@@ -1,6 +1,6 @@
 # OcenFin
 
-OcenFin will be a native WebOS app for LG TVs. Let me be clear: I am not trying to create the ultimate WebOS Jellyfin app (based on AI); it is simply meant to serve my own needs. If you are looking for a feature-rich native app, check out MoonFin or Litefin, which also offers an native app for WebOS.
+OcenFin will be a native WebOS app for LG TVs. Let me be clear: I am not trying to create the ultimate WebOS Jellyfin app (based on AI); it is simply meant to serve my own needs. If you are looking for a feature-rich native app, check out MoonFin, Litefin, Breezyfin which also offers an native app for WebOS.
 
 While the official Jellyfin app is available in the LG App Store, it is essentially just a browser wrapper. It's nothing more than the Jellyfin website, which is not optimized for WebOS (LG TVs). Our problem: We switch users on the TV very often. Doing this with the official app is quite annoying because you first have to log out the user, then select the server again, just to be able to select the correct user. Furthermore, the performance on our LG B4 was very sluggish. The picture quality is great, but the hardware isn't really designed for such crappy apps.
 
