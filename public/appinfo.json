@@ -1,0 +1,17 @@
+{
+  "id": "com.ocenfin.app",
+  "version": "2026.6.3",
+  "vendor": "seluce",
+  "type": "web",
+  "main": "index.html",
+  "title": "OcenFin",
+  "appDescription": "Jellyfin-Client für WebOS",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "splashBackground": "splash.png",
+  "bgColor": "#111827",
+  "iconColor": "#3B82F6",
+  "disableBackHistoryAPI": true,
+  "handlesRelaunch": true,
+  "supportTouchMode": "virtual"
+}

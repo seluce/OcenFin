@@ -1,0 +1,985 @@
+<script>
+  import { currentLang, t, LANGUAGES } from '../i18n.js';
+  import { isBackKey, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng } from '../utils.js';
+  import { createEventDispatcher, tick, onDestroy } from 'svelte';
+
+  export let serverUrl;
+  export let activeToken;
+  export let selectedUser;
+  export let selectedServer;
+  export let savedTokens        = {};
+  export let screensaverSettings = { enabled: true, timeout: 90 };
+  export let reduceAnimations    = false;
+  export let displaySettings     = { clock: true, hero: true, episodeCount: true };
+  export let playbackPrefs       = { audioLanguage: 'default', subtitleLanguage: 'default', subtitleSize: 'normal' };
+  export let libraries           = [];   // echte Mediatheken (für den Navigations-Editor)
+
+  let showDisplayOptions = false;   // Unterpunkt ein-/ausklappen
+
+  // Audio-/Untertitel-Sprachoptionen für die Modals
+  $: audioLangOptions = [
+    { key: 'default', name: $t.langDefault },
+    ...LANGUAGES
+  ];
+  $: subtitleLangOptions = [
+    { key: 'off',     name: $t.langOff },
+    { key: 'default', name: $t.langDefault },
+    ...LANGUAGES
+  ];
+  $: audioLangName    = (audioLangOptions.find(o => o.key === playbackPrefs.audioLanguage)    || audioLangOptions[0]).name;
+  $: subtitleLangName = (subtitleLangOptions.find(o => o.key === playbackPrefs.subtitleLanguage) || subtitleLangOptions[0]).name;
+
+  function setAudioLang(key) {
+    playbackPrefs = { ...playbackPrefs, audioLanguage: key };
+    dispatch('playbackPrefsChange', playbackPrefs);
+    closeModal();
+  }
+  function setSubtitleLang(key) {
+    playbackPrefs = { ...playbackPrefs, subtitleLanguage: key };
+    dispatch('playbackPrefsChange', playbackPrefs);
+    closeModal();
+  }
+
+  function togglePlaybackPref(key) {
+    playbackPrefs = { ...playbackPrefs, [key]: !playbackPrefs[key] };
+    dispatch('playbackPrefsChange', playbackPrefs);
+  }
+
+  function setSubtitleSize(size) {
+    playbackPrefs = { ...playbackPrefs, subtitleSize: size };
+    dispatch('playbackPrefsChange', playbackPrefs);
+  }
+
+  // Version: YYYYMMDD — bei Updates hier anpassen
+  const APP_VERSION = '20260603';
+
+  const dispatch = createEventDispatcher();
+
+  $: isCurrentUserSaved = !!(
+    selectedUser && selectedServer &&
+    savedTokens[selectedServer.id]?.[selectedUser.Id]
+  );
+
+  let activeModal  = null;
+  let currentPw    = '';
+  let newPw        = '';
+  let pwMessage    = '';
+  let qcCode       = '';
+  let qcMessage    = '';
+  let modalTimeout = null;  // für Memory-Leak-freies setTimeout
+
+  $: timeoutOptions = [
+    { label: `1 ${$t.minuteShort}`,  value: 60  },
+    { label: `90 ${$t.secondShort}`, value: 90  },
+    { label: `2 ${$t.minuteShort}`,  value: 120 },
+    { label: `5 ${$t.minuteShort}`,  value: 300 },
+  ];
+
+  onDestroy(() => { if (modalTimeout) clearTimeout(modalTimeout); });
+
+  function getAuthHeaders() {
+    return {
+      "Authorization": `MediaBrowser Token="${activeToken}"`,
+      "Content-Type":  "application/json"
+    };
+  }
+
+  async function openModal(name) {
+    pwMessage = ''; qcMessage = '';
+    currentPw = ''; newPw = ''; qcCode = '';
+    if (modalTimeout) clearTimeout(modalTimeout);
+    activeModal = name;
+    await tick();
+    document.querySelector('[data-modal] input, [data-modal] button')?.focus();
+  }
+
+  function closeModal() {
+    if (modalTimeout) clearTimeout(modalTimeout);
+    activeModal = null;
+  }
+
+  function setLanguage(lang) {
+    currentLang.set(lang);
+    closeModal();
+  }
+
+  async function changePassword() {
+    pwMessage = '';
+    try {
+      const res = await fetch(`${serverUrl}/Users/${selectedUser.Id}/Password`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ Id: selectedUser.Id, CurrentPw: currentPw, NewPw: newPw })
+      });
+      pwMessage = res.ok ? $t.pwChangedSuccess : $t.pwChangedError;
+      if (res.ok) {
+        currentPw = ''; newPw = '';
+        modalTimeout = setTimeout(closeModal, 2000);
+      }
+    } catch { pwMessage = $t.networkError; }
+  }
+
+  async function authorizeQuickConnect() {
+    qcMessage = '';
+    try {
+      const res = await fetch(`${serverUrl}/QuickConnect/Authorize`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ Code: qcCode })
+      });
+      qcMessage = res.ok ? $t.qcSuccess : $t.qcError;
+      if (res.ok) { qcCode = ''; modalTimeout = setTimeout(closeModal, 2000); }
+    } catch { qcMessage = $t.networkError; }
+  }
+
+  function updateScreensaver(patch) {
+    screensaverSettings = { ...screensaverSettings, ...patch };
+    dispatch('screensaverChange', screensaverSettings);
+  }
+
+  function toggleReduceAnimations() {
+    reduceAnimations = !reduceAnimations;
+    dispatch('reduceAnimationsChange', reduceAnimations);
+  }
+
+  function toggleDisplay(key) {
+    displaySettings = { ...displaySettings, [key]: !displaySettings[key] };
+    dispatch('displayChange', displaySettings);
+  }
+
+  function setClockFormat(fmt) {
+    displaySettings = { ...displaySettings, clockFormat: fmt };
+    dispatch('displayChange', displaySettings);
+  }
+
+  function setUiSize(size) {
+    displaySettings = { ...displaySettings, uiSize: size };
+    dispatch('displayChange', displaySettings);
+  }
+  function setRecRows(n) {
+    displaySettings = { ...displaySettings, recommendationRows: n };
+    dispatch('displayChange', displaySettings);
+  }
+  function setTheme(theme) {
+    displaySettings = { ...displaySettings, theme };
+    dispatch('displayChange', displaySettings);
+  }
+  function setSeekStep(sec) {
+    displaySettings = { ...displaySettings, seekStep: sec };
+    dispatch('displayChange', displaySettings);
+  }
+
+  // ---- Navigations-Editor (Sidebar-Einträge anordnen/ausblenden, pro Profil) ----
+  // Gemeinsame Quelle wie die Sidebar; zeigt hier ALLE Einträge inkl. ausgeblendeter.
+  $: navEntries = applyNavConfig(buildNavEntries(libraries, $t, displaySettings.navIcons || {}), displaySettings.navOrder || [], displaySettings.navHidden || []);
+  let grabbedId = null;   // angehobener Eintrag (Greifen-Modus) – null = keiner
+  let navListEl;          // bind: zum Refokussieren nach dem Verschieben
+  let lastGrabToggle = 0; // gegen Auto-Repeat: gehaltene OK-Taste = ein Umschalten
+  let iconPickerFor = null;   // Eintrags-Id, für die gerade ein Icon gewählt wird (null = zu)
+  let iconGridEl;             // bind: Auto-Fokus im Icon-Wähler
+
+  // grabbedId zentral setzen + App melden, damit der Fokus-Manager die Sidebar währenddessen sperrt.
+  function setGrabbed(id) {
+    grabbedId = id;
+    dispatch('reorderingChange', id !== null);
+  }
+  function toggleGrab(entry) {
+    const now = Date.now();
+    if (now - lastGrabToggle < 350) return;   // gehaltene OK-Taste nicht 100× auslösen
+    lastGrabToggle = now;
+    setGrabbed(grabbedId === entry.id ? null : entry.id);   // OK hebt an / legt ab
+  }
+  async function moveGrabbed(dir) {
+    const ids = navEntries.map(e => e.id);
+    const i = ids.indexOf(grabbedId);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    displaySettings = { ...displaySettings, navOrder: ids };   // vollständige Reihenfolge sichern
+    dispatch('displayChange', displaySettings);
+    await tick();
+    navListEl?.querySelector(`[data-nav-id="${grabbedId}"]`)?.focus();   // Fokus folgt dem Eintrag
+  }
+  function toggleHidden(entry) {
+    if (entry.locked) return;
+    const hidden = new Set(displaySettings.navHidden || []);
+    hidden.has(entry.id) ? hidden.delete(entry.id) : hidden.add(entry.id);
+    displaySettings = { ...displaySettings, navHidden: [...hidden] };
+    dispatch('displayChange', displaySettings);
+  }
+  // --- Icon-Wähler ---
+  async function openIconPicker(entry) {
+    iconPickerFor = entry.id;
+    await tick();
+    iconGridEl?.querySelector('button')?.focus();
+  }
+  function pickIcon(key) {
+    displaySettings = { ...displaySettings, navIcons: { ...(displaySettings.navIcons || {}), [iconPickerFor]: key } };
+    dispatch('displayChange', displaySettings);
+    iconPickerFor = null;
+  }
+  function onIconPickerKey(e) {
+    if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); iconPickerFor = null; }
+  }
+
+  // --- Profilbild (Preset-Avatar → Jellyfin hochladen) ---
+  let avatarIcon  = null;                  // null = noch nichts gewählt (kein Avatar markiert)
+  let avatarColor = null;                  // null = noch nichts gewählt (keine Farbe markiert)
+  let avatarSaving = false;
+  let avatarSaved  = false;                // kurzer Bestätigungshinweis nach dem Hochladen
+  let hasEditedAvatar = false;             // false → Vorschau zeigt das echte aktuelle Profilbild
+  // Effektive Werte nur fürs Rendern/Hochladen (Fallback auf Standard), Markierung bleibt an den Rohwerten.
+  $: effectiveIcon  = avatarIcon  || AVATAR_ICON_KEYS[0];
+  $: effectiveColor = avatarColor || AVATAR_COLORS[0];
+  // Beim Verlassen von "Profil & Sicherheit" ohne Speichern → Vorschau auf das echte Bild zurücksetzen,
+  // damit niemand denkt, die Auswahl sei bereits gespeichert.
+  $: if (activeCategory !== 'security' && hasEditedAvatar) {
+    hasEditedAvatar = false; avatarIcon = null; avatarColor = null;
+  }
+
+  async function saveProfileImage() {
+    if (avatarSaving) return;
+    avatarSaving = true; avatarSaved = false;
+    try {
+      const base64 = await renderAvatarPng(effectiveIcon, effectiveColor);
+      const res = await fetch(`${serverUrl}/Users/${selectedUser.Id}/Images/Primary`, {
+        method: 'POST',
+        headers: { 'Authorization': `MediaBrowser Token="${activeToken}"`, 'Content-Type': 'image/png' },
+        body: base64,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      avatarSaved = true;
+      dispatch('profileImageChanged');     // App lädt selectedUser neu → Sidebar zeigt es sofort
+      setTimeout(() => avatarSaved = false, 2500);
+    } catch (e) {
+      console.error('[OcenFin] Profilbild-Upload fehlgeschlagen:', e);
+    } finally {
+      avatarSaving = false;
+    }
+  }
+  // Im Greifen-Modus ▲/▼ abfangen (vor dem Fokus-Manager, bubble-Phase) und verschieben.
+  // OK (Klick) legt ab; Zurück bricht den Greifen-Modus ab.
+  function onNavRowKey(e, entry) {
+    if (grabbedId !== entry.id) return;
+    if (e.key === 'ArrowUp')        { e.preventDefault(); e.stopPropagation(); moveGrabbed(-1); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); moveGrabbed(1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); } // im Greif-Modus nicht verlassen
+    else if (isBackKey(e))          { e.preventDefault(); e.stopPropagation(); setGrabbed(null); }
+  }
+
+  // Akzentfarben (Vorschaufarbe = der 500er-Ton). OLED-freundliche, kräftige Töne.
+  const themeSwatches = [
+    { id: 'blue',    color: '#3b82f6', label: $t.themeBlue },
+    { id: 'sky',     color: '#0ea5e9', label: $t.themeSky },
+    { id: 'teal',    color: '#14b8a6', label: $t.themeTeal },
+    { id: 'emerald', color: '#10b981', label: $t.themeEmerald },
+    { id: 'indigo',  color: '#6366f1', label: $t.themeIndigo },
+    { id: 'violet',  color: '#8b5cf6', label: $t.themeViolet },
+    { id: 'fuchsia', color: '#d946ef', label: $t.themeFuchsia },
+    { id: 'rose',    color: '#f43f5e', label: $t.themeRose },
+    { id: 'orange',  color: '#f97316', label: $t.themeOrange },
+    { id: 'amber',   color: '#f59e0b', label: $t.themeAmber },
+  ];
+
+  // Anzeige-Elemente gruppiert: Startseiten-Zeilen vs. allgemeine Oberfläche
+  $: homeToggles = [
+    { key: 'hero',            label: $t.displayHero },
+    { key: 'libraries',       label: $t.displayLibraries },
+    { key: 'nextUp',          label: $t.nextUp },
+    { key: 'history',         label: $t.displayHistory },
+    { key: 'recommendations', label: $t.displayRecommendations },
+    { key: 'latest',          label: $t.displayLatest },
+    { key: 'collections',     label: $t.collections },
+  ];
+  $: uiToggles = [
+    { key: 'showLogo',        label: $t.displayLogo },
+    { key: 'clock',           label: $t.displayClock },
+    { key: 'episodeCount',    label: $t.displayEpisodeCount },
+    { key: 'backdropPreview', label: $t.displayBackdropPreview },
+    { key: 'showChapters',    label: $t.displayChapters },
+  ];
+
+  // Zwei-Spalten-Navigation: Kategorie links wählen, Inhalt rechts (kein langes Scrollen)
+  let activeCategory = 'appearance';
+  $: categories = [
+    { id: 'appearance', label: $t.settingsDisplay,    icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
+    { id: 'navigation', label: $t.settingsNavigation, icon: 'M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z' },
+    { id: 'oled',       label: $t.screensaverSection, icon: 'M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
+    { id: 'playback',   label: $t.playback,           icon: 'M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z' },
+    { id: 'security',   label: $t.profileSecurity,    icon: 'M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z' },
+    { id: 'account',    label: $t.settingsAccount,    icon: 'M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.7 5.1a3.375 3.375 0 012.7-1.35h7.13c1.06 0 2.06.5 2.7 1.35l2.59 3.45a4.5 4.5 0 01.9 2.7' },
+  ];
+</script>
+
+<div class="flex h-full">
+
+  <!-- LINKS: Kategorie-Navigation -->
+  <nav class="w-72 shrink-0 bg-gray-900/60 border-r border-gray-800 p-6 pt-16 flex flex-col gap-2 overflow-y-auto hide-scrollbar">
+    <h1 class="text-3xl font-bold text-white mb-4 ml-2">{$t.settings}</h1>
+    {#each categories as cat}
+      <button on:click={() => activeCategory = cat.id}
+        class="flex items-center gap-4 px-4 py-4 rounded-xl text-left font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+               {activeCategory === cat.id ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800 focus:bg-gray-800'}">
+        <svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d={cat.icon}/>
+        </svg>
+        <span>{cat.label}</span>
+      </button>
+    {/each}
+    <div class="mt-auto pt-6 text-center">
+      <span class="text-gray-600 font-mono text-xs tracking-widest block">OcenFin</span>
+      <span class="text-gray-600 font-mono text-xs tracking-widest">{$t.version} {APP_VERSION}</span>
+    </div>
+  </nav>
+
+  <!-- RECHTS: Inhalt der aktiven Kategorie -->
+  <div class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16">
+    <div class="max-w-4xl flex flex-col gap-10 pb-32">
+    <!-- ══════════════════════════════════════════
+         1. DARSTELLUNG
+    ══════════════════════════════════════════ -->
+    {#if activeCategory === 'appearance'}
+    <section class="flex flex-col gap-4">
+      <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{$t.settingsDisplay}</h2>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+
+        <!-- Sprache -->
+        <button on:click={() => openModal('lang')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <div>
+            <span class="text-2xl text-white font-medium block">{$t.language}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{$t.languageDesc}</span>
+          </div>
+          <span class="text-xl font-bold text-gray-300">{$currentLang === 'de' ? 'Deutsch' : 'English'}</span>
+        </button>
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Animationen reduzieren -->
+        <button on:click={toggleReduceAnimations}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <div>
+            <span class="text-2xl text-white font-medium block">{$t.reduceAnimations}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{$t.reduceAnimationsDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {reduceAnimations ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {reduceAnimations ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Oberflächengröße — eigener Punkt, skaliert die gesamte App -->
+        <div class="p-6">
+          <span class="text-2xl text-white font-medium block">{$t.uiSize}</span>
+          <span class="text-gray-400 mt-1 mb-4 block text-sm">{$t.uiSizeDesc}</span>
+          <div class="flex gap-3">
+            {#each [['small', $t.sizeSmall],['medium', $t.sizeMedium],['large', $t.sizeLarge]] as [val, label]}
+              <button on:click={() => setUiSize(val)}
+                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                       {(displaySettings.uiSize || 'medium') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                {label}
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Akzentfarbe — eigener Punkt, ändert die Hervorhebungsfarbe -->
+        <div class="p-6">
+          <span class="text-2xl text-white font-medium block">{$t.accentColor}</span>
+          <span class="text-gray-400 mt-1 mb-4 block text-sm">{$t.accentColorDesc}</span>
+          <div class="flex gap-4 flex-wrap">
+            {#each themeSwatches as sw}
+              <button on:click={() => setTheme(sw.id)} title={sw.label}
+                class="w-14 h-14 rounded-full focus:outline-none focus:ring-4 focus:ring-white transition-all
+                       {(displaySettings.theme || 'blue') === sw.id ? 'ring-4 ring-white scale-110' : 'hover:scale-105'}"
+                style="background-color: {sw.color}">
+                {#if (displaySettings.theme || 'blue') === sw.id}
+                  <svg class="w-7 h-7 mx-auto text-white drop-shadow" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                  </svg>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- ANZEIGE-ELEMENTE — ausklappbarer Unterpunkt, hält das Menü schlank -->
+        <button on:click={() => showDisplayOptions = !showDisplayOptions}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <div>
+            <span class="text-2xl text-white font-medium block">{$t.displayElements}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{$t.displayElementsDesc}</span>
+          </div>
+          <svg class="w-7 h-7 text-gray-400 transition-transform {showDisplayOptions ? 'rotate-90' : ''}"
+            fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
+
+        {#if showDisplayOptions}
+          <!-- Gruppe: Startseite (Dashboard-Zeilen) -->
+          <div class="pl-10 pr-6 pt-4 pb-2 bg-gray-900/50">
+            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{$t.groupHome}</h3>
+          </div>
+          {#each homeToggles as tg}
+            <button on:click={() => toggleDisplay(tg.key)}
+              class="flex items-center justify-between w-full pl-10 pr-6 py-4 bg-gray-900/50 hover:bg-gray-700 focus:bg-gray-700
+                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+              <span class="text-lg text-gray-200">{tg.label}</span>
+              <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
+                          {displaySettings[tg.key] ? 'bg-blue-500' : 'bg-gray-600'}">
+                <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
+                            {displaySettings[tg.key] ? 'translate-x-7' : ''}"></div>
+              </div>
+            </button>
+          {/each}
+
+          <!-- Anzahl Empfehlungs-Reihen — nur relevant wenn Empfehlungen aktiv -->
+          {#if displaySettings.recommendations}
+            <div class="pl-10 pr-6 py-4 bg-gray-900/50">
+              <span class="text-lg text-gray-200 block mb-3">{$t.recommendationRows}</span>
+              <div class="flex gap-2">
+                {#each [[1, $t.rowsOne],[2, $t.rowsTwo]] as [val, label]}
+                  <button on:click={() => setRecRows(val)}
+                    class="flex-1 py-2.5 rounded-lg font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-all
+                           {(displaySettings.recommendationRows || 1) === val ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">
+                    {label}
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+
+          <!-- Gruppe: Oberfläche (allgemeine Elemente) -->
+          <div class="pl-10 pr-6 pt-5 pb-2 bg-gray-900/50 border-t border-gray-700/40">
+            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{$t.groupInterface}</h3>
+          </div>
+          {#each uiToggles as tg}
+            <button on:click={() => toggleDisplay(tg.key)}
+              class="flex items-center justify-between w-full pl-10 pr-6 py-4 bg-gray-900/50 hover:bg-gray-700 focus:bg-gray-700
+                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+              <span class="text-lg text-gray-200">{tg.label}</span>
+              <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
+                          {displaySettings[tg.key] ? 'bg-blue-500' : 'bg-gray-600'}">
+                <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
+                            {displaySettings[tg.key] ? 'translate-x-7' : ''}"></div>
+              </div>
+            </button>
+          {/each}
+
+          <!-- Zeitformat (gilt für beide Uhren) -->
+          <div class="pl-10 pr-6 py-4 bg-gray-900/50">
+            <span class="text-lg text-gray-200 block mb-3">{$t.clockFormat}</span>
+            <div class="flex gap-2">
+              {#each [['auto', $t.clockAuto],['24h', $t.clock24h],['12h', $t.clock12h]] as [val, label]}
+                <button on:click={() => setClockFormat(val)}
+                  class="flex-1 py-2.5 rounded-lg font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {(displaySettings.clockFormat || 'auto') === val ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">
+                  {label}
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+      </div>
+    </section>
+    {/if}
+
+    <!-- ══════════════════════════════════════════
+         NAVIGATION (Sidebar-Einträge anordnen/ausblenden)
+    ══════════════════════════════════════════ -->
+    {#if activeCategory === 'navigation'}
+    <section class="flex flex-col gap-3">
+      <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{$t.settingsNavigation}</h2>
+      <p class="text-gray-400 text-sm ml-2">{$t.navEditHint}</p>
+      <div bind:this={navListEl} class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl flex flex-col">
+        {#each navEntries as entry (entry.id)}
+          <div class="flex items-center gap-2 px-3 py-1.5 border-b border-gray-700/40 last:border-b-0 {entry.hidden ? 'opacity-50' : ''}">
+            <!-- Anheben / Verschieben (OK greift, ▲▼ bewegt) -->
+            <button data-nav-id={entry.id} on:click={() => toggleGrab(entry)} on:keydown={(e) => onNavRowKey(e, entry)}
+              class="flex-1 flex items-center gap-4 p-3 rounded-xl text-left focus:outline-none transition-all
+                     {grabbedId === entry.id
+                       ? 'bg-blue-600 text-white ring-4 ring-white scale-[1.02] shadow-xl'
+                       : 'text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:ring-4 focus:ring-white'}">
+              <svg class="w-6 h-6 shrink-0 opacity-50" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6h2v2H8V6zm0 5h2v2H8v-2zm0 5h2v2H8v-2zm6-10h2v2h-2V6zm0 5h2v2h-2v-2zm0 5h2v2h-2v-2z"/></svg>
+              <svg class="w-7 h-7 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d={entry.icon}/></svg>
+              <span class="text-xl font-semibold flex-1">{entry.label}</span>
+              {#if grabbedId === entry.id}
+                <span class="text-sm font-medium opacity-90 whitespace-nowrap">{$t.navGrabbedHint}</span>
+              {/if}
+            </button>
+            <!-- Icon wählen -->
+            <button on:click={() => openIconPicker(entry)}
+              class="p-3 rounded-xl text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors"
+              title={$t.chooseIcon}>
+              <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d={entry.icon}/></svg>
+            </button>
+            <!-- Sichtbarkeit -->
+            {#if entry.locked}
+              <div class="p-3 text-gray-600" title={$t.navAlwaysVisible}>
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+              </div>
+            {:else}
+              <button on:click={() => toggleHidden(entry)}
+                class="p-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-colors
+                       {entry.hidden ? 'text-gray-500 hover:text-white focus:text-white' : 'text-blue-400 hover:text-white focus:text-white'}"
+                title={entry.hidden ? $t.navShow : $t.navHide}>
+                {#if entry.hidden}
+                  <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.243 4.243L9.88 9.88"/></svg>
+                {:else}
+                  <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                {/if}
+              </button>
+            {/if}
+          </div>
+        {/each}
+      </div>
+
+      <!-- Icon-Wähler (Modal, D-Pad-Grid) -->
+      {#if iconPickerFor}
+        <div class="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-8"
+             data-focus-trap on:keydown={onIconPickerKey} role="dialog" tabindex="-1">
+          <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-2xl max-w-xl w-full">
+            <div class="flex justify-between items-center mb-5">
+              <h3 class="text-2xl font-bold text-white">{$t.chooseIcon}</h3>
+              <button on:click={() => iconPickerFor = null} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <div bind:this={iconGridEl} class="grid grid-cols-4 gap-3">
+              {#each NAV_ICON_KEYS as key}
+                <button on:click={() => pickIcon(key)}
+                  class="aspect-square flex items-center justify-center rounded-xl bg-gray-700 hover:bg-gray-600 focus:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+                  <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d={NAV_ICON_PALETTE[key]}/></svg>
+                </button>
+              {/each}
+            </div>
+          </div>
+        </div>
+      {/if}
+    </section>
+    {/if}
+
+    <!-- ══════════════════════════════════════════
+         2. OLED-SCHUTZ
+    ══════════════════════════════════════════ -->
+    {#if activeCategory === 'oled'}
+    <section class="flex flex-col gap-4">
+      <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{$t.screensaverSection}</h2>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+
+        <!-- Screensaver Toggle -->
+        <button on:click={() => updateScreensaver({ enabled: !screensaverSettings.enabled })}
+          class="flex items-center justify-between w-full px-6 py-5 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <div>
+            <span class="text-2xl text-white font-medium block">{$t.screensaverTitle}</span>
+            <span class="text-gray-400 mt-0.5 block text-sm">{$t.screensaverDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {screensaverSettings.enabled ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {screensaverSettings.enabled ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        <!-- Timeout (nur wenn aktiv) -->
+        {#if screensaverSettings.enabled}
+          <div class="h-px bg-gray-700"></div>
+          <div class="flex items-center justify-between px-6 py-4">
+            <span class="text-base text-gray-400 font-medium">{$t.screensaverAfter}</span>
+            <div class="flex gap-2">
+              {#each timeoutOptions as opt}
+                <button on:click={() => updateScreensaver({ timeout: opt.value })}
+                  class="px-5 py-2 rounded-lg font-bold text-sm transition-all
+                         focus:outline-none focus:ring-2 focus:ring-white
+                         {screensaverSettings.timeout === opt.value
+                           ? 'bg-blue-600 text-white'
+                           : 'bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-white focus:bg-gray-600 focus:text-white'}">
+                  {opt.label}
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+      </div>
+    </section>
+    {/if}
+
+    <!-- ══════════════════════════════════════════
+         WIEDERGABE — Standard-Sprachen
+    ══════════════════════════════════════════ -->
+    {#if activeCategory === 'playback'}
+    <section class="flex flex-col gap-4">
+      <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{$t.playback}</h2>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+
+        <!-- Standard-Audiosprache -->
+        <button on:click={() => openModal('audioLang')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <span class="text-2xl text-white font-medium">{$t.audioLanguage}</span>
+          <span class="text-xl font-bold text-gray-300">{audioLangName}</span>
+        </button>
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Standard-Untertitel -->
+        <button on:click={() => openModal('subtitleLang')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <span class="text-2xl text-white font-medium">{$t.subtitleLanguage}</span>
+          <span class="text-xl font-bold text-gray-300">{subtitleLangName}</span>
+        </button>
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Sprungweite der Vor-/Zurück-Buttons (gestapelt + flex-1, damit per D-Pad erreichbar) -->
+        <div class="p-6">
+          <span class="text-2xl text-white font-medium block">{$t.seekInterval}</span>
+          <span class="text-gray-400 mt-1 mb-4 block text-sm">{$t.seekIntervalDesc}</span>
+          <div class="flex gap-3">
+            {#each [10, 30, 60] as sec}
+              <button on:click={() => setSeekStep(sec)}
+                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                       {(displaySettings.seekStep || 30) === sec ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                {sec}s
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Auto-Skip Intro -->
+        <button on:click={() => togglePlaybackPref('autoSkipIntro')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <div>
+            <span class="text-2xl text-white font-medium block">{$t.autoSkipIntro}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{$t.autoSkipDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.autoSkipIntro ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.autoSkipIntro ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Auto-Skip Outro -->
+        <button on:click={() => togglePlaybackPref('autoSkipCredits')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <div>
+            <span class="text-2xl text-white font-medium block">{$t.autoSkipOutro}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{$t.autoSkipOutroDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.autoSkipCredits ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.autoSkipCredits ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        <!-- Nächste Folge automatisch -->
+        <button on:click={() => togglePlaybackPref('autoPlayNext')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <div>
+            <span class="text-2xl text-white font-medium block">{$t.autoPlayNext}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{$t.autoPlayNextDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.autoPlayNext ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.autoPlayNext ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        <!-- Untertitelgröße -->
+        <div class="p-6 border-t border-gray-700/50">
+          <span class="text-2xl text-white font-medium block mb-4">{$t.subtitleSize}</span>
+          <div class="flex gap-3">
+            {#each [['small', $t.sizeSmall], ['normal', $t.sizeNormal], ['large', $t.sizeLarge]] as [val, label]}
+              <button on:click={() => setSubtitleSize(val)}
+                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                       {playbackPrefs.subtitleSize === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                {label}
+              </button>
+            {/each}
+          </div>
+        </div>
+
+      </div>
+    </section>
+    {/if}
+
+    <!-- ══════════════════════════════════════════
+         3. SICHERHEIT & GERÄTE (inkl. Schnellwechsel)
+    ══════════════════════════════════════════ -->
+    {#if activeCategory === 'security'}
+    <section class="flex flex-col gap-4">
+      <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{$t.profileSecurity}</h2>
+
+      <!-- Profilbild: Preset-Avatar + Hintergrundfarbe, wird als Jellyfin-Profilbild hochgeladen -->
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-6 shadow-xl flex flex-col gap-5">
+        <div class="flex items-center gap-5">
+          <div class="w-20 h-20 rounded-full overflow-hidden flex items-center justify-center shrink-0 shadow-md" style="background:{(!hasEditedAvatar && selectedUser?.PrimaryImageTag) ? 'transparent' : effectiveColor}">
+            {#if !hasEditedAvatar && selectedUser?.PrimaryImageTag}
+              <img src="{serverUrl}/Users/{selectedUser.Id}/Images/Primary?tag={selectedUser.PrimaryImageTag}" alt={$t.profilePicture} class="w-full h-full object-cover" />
+            {:else}
+              <svg class="w-11 h-11 text-white" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[effectiveIcon]}/></svg>
+            {/if}
+          </div>
+          <div class="flex-1">
+            <span class="text-2xl text-white font-medium block">{$t.profilePicture}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{$t.profilePictureHint}</span>
+          </div>
+          <button on:click={saveProfileImage} disabled={avatarSaving || !hasEditedAvatar}
+            class="px-6 py-3 rounded-xl font-bold text-base shrink-0 focus:outline-none focus:ring-4 focus:ring-white transition-colors
+                   {avatarSaved ? 'bg-green-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50'}">
+            {avatarSaved ? $t.saved : avatarSaving ? $t.saving : $t.save}
+          </button>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          {#each AVATAR_ICON_KEYS as key}
+            <button on:click={() => { avatarIcon = key; hasEditedAvatar = true; }}
+              class="w-14 h-14 rounded-xl flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-white transition-all
+                     {avatarIcon === key ? 'bg-gray-600 ring-2 ring-blue-400' : 'bg-gray-700 hover:bg-gray-600'}">
+              <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[key]}/></svg>
+            </button>
+          {/each}
+        </div>
+        <div class="flex flex-wrap gap-2">
+          {#each AVATAR_COLORS as color}
+            <button on:click={() => { avatarColor = color; hasEditedAvatar = true; }}
+              class="w-10 h-10 rounded-full focus:outline-none focus:ring-4 focus:ring-white transition-all {avatarColor === color ? 'ring-2 ring-white scale-110' : ''}"
+              style="background:{color}" aria-label="Farbe"></button>
+          {/each}
+        </div>
+      </div>
+
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+
+        <!-- Kennwort speichern / Schnellwechsel (vormals eigene Kategorie "Profil") -->
+        <button on:click={() => dispatch('toggleSave')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <div>
+            <span class="text-2xl text-white font-medium block">{$t.savePasswords}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{$t.fastSwitchDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {isCurrentUserSaved ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {isCurrentUserSaved ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Passwort ändern -->
+        <button on:click={() => openModal('password')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <div>
+            <span class="text-2xl text-white font-medium block">{$t.changePassword}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{$t.changePwDesc}</span>
+          </div>
+          <svg class="w-7 h-7 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Quick Connect (Gerät autorisieren) -->
+        <button on:click={() => openModal('quickConnect')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <div>
+            <span class="text-2xl text-white font-medium block">{$t.quickConnect}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{$t.qcDesc}</span>
+          </div>
+          <svg class="w-7 h-7 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
+
+      </div>
+    </section>
+    {/if}
+
+    <!-- ══════════════════════════════════════════
+         5. KONTO & SERVER
+    ══════════════════════════════════════════ -->
+    {#if activeCategory === 'account'}
+    <section class="flex flex-col gap-4">
+      <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{$t.settingsAccount}</h2>
+
+      <!-- Server-Info -->
+      {#if selectedServer}
+        <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-5">
+          <p class="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">{$t.connectedServer}</p>
+          <p class="text-xl text-white font-bold">{selectedServer.name}</p>
+          <p class="text-gray-400 mt-0.5 text-sm font-mono">{selectedServer.url}</p>
+        </div>
+      {/if}
+
+      <!-- Cache leeren (direkt unter der Server-Adresse) -->
+      <button on:click={() => dispatch('clearCache')}
+        class="bg-gray-800/80 border border-gray-700 rounded-2xl shadow-xl flex items-center justify-between w-full p-6
+               hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-4 focus:ring-white transition-all text-left">
+        <div>
+          <span class="text-xl text-white font-bold block">{$t.clearCache}</span>
+          <span class="text-gray-400 mt-1 block text-sm">{$t.clearCacheDesc}</span>
+        </div>
+        <svg class="w-7 h-7 text-gray-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+      </button>
+
+      <!-- Benutzer wechseln / Abmelden -->
+      <div class="grid grid-cols-2 gap-5">
+        <button on:click={() => dispatch('switchUser')}
+          class="flex flex-col items-center justify-center p-7 bg-gray-800 border border-gray-700 rounded-2xl
+                 hover:bg-gray-700 hover:scale-105 focus:scale-105
+                 focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-xl">
+          <svg class="w-11 h-11 text-white mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7"/>
+          </svg>
+          <span class="text-xl text-white font-bold">{$t.switchUser}</span>
+          <span class="text-gray-400 mt-1 text-center text-sm">{$t.switchUserDesc}</span>
+        </button>
+
+        <button on:click={() => dispatch('logout')}
+          class="flex flex-col items-center justify-center p-7 bg-red-900/40 border border-red-800/50 rounded-2xl
+                 hover:bg-red-600 focus:bg-red-600 focus:scale-105
+                 focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-xl group">
+          <svg class="w-11 h-11 text-red-500 group-hover:text-white group-focus:text-white mb-3 transition-colors"
+            fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+          </svg>
+          <span class="text-xl text-white font-bold">{$t.logout}</span>
+          <span class="text-red-300 group-hover:text-red-100 group-focus:text-red-100 mt-1 text-center text-sm transition-colors">
+            {$t.logoutDesc}
+          </span>
+        </button>
+      </div>
+
+    </section>
+    {/if}
+
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     MODAL (Sprache / Passwort / Quick Connect)
+══════════════════════════════════════════ -->
+{#if activeModal}
+  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8 animate-fade-in"
+    on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeModal(); } }}>
+
+    <div data-modal data-focus-trap
+      class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full max-w-xl flex flex-col gap-6 shadow-2xl">
+
+      {#if activeModal === 'lang'}
+        <h2 class="text-4xl text-white font-bold mb-2">{$t.language}</h2>
+        <button on:click={() => setLanguage('de')}
+          class="w-full text-left p-6 text-2xl font-bold text-white rounded-xl transition-colors
+                 focus:outline-none focus:ring-4 focus:ring-white
+                 {$currentLang === 'de' ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
+          🇩🇪&nbsp; Deutsch
+        </button>
+        <button on:click={() => setLanguage('en')}
+          class="w-full text-left p-6 text-2xl font-bold text-white rounded-xl transition-colors
+                 focus:outline-none focus:ring-4 focus:ring-white
+                 {$currentLang === 'en' ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
+          🇬🇧&nbsp; English
+        </button>
+
+      {:else if activeModal === 'audioLang'}
+        <h2 class="text-4xl text-white font-bold mb-2">{$t.audioLanguage}</h2>
+        <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
+          {#each audioLangOptions as opt}
+            <button on:click={() => setAudioLang(opt.key)}
+              class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
+                     focus:outline-none focus:ring-4 focus:ring-white
+                     {playbackPrefs.audioLanguage === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
+              {opt.name}
+            </button>
+          {/each}
+        </div>
+
+      {:else if activeModal === 'subtitleLang'}
+        <h2 class="text-4xl text-white font-bold mb-2">{$t.subtitleLanguage}</h2>
+        <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
+          {#each subtitleLangOptions as opt}
+            <button on:click={() => setSubtitleLang(opt.key)}
+              class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
+                     focus:outline-none focus:ring-4 focus:ring-white
+                     {playbackPrefs.subtitleLanguage === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
+              {opt.name}
+            </button>
+          {/each}
+        </div>
+
+      {:else if activeModal === 'password'}
+        <h2 class="text-4xl text-white font-bold mb-2">{$t.changePassword}</h2>
+        <input type="password" bind:value={currentPw} placeholder={$t.currentPassword}
+          use:tvKeyboard
+          on:keydown={(e) => e.key === 'Enter' && changePassword()}
+          class="w-full bg-gray-900 text-white text-2xl p-6 rounded-xl border border-gray-600
+                 focus:outline-none focus:ring-4 focus:ring-blue-500" />
+        <input type="password" bind:value={newPw} placeholder={$t.newPassword}
+          use:tvKeyboard
+          on:keydown={(e) => e.key === 'Enter' && changePassword()}
+          class="w-full bg-gray-900 text-white text-2xl p-6 rounded-xl border border-gray-600
+                 focus:outline-none focus:ring-4 focus:ring-blue-500" />
+        {#if pwMessage}<p class="text-blue-400 font-bold text-lg">{pwMessage}</p>{/if}
+        <button on:click={changePassword}
+          class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-2xl py-6 rounded-xl
+                 focus:outline-none focus:ring-4 focus:ring-white mt-2">{$t.save}</button>
+
+      {:else if activeModal === 'quickConnect'}
+        <h2 class="text-4xl text-white font-bold mb-2">{$t.quickConnect}</h2>
+        <p class="text-gray-400 text-lg">{$t.qcAuthInstruction}</p>
+        <input type="text" bind:value={qcCode} placeholder={$t.qcPlaceholder}
+          on:keydown={(e) => e.key === 'Enter' && authorizeQuickConnect()}
+          class="w-full bg-gray-900 text-white text-4xl tracking-widest text-center p-6 rounded-xl border border-gray-600
+                 focus:outline-none focus:ring-4 focus:ring-blue-500" />
+        {#if qcMessage}<p class="text-blue-400 font-bold text-lg">{qcMessage}</p>{/if}
+        <button on:click={authorizeQuickConnect}
+          class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-2xl py-6 rounded-xl
+                 focus:outline-none focus:ring-4 focus:ring-white mt-2">{$t.qcAuthorizeBtn}</button>
+      {/if}
+
+      <button on:click={closeModal}
+        class="w-full bg-transparent hover:bg-gray-700 focus:bg-gray-700 text-gray-400 font-bold text-xl py-4 rounded-xl
+               border border-gray-600 focus:outline-none focus:ring-4 focus:ring-white mt-2">{$t.qcCancel}</button>
+
+    </div>
+  </div>
+{/if}
+
+<style>
+  .hide-scrollbar::-webkit-scrollbar { display: none; }
+  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+</style>

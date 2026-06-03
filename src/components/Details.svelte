@@ -1,0 +1,658 @@
+<script>
+  import { t, LANGUAGES } from '../i18n.js';
+  import { isBackKey, focusOnMount, personImageUrl, itemProgress } from '../utils.js';
+  import { createEventDispatcher } from 'svelte';
+
+  export let item;
+  export let serverUrl;
+  export let activeToken;
+  export let selectedUser;
+  export let reduceAnimations = false;   // Backdrop bei aktivem Sparmodus weglassen
+  export let playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default' };
+  export let use24h = true;   // Zeitformat für den „Endet um"-Chip (folgt der Einstellung)
+
+  const dispatch = createEventDispatcher();
+
+  let fullItem     = null;
+  let relatedItems = [];
+  let similarItems = [];
+  let isLoading    = true;
+
+  let selectedAudioIndex    = -1;
+  let selectedSubtitleIndex = -1;
+
+  // Trailer-Modal
+  let trailerEmbedUrl = null;
+  let showMediaInfo   = false;   // Medieninformationen-Modal
+
+  function formatBytes(bytes) {
+    if (!bytes) return null;
+    const gb = bytes / 1073741824;
+    if (gb >= 1) return `${gb.toFixed(2)} GB`;
+    return `${(bytes / 1048576).toFixed(0)} MB`;
+  }
+
+  function formatBitrate(bps) {
+    if (!bps) return null;
+    return `${(bps / 1000000).toFixed(1)} Mbit/s`;
+  }
+
+  const YOUTUBE_APP_ID = 'youtube.leanback.v4';   // LG webOS YouTube-App
+
+  function openTrailer() {
+    if (!fullItem?.RemoteTrailers?.length) return;
+    const url     = fullItem.RemoteTrailers[0].Url;
+    const match   = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([^&?\s]{11})/);
+    const videoId = match ? match[1] : null;
+
+    // Auf dem TV: native YouTube-App starten. Embeds scheitern auf WebOS an der Referer-/
+    // Plattform-Beschränkung (Fehler 153) — so macht es auch LiteFin/Jellyfin-webOS.
+    if (videoId && window.webOS?.service?.request) {
+      window.webOS.service.request('luna://com.webos.applicationManager', {
+        method: 'launch',
+        parameters: { id: YOUTUBE_APP_ID, params: { contentTarget: `v=${videoId}` } },
+        onFailure: () => {   // App nicht vorhanden o. Ä. → Embed als Notlösung
+          trailerEmbedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&playsinline=1&modestbranding=1`;
+        },
+      });
+      return;   // YouTube-App übernimmt; kein App-internes Modal nötig
+    }
+
+    // Browser/Entwicklung (kein webOS) oder keine YouTube-URL → wie bisher per Overlay.
+    if (videoId) {
+      trailerEmbedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&playsinline=1&modestbranding=1`;
+    } else {
+      trailerEmbedUrl = url;
+    }
+  }
+
+  // Besetzung: Schauspieler (max. 20) aus den People-Daten
+  $: castMembers = (fullItem?.People || []).filter(p => p.Type === 'Actor').slice(0, 20);
+
+  // Findet den Index des ersten Streams (Audio/Subtitle), dessen Sprache zur Präferenz passt.
+  // Gibt null zurück wenn keine Präferenz gesetzt ('default') oder kein Treffer.
+  function matchLanguageStream(streams, type, prefKey) {
+    if (!prefKey || prefKey === 'default') return null;
+    const lang = LANGUAGES.find(l => l.key === prefKey);
+    if (!lang) return null;
+    const match = streams.find(s =>
+      s.Type === type && s.Language && lang.codes.includes(s.Language.toLowerCase())
+    );
+    return match ? match.Index : null;
+  }
+
+  // Wie Jellyfin im Standardmodus: erzwungenen ("Forced") Untertitel in der Sprache der
+  // gewählten Audiospur einblenden (für fremdsprachige Dialoge/Schilder). Sonst Server-Default.
+  function pickForcedSubtitle(streams, audioIndex, serverDefault) {
+    const audioLang = streams.find(s => s.Type === 'Audio' && s.Index === audioIndex)?.Language?.toLowerCase();
+    const subs = streams.filter(s => s.Type === 'Subtitle');
+    const pick = subs.find(s => s.IsForced && audioLang && s.Language?.toLowerCase() === audioLang)
+              ?? subs.find(s => s.IsForced);
+    if (pick) return pick.Index;
+    return serverDefault != null ? serverDefault : -1;
+  }
+
+  function closeTrailer() {
+    trailerEmbedUrl = null;
+  }
+
+  function getAuthHeaders() {
+    return { "Authorization": `MediaBrowser Token="${activeToken}"`, "Content-Type": "application/json" };
+  }
+
+  // Reaktiv: lädt neu, sobald 'item' prop sich ändert
+  $: if (item) loadFullDetails(item.Id);
+
+  async function loadFullDetails(itemId) {
+    isLoading    = true;
+    fullItem     = null;
+    relatedItems = [];
+    similarItems = [];
+    selectedAudioIndex    = -1;
+    selectedSubtitleIndex = -1;
+
+    try {
+      const res = await fetch(
+        `${serverUrl}/Users/${selectedUser.Id}/Items/${itemId}?Fields=MediaSources,Overview,Path,ProviderIds,People,RemoteTrailers`,
+        { headers: getAuthHeaders() }
+      );
+      if (res.ok) {
+        fullItem = await res.json();
+
+        if (fullItem.MediaSources?.length > 0) {
+          const src     = fullItem.MediaSources[0];
+          const streams = src.MediaStreams || [];
+
+          // AUDIO: Präferenz anwenden, sonst Server-Default
+          const audioPref = matchLanguageStream(streams, 'Audio', playbackPrefs.audioLanguage);
+          if (audioPref != null)                          selectedAudioIndex = audioPref;
+          else if (src.DefaultAudioStreamIndex != null)   selectedAudioIndex = src.DefaultAudioStreamIndex;
+
+          // UNTERTITEL: 'off' = aus; 'default' = Jellyfin-Standard (erzwungene Untertitel
+          // passend zur Audiospur); Sprachcode = diese Sprache; sonst Server-Default.
+          if (playbackPrefs.subtitleLanguage === 'off') {
+            selectedSubtitleIndex = -1;
+          } else {
+            const subPref = matchLanguageStream(streams, 'Subtitle', playbackPrefs.subtitleLanguage);
+            if (subPref != null)                              selectedSubtitleIndex = subPref;
+            else if (playbackPrefs.subtitleLanguage === 'default')
+              selectedSubtitleIndex = pickForcedSubtitle(streams, selectedAudioIndex, src.DefaultSubtitleStreamIndex);
+            else if (src.DefaultSubtitleStreamIndex != null)  selectedSubtitleIndex = src.DefaultSubtitleStreamIndex;
+          }
+        }
+
+        // Parallel laden
+        loadSimilarItems(itemId);
+        if (fullItem.Type === 'Episode' && fullItem.SeasonId) {
+          loadRelatedItems(fullItem.SeasonId);
+        } else if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
+          loadRelatedItems(fullItem.Id);
+        }
+      }
+    } catch (e) { console.error(e); }
+    finally     { isLoading = false; }
+  }
+
+  async function loadSimilarItems(itemId) {
+    try {
+      const res = await fetch(
+        `${serverUrl}/Items/${itemId}/Similar?Limit=10&Fields=PrimaryImageAspectRatio`,
+        { headers: getAuthHeaders() }
+      );
+      if (res.ok) { const d = await res.json(); similarItems = d.Items || []; }
+    } catch (e) { console.error(e); }
+  }
+
+  async function loadRelatedItems(parentId) {
+    try {
+      const res = await fetch(
+        `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${parentId}&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName`,
+        { headers: getAuthHeaders() }
+      );
+      if (res.ok) { const d = await res.json(); relatedItems = d.Items || []; }
+    } catch (e) { console.error(e); }
+  }
+
+  async function handlePlay() {
+    if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
+      const url = fullItem.Type === 'Series'
+        ? `${serverUrl}/Shows/NextUp?SeriesId=${fullItem.Id}&UserId=${selectedUser.Id}&Limit=1`
+        : `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Filters=IsNotPlayed&Limit=1&SortBy=SortName`;
+      try {
+        const res  = await fetch(url, { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (data.Items?.length > 0) {
+          dispatch('playVideo', { item: data.Items[0], audioIndex: -1, subtitleIndex: -1 });
+        } else {
+          // Fallback: erste Folge
+          const fb = await fetch(
+            `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=SortName`,
+            { headers: getAuthHeaders() }
+          );
+          const fd = await fb.json();
+          if (fd.Items?.length > 0) dispatch('playVideo', { item: fd.Items[0], audioIndex: -1, subtitleIndex: -1 });
+        }
+      } catch (e) { console.error(e); }
+    } else {
+      dispatch('playVideo', { item: fullItem, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex });
+    }
+  }
+
+  // "Von Anfang": gleiches Item, aber Fortsetzen-Position auf 0 → Player startet bei Null.
+  function playFromBeginning() {
+    const fresh = { ...fullItem, UserData: { ...(fullItem.UserData || {}), PlaybackPositionTicks: 0 } };
+    dispatch('playVideo', { item: fresh, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex });
+  }
+
+  async function togglePlayed() {
+    // Optimistisch lokal umschalten — kein Neuladen der ganzen Detailseite
+    const willBePlayed = !fullItem.UserData?.Played;
+    fullItem.UserData = { ...fullItem.UserData, Played: willBePlayed };
+    fullItem = fullItem;   // Svelte-Reaktivität auslösen
+    try {
+      await fetch(`${serverUrl}/Users/${selectedUser.Id}/PlayedItems/${fullItem.Id}`, {
+        method: willBePlayed ? "POST" : "DELETE",
+        headers: getAuthHeaders()
+      });
+    } catch {
+      // Bei Fehler zurückrollen
+      fullItem.UserData = { ...fullItem.UserData, Played: !willBePlayed };
+      fullItem = fullItem;
+    }
+  }
+
+  async function toggleFavorite() {
+    const willBeFav = !fullItem.UserData?.IsFavorite;
+    fullItem.UserData = { ...fullItem.UserData, IsFavorite: willBeFav };
+    fullItem = fullItem;
+    try {
+      await fetch(`${serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${fullItem.Id}`, {
+        method: willBeFav ? "POST" : "DELETE",
+        headers: getAuthHeaders()
+      });
+    } catch {
+      fullItem.UserData = { ...fullItem.UserData, IsFavorite: !willBeFav };
+      fullItem = fullItem;
+    }
+  }
+
+  // FIX: Nur dispatchen — die reaktive $: if(item) in dieser Datei übernimmt das Laden.
+  // Kein direktes loadFullDetails() mehr hier, sonst doppelter API-Call.
+  function navigateTo(id) {
+    isLoading = true;
+    fullItem  = null;   // Spinner sofort zeigen
+    dispatch('openItemById', id);
+  }
+
+  function getItemImageUrl(targetItem, format = "portrait") {
+    if (format === 'landscape') {
+      if (targetItem.Type === 'Episode' && targetItem.ImageTags?.Primary)
+        return `${serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
+      if (targetItem.BackdropImageTags?.length > 0)
+        return `${serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+    }
+    if (targetItem.ImageTags?.Primary)
+      return `${serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&fillHeight=400&quality=80&format=webp`;
+    if (targetItem.SeriesPrimaryImageTag)
+      return `${serverUrl}/Items/${targetItem.SeriesId}/Images/Primary?tag=${targetItem.SeriesPrimaryImageTag}&fillHeight=400&quality=80&format=webp`;
+    return null;
+  }
+
+  function getItemBackdropUrl(targetItem) {
+    if (targetItem.BackdropImageTags?.length > 0)
+      return `${serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
+    if (targetItem.ParentBackdropImageTags?.length > 0)
+      return `${serverUrl}/Items/${targetItem.ParentBackdropItemId}/Images/Backdrop?tag=${targetItem.ParentBackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
+    return null;
+  }
+
+  function getRuntimeMinutes(ticks) {
+    return !ticks ? "" : Math.round(ticks / 10000000 / 60) + ` ${$t.mins}`;
+  }
+
+  function getMediaStreams(type) {
+    if (!fullItem?.MediaSources?.length) return [];
+    return (fullItem.MediaSources[0].MediaStreams || []).filter(s => s.Type === type);
+  }
+
+  function getEndTime(targetItem) {
+    if (!targetItem?.RunTimeTicks) return "";
+    const remainingTicks = targetItem.RunTimeTicks - (targetItem.UserData?.PlaybackPositionTicks || 0);
+    const endDate = new Date(Date.now() + remainingTicks / 10000);
+    return `Endet um ${endDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`;
+  }
+</script>
+
+<div class="flex flex-col h-full relative overflow-hidden">
+  {#if isLoading}
+    <div class="flex-1 flex items-center justify-center">
+      <div class="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+
+  {:else if fullItem}
+
+    <div class="flex-1 overflow-y-auto hide-scrollbar">
+
+      <!-- ════ CINEMATIC HERO-BANNER — Backdrop scrollt mit, läuft unten/links ins App-Grau ════ -->
+      <div class="relative">
+        {#if !reduceAnimations && getItemBackdropUrl(fullItem)}
+          <div class="absolute inset-0 z-0">
+            <img src={getItemBackdropUrl(fullItem)} alt="" class="w-full h-full object-cover object-top" />
+            <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/60 to-gray-900/20"></div>
+            <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/40 to-transparent"></div>
+          </div>
+        {/if}
+
+        <div class="relative z-10 p-10 pt-16">
+
+          <!-- BREADCRUMB + ZURÜCK -->
+      <div class="flex items-center gap-6 mb-10" data-focus-group="details-top">
+        <button on:click={() => dispatch('close')}
+          class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
+          {$t.back}
+        </button>
+        {#if fullItem.Type === 'Episode'}
+          <div class="flex items-center text-xl font-semibold text-gray-400 gap-2">
+            <button on:click={() => navigateTo(fullItem.SeriesId)}
+              class="hover:text-white focus:text-white focus:outline-none">{fullItem.SeriesName}</button>
+            <span>/</span>
+            <button on:click={() => navigateTo(fullItem.SeasonId)}
+              class="hover:text-white focus:text-white focus:outline-none">{fullItem.SeasonName}</button>
+          </div>
+        {/if}
+      </div>
+
+      <!-- HERO -->
+      <div class="flex gap-12 items-start mb-8">
+
+        <div class="w-64 shrink-0 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800">
+          {#if getItemImageUrl(fullItem)}
+            <img src={getItemImageUrl(fullItem)} alt={fullItem.Name} class="w-full h-full object-cover" />
+          {/if}
+        </div>
+
+        <div class="flex-1 max-w-4xl" data-focus-group="details-hero">
+          <h1 class="text-6xl font-bold text-white mb-4 drop-shadow-lg">{fullItem.Name}</h1>
+
+          <!-- META -->
+          <div class="flex items-center flex-wrap gap-4 text-lg font-semibold text-gray-300 mb-6">
+            {#if fullItem.ProductionYear}
+              <span class="text-blue-400">{fullItem.ProductionYear}</span>
+            {/if}
+            {#if fullItem.RunTimeTicks}
+              <span class="flex items-center gap-2">
+                • {getRuntimeMinutes(fullItem.RunTimeTicks)}
+                <span class="text-sm font-normal text-gray-400 bg-gray-800/80 px-2 py-0.5 rounded-md border border-gray-700 ml-1">
+                  {getEndTime(fullItem)}
+                </span>
+              </span>
+            {/if}
+            {#if fullItem.CommunityRating}
+              <span class="flex items-center gap-1 text-yellow-400">
+                •
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                </svg>
+                {fullItem.CommunityRating.toFixed(1)}
+              </span>
+            {/if}
+            {#if fullItem.CriticRating}
+              <span class="flex items-center gap-1 text-red-400">• {fullItem.CriticRating}%</span>
+            {/if}
+          </div>
+
+          <p class="text-xl text-gray-300 mb-10 line-clamp-4 leading-relaxed">{fullItem.Overview || $t.noDescription}</p>
+
+          <!-- AKTIONS-BUTTONS -->
+          <div class="flex items-center gap-4 mb-12">
+            <button on:click={handlePlay} use:focusOnMount
+              class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-2xl px-12 py-4 rounded-xl
+                     focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-3 shadow-lg">
+              <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
+              {#if fullItem.UserData?.PlaybackPositionTicks > 0}{$t.resumePlay}{:else}{$t.play}{/if}
+            </button>
+
+            {#if fullItem.UserData?.PlaybackPositionTicks > 0 && fullItem.Type !== 'Series' && fullItem.Type !== 'Season'}
+              <button on:click={playFromBeginning}
+                class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold text-lg px-7 py-4 rounded-xl
+                       focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg flex items-center gap-2">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"/>
+                </svg>
+                {$t.playFromStart}
+              </button>
+            {/if}
+
+            {#if fullItem.RemoteTrailers?.length > 0}
+              <button on:click={openTrailer}
+                class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold text-lg px-8 py-4 rounded-xl
+                       focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg flex items-center gap-2">
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                {$t.trailer}
+              </button>
+            {/if}
+
+            <button on:click={togglePlayed}
+              class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg
+                     {fullItem.UserData?.Played ? 'bg-green-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white focus:text-white'}">
+              <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+              </svg>
+            </button>
+
+            <button on:click={toggleFavorite}
+              class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg
+                     {fullItem.UserData?.IsFavorite ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white focus:text-white'}">
+              <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+              </svg>
+            </button>
+
+            {#if fullItem.MediaSources?.length > 0}
+              <button on:click={() => showMediaInfo = true} title={$t.mediaInfo}
+                class="p-4 rounded-xl bg-gray-800 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+              </button>
+            {/if}
+          </div>
+
+          <!-- STREAM-INFO -->
+          {#if fullItem.MediaSources?.length > 0}
+            <div class="bg-gray-800/80 border border-gray-700 rounded-xl p-4 flex flex-col gap-4 max-w-2xl">
+
+              {#each getMediaStreams('Video') as stream}
+                <div class="flex items-center gap-4">
+                  <svg class="w-6 h-6 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/>
+                  </svg>
+                  <span class="text-sm font-semibold text-gray-300">{stream.DisplayTitle || stream.Codec}</span>
+                </div>
+              {/each}
+
+              {#if getMediaStreams('Audio').length > 0}
+                <div class="flex items-center gap-4 w-full">
+                  <svg class="w-6 h-6 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
+                  </svg>
+                  <select bind:value={selectedAudioIndex}
+                    class="flex-1 bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer appearance-none">
+                    {#each getMediaStreams('Audio') as stream}
+                      <option value={stream.Index}>{stream.DisplayTitle || `${stream.Language || 'Unbekannt'} – ${stream.Codec}`}</option>
+                    {/each}
+                  </select>
+                </div>
+              {/if}
+
+              {#if getMediaStreams('Subtitle').length > 0}
+                <div class="flex items-center gap-4 w-full">
+                  <svg class="w-6 h-6 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                  </svg>
+                  <select bind:value={selectedSubtitleIndex}
+                    class="flex-1 bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer appearance-none">
+                    <option value={-1}>{$t.subtitleOff}</option>
+                    {#each getMediaStreams('Subtitle') as stream}
+                      <option value={stream.Index}>{stream.DisplayTitle || stream.Language || 'Unbekannt'}</option>
+                    {/each}
+                  </select>
+                </div>
+              {/if}
+
+            </div>
+          {/if}
+
+        </div>
+      </div>
+        </div>
+      </div>
+      <!-- ════ /HERO-BANNER ════ -->
+
+      <!-- INHALT (Reihen) auf vollem App-Grau — eigene Fokus-Gruppe pro Reihe,
+           damit D-Pad LINKS am Reihenanfang direkt zur Sidebar springt. -->
+      <div class="relative z-10 px-10 pb-16 bg-gray-900 flex flex-col">
+
+      <!-- STAFFELN / FOLGEN -->
+      {#if relatedItems.length > 0}
+        <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-episodes">
+          <h2 class="text-3xl font-bold text-white mb-6">
+            {#if fullItem.Type === 'Series'}{$t.seasons}
+            {:else if fullItem.Type === 'Season'}{$t.episodes}
+            {:else}{$t.moreFromSeason} {fullItem.SeasonName || ''}
+            {/if}
+          </h2>
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-8 px-2">
+            {#each relatedItems as ep}
+              <button on:click={() => { fullItem = null; loadFullDetails(ep.Id); }}
+                class="shrink-0 group flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
+                <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 transition-all shadow-xl relative">
+                  {#if getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')}
+                    <img src={getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')} alt={ep.Name} class="w-full h-full object-cover" loading="lazy" />
+                  {/if}
+                  {#if itemProgress(ep) > 0}
+                    <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
+                      <div class="h-full bg-blue-500" style="width:{itemProgress(ep)}%"></div>
+                    </div>
+                  {/if}
+                  {#if ep.UserData?.Played}
+                    <div class="absolute top-2 right-2 bg-green-500 text-white rounded-full p-1 shadow-md">
+                      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                      </svg>
+                    </div>
+                  {/if}
+                </div>
+                <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full">
+                  {#if ep.IndexNumber && ep.Type !== 'Season'}{ep.IndexNumber}.&nbsp;{/if}{ep.Name}
+                </span>
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
+      <!-- BESETZUNG (antippbar → Filmografie der Person) — gehört zum Titel, daher über Ähnliches -->
+      {#if castMembers.length > 0}
+        <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-cast">
+          <h2 class="text-3xl font-bold text-white mb-6">{$t.cast}</h2>
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-8 px-2">
+            {#each castMembers as person}
+              <button on:click={() => dispatch('openPerson', person)} class="shrink-0 w-36 group focus:outline-none text-center">
+                <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto">
+                  {#if personImageUrl(serverUrl, person)}
+                    <img src={personImageUrl(serverUrl, person)} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
+                  {:else}
+                    <div class="w-full h-full flex items-center justify-center text-gray-600">
+                      <svg class="w-14 h-14" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                    </div>
+                  {/if}
+                </div>
+                <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full block">{person.Name}</span>
+                {#if person.Role}<span class="text-xs text-gray-500 truncate w-full block">{person.Role}</span>{/if}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
+      <!-- ÄHNLICHES -->
+      {#if similarItems.length > 0}
+        <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-similar">
+          <h2 class="text-3xl font-bold text-white mb-6">{$t.similar}</h2>
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-8 px-2">
+            {#each similarItems as si}
+              <button on:click={() => navigateTo(si.Id)} class="shrink-0 w-48 group flex flex-col focus:outline-none text-left">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
+                  {#if getItemImageUrl(si, 'portrait')}
+                    <img src={getItemImageUrl(si, 'portrait')} alt={si.Name} class="w-full h-full object-cover" loading="lazy" />
+                  {/if}
+                </div>
+                <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full">{si.Name}</span>
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
+      </div>
+      <!-- ════ /INHALT ════ -->
+    </div>
+  {/if}
+</div>
+
+<!-- TRAILER-MODAL — YouTube Embed oder direktes Video -->
+{#if trailerEmbedUrl}
+  <div
+    data-focus-trap
+    class="fixed inset-0 bg-black z-[200] flex items-center justify-center"
+    on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeTrailer(); } }}
+  >
+    <!-- Schließen-Button (oben rechts, über dem Video) -->
+    <button
+      on:click={closeTrailer}
+      use:focusOnMount
+      class="absolute top-6 right-8 z-10 text-white/80 hover:text-white focus:text-white
+             bg-black/50 rounded-full p-3 focus:outline-none focus:ring-4 focus:ring-white transition-colors"
+    >
+      <svg class="w-9 h-9" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+    </button>
+
+    <!-- Vollbild: Video füllt den Bildschirm -->
+    {#if trailerEmbedUrl.includes('/embed/')}
+      <iframe
+        src={trailerEmbedUrl}
+        class="w-full h-full"
+        allow="autoplay; fullscreen"
+        allowfullscreen
+        title={$t.trailer}
+      ></iframe>
+    {:else}
+      <!-- svelte-ignore a11y-media-has-caption -->
+      <video
+        src={trailerEmbedUrl}
+        class="w-full h-full object-contain"
+        autoplay
+        controls
+      ></video>
+    {/if}
+  </div>
+{/if}
+
+<!-- MEDIENINFORMATIONEN-MODAL (Codec, Bitrate, Sprachen, …) -->
+{#if showMediaInfo && fullItem?.MediaSources?.length}
+  <div data-focus-trap class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8 animate-fade-in"
+    on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showMediaInfo = false; } }}>
+    <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl">
+      <div class="flex justify-between items-center p-8 pb-4 sticky top-0 bg-gray-800 z-10">
+        <h2 class="text-4xl text-white font-bold">{$t.mediaInfo}</h2>
+        <button on:click={() => showMediaInfo = false} use:focusOnMount
+          class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
+          <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      {#each fullItem.MediaSources.slice(0, 1) as src}
+        <div class="px-8 pb-8 flex flex-col gap-5">
+          <!-- Datei: Container / Größe / Gesamtbitrate -->
+          <div class="grid grid-cols-3 gap-3">
+            {#if src.Container}
+              <div><div class="text-gray-500 text-xs uppercase tracking-wider">Container</div><div class="text-white font-semibold uppercase">{src.Container}</div></div>
+            {/if}
+            {#if formatBytes(src.Size)}
+              <div><div class="text-gray-500 text-xs uppercase tracking-wider">{$t.miSize}</div><div class="text-white font-semibold">{formatBytes(src.Size)}</div></div>
+            {/if}
+            {#if formatBitrate(src.Bitrate)}
+              <div><div class="text-gray-500 text-xs uppercase tracking-wider">Bitrate</div><div class="text-white font-semibold">{formatBitrate(src.Bitrate)}</div></div>
+            {/if}
+          </div>
+
+          <!-- Einzelne Spuren -->
+          {#each (src.MediaStreams || []) as s}
+            <div class="bg-gray-900 rounded-xl p-4 border border-gray-700/50">
+              <div class="flex items-center gap-3 mb-2">
+                <span class="text-xs uppercase font-bold px-2 py-1 rounded bg-blue-600 text-white shrink-0">{s.Type === 'Subtitle' ? $t.miSubtitle : s.Type}</span>
+                <span class="text-white font-semibold truncate">{s.DisplayTitle || s.Codec || '—'}</span>
+              </div>
+              <div class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-gray-300">
+                {#if s.Codec}<div><span class="text-gray-500">Codec:&nbsp;</span>{s.Codec.toUpperCase()}</div>{/if}
+                {#if s.Type === 'Video' && s.Width}<div><span class="text-gray-500">{$t.miResolution}:&nbsp;</span>{s.Width}×{s.Height}</div>{/if}
+                {#if s.Type === 'Video' && s.VideoRange}<div><span class="text-gray-500">HDR:&nbsp;</span>{s.VideoRange}</div>{/if}
+                {#if s.Type === 'Video' && s.AverageFrameRate}<div><span class="text-gray-500">{$t.miFramerate}:&nbsp;</span>{s.AverageFrameRate.toFixed(0)} fps</div>{/if}
+                {#if s.Type === 'Audio' && s.ChannelLayout}<div><span class="text-gray-500">{$t.miChannels}:&nbsp;</span>{s.ChannelLayout}</div>{/if}
+                {#if s.Language}<div><span class="text-gray-500">{$t.miLanguage}:&nbsp;</span>{s.Language}</div>{/if}
+                {#if formatBitrate(s.BitRate)}<div><span class="text-gray-500">Bitrate:&nbsp;</span>{formatBitrate(s.BitRate)}</div>{/if}
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/each}
+    </div>
+  </div>
+{/if}
+
+<style>
+  .hide-scrollbar::-webkit-scrollbar { display: none; }
+  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+</style>
