@@ -189,6 +189,7 @@ export function buildNavEntries(libraries, t, iconOverrides = {}) {
   return [
     { id: 'dashboard', kind: 'view', target: 'dashboard', label: t.dashboard, icon: pick('dashboard', 'dashboard'), locked: true },
     { id: 'search',    kind: 'view', target: 'search',    label: t.search,    icon: pick('search', 'search'),       locked: false },
+    { id: 'favorites', kind: 'view', target: 'favorites', label: t.favorites, icon: pick('favorites', 'heart'),      locked: false },
     ...libItems,
     { id: 'settings',  kind: 'view', target: 'settings',  label: t.settings,  icon: pick('settings', 'settings'),   locked: true },
   ];

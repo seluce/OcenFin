@@ -1,7 +1,8 @@
 <script>
   import { t, LANGUAGES } from '../i18n.js';
   import { isBackKey, focusOnMount, personImageUrl, itemProgress } from '../utils.js';
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import AddToPicker from './AddToPicker.svelte';
 
   export let item;
   export let serverUrl;
@@ -20,10 +21,84 @@
 
   let selectedAudioIndex    = -1;
   let selectedSubtitleIndex = -1;
+  let selectedMediaSourceId = null;   // gewählte Version (FullHD/4K …), wenn mehrere existieren
+
+  // aktuell gewählte Quelle (für Stream-Infos, Audio-/Untertitelspuren)
+  $: selectedSource = fullItem?.MediaSources?.find(s => s.Id === selectedMediaSourceId)
+                      || fullItem?.MediaSources?.[0] || null;
+
+  // Label für die Auflösungsauswahl, z. B. "4K HEVC" / "1080p HEVC"
+  function sourceLabel(src) {
+    const v = (src?.MediaStreams || []).find(s => s.Type === 'Video');
+    const h = v?.Height || 0;
+    const res = h >= 2160 ? '4K' : h >= 1080 ? '1080p' : h >= 720 ? '720p' : (h ? h + 'p' : '');
+    const codec = (v?.Codec || '').toUpperCase();
+    return [res, codec].filter(Boolean).join(' ') || src?.Name || 'Quelle';
+  }
+
+  // Standard-Audio/-Untertitel für eine Quelle wählen (Präferenzen + Server-Defaults)
+  function applySourceDefaults(src) {
+    const streams = src?.MediaStreams || [];
+    selectedAudioIndex = -1;
+    const audioPref = matchLanguageStream(streams, 'Audio', playbackPrefs.audioLanguage);
+    if (audioPref != null)                        selectedAudioIndex = audioPref;
+    else if (src?.DefaultAudioStreamIndex != null) selectedAudioIndex = src.DefaultAudioStreamIndex;
+
+    if (playbackPrefs.subtitleLanguage === 'off') {
+      selectedSubtitleIndex = -1;
+    } else {
+      const subPref = matchLanguageStream(streams, 'Subtitle', playbackPrefs.subtitleLanguage);
+      if (subPref != null)                              selectedSubtitleIndex = subPref;
+      else if (playbackPrefs.subtitleLanguage === 'default')
+        selectedSubtitleIndex = pickForcedSubtitle(streams, selectedAudioIndex, src?.DefaultSubtitleStreamIndex);
+      else if (src?.DefaultSubtitleStreamIndex != null) selectedSubtitleIndex = src.DefaultSubtitleStreamIndex;
+      else selectedSubtitleIndex = -1;
+    }
+  }
+
+  // Bei Wechsel der Auflösung/Version: Spuren neu auf die Standardwerte der Quelle setzen
+  function onSourceChange() {
+    const src = fullItem?.MediaSources?.find(s => s.Id === selectedMediaSourceId);
+    if (src) applySourceDefaults(src);
+  }
+
+  // ---- Eigene Dropdowns (Auflösung/Audio/Untertitel) ------------------------------------------
+  // Native <select> friert auf webOS beim Zurück-Knopf ein → D-Pad-taugliche Eigenbau-Dropdowns.
+  let openDropdown = null;     // 'resolution' | 'audio' | 'subtitle'
+  let openTrigger  = null;     // Auslöser-Button (Fokus kehrt beim Schließen dorthin zurück)
+
+  function toggleDropdown(key, e) {
+    if (openDropdown === key) { openDropdown = null; openTrigger = null; }
+    else { openDropdown = key; openTrigger = e.currentTarget; }
+  }
+  function closeDropdown(refocus = true) {
+    const t = openTrigger;
+    openDropdown = null; openTrigger = null;
+    if (refocus) t?.focus();
+  }
+  function onDropdownBack(e) {
+    // Zurück schließt nur das offene Dropdown — nicht die Detailansicht.
+    if (openDropdown && isBackKey(e)) { e.preventDefault(); e.stopPropagation(); closeDropdown(); }
+  }
+  function onDropdownOutside(e) {
+    // Klick mit der Magic-Remote außerhalb des Dropdowns schließt es (wie ein normales Dropdown).
+    if (openDropdown && !e.target.closest('[data-dropdown]')) closeDropdown(false);
+  }
+  onMount(()   => { window.addEventListener('keydown', onDropdownBack, true); window.addEventListener('click', onDropdownOutside); });
+  onDestroy(() => { window.removeEventListener('keydown', onDropdownBack, true); window.removeEventListener('click', onDropdownOutside); });
+
+  // Anzeige-Labels für die Trigger-Buttons
+  function audioLabel(s)    { return s ? (s.DisplayTitle || `${s.Language || 'Unbekannt'} – ${s.Codec}`) : ''; }
+  function subtitleLabel(s) { return s ? (s.DisplayTitle || s.Language || 'Unbekannt') : ''; }
+
+  // ---- Zur Sammlung / Wiedergabeliste hinzufügen ----------------------------------------------
+  // Der Dialog selbst liegt in der gemeinsamen Komponente <AddToPicker>; hier nur der Schalter.
+  let pickerMode = null;   // null | 'collection' | 'playlist'
 
   // Trailer-Modal
   let trailerEmbedUrl = null;
   let showMediaInfo   = false;   // Medieninformationen-Modal
+  let mediaInfoScroll;           // Scroll-Container des Modals (für D-Pad-Scrollen)
 
   function formatBytes(bytes) {
     if (!bytes) return null;
@@ -110,6 +185,7 @@
     similarItems = [];
     selectedAudioIndex    = -1;
     selectedSubtitleIndex = -1;
+    selectedMediaSourceId = null;
 
     try {
       const res = await fetch(
@@ -120,25 +196,9 @@
         fullItem = await res.json();
 
         if (fullItem.MediaSources?.length > 0) {
-          const src     = fullItem.MediaSources[0];
-          const streams = src.MediaStreams || [];
-
-          // AUDIO: Präferenz anwenden, sonst Server-Default
-          const audioPref = matchLanguageStream(streams, 'Audio', playbackPrefs.audioLanguage);
-          if (audioPref != null)                          selectedAudioIndex = audioPref;
-          else if (src.DefaultAudioStreamIndex != null)   selectedAudioIndex = src.DefaultAudioStreamIndex;
-
-          // UNTERTITEL: 'off' = aus; 'default' = Jellyfin-Standard (erzwungene Untertitel
-          // passend zur Audiospur); Sprachcode = diese Sprache; sonst Server-Default.
-          if (playbackPrefs.subtitleLanguage === 'off') {
-            selectedSubtitleIndex = -1;
-          } else {
-            const subPref = matchLanguageStream(streams, 'Subtitle', playbackPrefs.subtitleLanguage);
-            if (subPref != null)                              selectedSubtitleIndex = subPref;
-            else if (playbackPrefs.subtitleLanguage === 'default')
-              selectedSubtitleIndex = pickForcedSubtitle(streams, selectedAudioIndex, src.DefaultSubtitleStreamIndex);
-            else if (src.DefaultSubtitleStreamIndex != null)  selectedSubtitleIndex = src.DefaultSubtitleStreamIndex;
-          }
+          const src = fullItem.MediaSources[0];
+          selectedMediaSourceId = src.Id;   // erste Version vorwählen
+          applySourceDefaults(src);
         }
 
         // Parallel laden
@@ -194,14 +254,14 @@
         }
       } catch (e) { console.error(e); }
     } else {
-      dispatch('playVideo', { item: fullItem, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex });
+      dispatch('playVideo', { item: fullItem, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId });
     }
   }
 
   // "Von Anfang": gleiches Item, aber Fortsetzen-Position auf 0 → Player startet bei Null.
   function playFromBeginning() {
     const fresh = { ...fullItem, UserData: { ...(fullItem.UserData || {}), PlaybackPositionTicks: 0 } };
-    dispatch('playVideo', { item: fresh, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex });
+    dispatch('playVideo', { item: fresh, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId });
   }
 
   async function togglePlayed() {
@@ -271,8 +331,7 @@
   }
 
   function getMediaStreams(type) {
-    if (!fullItem?.MediaSources?.length) return [];
-    return (fullItem.MediaSources[0].MediaStreams || []).filter(s => s.Type === type);
+    return (selectedSource?.MediaStreams || []).filter(s => s.Type === type);
   }
 
   function getEndTime(targetItem) {
@@ -409,12 +468,31 @@
             </button>
 
             {#if fullItem.MediaSources?.length > 0}
-              <button on:click={() => showMediaInfo = true} title={$t.mediaInfo}
-                class="p-4 rounded-xl bg-gray-800 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg">
-                <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                </svg>
-              </button>
+              <div class="relative" data-dropdown data-focus-trap={openDropdown === 'kebab' || undefined}>
+                <button on:click={(e) => toggleDropdown('kebab', e)} aria-label={$t.more} title={$t.more}
+                  class="p-4 rounded-xl bg-gray-800 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg">
+                  <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+                </button>
+                {#if openDropdown === 'kebab'}
+                  <div class="absolute right-0 mt-2 z-50 w-80 flex flex-col gap-1 bg-gray-900 rounded-xl border border-gray-700 p-2 shadow-2xl">
+                    <button on:click={() => { closeDropdown(false); showMediaInfo = true; }}
+                      class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
+                      <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                      {$t.mediaInfo}
+                    </button>
+                    <button on:click={() => { closeDropdown(false); pickerMode = 'playlist'; }}
+                      class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
+                      <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h13M3 12h9m-9 6h9m4-3v6m3-3h-6"/></svg>
+                      {$t.addToPlaylist}
+                    </button>
+                    <button on:click={() => { closeDropdown(false); pickerMode = 'collection'; }}
+                      class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
+                      <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                      {$t.addToCollection}
+                    </button>
+                  </div>
+                {/if}
+              </div>
             {/if}
           </div>
 
@@ -422,41 +500,101 @@
           {#if fullItem.MediaSources?.length > 0}
             <div class="bg-gray-800/80 border border-gray-700 rounded-xl p-4 flex flex-col gap-4 max-w-2xl">
 
-              {#each getMediaStreams('Video') as stream}
-                <div class="flex items-center gap-4">
-                  <svg class="w-6 h-6 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <!-- AUFLÖSUNG / VERSION: eigenes Dropdown bei mehreren Quellen, sonst statisch -->
+              {#if fullItem.MediaSources.length > 1}
+                <div class="flex items-start gap-4 w-full">
+                  <svg class="w-6 h-6 text-gray-500 shrink-0 mt-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/>
                   </svg>
-                  <span class="text-sm font-semibold text-gray-300">{stream.DisplayTitle || stream.Codec}</span>
+                  <div class="flex-1" data-dropdown data-focus-trap={openDropdown === 'resolution' || undefined}>
+                    <button on:click={(e) => toggleDropdown('resolution', e)}
+                      class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
+                      <span>{sourceLabel(selectedSource)}</span>
+                      <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'resolution' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                    </button>
+                    {#if openDropdown === 'resolution'}
+                      <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
+                        {#each fullItem.MediaSources as src}
+                          <button on:click={() => { selectedMediaSourceId = src.Id; onSourceChange(); closeDropdown(); }}
+                            class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {src.Id === selectedMediaSourceId ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
+                            {sourceLabel(src)}
+                          </button>
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
                 </div>
-              {/each}
+              {:else}
+                {#each getMediaStreams('Video') as stream}
+                  <div class="flex items-center gap-4">
+                    <svg class="w-6 h-6 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/>
+                    </svg>
+                    <span class="text-sm font-semibold text-gray-300">{stream.DisplayTitle || stream.Codec}</span>
+                  </div>
+                {/each}
+              {/if}
 
-              {#if getMediaStreams('Audio').length > 0}
-                <div class="flex items-center gap-4 w-full">
+              <!-- AUDIO: eigenes Dropdown bei mehreren Spuren, sonst statisch -->
+              {#if getMediaStreams('Audio').length > 1}
+                <div class="flex items-start gap-4 w-full">
+                  <svg class="w-6 h-6 text-gray-500 shrink-0 mt-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
+                  </svg>
+                  <div class="flex-1" data-dropdown data-focus-trap={openDropdown === 'audio' || undefined}>
+                    <button on:click={(e) => toggleDropdown('audio', e)}
+                      class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
+                      <span>{audioLabel(getMediaStreams('Audio').find(s => s.Index === selectedAudioIndex))}</span>
+                      <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'audio' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                    </button>
+                    {#if openDropdown === 'audio'}
+                      <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
+                        {#each getMediaStreams('Audio') as stream}
+                          <button on:click={() => { selectedAudioIndex = stream.Index; closeDropdown(); }}
+                            class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedAudioIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
+                            {audioLabel(stream)}
+                          </button>
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
+                </div>
+              {:else if getMediaStreams('Audio').length === 1}
+                <div class="flex items-center gap-4">
                   <svg class="w-6 h-6 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
                   </svg>
-                  <select bind:value={selectedAudioIndex}
-                    class="flex-1 bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer appearance-none">
-                    {#each getMediaStreams('Audio') as stream}
-                      <option value={stream.Index}>{stream.DisplayTitle || `${stream.Language || 'Unbekannt'} – ${stream.Codec}`}</option>
-                    {/each}
-                  </select>
+                  <span class="text-sm font-semibold text-gray-300">{getMediaStreams('Audio')[0].DisplayTitle || getMediaStreams('Audio')[0].Language || getMediaStreams('Audio')[0].Codec}</span>
                 </div>
               {/if}
 
+              <!-- UNTERTITEL: eigenes Dropdown (mit "Aus") -->
               {#if getMediaStreams('Subtitle').length > 0}
-                <div class="flex items-center gap-4 w-full">
-                  <svg class="w-6 h-6 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="flex items-start gap-4 w-full">
+                  <svg class="w-6 h-6 text-gray-500 shrink-0 mt-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
                   </svg>
-                  <select bind:value={selectedSubtitleIndex}
-                    class="flex-1 bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer appearance-none">
-                    <option value={-1}>{$t.subtitleOff}</option>
-                    {#each getMediaStreams('Subtitle') as stream}
-                      <option value={stream.Index}>{stream.DisplayTitle || stream.Language || 'Unbekannt'}</option>
-                    {/each}
-                  </select>
+                  <div class="flex-1" data-dropdown data-focus-trap={openDropdown === 'subtitle' || undefined}>
+                    <button on:click={(e) => toggleDropdown('subtitle', e)}
+                      class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
+                      <span>{selectedSubtitleIndex === -1 ? $t.subtitleOff : subtitleLabel(getMediaStreams('Subtitle').find(s => s.Index === selectedSubtitleIndex))}</span>
+                      <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'subtitle' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                    </button>
+                    {#if openDropdown === 'subtitle'}
+                      <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
+                        <button on:click={() => { selectedSubtitleIndex = -1; closeDropdown(); }}
+                          class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {selectedSubtitleIndex === -1 ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
+                          {$t.subtitleOff}
+                        </button>
+                        {#each getMediaStreams('Subtitle') as stream}
+                          <button on:click={() => { selectedSubtitleIndex = stream.Index; closeDropdown(); }}
+                            class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedSubtitleIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
+                            {subtitleLabel(stream)}
+                          </button>
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
                 </div>
               {/if}
 
@@ -604,8 +742,12 @@
 <!-- MEDIENINFORMATIONEN-MODAL (Codec, Bitrate, Sprachen, …) -->
 {#if showMediaInfo && fullItem?.MediaSources?.length}
   <div data-focus-trap class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8 animate-fade-in"
-    on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showMediaInfo = false; } }}>
-    <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl">
+    on:keydown={(e) => {
+      if (isBackKey(e)) { e.stopPropagation(); showMediaInfo = false; return; }
+      if (e.key === 'ArrowDown')    { e.preventDefault(); e.stopPropagation(); mediaInfoScroll?.scrollBy({ top: 160, behavior: 'smooth' }); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); mediaInfoScroll?.scrollBy({ top: -160, behavior: 'smooth' }); }
+    }}>
+    <div bind:this={mediaInfoScroll} class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl">
       <div class="flex justify-between items-center p-8 pb-4 sticky top-0 bg-gray-800 z-10">
         <h2 class="text-4xl text-white font-bold">{$t.mediaInfo}</h2>
         <button on:click={() => showMediaInfo = false} use:focusOnMount
@@ -651,6 +793,10 @@
     </div>
   </div>
 {/if}
+
+<!-- Zur Sammlung / Wiedergabeliste hinzufügen (gemeinsame Komponente) -->
+<AddToPicker mode={pickerMode} item={fullItem} {serverUrl} {selectedUser} {getAuthHeaders}
+  on:created={() => dispatch('libchanged')} on:close={() => pickerMode = null} />
 
 <style>
   .hide-scrollbar::-webkit-scrollbar { display: none; }

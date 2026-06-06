@@ -21,7 +21,11 @@ function authHeader(token) {
 //    läuft, aber kein Ton). Server macht dann einen leichten reinen Audio-Transcode.
 //  • Transkodier-Ziel: HLS (TS/H.264/AAC) — über hls.js universell abspielbar.
 //  • Untertitel: VTT/SRT extern (als Spur), ASS/SSA/PGS/VOBSUB werden ins Bild gebrannt.
-export function buildDeviceProfile(maxBitrate = 120000000) {
+export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false) {
+  // Textuntertitel (SubRip/ASS): bei burnSubtitles=true ins Bild brennen (mit Styling, aber
+  // Transcode + harter Wechsel), sonst extern als VTT liefern → eigener Overlay-Renderer
+  // (kein Styling, dafür Direct Play + weicher Wechsel). Grafik-Untertitel immer brennen.
+  const textSub = burnSubtitles ? 'Encode' : 'External';
   return {
     MaxStreamingBitrate: maxBitrate,
     MaxStaticBitrate: maxBitrate,
@@ -65,14 +69,14 @@ export function buildDeviceProfile(maxBitrate = 120000000) {
     ],
 
     SubtitleProfiles: [
-      { Format: 'vtt',      Method: 'External' },
-      { Format: 'webvtt',   Method: 'External' },
-      { Format: 'srt',      Method: 'External' },
-      { Format: 'subrip',   Method: 'External' },
-      { Format: 'mov_text', Method: 'External' },
-      { Format: 'ass',      Method: 'Encode'   },  // gestylte Untertitel → ins Bild brennen
-      { Format: 'ssa',      Method: 'Encode'   },
-      { Format: 'pgssub',   Method: 'Encode'   },
+      { Format: 'vtt',      Method: textSub },
+      { Format: 'webvtt',   Method: textSub },
+      { Format: 'srt',      Method: textSub },
+      { Format: 'subrip',   Method: textSub },
+      { Format: 'mov_text', Method: textSub },
+      { Format: 'ass',      Method: textSub },   // gestylt: extern → Overlay ohne Styling, Encode → gebrannt mit Styling
+      { Format: 'ssa',      Method: textSub },
+      { Format: 'pgssub',   Method: 'Encode'   }, // Grafik-Untertitel → immer brennen (kein VTT möglich)
       { Format: 'dvdsub',   Method: 'Encode'   },
       { Format: 'pgs',      Method: 'Encode'   },
     ],
@@ -87,6 +91,7 @@ export async function getPlaybackInfo({
   audioStreamIndex = null, subtitleStreamIndex = null,
   maxBitrate = 120000000, startTicks = 0,
   enableDirectPlay = true, enableDirectStream = true, allowAudioStreamCopy = true,
+  burnSubtitles = false, mediaSourceId = null,
 }) {
   // WICHTIG: Jellyfin liest AudioStreamIndex/SubtitleStreamIndex und die Enable*-Flags
   // aus dem QUERY-STRING (nur das DeviceProfile gehört in den Body). Genau so macht es
@@ -104,11 +109,12 @@ export async function getPlaybackInfo({
   });
   if (audioStreamIndex !== null && audioStreamIndex !== -1)       qs.set('AudioStreamIndex', String(audioStreamIndex));
   if (subtitleStreamIndex !== null && subtitleStreamIndex !== -1) qs.set('SubtitleStreamIndex', String(subtitleStreamIndex));
+  if (mediaSourceId) qs.set('MediaSourceId', mediaSourceId);   // gewählte Version erzwingen
 
   // Body: DeviceProfile (Pflicht) + dieselben Felder zur Sicherheit (manche Versionen lesen sie hier).
   const body = {
     UserId: userId,
-    DeviceProfile: buildDeviceProfile(maxBitrate),
+    DeviceProfile: buildDeviceProfile(maxBitrate, burnSubtitles),
     MaxStreamingBitrate: maxBitrate,
     StartTimeTicks: startTicks,
     EnableDirectPlay: enableDirectPlay,
@@ -120,6 +126,7 @@ export async function getPlaybackInfo({
   };
   if (audioStreamIndex !== null && audioStreamIndex !== -1)       body.AudioStreamIndex = audioStreamIndex;
   if (subtitleStreamIndex !== null && subtitleStreamIndex !== -1) body.SubtitleStreamIndex = subtitleStreamIndex;
+  if (mediaSourceId) body.MediaSourceId = mediaSourceId;
   console.log('[OcenFin] PlaybackInfo-Anfrage:', { audioStreamIndex, subtitleStreamIndex, enableDirectPlay, enableDirectStream, allowAudioStreamCopy });
 
   const res = await fetch(`${serverUrl}/Items/${itemId}/PlaybackInfo?${qs.toString()}`, {
@@ -133,7 +140,7 @@ export async function getPlaybackInfo({
     throw new Error(`PlaybackInfo HTTP ${res.status}`);
   }
   const data = await res.json();
-  const ms = data.MediaSources?.[0] || null;
+  const ms = (mediaSourceId && data.MediaSources?.find(s => s.Id === mediaSourceId)) || data.MediaSources?.[0] || null;
   const vStream = ms?.MediaStreams?.find(s => s.Type === 'Video');
   const aStream = ms?.MediaStreams?.find(s => s.Type === 'Audio' && (audioStreamIndex == null || audioStreamIndex < 0 || s.Index === audioStreamIndex));
   // Welche Audiospur hat der SERVER tatsächlich gewählt (aus der Transcoding-URL gelesen)?
@@ -157,6 +164,36 @@ export async function getPlaybackInfo({
   console.log(`[OcenFin] → Server wählte AudioStreamIndex=${urlAudioIdx} SubtitleStreamIndex=${urlSubIdx} | angefragt Audio=${audioStreamIndex}`);
   if (ms?.TranscodingUrl) console.log('[OcenFin] TranscodingUrl:', ms.TranscodingUrl);
   return { mediaSource: ms, playSessionId: data.PlaySessionId || null };
+}
+
+// ---- Leichter Prefetch der nächsten Folge -----------------------------------------------------
+// Holt die PlaybackInfo der nächsten Folge im Voraus und cached das Promise kurz, damit der
+// Folgenwechsel den Netzwerk-Roundtrip spart. KEIN Video-Pre-Buffering (das würde bei Transcode
+// eine zweite Session öffnen) — nur Metadaten/Stream-URL. Greift nur, wenn die Parameter passen,
+// sonst normaler Abruf (sicheres Fallback).
+const _pfCache = new Map();   // itemId → { ts, key, promise }
+const _PF_TTL  = 25000;       // ~25 s gültig (so lange bleibt auch eine Transcode-Session offen)
+
+function _pfKey(p) {
+  return [p.itemId, p.audioStreamIndex ?? -1, p.subtitleStreamIndex ?? -1, !!p.burnSubtitles, p.mediaSourceId || ''].join('|');
+}
+
+export function prefetchPlaybackInfo(params) {
+  if (!params?.itemId) return;
+  const key = _pfKey(params);
+  const existing = _pfCache.get(params.itemId);
+  if (existing && existing.key === key && Date.now() - existing.ts < _PF_TTL) return;  // schon frisch geladen
+  _pfCache.set(params.itemId, { ts: Date.now(), key, promise: getPlaybackInfo(params).catch(() => null) });
+}
+
+export async function getPlaybackInfoFast(params) {
+  const entry = _pfCache.get(params.itemId);
+  if (entry && entry.key === _pfKey(params) && Date.now() - entry.ts < _PF_TTL) {
+    _pfCache.delete(params.itemId);
+    const info = await entry.promise;
+    if (info) { console.log('[OcenFin] PlaybackInfo aus Prefetch übernommen'); return info; }
+  }
+  return getPlaybackInfo(params);
 }
 
 // Baut aus der Server-Entscheidung die finale Wiedergabe-URL + Metadaten.
@@ -200,9 +237,7 @@ export function resolveStream({ serverUrl, token, itemId, mediaSource, audioStre
 // Liefert die externe VTT-Untertitel-URL für eine Spur (falls DeliveryMethod = External).
 export function externalSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, token }) {
   if (!stream) return null;
-  if (stream.DeliveryUrl) {
-    return stream.DeliveryUrl.startsWith('http') ? stream.DeliveryUrl : `${serverUrl}${stream.DeliveryUrl}`;
-  }
-  // Fallback-URL nach Jellyfin-Schema
+  // IMMER als WebVTT anfordern: unser Overlay-Renderer parst nur VTT, und stream.DeliveryUrl
+  // zeigt häufig auf das Quellformat (.subrip/.srt). Jellyfin konvertiert hier on-the-fly.
   return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.vtt?api_key=${token}`;
 }

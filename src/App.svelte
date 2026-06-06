@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, itemProgress, connectionLost, longPress } from './utils.js';
+  import { isBackKey, focusOnMount, itemProgress, connectionLost, longPress, personImageUrl } from './utils.js';
   import { createFocusManager } from './spatialnav.js';
   import { currentLang, t } from './i18n.js';
   import Clock       from './components/Clock.svelte';
@@ -87,7 +87,7 @@
   let displaySettings = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, backdropPreview: true, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} };
 
   // Standard-Audio-/Untertitelsprache
-  let playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', autoPlayNext: true };
+  let playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', autoPlayNext: true, burnSubtitles: false, stillWatching: true, stillWatchingEpisodes: 3 };
 
   // ── Profil-bezogene Einstellungen ───────────────────────────
   // Sprache + Anzeige + Wiedergabe + Animationen werden PRO BENUTZER gespeichert.
@@ -143,7 +143,7 @@
       localStorage.setItem('app_language', p.language);   // "zuletzt genutzt" aktualisieren
     }
     displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, backdropPreview: true, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
-    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', autoPlayNext: true, ...(p.playbackPrefs || {}) };
+    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', autoPlayNext: true, burnSubtitles: false, stillWatching: true, stillWatchingEpisodes: 3, ...(p.playbackPrefs || {}) };
     reduceAnimations = p.reduceAnimations ?? false;
     librarySorts     = p.librarySorts || {};   // gemerkte Sortierung pro Bibliothek
     applyingPrefs = false;
@@ -225,6 +225,8 @@
 
   let activeAudioIndex    = -1;
   let activeSubtitleIndex = -1;
+  let activeMediaSourceId = null;   // gewählte Version (FullHD/4K), aus Details
+  let autoPlayStreak = 0;           // "Schaust du noch?": automatisch abgespielte Folgen in Folge ohne Interaktion
 
   // A-Z
   let activeLetter    = '#';
@@ -830,10 +832,11 @@
     if      (viewState === 'player')   { viewState = 'details';        e.preventDefault(); }
     else if (viewState === 'details')  { returnFromDetails();          e.preventDefault(); }
     else if (viewState === 'person')   { viewState = personReturnView; e.preventDefault(); }
-    else if (viewState === 'collection') { viewState = collectionReturnView; e.preventDefault(); }
+    else if (viewState === 'collection') { if (playlistEditMode) playlistEditMode = false; else viewState = collectionReturnView; e.preventDefault(); }
     else if (viewState === 'library')  { viewState = 'dashboard';      e.preventDefault(); }
     else if (viewState === 'settings') { viewState = 'dashboard';      e.preventDefault(); }
     else if (viewState === 'search')   { viewState = 'dashboard';      e.preventDefault(); }
+    else if (viewState === 'favorites') { viewState = 'dashboard';      e.preventDefault(); }
     else if (viewState === 'dashboard') { showExitConfirm = true;      e.preventDefault(); }
   }
 
@@ -849,14 +852,21 @@
 
   // Player sendet jetzt das vollständige Episode-Objekt via dispatch('next/prev', episodeItem).
   // Kein eigener API-Call mehr nötig — einfach currentDetailItem setzen.
-  function handleNextEpisode(episodeItem) {
+  // Player sendet { episode, resetStreak }. resetStreak=true → Nutzer war wach (manuell/Interaktion),
+  // Zähler auf 0; sonst hochzählen (für den "Schaust du noch?"-Einschlaf-Schutz).
+  function handleNextEpisode(detail) {
+    const episodeItem = detail?.episode ?? detail;   // Robustheit: akzeptiert auch ein nacktes Episoden-Objekt
     if (!episodeItem) return;
+    autoPlayStreak = detail?.resetStreak ? 0 : autoPlayStreak + 1;
+    activeMediaSourceId = null;   // neue Folge → eigene Standard-Version, nicht die der vorigen
     currentDetailItem = episodeItem;
     // viewState bleibt 'player' — {#key currentDetailItem.Id} in der Template sorgt für Remount
   }
 
   function handlePrevEpisode(episodeItem) {
     if (!episodeItem) return;
+    autoPlayStreak = 0;   // Zurückspringen ist eine bewusste Aktion → Zähler zurücksetzen
+    activeMediaSourceId = null;
     currentDetailItem = episodeItem;
   }
 
@@ -985,6 +995,8 @@
 
   // ── Personen-Ansicht (Filmografie) ──────────────────────────
   let currentPersonName  = '';
+  let currentPerson      = null;
+  let currentPersonFav   = false;
   let currentPersonItems = [];
   let personReturnView   = 'search';   // wohin "Zurück" führt
   let isLoadingPerson    = false;
@@ -995,6 +1007,7 @@
   let currentCollection     = null;
   let collectionReturnView = 'dashboard';
   let isLoadingCollection  = false;
+  let playlistEditMode     = false;   // Bearbeiten-Modus der Wiedergabelisten-Ansicht (Entfernen/Umsortieren)
 
   async function openCollection(boxSet) {
     collectionReturnView  = viewState;
@@ -1002,25 +1015,120 @@
     currentCollection     = boxSet;
     collectionItems       = [];
     isLoadingCollection   = true;
+    playlistEditMode      = false;
     viewState             = 'collection';
+    // Wiedergabelisten über ihren eigenen Endpunkt laden (zuverlässig + in Listen-Reihenfolge),
+    // Sammlungen/BoxSets über ParentId.
+    const url = boxSet.Type === 'Playlist'
+      ? `${serverUrl}/Playlists/${boxSet.Id}/Items?UserId=${selectedUser.Id}&Fields=PrimaryImageAspectRatio&Limit=300`
+      : `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${boxSet.Id}&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=100`;
     try {
-      const res = await fetch(
-        `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${boxSet.Id}` +
-        `&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=100`,
-        { headers: getAuthHeaders() }
-      );
+      const res = await fetch(url, { headers: getAuthHeaders() });
       if (res.ok) collectionItems = (await res.json()).Items || [];
     } catch { /* ignorieren */ }
     finally { isLoadingCollection = false; }
+  }
+
+  // Beschriftung für eine Folge in der Sammlungs-/Wiedergabelisten-Ansicht: "S1 · E5 · Titel"
+  function episodeLabel(item) {
+    const s = item.ParentIndexNumber, e = item.IndexNumber;
+    const code = (s != null && e != null) ? `S${s} · E${e}` : (e != null ? `E${e}` : '');
+    return [code, item.Name].filter(Boolean).join(' · ');
+  }
+
+  // Nach dem Anlegen einer Wiedergabeliste/Sammlung erscheint serverseitig ggf. eine neue
+  // Mediatheks-Ansicht (z. B. "Playlists") – Sidebar/Menü sofort aktualisieren statt erst beim Neustart.
+  async function refreshLibraries() {
+    try {
+      const res = await fetch(`${serverUrl}/Users/${selectedUser.Id}/Views`, { headers: getAuthHeaders() });
+      if (res.ok) navLibraries = (await res.json()).Items || [];
+    } catch { }
+  }
+
+  // --- Wiedergabelisten-Verwaltung (nur in der Wiedergabelisten-Inhaltsansicht) -----------------
+  // Umsortieren: optimistisch lokal, dann serverseitig bestätigen.
+  async function movePlaylistItem(fromIndex, toIndex) {
+    if (!currentCollection || toIndex < 0 || toIndex >= collectionItems.length) return;
+    const item = collectionItems[fromIndex];
+    if (!item?.PlaylistItemId) return;
+    const arr = [...collectionItems];
+    const [moved] = arr.splice(fromIndex, 1);
+    arr.splice(toIndex, 0, moved);
+    collectionItems = arr;
+    try {
+      const res = await fetch(`${serverUrl}/Playlists/${currentCollection.Id}/Items/${item.PlaylistItemId}/Move/${toIndex}`,
+        { method: 'POST', headers: getAuthHeaders() });
+      if (!res.ok) console.warn('[OcenFin] Verschieben fehlgeschlagen', res.status);
+    } catch (e) { console.warn('[OcenFin] Verschieben-Fehler', e); }
+  }
+  async function removePlaylistItem(item) {
+    if (!currentCollection || !item?.PlaylistItemId) return;
+    collectionItems = collectionItems.filter(i => i.PlaylistItemId !== item.PlaylistItemId);
+    try {
+      const res = await fetch(`${serverUrl}/Playlists/${currentCollection.Id}/Items?EntryIds=${item.PlaylistItemId}`,
+        { method: 'DELETE', headers: getAuthHeaders() });
+      if (!res.ok) console.warn('[OcenFin] Entfernen fehlgeschlagen', res.status);
+    } catch (e) { console.warn('[OcenFin] Entfernen-Fehler', e); }
+  }
+
+  // Favoriten — eigene Ansicht (Filme, Serien, Sammlungen), aus dem Menü erreichbar.
+  // Wird bei jedem Aufruf frisch geladen, da sich Favoriten jederzeit ändern können.
+  let favoriteItems      = [];
+  let isLoadingFavorites = false;
+  let favoritesGrid;
+
+  // Gruppierung wie in der Suche: Filme / Serien / Sammlungen (leere Gruppen entfallen im Template)
+  $: favGroups = [
+    { key: 'movies',      label: $t.movies,      items: favoriteItems.filter(i => i.Type === 'Movie') },
+    { key: 'series',      label: $t.series,      items: favoriteItems.filter(i => i.Type === 'Series') },
+    { key: 'collections', label: $t.collections, items: favoriteItems.filter(i => i.Type === 'BoxSet') },
+  ];
+  // Personen separat (runde Karten, eigene Sektion)
+  $: favPersons = favoriteItems.filter(i => i.Type === 'Person');
+
+  async function loadFavorites() {
+    isLoadingFavorites = true;
+    favoriteItems = [];
+    try {
+      // Personen sind KEINE Bibliothekselemente → die /Items-Abfrage (Recursive) liefert sie nie.
+      // Stattdessen der dedizierte /Persons-Endpunkt mit IsFavorite-Filter (UserId für den Kontext).
+      const [contentRes, personRes] = await Promise.all([
+        fetch(
+          `${serverUrl}/Users/${selectedUser.Id}/Items?Filters=IsFavorite&Recursive=true` +
+          `&IncludeItemTypes=Movie,Series,BoxSet&SortBy=SortName&SortOrder=Ascending` +
+          `&Fields=PrimaryImageAspectRatio,ProductionYear,UserData&EnableImageTypes=Primary,Backdrop,Thumb`,
+          { headers: getAuthHeaders() }
+        ),
+        fetch(
+          `${serverUrl}/Persons?UserId=${selectedUser.Id}&IsFavorite=true&SortBy=SortName&SortOrder=Ascending&Fields=PrimaryImageAspectRatio`,
+          { headers: getAuthHeaders() }
+        ),
+      ]);
+      const content = contentRes.ok ? ((await contentRes.json()).Items || []) : [];
+      const persons = personRes.ok  ? ((await personRes.json()).Items  || []).map(p => ({ ...p, Type: 'Person' })) : [];
+      console.log('[OcenFin] Favoriten:', content.length, 'Titel,', persons.length, 'Personen');
+      favoriteItems = [...content, ...persons];
+    } catch (e) { console.log('[OcenFin] Favoriten-Fehler:', e?.message); }
+    finally { isLoadingFavorites = false; }
+    await tick();
+    const card = favoritesGrid?.querySelector('button');
+    if (card) card.focus(); else focusMain();
   }
 
   // Öffnet die Filmografie einer Person (aus Suche oder Besetzung in den Details)
   async function openPerson(person) {
     personReturnView   = viewState;
     currentPersonName  = person.Name;
+    currentPerson      = person;
+    currentPersonFav   = !!person.UserData?.IsFavorite;
     currentPersonItems = [];
     isLoadingPerson    = true;
     viewState          = 'person';
+    // Person-Item separat holen → korrekter Favoritenstatus (aus Suche/Besetzung fehlt UserData oft)
+    fetch(`${serverUrl}/Users/${selectedUser.Id}/Items/${person.Id}`, { headers: getAuthHeaders() })
+      .then(r => r.ok ? r.json() : null)
+      .then(p => { if (p) { currentPerson = p; currentPersonFav = !!p.UserData?.IsFavorite; } })
+      .catch(() => {});
     try {
       const res = await fetch(
         `${serverUrl}/Users/${selectedUser.Id}/Items?PersonIds=${person.Id}` +
@@ -1031,6 +1139,17 @@
       if (res.ok) currentPersonItems = (await res.json()).Items || [];
     } catch { /* ignorieren */ }
     finally { isLoadingPerson = false; }
+  }
+
+  // Person als Favorit setzen/entfernen (optimistisch; bei Fehler zurückrollen)
+  async function togglePersonFavorite() {
+    if (!currentPerson) return;
+    const next = !currentPersonFav;
+    currentPersonFav = next;
+    try {
+      await fetch(`${serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${currentPerson.Id}`,
+        { method: next ? 'POST' : 'DELETE', headers: getAuthHeaders() });
+    } catch { currentPersonFav = !next; }
   }
 
   // Filmografie nach Typ gruppieren (nur Filme / Serien). Folgen werden bewusst weggelassen –
@@ -1090,6 +1209,8 @@
   }
 
   function showItemDetails(item) {
+    // Container (Sammlung/Wiedergabeliste) zeigen ihren Inhalt statt einer Detailseite
+    if (item?.Type === 'BoxSet' || item?.Type === 'Playlist') { openCollection(item); return; }
     // Herkunft merken, damit "Zurück" wieder dorthin führt (nicht immer Dashboard)
     detailsOrigin = viewState;
     if (viewState === 'library') {
@@ -1691,7 +1812,7 @@
         navHidden={displaySettings.navHidden}
         navIcons={displaySettings.navIcons}
         activeLibraryId={currentLibraryId}
-        on:navigate={(e) => { viewState = e.detail; focusMain(); }}
+        on:navigate={(e) => { viewState = e.detail; if (e.detail === 'favorites') loadFavorites(); else focusMain(); }}
         on:navigateLibrary={(e) => navigateToLibrary(e.detail, true)}
         on:switchUser={handleSwitchUser}
         on:logOutServer={handleLogout}
@@ -1905,10 +2026,12 @@
             on:close={returnFromDetails}
             on:openItemById={(e) => loadItemById(e.detail)}
             on:openPerson={(e) => openPerson(e.detail)}
+            on:libchanged={refreshLibraries}
             on:playVideo={(e) => {
               if (e.detail.item) currentDetailItem = e.detail.item;
               activeAudioIndex    = e.detail.audioIndex    ?? -1;
               activeSubtitleIndex = e.detail.subtitleIndex ?? -1;
+              activeMediaSourceId = e.detail.mediaSourceId ?? null;
               viewState = 'player';
             }}
           />
@@ -1919,6 +2042,11 @@
               <button on:click={() => viewState = personReturnView} use:focusOnMount
                 class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
                 {$t.back}
+              </button>
+              <button on:click={togglePersonFavorite} aria-label={$t.favorites}
+                class="w-12 h-12 rounded-lg focus:outline-none focus:ring-4 focus:ring-white transition-colors flex items-center justify-center
+                       {currentPersonFav ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700 focus:bg-gray-700'}">
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0z"/></svg>
               </button>
             </div>
             <div class="flex items-center gap-4 mb-10">
@@ -1972,6 +2100,73 @@
             {/if}
           </div>
 
+        {:else if viewState === 'favorites'}
+          <div class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
+            <div class="flex items-center gap-4 mb-10">
+              <svg class="w-10 h-10 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0z"/></svg>
+              <h1 class="text-4xl font-bold text-white">{$t.favorites}</h1>
+            </div>
+
+            {#if isLoadingFavorites}
+              <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4">
+                {#each Array(12).fill(0) as _}
+                  <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg animate-pulse"></div>
+                {/each}
+              </div>
+            {:else if favoriteItems.length > 0}
+              <div bind:this={favoritesGrid}>
+                {#each favGroups as group (group.key)}
+                  {#if group.items.length > 0}
+                    <h2 class="text-3xl font-bold text-white mb-6 px-2">{group.label}</h2>
+                    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-12">
+                      {#each group.items as item (item.Id)}
+                        <button on:click={() => showItemDetails(item)}
+                          use:longPress on:longpress={() => openContextMenu(item)}
+                          class="group focus:outline-none text-left cv-auto">
+                          <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
+                            {#if getItemImageUrl(item)}
+                              <img src={getItemImageUrl(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
+                            {/if}
+                            {#if itemProgress(item) > 0}
+                              <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
+                                <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
+                              </div>
+                            {/if}
+                          </div>
+                          <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Name}</span>
+                          {#if item.ProductionYear}<span class="text-xs text-gray-500 block truncate w-full">{item.ProductionYear}</span>{/if}
+                        </button>
+                      {/each}
+                    </div>
+                  {/if}
+                {/each}
+
+                {#if favPersons.length > 0}
+                  <h2 class="text-3xl font-bold text-white mb-6 px-2">{$t.people}</h2>
+                  <div class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-6 pr-4 mb-12">
+                    {#each favPersons as p (p.Id)}
+                      <button on:click={() => openPerson(p)} class="group focus:outline-none text-center cv-auto">
+                        <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
+                          {#if personImageUrl(serverUrl, p)}
+                            <img src={personImageUrl(serverUrl, p)} alt={p.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
+                          {:else}
+                            <div class="w-full h-full flex items-center justify-center text-gray-600">
+                              <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                            </div>
+                          {/if}
+                        </div>
+                        <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full block">{p.Name}</span>
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {:else}
+              <div class="flex items-center justify-center h-64">
+                <p class="text-2xl text-gray-500 font-bold">{$t.noItems}</p>
+              </div>
+            {/if}
+          </div>
         {:else if viewState === 'collection'}
           <div class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
             <div class="flex items-center gap-6 mb-8">
@@ -1979,6 +2174,13 @@
                 class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
                 {$t.back}
               </button>
+              {#if currentCollection?.Type === 'Playlist' && collectionItems.length > 0}
+                <button on:click={() => playlistEditMode = !playlistEditMode}
+                  class="ml-auto px-6 py-2 rounded-lg font-bold focus:outline-none focus:ring-4 focus:ring-white transition-colors
+                         {playlistEditMode ? 'bg-blue-600 text-white' : 'bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white'}">
+                  {playlistEditMode ? $t.done : $t.edit}
+                </button>
+              {/if}
             </div>
             <div class="flex items-center gap-4 mb-10">
               <svg class="w-10 h-10 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
@@ -1992,26 +2194,79 @@
                 {/each}
               </div>
             {:else if collectionItems.length > 0}
-              <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4">
-                {#each collectionItems as item}
-                  <button on:click={() => showItemDetails(item)}
-                    use:longPress on:longpress={() => openContextMenu(item)}
-                    class="group focus:outline-none text-left cv-auto">
-                    <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
-                      {#if getItemImageUrl(item)}
-                        <img src={getItemImageUrl(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
-                      {/if}
-                      {#if itemProgress(item) > 0}
-                        <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                          <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                        </div>
-                      {/if}
+              {#if playlistEditMode}
+                <div class="flex flex-col gap-2 pr-4 max-w-4xl">
+                  {#each collectionItems as item, i (item.PlaylistItemId)}
+                    <div class="flex items-center gap-4 bg-gray-800/60 rounded-xl p-3">
+                      <div class="w-14 h-20 shrink-0 bg-gray-900 rounded-lg overflow-hidden">
+                        {#if getItemImageUrl(item)}<img src={getItemImageUrl(item)} alt={item.Name} class="w-full h-full object-cover"/>{/if}
+                      </div>
+                      <div class="flex-1 min-w-0">
+                        {#if item.Type === 'Episode'}
+                          <div class="text-lg font-bold text-white truncate">{item.SeriesName || item.Name}</div>
+                          <div class="text-sm text-gray-400 truncate">{episodeLabel(item)}</div>
+                        {:else}
+                          <div class="text-lg font-bold text-white truncate">{item.Name}</div>
+                          {#if item.ProductionYear}<div class="text-sm text-gray-400">{item.ProductionYear}</div>{/if}
+                        {/if}
+                      </div>
+                      <button on:click={() => movePlaylistItem(i, i - 1)} disabled={i === 0} title={$t.moveUp} aria-label={$t.moveUp}
+                        class="p-3 rounded-lg text-gray-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white disabled:opacity-30 disabled:cursor-not-allowed">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
+                      </button>
+                      <button on:click={() => movePlaylistItem(i, i + 1)} disabled={i === collectionItems.length - 1} title={$t.moveDown} aria-label={$t.moveDown}
+                        class="p-3 rounded-lg text-gray-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white disabled:opacity-30 disabled:cursor-not-allowed">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                      </button>
+                      <button on:click={() => removePlaylistItem(item)} title={$t.remove} aria-label={$t.remove}
+                        class="p-3 rounded-lg text-red-400 hover:bg-red-900/40 focus:bg-red-900/40 focus:outline-none focus:ring-2 focus:ring-red-500">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-7 0v12a1 1 0 001 1h6a1 1 0 001-1V7"/></svg>
+                      </button>
                     </div>
-                    <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Name}</span>
-                    {#if item.ProductionYear}<span class="text-xs text-gray-500 block truncate w-full">{item.ProductionYear}</span>{/if}
-                  </button>
+                  {/each}
+                </div>
+              {:else}
+              {@const groups = [
+                { label: $t.movies,   items: collectionItems.filter(i => i.Type === 'Movie') },
+                { label: $t.series,   items: collectionItems.filter(i => i.Type === 'Series') },
+                { label: $t.episodes, items: collectionItems.filter(i => i.Type === 'Episode') },
+                { label: '',          items: collectionItems.filter(i => !['Movie', 'Series', 'Episode'].includes(i.Type)) }
+              ].filter(g => g.items.length)}
+              <div class="flex flex-col gap-10 pr-4">
+                {#each groups as group}
+                  <div>
+                    {#if groups.length > 1 && group.label}
+                      <h2 class="text-2xl font-bold text-gray-400 mb-4">{group.label}</h2>
+                    {/if}
+                    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+                      {#each group.items as item}
+                        <button on:click={() => showItemDetails(item)}
+                          use:longPress on:longpress={() => openContextMenu(item)}
+                          class="group focus:outline-none text-left cv-auto">
+                          <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
+                            {#if getItemImageUrl(item)}
+                              <img src={getItemImageUrl(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
+                            {/if}
+                            {#if itemProgress(item) > 0}
+                              <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
+                                <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
+                              </div>
+                            {/if}
+                          </div>
+                          {#if item.Type === 'Episode'}
+                            <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.SeriesName || item.Name}</span>
+                            <span class="text-xs text-gray-500 block truncate w-full">{episodeLabel(item)}</span>
+                          {:else}
+                            <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Name}</span>
+                            {#if item.ProductionYear}<span class="text-xs text-gray-500 block truncate w-full">{item.ProductionYear}</span>{/if}
+                          {/if}
+                        </button>
+                      {/each}
+                    </div>
+                  </div>
                 {/each}
               </div>
+              {/if}
             {:else}
               <div class="flex items-center justify-center h-64">
                 <p class="text-2xl text-gray-500 font-bold">{$t.noItems}</p>
@@ -2038,7 +2293,10 @@
           seekStep={displaySettings.seekStep}
           selectedAudioIndex={activeAudioIndex}
           selectedSubtitleIndex={activeSubtitleIndex}
+          mediaSourceId={activeMediaSourceId}
+          {autoPlayStreak}
           on:exit={() => viewState = 'details'}
+          on:libchanged={refreshLibraries}
           on:next={(e) => handleNextEpisode(e.detail)}
           on:prev={(e) => handlePrevEpisode(e.detail)}
         />

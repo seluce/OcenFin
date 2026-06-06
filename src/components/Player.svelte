@@ -1,20 +1,23 @@
 <script>
   import { t, currentLang } from '../i18n.js';
   import { isBackKey, focusOnMount } from '../utils.js';
-  import { getPlaybackInfo, resolveStream, externalSubtitleUrl } from '../playback.js';
+  import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl } from '../playback.js';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
+  import AddToPicker from './AddToPicker.svelte';
 
   export let item;
   export let serverUrl;
   export let activeToken;
   export let selectedAudioIndex;
   export let selectedSubtitleIndex;
+  export let mediaSourceId = null;   // gewählte Version (FullHD/4K); null = Server-Standard
   export let selectedUser;
   export let playbackPrefs = { autoSkipIntro: false, autoSkipCredits: false };
   export let use24h = true;   // Uhrzeit-Format (aus Einstellung) für die Uhr im Player
   export let showClock = true; // Uhr im Player anzeigen (folgt der Anzeige-Einstellung)
   export let showChapters = false; // Kapitelmarken auf der Leiste (Opt-in)
   export let seekStep = 30;        // Sprungweite der Vor-/Zurück-Buttons in Sekunden (pro Profil)
+  export let autoPlayStreak = 0;   // "Schaust du noch?": Folgen, die ohne Interaktion auto-gestartet wurden (von App gehalten)
 
   const dispatch = createEventDispatcher();
 
@@ -30,6 +33,7 @@
   // Scrubbing
   let isSeeking  = false;
   let seekTime   = 0;
+  let seekCommitTimer = null;   // gebündeltes Spulen: erst nach kurzer Pause EINMAL springen
   $: displayTime = isSeeking ? seekTime : currentTime;
   $: seekPct     = duration > 0 ? (displayTime / duration) * 100 : 0;
 
@@ -131,6 +135,7 @@
   // UI
   let showControls  = true;
   let showSettings  = false;
+  let pickerMode    = null;        // null | 'collection' | 'playlist' – steuert <AddToPicker>
   let settingsTab   = 'audio';     // 'audio' | 'subtitle' — welcher Bereich im Panel gezeigt wird
   let controlsTimeout;
   let isFavorite = item.UserData?.IsFavorite || false;
@@ -175,19 +180,30 @@
     if (!forceTranscode) triedTranscodeFallback = false;   // frischer Versuch → Fallback wieder erlauben
     try {
       const explicitAudio = audioIndex !== -1;
-      const enableDirectPlay = !explicitAudio && subtitleIndex === -1 && !forceTranscode;
-      // Bei explizitem Audiowechsel: DirectStream AUS + Audio NEU kodieren → der Server gibt
-      // garantiert die GEWÄHLTE Spur aus, statt die Standardspur (deutsch) zu kopieren.
-      const enableDirectStream = !explicitAudio && !forceTranscode;
+      // Ein Untertitel erzwingt nur dann einen Transcode, wenn er GEBRANNT wird:
+      // Textuntertitel nur bei aktiviertem Einbrennen, Grafikuntertitel (PGS/VobSub) immer.
+      // Externe Textuntertitel (VTT-Overlay) brauchen KEINEN Transcode → Direct Play bleibt möglich,
+      // und der Untertitelwechsel kann weich (ohne Neuladen) erfolgen.
+      const subStreams = (item?.MediaStreams?.length ? item.MediaStreams : mediaStreams) || [];
+      const subStream  = subtitleIndex !== -1 ? subStreams.find(s => s.Index === subtitleIndex && s.Type === 'Subtitle') : null;
+      const graphicSub = ['pgssub', 'dvdsub', 'pgs', 'dvbsub', 'vobsub', 'sub'].includes((subStream?.Codec || '').toLowerCase());
+      const subWillBurn = subtitleIndex !== -1 && (playbackPrefs.burnSubtitles || graphicSub);
+
+      const enableDirectPlay = !explicitAudio && !subWillBurn && !forceTranscode;
+      // Bei explizitem Audiowechsel/gebranntem Untertitel: DirectStream AUS + Audio NEU kodieren → der
+      // Server gibt garantiert die GEWÄHLTE Spur aus, statt die Standardspur (deutsch) zu kopieren.
+      const enableDirectStream = !explicitAudio && !subWillBurn && !forceTranscode;
       const allowAudioStreamCopy = !explicitAudio;
       console.log('[OcenFin] setupPlayback →', { item: item?.Name, audioIndex, subtitleIndex, enableDirectPlay, enableDirectStream, allowAudioStreamCopy, forceTranscode });
       // Direct Play: volle Bitrate; Transcode: deckeln, damit der Server in Echtzeit mitkommt.
       const requestBitrate = enableDirectPlay ? maxBitrate : Math.min(maxBitrate, TRANSCODE_MAX_BITRATE);
-      const info = await getPlaybackInfo({
+      const info = await getPlaybackInfoFast({
         serverUrl, userId: selectedUser.Id, token: activeToken, itemId: item.Id,
         audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex,
         maxBitrate: requestBitrate, startTicks: 0,   // Resume passiert client-seitig (seekToResume)
         enableDirectPlay, enableDirectStream, allowAudioStreamCopy,
+        burnSubtitles: playbackPrefs.burnSubtitles,
+        mediaSourceId,
       });
       if (info.playSessionId) playSessionId = info.playSessionId;
       const ms = info.mediaSource;
@@ -245,27 +261,61 @@
     videoElement.play().catch(() => {});
   }
 
-  // Untertitel-Spur nur setzen, wenn der Server sie EXTERN liefert (Textuntertitel als VTT).
-  // Gestylte/Grafik-Untertitel (ASS/SSA/PGS) werden serverseitig ins Bild gebrannt → keine Spur.
-  function applyExternalSubtitleIfNeeded(index, ms) {
+  // Externe Textuntertitel selbst rendern: VTT per fetch holen (Jellyfin erlaubt CORS) und
+  // parsen, statt einen <track> zu setzen. Ein cross-origin <track> wird vom Browser blockiert,
+  // und webOS rendert native Cues ohnehin unzuverlässig. So haben wir volle Kontrolle.
+  let currentSubtitleText = '';
+  let subtitleCues = [];           // [{ start, end, text }] in Sekunden
+  let subtitleFetchToken = 0;      // ignoriert Antworten eines überholten Wechsels
+
+  // VTT-Zeitstempel "HH:MM:SS.mmm" oder "MM:SS.mmm" → Sekunden
+  function parseVttTime(t) {
+    const p = t.split(':');
+    if (p.length === 3) return (+p[0]) * 3600 + (+p[1]) * 60 + parseFloat(p[2]);
+    if (p.length === 2) return (+p[0]) * 60 + parseFloat(p[1]);
+    return parseFloat(t);
+  }
+  function parseVtt(text) {
+    const cues = [];
+    const blocks = text.replace(/\r/g, '').split('\n\n');
+    for (const block of blocks) {
+      const lines = block.split('\n').filter(l => l.length);
+      const tlIdx = lines.findIndex(l => l.includes('-->'));
+      if (tlIdx === -1) continue;
+      const times = lines[tlIdx].split('-->');
+      const start = parseVttTime(times[0].trim().split(/\s+/)[0]);
+      const end   = parseVttTime(times[1].trim().split(/\s+/)[0]);
+      const txt = lines.slice(tlIdx + 1).join('\n').replace(/<[^>]+>/g, '').trim();
+      if (txt && !isNaN(start) && !isNaN(end)) cues.push({ start, end, text: txt });
+    }
+    return cues;
+  }
+
+  // Aktiven Cue aus der aktuellen Zeit ableiten (reaktiv, folgt currentTime)
+  $: currentSubtitleText = subtitleCues.length
+    ? (subtitleCues.find(c => currentTime >= c.start && currentTime <= c.end)?.text ?? '')
+    : '';
+
+  async function applyExternalSubtitleIfNeeded(index, ms) {
+    subtitleCues = [];
+    const myToken = ++subtitleFetchToken;
     if (!videoElement) return;
-    Array.from(videoElement.querySelectorAll('track')).forEach(t => t.remove());
     if (index === -1 || !ms) return;
     const stream = (ms.MediaStreams || []).find(s => s.Index === index && s.Type === 'Subtitle');
     if (!stream) return;
     const method = (stream.DeliveryMethod || '').toLowerCase();
-    if (method !== 'external') return;   // Encode/Embed → bereits im Bild/Stream
+    const graphic = ['pgssub', 'dvdsub', 'pgs', 'dvbsub', 'vobsub', 'sub'].includes((stream.Codec || '').toLowerCase());
+    if (method === 'encode' || graphic) return;   // gebrannt oder Grafik-Untertitel → kein VTT-Overlay
 
     const url = externalSubtitleUrl({ serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: activeToken });
-    const track = document.createElement('track');
-    track.kind    = 'subtitles';
-    track.label   = stream.DisplayTitle || `Sub-${index}`;
-    track.src     = url;
-    track.default = true;
-    videoElement.appendChild(track);
-    requestAnimationFrame(() => {
-      if (videoElement?.textTracks?.length) videoElement.textTracks[videoElement.textTracks.length - 1].mode = 'showing';
-    });
+    try {
+      const res = await fetch(url);
+      if (!res.ok || myToken !== subtitleFetchToken) return;   // überholt oder Fehler
+      const text = await res.text();
+      if (myToken !== subtitleFetchToken) return;
+      subtitleCues = parseVtt(text);
+      console.log('[OcenFin] Untertitel geladen:', subtitleCues.length, 'Cues');
+    } catch (e) { console.log('[OcenFin] Untertitel-Fetch-Fehler:', e?.message); }
   }
 
   // Intro Skipper / Media Segments
@@ -283,8 +333,10 @@
   // Auto-Play der nächsten Folge mit Countdown-Overlay (Netflix-Prinzip).
   // Startet nahe dem Ende; "Abspann automatisch überspringen" hat Vorrang (sofortiger Sprung).
   let chapters          = [];
-  let nextCountdown     = null;   // verbleibende Sekunden, null = inaktiv
+  let nextCountdown     = null;   // verbleibende Sekunden (ganzzahlig, für den Text), null = inaktiv
+  let countdownProgress = 0;      // 1 → 0, treibt den Balken
   let countdownTimer    = null;
+  let countdownEnd      = 0;
   let countdownDismissed = false; // pro Folge: nach Abbruch nicht erneut starten
   const COUNTDOWN_FROM  = 12;
 
@@ -304,14 +356,28 @@
   }
 
   function startCountdown() {
-    nextCountdown = COUNTDOWN_FROM;
+    // Nächste Folge leicht vorladen (nur PlaybackInfo/Stream-URL, kein Video-Pre-Buffering),
+    // damit der Wechsel den Roundtrip spart. Greift nur, wenn die Parameter beim Wechsel passen.
+    if (nextEpisode?.Id) {
+      prefetchPlaybackInfo({
+        serverUrl, userId: selectedUser.Id, token: activeToken, itemId: nextEpisode.Id,
+        audioStreamIndex: selectedAudioIndex, subtitleStreamIndex: selectedSubtitleIndex,
+        maxBitrate, burnSubtitles: playbackPrefs.burnSubtitles, mediaSourceId: null,
+      });
+    }
+    nextCountdown = COUNTDOWN_FROM;   // sofort sichtbar → Karte erscheint
+    countdownProgress = 1;
+    countdownEnd = Date.now() + COUNTDOWN_FROM * 1000;
+    // setInterval (im Projekt zuverlässig) alle 100 ms → Text sekündlich, Balken flüssig.
     countdownTimer = setInterval(() => {
-      nextCountdown -= 1;
-      if (nextCountdown <= 0) { stopCountdown(); goToNextEpisode(); }
-    }, 1000);
+      const remainingMs = countdownEnd - Date.now();
+      if (remainingMs <= 0) { stopCountdown(); goToNextEpisode(); return; }
+      countdownProgress = remainingMs / (COUNTDOWN_FROM * 1000);
+      nextCountdown = Math.ceil(remainingMs / 1000);
+    }, 100);
   }
   function stopCountdown() {
-    clearInterval(countdownTimer);
+    if (countdownTimer) clearInterval(countdownTimer);
     countdownTimer = null;
     nextCountdown = null;
   }
@@ -346,18 +412,50 @@
     goToNextEpisode();
   }
 
-  let nextEpisode = null;
+  // Serien-Episoden (alle Staffeln) für zuverlässige Vor/Zurück-Navigation über Staffelgrenzen hinweg
+  let seriesEpisodes = [];
+  let episodeIndex   = -1;
+  $: prevEpisode = episodeIndex > 0 ? seriesEpisodes[episodeIndex - 1] : null;
+  $: nextByIndex = episodeIndex >= 0 && episodeIndex < seriesEpisodes.length - 1
+                   ? seriesEpisodes[episodeIndex + 1] : null;
+  $: nextEpisode = nextByIndex;   // Auto-Play/Outro nutzen dieselbe sequentielle nächste Folge (auch zur nächsten Staffel)
+  // Position in der Staffel für die Anzeige oben links: "Folge X von Y"
+  $: seasonTotal = (item?.Type === 'Episode' && item.ParentIndexNumber != null)
+                   ? seriesEpisodes.filter(e => e.ParentIndexNumber === item.ParentIndexNumber).length : 0;
+  $: episodePosition = (item?.Type === 'Episode' && item.IndexNumber != null && seasonTotal > 0)
+                   ? `${$t.episode} ${item.IndexNumber} ${$t.of} ${seasonTotal}` : '';
 
-  // Staffel-Episoden für zuverlässige Vor/Zurück-Navigation per Transporttasten
-  let seasonEpisodes   = [];
-  let episodeIndex     = -1;
-  $: prevEpisode  = episodeIndex > 0                              ? seasonEpisodes[episodeIndex - 1] : null;
-  $: nextByIndex  = episodeIndex >= 0 && episodeIndex < seasonEpisodes.length - 1
-                    ? seasonEpisodes[episodeIndex + 1] : null;
+  // Infozeile zur nächsten Folge: "S2 · E1 · 52 Min · endet um 11:59"
+  $: nextEpisodeMeta = (() => {
+    if (!nextEpisode) return '';
+    const parts = [];
+    if (nextEpisode.ParentIndexNumber != null && nextEpisode.IndexNumber != null)
+      parts.push(`S${nextEpisode.ParentIndexNumber} · E${nextEpisode.IndexNumber}`);
+    const mins = nextEpisode.RunTimeTicks ? Math.round(nextEpisode.RunTimeTicks / 600000000) : 0;
+    if (mins) {
+      parts.push(`${mins} ${$t.minShort}`);
+      const end = new Date(Date.now() + mins * 60000);
+      parts.push(`${$t.endsAt} ${end.toLocaleTimeString($currentLang === 'de' ? 'de-DE' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`);
+    }
+    return parts.join(' · ');
+  })();
 
   // ============================================================
   // LIFECYCLE
   // ============================================================
+
+  // "Schaust du noch?" – Best Practice (Netflix-Stil): NICHT zeitbasiert, sondern nach
+  // mehreren automatisch abgespielten Folgen in Folge ohne Interaktion. Greift damit nur bei
+  // Serien-Auto-Play (Einschlaf-Schutz) und unterbricht nie einen Film oder eine aktiv geschaute Folge.
+  // Der Zähler (autoPlayStreak) lebt in App.svelte, weil der Player pro Folge neu aufsetzt.
+  let showStillWatching = false;
+  let interacted = false;   // hat der Nutzer in DIESER Folge etwas getan? (Tastendruck/Remote/Klick)
+  function markInteraction() { interacted = true; }
+  function resumeFromStillWatching() {
+    showStillWatching = false;
+    // Nutzer ist wach → weiter zur nächsten Folge; Zähler in App zurücksetzen.
+    if (nextEpisode) dispatch('next', { episode: nextEpisode, resetStreak: true });
+  }
 
   onMount(async () => {
     resetControlsTimeout();
@@ -365,8 +463,12 @@
 
     fetchMediaSources();
     fetchIntroTimestamps();
-    fetchNextEpisode();
-    fetchSeasonEpisodes();   // ← für Transport-Prev/Next
+    fetchSeriesEpisodes();   // Vor/Zurück + Auto-Play + Positionsanzeige (über alle Staffeln)
+
+    // Interaktions-Tracking für "Schaust du noch?": jede bewusste Eingabe markiert den Nutzer als wach.
+    window.addEventListener('keydown', markInteraction);
+    window.addEventListener('pointermove', markInteraction);
+    window.addEventListener('click', markInteraction);
 
     // PlaybackInfo entscheidet Direct Play vs. Transcode; setzt Quelle + ggf. HLS.
     // Resume (startTicks) passiert client-seitig nach 'loadedmetadata' (seekToResume).
@@ -379,9 +481,13 @@
   });
 
   onDestroy(() => {
+    window.removeEventListener('keydown', markInteraction);
+    window.removeEventListener('pointermove', markInteraction);
+    window.removeEventListener('click', markInteraction);
     if (controlsTimeout) clearTimeout(controlsTimeout);
     if (progressTimer)   clearInterval(progressTimer);
     if (countdownTimer)  clearInterval(countdownTimer);
+    if (seekCommitTimer) clearTimeout(seekCommitTimer);
     if (clockTimer)      clearInterval(clockTimer);
     clearBufferWatchdog();
     if (hls) { try { hls.destroy(); } catch {} hls = null; }
@@ -484,39 +590,18 @@
     return (intro.Valid || credits.Valid) ? { Introduction: intro, Credits: credits } : null;
   }
 
-  async function fetchNextEpisode() {
+  // Alle Episoden der Serie (staffelübergreifend, in Reihenfolge) – für Vor/Zurück, Auto-Play und Positionsanzeige
+  async function fetchSeriesEpisodes() {
     if (item.Type !== 'Episode' || !item.SeriesId) return;
     try {
       const res = await fetch(
-        `${serverUrl}/Shows/NextUp?SeriesId=${item.SeriesId}&UserId=${selectedUser.Id}&Limit=1`,
+        `${serverUrl}/Shows/${item.SeriesId}/Episodes?UserId=${selectedUser.Id}`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
-        const data = await res.json();
-        if (data.Items?.[0]?.Id && data.Items[0].Id !== item.Id) {
-          nextEpisode = data.Items[0];
-        }
-      }
-    } catch { }
-  }
-
-  // Staffel-Episodenliste für Transport-Navigation (sequential, nicht ShowsNextUp)
-  async function fetchSeasonEpisodes() {
-    if (item.Type !== 'Episode' || !item.SeriesId) return;
-    try {
-      let url;
-      if (item.SeasonId) {
-        url = `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${item.SeasonId}&IncludeItemTypes=Episode&SortBy=IndexNumber&Fields=Overview`;
-      } else if (item.ParentIndexNumber != null) {
-        url = `${serverUrl}/Shows/${item.SeriesId}/Episodes?SeasonNumber=${item.ParentIndexNumber}&UserId=${selectedUser.Id}&Fields=Overview`;
-      } else {
-        return;
-      }
-      const res = await fetch(url, { headers: getAuthHeaders() });
-      if (res.ok) {
-        const data   = await res.json();
-        seasonEpisodes = data.Items || [];
-        episodeIndex   = seasonEpisodes.findIndex(ep => ep.Id === item.Id);
+        const data     = await res.json();
+        seriesEpisodes = data.Items || [];
+        episodeIndex   = seriesEpisodes.findIndex(ep => ep.Id === item.Id);
       }
     } catch { }
   }
@@ -578,9 +663,18 @@
     if (type === 'subtitle') {
       const oldStream = mediaStreams.find(s => s.Index === selectedSubtitleIndex && s.Type === 'Subtitle');
       const newStream = mediaStreams.find(s => s.Index === index && s.Type === 'Subtitle');
-      const isExternal = (s, idx) => idx === -1 || (s && (s.DeliveryMethod || '').toLowerCase() === 'external');
-      const oldIsExternal = isExternal(oldStream, selectedSubtitleIndex);
-      const newIsExternal = isExternal(newStream, index);
+      // Weicher Wechsel möglich, wenn der Untertitel NICHT gebrannt werden muss: "Aus", oder
+      // ein Textuntertitel (egal ob extern geliefert oder eingebettet → wir holen ihn als VTT).
+      const graphicCodecs = ['pgssub', 'dvdsub', 'pgs', 'dvbsub', 'vobsub', 'sub'];
+      const isSoftSub = (s, idx) => {
+        if (idx === -1) return true;
+        if (!s) return false;
+        if ((s.DeliveryMethod || '').toLowerCase() === 'encode') return false;      // gebrannt → Neuladen
+        if (graphicCodecs.includes((s.Codec || '').toLowerCase())) return false;     // Grafik → nicht als VTT
+        return true;
+      };
+      const oldIsExternal = isSoftSub(oldStream, selectedSubtitleIndex);
+      const newIsExternal = isSoftSub(newStream, index);
 
       selectedSubtitleIndex = index;
 
@@ -613,8 +707,20 @@
     resetControlsTimeout();
   }
 
-  function goToNextEpisode() {
-    if (nextEpisode) dispatch('next', nextEpisode);
+  // manual=true → vom Nutzer ausgelöst (Button/Prompt); manual=false → Auto-Play (Countdown/Ende/Credits).
+  function goToNextEpisode(manual = false) {
+    stopCountdown();
+    if (!nextEpisode) return;
+    const awake = manual || interacted;
+    // Einschlaf-Schutz: nur bei Serien-Auto-Play, wenn der Nutzer länger nichts getan hat.
+    if (!awake && playbackPrefs.stillWatching && item.Type === 'Episode'
+        && autoPlayStreak >= (playbackPrefs.stillWatchingEpisodes || 3)) {
+      videoElement?.pause();
+      showStillWatching = true;
+      return;
+    }
+    // resetStreak: wach → Zähler in App auf 0; sonst hochzählen.
+    dispatch('next', { episode: nextEpisode, resetStreak: awake });
   }
 
   async function toggleFavorite() {
@@ -643,6 +749,7 @@
   }
 
   function onSeekEnd(e) {
+    if (seekCommitTimer) { clearTimeout(seekCommitTimer); seekCommitTimer = null; }
     const t = +e.target.value;
     if (videoElement) videoElement.currentTime = t;
     seekTime  = t;
@@ -668,9 +775,22 @@
     resetControlsTimeout();
   }
 
+  // Spulen wie bei Netflix/Jellyfin: mehrfaches schnelles Drücken verschiebt nur die VORSCHAU
+  // und springt erst nach einer kurzen Pause EINMAL an die Stelle — nicht bei jedem Druck neu laden.
   function skip(seconds) {
-    if (videoElement) videoElement.currentTime += seconds;
+    if (!videoElement || !duration) return;
+    if (!isSeeking) { isSeeking = true; seekTime = currentTime; }
+    seekTime = Math.max(0, Math.min(duration, seekTime + seconds));
     resetControlsTimeout();
+    if (seekCommitTimer) clearTimeout(seekCommitTimer);
+    seekCommitTimer = setTimeout(commitSeek, 700);
+  }
+  function commitSeek() {
+    if (seekCommitTimer) { clearTimeout(seekCommitTimer); seekCommitTimer = null; }
+    if (!isSeeking) return;
+    if (videoElement) videoElement.currentTime = seekTime;
+    currentTime = seekTime;   // sofort übernehmen, kein kurzes Zurückspringen bis zum timeupdate
+    isSeeking = false;
   }
 
   // Kapitel-Sprünge — nur sinnvoll/sichtbar wenn das Video echte Kapitelmarken hat
@@ -724,8 +844,14 @@
   function onSeekKey(e) {
     if (e.key === 'ArrowLeft')      { e.preventDefault(); e.stopPropagation(); skip(-10); resetControlsTimeout(); }
     else if (e.key === 'ArrowRight'){ e.preventDefault(); e.stopPropagation(); skip(10);  resetControlsTimeout(); }
+    // OK auf der Leiste: ausstehenden Sprung sofort übernehmen, dann Wiedergabe/Pause umschalten.
+    else if (e.key === 'Enter' || e.keyCode === 13) {
+      e.preventDefault(); e.stopPropagation();
+      if (isSeeking) commitSeek();
+      togglePlay();
+    }
     // ▼ springt direkt auf Wiedergabe/Pause (häufigster Fall) statt auf den linken Zurückspul-Button.
-    else if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); playPauseBtn?.focus(); resetControlsTimeout(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); if (isSeeking) commitSeek(); playPauseBtn?.focus(); resetControlsTimeout(); }
     else if (e.key === 'ArrowUp')   { e.preventDefault(); /* nach oben per FocusManager */ }
   }
 
@@ -839,9 +965,10 @@
     </div>
   {/if}
 
-  <!-- HAUPT-OVERLAY -->
+  <!-- HAUPT-OVERLAY — Klick auf die leere Bildfläche (|self, nicht auf Buttons) pausiert/spielt -->
   <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/50 flex flex-col justify-between p-10 transition-opacity duration-500 z-50
-              {showControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}">
+              {showControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}"
+       on:click|self={togglePlay}>
 
     <!-- OBEN: Titel + Uhrzeit -->
     <div class="flex items-start justify-between gap-6">
@@ -849,6 +976,9 @@
         <h1 class="text-3xl font-bold drop-shadow-lg">{item.Name}</h1>
         {#if item.SeriesName}
           <p class="text-gray-400 text-lg mt-1">{item.SeriesName} · {item.SeasonName}</p>
+        {/if}
+        {#if episodePosition}
+          <p class="text-gray-500 text-base mt-0.5 font-semibold tracking-wide">{episodePosition}</p>
         {/if}
       </div>
       {#if showClock}
@@ -879,6 +1009,12 @@
             style="background: linear-gradient(to right, var(--color-blue-500, #3b82f6) {seekPct}%, rgba(255,255,255,0.22) {seekPct}%);"
             class="seekbar w-full h-1.5 rounded-full appearance-none cursor-pointer focus:outline-none"
           />
+          {#if isSeeking}
+            <div class="absolute bottom-full mb-4 -translate-x-1/2 pointer-events-none whitespace-nowrap"
+                 style="left: {Math.min(96, Math.max(4, seekPct))}%;">
+              <span class="text-4xl font-bold text-white tabular-nums drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)]">{formatTime(seekTime)}</span>
+            </div>
+          {/if}
           {#if showChapters && duration > 0 && chapters.length > 1}
             {#each chapters as ch}
               <div class="absolute top-1/2 -translate-y-1/2 w-0.5 h-3 bg-white/60 rounded-full pointer-events-none"
@@ -957,8 +1093,8 @@
             </button>
           {/if}
 
-          <!-- Nächste Folge: ►| — Transport-Navigation (sequentiell) -->
-          <button on:click={() => nextByIndex && dispatch('next', nextByIndex)}
+          <!-- Nächste Folge: ►| — Transport-Navigation (sequentiell), zählt als bewusste Aktion -->
+          <button on:click={() => goToNextEpisode(true)}
             disabled={!nextByIndex}
             class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none disabled:opacity-30"
             title={$t.nextEpisode}>
@@ -969,36 +1105,44 @@
           </button>
         </div>
 
-        <div class="flex items-center gap-6">
+        <div class="flex items-center gap-4">
 
           <!-- Favorit -->
           <button on:click={toggleFavorite}
-            class="p-3 focus:outline-none transition-colors {isFavorite ? 'text-red-500' : 'text-gray-400 hover:text-white focus:text-white'}">
+            class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors {isFavorite ? 'text-red-500' : 'text-gray-400 hover:text-white focus:text-white'}">
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
             </svg>
           </button>
 
-          <!-- AUDIO — eigener Button (ersetzt das Zahnrad) -->
-          <button on:click|stopPropagation={() => openSettings('audio')}
-            class="px-4 py-2.5 rounded-lg font-bold text-base flex items-center gap-2 focus:outline-none focus:ring-4 focus:ring-white transition-colors
-                   {showSettings && settingsTab === 'audio' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:text-white focus:text-white'}"
-            title={$t.audio}>
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
-            </svg>
-            {$t.audio}
+          <!-- Zur Wiedergabeliste hinzufügen -->
+          <button on:click|stopPropagation={() => pickerMode = 'playlist'} title={$t.addToPlaylist} aria-label={$t.addToPlaylist}
+            class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors text-gray-400 hover:text-white focus:text-white">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h13M3 12h9m-9 6h9m4-3v6m3-3h-6"/></svg>
           </button>
 
-          <!-- UNTERTITEL — eigener Button -->
-          <button on:click|stopPropagation={() => openSettings('subtitle')}
-            class="px-4 py-2.5 rounded-lg font-bold text-base flex items-center gap-2 focus:outline-none focus:ring-4 focus:ring-white transition-colors
-                   {showSettings && settingsTab === 'subtitle' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:text-white focus:text-white'}"
-            title={$t.subtitles}>
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <!-- Zur Sammlung hinzufügen -->
+          <button on:click|stopPropagation={() => pickerMode = 'collection'} title={$t.addToCollection} aria-label={$t.addToCollection}
+            class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors text-gray-400 hover:text-white focus:text-white">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+          </button>
+
+          <!-- AUDIO — nur Icon (ersetzt das Zahnrad) -->
+          <button on:click|stopPropagation={() => openSettings('audio')} title={$t.audio} aria-label={$t.audio}
+            class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
+                   {showSettings && settingsTab === 'audio' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
+            </svg>
+          </button>
+
+          <!-- UNTERTITEL — nur Icon -->
+          <button on:click|stopPropagation={() => openSettings('subtitle')} title={$t.subtitles} aria-label={$t.subtitles}
+            class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
+                   {showSettings && settingsTab === 'subtitle' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h12M4 14h16M4 18h8"/>
             </svg>
-            {$t.subtitles}
           </button>
         </div>
       </div>
@@ -1053,6 +1197,16 @@
   <!-- ENDE HAUPT-OVERLAY -->
 
 
+  <!-- UNTERTITEL-OVERLAY — eigener VTT-Renderer (native Track-Anzeige ist auf webOS unzuverlässig).
+       Rückt nach oben, wenn die Steuerleiste sichtbar ist, damit nichts überdeckt wird. -->
+  {#if currentSubtitleText}
+    <div class="absolute inset-x-0 z-[65] flex justify-center px-[8%] pointer-events-none transition-all duration-200
+                {showControls ? 'bottom-44' : 'bottom-[7%]'}">
+      <span class="subtitle-box sub-{playbackPrefs.subtitleSize || 'normal'}">{currentSubtitleText}</span>
+    </div>
+  {/if}
+
+
   <!-- INTRO ÜBERSPRINGEN — unten links -->
   {#if showSkipIntro}
     <div class="absolute bottom-36 left-12 z-[70] animate-fade-in">
@@ -1078,11 +1232,12 @@
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-5 w-80 flex flex-col gap-3">
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{$t.nextEpisodeIn} {nextCountdown} {nextCountdown === 1 ? $t.secondOne : $t.secondsMany}</span>
         <span class="text-lg font-bold text-white truncate">{nextEpisode.Name}</span>
+        {#if nextEpisodeMeta}<span class="text-sm text-gray-400 truncate">{nextEpisodeMeta}</span>{/if}
         <div class="h-1 bg-gray-700 rounded-full overflow-hidden">
-          <div class="h-full bg-blue-500 countdown-bar" style="--cd: {COUNTDOWN_FROM}s;"></div>
+          <div class="h-full bg-blue-500" style="width: {countdownProgress * 100}%; transition: width 0.12s linear;"></div>
         </div>
         <div class="flex gap-3">
-          <button on:click={goToNextEpisode} use:focusOnMount
+          <button on:click={() => goToNextEpisode(true)} use:focusOnMount
             class="flex-1 bg-white text-black font-bold py-2.5 rounded-lg flex items-center justify-center gap-2
                    focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -1098,26 +1253,48 @@
     </div>
   {/if}
 
-  <!-- Manueller "Nächste Folge"-Button (wenn kein Countdown läuft, z. B. Auto-Play aus) -->
+  <!-- Manueller "Nächste Folge"-Hinweis (wenn kein Countdown läuft, z. B. Auto-Play aus) -->
   {#if nearEnd && nextEpisode && nextCountdown === null}
     <div class="absolute bottom-36 right-12 z-[70] animate-fade-in">
-      <button on:click={goToNextEpisode} use:focusOnMount
-        class="bg-white text-black font-bold text-xl px-8 py-4 rounded-xl
-               flex items-center gap-4 shadow-2xl
-               hover:scale-105 focus:scale-105 focus:outline-none transition-transform duration-200">
-        <div class="flex flex-col items-start leading-tight">
-          <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">{ $t.nextEpisode }</span>
-          <span class="text-base font-bold text-black truncate max-w-xs">{nextEpisode.Name}</span>
-        </div>
-        <!-- ►| : Dreieck rechts + bar rechts -->
-        <svg class="w-7 h-7 shrink-0" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M16 6h2v12h-2zm-10 0l9 6-9 6V6z"/>
+      <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-5 w-80 flex flex-col gap-3">
+        <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{$t.nextEpisode}</span>
+        <span class="text-lg font-bold text-white truncate">{nextEpisode.Name}</span>
+        {#if nextEpisodeMeta}<span class="text-sm text-gray-400 truncate">{nextEpisodeMeta}</span>{/if}
+        <button on:click={() => goToNextEpisode(true)} use:focusOnMount
+          class="bg-white text-black font-bold py-2.5 rounded-lg flex items-center justify-center gap-2
+                 focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          {$t.playNow}
+        </button>
+      </div>
+    </div>
+  {/if}
+
+  <!-- "Schaust du noch?" – nach Inaktivität pausiert -->
+  {#if showStillWatching}
+    <div class="absolute inset-0 z-[120] bg-black/85 flex items-center justify-center animate-fade-in">
+      <div class="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl p-12 flex flex-col items-center gap-7 max-w-md text-center">
+        <svg class="w-16 h-16 text-gray-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1 1 0 010-.644C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178a1 1 0 010 .644C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
         </svg>
-      </button>
+        <h2 class="text-3xl font-bold text-white">{$t.stillWatching}</h2>
+        <button on:click={resumeFromStillWatching} use:focusOnMount
+          class="bg-white text-black font-bold text-xl px-10 py-4 rounded-xl flex items-center gap-3
+                 focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
+          <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          {$t.continueWatching}
+        </button>
+      </div>
     </div>
   {/if}
 
 </div>
+
+<!-- Zur Sammlung / Wiedergabeliste hinzufügen (gemeinsame Komponente) -->
+<AddToPicker mode={pickerMode} {item} {serverUrl} {selectedUser} {getAuthHeaders}
+  on:created={() => dispatch('libchanged')}
+  on:close={async () => { pickerMode = null; await tick(); playerContainer?.focus(); }} />
 
 <style>
   .hide-scrollbar::-webkit-scrollbar { display: none; }
@@ -1150,11 +1327,13 @@
   :global(.subs-normal video::cue) { font-size: 3.4vh; }
   :global(.subs-large video::cue)  { font-size: 4.8vh; }
 
-  /* Auto-Play-Countdown: Balken läuft flüssig (GPU-getrieben) statt sekündlich zu springen.
-     Dauer kommt per --cd aus COUNTDOWN_FROM. */
-  .countdown-bar {
-    width: 100%;
-    animation: countdown-shrink var(--cd, 12s) linear forwards;
+  /* Eigener Untertitel-Overlay-Renderer (externe VTT) — kein Kasten, nur kräftiger Schatten */
+  .subtitle-box {
+    white-space: pre-line; text-align: center; color: #fff; font-weight: 600; line-height: 1.35;
+    text-shadow: 0 1px 2px #000, 0 2px 8px rgba(0,0,0,.95), 0 0 4px rgba(0,0,0,.9);
+    max-width: 100%;
   }
-  @keyframes countdown-shrink { from { width: 100%; } to { width: 0%; } }
+  .sub-small  { font-size: 2.6vh; }
+  .sub-normal { font-size: 3.4vh; }
+  .sub-large  { font-size: 4.8vh; }
 </style>

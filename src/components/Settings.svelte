@@ -51,8 +51,13 @@
     dispatch('playbackPrefsChange', playbackPrefs);
   }
 
+  function setStillWatchingEpisodes(n) {
+    playbackPrefs = { ...playbackPrefs, stillWatchingEpisodes: n };
+    dispatch('playbackPrefsChange', playbackPrefs);
+  }
+
   // Version: YYYYMMDD — bei Updates hier anpassen
-  const APP_VERSION = '20260603';
+  const APP_VERSION = '20260606';
 
   const dispatch = createEventDispatcher();
 
@@ -302,6 +307,8 @@
 
   // Zwei-Spalten-Navigation: Kategorie links wählen, Inhalt rechts (kein langes Scrollen)
   let activeCategory = 'appearance';
+  // Unterpunkt "Anzeige-Elemente" schließen, sobald man den Darstellungs-Reiter verlässt
+  $: if (activeCategory !== 'appearance') showDisplayOptions = false;
   $: categories = [
     { id: 'appearance', label: $t.settingsDisplay,    icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
     { id: 'navigation', label: $t.settingsNavigation, icon: 'M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z' },
@@ -347,7 +354,7 @@
         <!-- Sprache -->
         <button on:click={() => openModal('lang')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.language}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.languageDesc}</span>
@@ -360,7 +367,7 @@
         <!-- Animationen reduzieren -->
         <button on:click={toggleReduceAnimations}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.reduceAnimations}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.reduceAnimationsDesc}</span>
@@ -416,7 +423,7 @@
         <!-- ANZEIGE-ELEMENTE — ausklappbarer Unterpunkt, hält das Menü schlank -->
         <button on:click={() => showDisplayOptions = !showDisplayOptions}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.displayElements}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.displayElementsDesc}</span>
@@ -435,7 +442,7 @@
           {#each homeToggles as tg}
             <button on:click={() => toggleDisplay(tg.key)}
               class="flex items-center justify-between w-full pl-10 pr-6 py-4 bg-gray-900/50 hover:bg-gray-700 focus:bg-gray-700
-                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
               <span class="text-lg text-gray-200">{tg.label}</span>
               <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
                           {displaySettings[tg.key] ? 'bg-blue-500' : 'bg-gray-600'}">
@@ -468,7 +475,7 @@
           {#each uiToggles as tg}
             <button on:click={() => toggleDisplay(tg.key)}
               class="flex items-center justify-between w-full pl-10 pr-6 py-4 bg-gray-900/50 hover:bg-gray-700 focus:bg-gray-700
-                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
               <span class="text-lg text-gray-200">{tg.label}</span>
               <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
                           {displaySettings[tg.key] ? 'bg-blue-500' : 'bg-gray-600'}">
@@ -583,7 +590,7 @@
         <!-- Screensaver Toggle -->
         <button on:click={() => updateScreensaver({ enabled: !screensaverSettings.enabled })}
           class="flex items-center justify-between w-full px-6 py-5 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.screensaverTitle}</span>
             <span class="text-gray-400 mt-0.5 block text-sm">{$t.screensaverDesc}</span>
@@ -630,7 +637,7 @@
         <!-- Standard-Audiosprache -->
         <button on:click={() => openModal('audioLang')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <span class="text-2xl text-white font-medium">{$t.audioLanguage}</span>
           <span class="text-xl font-bold text-gray-300">{audioLangName}</span>
         </button>
@@ -640,7 +647,7 @@
         <!-- Standard-Untertitel -->
         <button on:click={() => openModal('subtitleLang')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <span class="text-2xl text-white font-medium">{$t.subtitleLanguage}</span>
           <span class="text-xl font-bold text-gray-300">{subtitleLangName}</span>
         </button>
@@ -667,7 +674,7 @@
         <!-- Auto-Skip Intro -->
         <button on:click={() => togglePlaybackPref('autoSkipIntro')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.autoSkipIntro}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.autoSkipDesc}</span>
@@ -684,7 +691,7 @@
         <!-- Auto-Skip Outro -->
         <button on:click={() => togglePlaybackPref('autoSkipCredits')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.autoSkipOutro}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.autoSkipOutroDesc}</span>
@@ -699,7 +706,7 @@
         <!-- Nächste Folge automatisch -->
         <button on:click={() => togglePlaybackPref('autoPlayNext')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.autoPlayNext}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.autoPlayNextDesc}</span>
@@ -711,27 +718,72 @@
           </div>
         </button>
 
-        <!-- Untertitelgröße -->
-        <div class="p-6 border-t border-gray-700/50">
-          <span class="text-2xl text-white font-medium block mb-4">{$t.subtitleSize}</span>
-          <div class="flex gap-3">
-            {#each [['small', $t.sizeSmall], ['normal', $t.sizeNormal], ['large', $t.sizeLarge]] as [val, label]}
-              <button on:click={() => setSubtitleSize(val)}
-                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                       {playbackPrefs.subtitleSize === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                {label}
-              </button>
-            {/each}
+        <!-- Untertitel einbrennen: an = gebrannt (Styling erhalten, aber Transcode + harter Wechsel),
+             aus = VTT-Overlay (weicher Wechsel, kein Transcode, ohne Styling). Grafik-Untertitel brennen immer. -->
+        <button on:click={() => togglePlaybackPref('burnSubtitles')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{$t.burnSubtitles}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{$t.burnSubtitlesDesc}</span>
           </div>
-        </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.burnSubtitles ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.burnSubtitles ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        <!-- Untertitelgröße — nur relevant (und sichtbar), wenn NICHT eingebrannt wird (WebVTT) -->
+        {#if !playbackPrefs.burnSubtitles}
+          <div class="p-6 border-t border-gray-700/50">
+            <span class="text-2xl text-white font-medium block">{$t.subtitleSize}</span>
+            <span class="text-gray-400 mt-1 mb-4 block text-sm">{$t.subtitleSizeDesc}</span>
+            <div class="flex gap-3">
+              {#each [['small', $t.sizeSmall], ['normal', $t.sizeNormal], ['large', $t.sizeLarge]] as [val, label]}
+                <button on:click={() => setSubtitleSize(val)}
+                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {playbackPrefs.subtitleSize === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                  {label}
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+        <!-- Schaust du noch? – Wiedergabe nach Inaktivität pausieren -->
+        <button on:click={() => togglePlaybackPref('stillWatching')}
+          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <div>
+            <span class="text-2xl text-white font-medium block">{$t.stillWatching}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{$t.stillWatchingDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.stillWatching ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.stillWatching ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        {#if playbackPrefs.stillWatching}
+          <div class="p-6 border-t border-gray-700/50">
+            <span class="text-2xl text-white font-medium block">{$t.stillWatchingAfter}</span>
+            <div class="flex gap-3 mt-4">
+              {#each [2, 3, 4] as n}
+                <button on:click={() => setStillWatchingEpisodes(n)}
+                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {(playbackPrefs.stillWatchingEpisodes || 3) === n ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                  {n} {$t.episodes}
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
 
       </div>
     </section>
     {/if}
-
-    <!-- ══════════════════════════════════════════
-         3. SICHERHEIT & GERÄTE (inkl. Schnellwechsel)
-    ══════════════════════════════════════════ -->
     {#if activeCategory === 'security'}
     <section class="flex flex-col gap-4">
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{$t.profileSecurity}</h2>
@@ -779,7 +831,7 @@
         <!-- Kennwort speichern / Schnellwechsel (vormals eigene Kategorie "Profil") -->
         <button on:click={() => dispatch('toggleSave')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.savePasswords}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.fastSwitchDesc}</span>
@@ -796,7 +848,7 @@
         <!-- Passwort ändern -->
         <button on:click={() => openModal('password')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.changePassword}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.changePwDesc}</span>
@@ -811,7 +863,7 @@
         <!-- Quick Connect (Gerät autorisieren) -->
         <button on:click={() => openModal('quickConnect')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.quickConnect}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.qcDesc}</span>
@@ -921,7 +973,7 @@
           {#each audioLangOptions as opt}
             <button on:click={() => setAudioLang(opt.key)}
               class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
-                     focus:outline-none focus:ring-4 focus:ring-white
+                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white
                      {playbackPrefs.audioLanguage === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
               {opt.name}
             </button>
@@ -934,7 +986,7 @@
           {#each subtitleLangOptions as opt}
             <button on:click={() => setSubtitleLang(opt.key)}
               class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
-                     focus:outline-none focus:ring-4 focus:ring-white
+                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white
                      {playbackPrefs.subtitleLanguage === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
               {opt.name}
             </button>

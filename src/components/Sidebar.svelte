@@ -24,6 +24,7 @@
   $: activeNavId =
     viewState === 'dashboard' ? 'dashboard' :
     viewState === 'search'    ? 'search'    :
+    viewState === 'favorites' ? 'favorites' :
     viewState === 'settings'  ? 'settings'  :
     viewState === 'library'   ? 'lib:' + activeLibraryId : '';
 
@@ -141,11 +142,14 @@
   {/if}
 
   <!-- NAV-BUTTONS — activeNavId ist $: reaktiv, Klasse wird korrekt aktualisiert -->
-  <div class="w-full flex flex-col gap-2 px-4">
+  <!-- flex-1 + min-h-0 + overflow-y-auto: bei mehr Einträgen als Platz scrollt die Liste,
+       sodass auch der unterste Eintrag (z. B. Einstellungen) immer erreichbar bleibt. -->
+  <div class="w-full flex-1 min-h-0 overflow-y-auto hide-scrollbar flex flex-col gap-2 px-4 py-1">
     {#each navItems as navItem (navItem.id)}
       <button
         on:click={() => activate(navItem)}
-        class="w-full flex items-center gap-6 p-4 rounded-xl transition-colors focus:outline-none
+        on:focus={(e) => e.currentTarget.scrollIntoView({ block: 'nearest' })}
+        class="w-full flex items-center gap-6 p-4 rounded-xl transition-colors focus:outline-none shrink-0
                {activeNavId === navItem.id
                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 focus:ring-4 focus:ring-white'
                  : 'text-gray-400 hover:bg-gray-800 hover:text-white focus:bg-gray-800 focus:text-white focus:ring-4 focus:ring-white'}"
@@ -163,3 +167,8 @@
 
 </nav>
 </div>
+
+<style>
+  .hide-scrollbar::-webkit-scrollbar { display: none; }
+  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+</style>

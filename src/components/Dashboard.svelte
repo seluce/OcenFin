@@ -270,7 +270,7 @@
 
   // Hero-Backdrop in hoher Auflösung
   function getHeroBackdrop(item) {
-    if (item.BackdropImageTags?.length > 0)
+    if (item?.BackdropImageTags?.length > 0)
       return `${serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=1920&quality=85&format=webp`;
     return null;
   }
