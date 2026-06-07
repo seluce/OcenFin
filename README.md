@@ -9,7 +9,8 @@ So I thought about how to make a better app for us: First, it should be a native
 Now, there is a quick user switch to easily change profiles. If you want, you can save your password (using a token). Then you can jump right into your profile without typing the password again.
 
 ### Features & Summary
-- **Svelte-based:** Very lightweight, supports English and German.
+- **Multi-Language:** Supports English and German until now
+- **Svelte-based:** Very lightweight. No bundled framework required.
 - **Minimalist Design:** Made for WebOS. Focuses on speed for older devices by removing things you don't really need.
 - **Fast User Switching:** Switch between profiles quickly and easily.
 - **Save Passwords:** Save your password as a token for instant login.
