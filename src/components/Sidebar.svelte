@@ -79,7 +79,7 @@
 
   <!-- LOGO + NAME (über dem Profil) — ausblendbar via Einstellung -->
   {#if showLogo}
-  <div class="w-full px-5 mb-8 flex items-center gap-3 select-none">
+  <div class="w-full px-5 mb-5 flex items-center gap-3 select-none">
     <svg viewBox="0 0 512 512" class="w-11 h-11 shrink-0 drop-shadow">
       <rect x="0" y="0" width="512" height="512" rx="118" ry="118" fill="var(--color-blue-600, #2563eb)"/>
       <circle cx="256" cy="256" r="118" fill="none" stroke="#ffffff" stroke-width="64"/>
@@ -93,7 +93,7 @@
   <button
     bind:this={profileButton}
     on:click|stopPropagation={() => showProfileMenu = !showProfileMenu}
-    class="group w-full px-5 mb-12 focus:outline-none flex items-center gap-4 relative"
+    class="group w-full px-5 mb-6 focus:outline-none flex items-center gap-4 relative"
   >
     <div class="w-14 h-14 shrink-0 rounded-full overflow-hidden border-4 border-transparent
                 group-focus:border-blue-500 shadow-md transition-all">
@@ -149,7 +149,7 @@
       <button
         on:click={() => activate(navItem)}
         on:focus={(e) => e.currentTarget.scrollIntoView({ block: 'nearest' })}
-        class="w-full flex items-center gap-6 p-4 rounded-xl transition-colors focus:outline-none shrink-0
+        class="w-full flex items-center gap-6 px-4 py-3.5 rounded-xl transition-colors focus:outline-none shrink-0
                {activeNavId === navItem.id
                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 focus:ring-4 focus:ring-white'
                  : 'text-gray-400 hover:bg-gray-800 hover:text-white focus:bg-gray-800 focus:text-white focus:ring-4 focus:ring-white'}"

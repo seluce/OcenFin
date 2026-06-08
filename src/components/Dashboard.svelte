@@ -16,6 +16,8 @@
   export let recommendationRows   = 1;    // 1 oder 2 Empfehlungs-Reihen
   export let showLatest       = true;    // "Zuletzt hinzugefügt" (Filme + Serien)
   export let showCollections  = true;    // "Sammlungen" (BoxSets)
+  export let sharedSuggestions = [];      // "Für euch beide" — Titel, die zur gemeinsamen Vorliebe passen
+  export let showSharedSuggestions = false; // Reihe anzeigen (nur wenn gemeinsames Profil eingerichtet)
 
   const dispatch = createEventDispatcher();
 
@@ -466,6 +468,34 @@
                   <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
                     <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
                   </div>
+                {/if}
+              </div>
+              <div class="mt-3 flex flex-col w-full overflow-hidden">
+                <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
+                {#if getItemSubtitle(item)}
+                  <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{getItemSubtitle(item)}</span>
+                {/if}
+              </div>
+            </button>
+          {/each}
+        </div>
+      </div>
+    {/if}
+
+    <!-- GEMEINSAME VORSCHLÄGE ("Für euch beide") — nur bei eingerichtetem gemeinsamen Profil -->
+    {#if showSharedSuggestions && sharedSuggestions.length > 0}
+      <div>
+        <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.sharedSuggestions}</h2>
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+          {#each sharedSuggestions as item}
+            <button on:click={() => dispatch('openDetails', item)} use:longPress on:longpress={() => dispatch('openContext', item)}
+              class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
+              <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
+                          border-4 border-transparent group-focus:border-white
+                          transition-colors duration-200 shadow-xl">
+                {#if getItemImageUrl(item)}
+                  <img src={getItemImageUrl(item)} alt={item.Name}
+                    class="w-full h-full object-cover" loading="lazy" />
                 {/if}
               </div>
               <div class="mt-3 flex flex-col w-full overflow-hidden">

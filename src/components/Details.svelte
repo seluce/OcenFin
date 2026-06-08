@@ -1,7 +1,7 @@
 <script>
   import { t, LANGUAGES } from '../i18n.js';
   import { isBackKey, focusOnMount, personImageUrl, itemProgress } from '../utils.js';
-  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
 
   export let item;
@@ -11,6 +11,7 @@
   export let reduceAnimations = false;   // Backdrop bei aktivem Sparmodus weglassen
   export let playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default' };
   export let use24h = true;   // Zeitformat für den „Endet um"-Chip (folgt der Einstellung)
+  export let spoilerProtection = true;   // ungesehene Folgen-Thumbnails leicht verschleiern
 
   const dispatch = createEventDispatcher();
 
@@ -67,9 +68,16 @@
   let openDropdown = null;     // 'resolution' | 'audio' | 'subtitle'
   let openTrigger  = null;     // Auslöser-Button (Fokus kehrt beim Schließen dorthin zurück)
 
-  function toggleDropdown(key, e) {
-    if (openDropdown === key) { openDropdown = null; openTrigger = null; }
-    else { openDropdown = key; openTrigger = e.currentTarget; }
+  async function toggleDropdown(key, e) {
+    if (openDropdown === key) { openDropdown = null; openTrigger = null; return; }
+    openDropdown = key;
+    openTrigger  = e.currentTarget;
+    // Fokus auf das aktive (blau hinterlegte) Element legen, sonst auf die erste Option —
+    // intuitiver, als jedes Mal ganz oben zu starten.
+    const panel = e.currentTarget.closest('[data-dropdown]');
+    await tick();
+    const active = panel?.querySelector('[data-opt][data-active="true"]');
+    (active || panel?.querySelector('[data-opt]'))?.focus();
   }
   function closeDropdown(refocus = true) {
     const t = openTrigger;
@@ -157,14 +165,28 @@
   }
 
   // Wie Jellyfin im Standardmodus: erzwungenen ("Forced") Untertitel in der Sprache der
-  // gewählten Audiospur einblenden (für fremdsprachige Dialoge/Schilder). Sonst Server-Default.
+  // gewählten Audiospur einblenden. Automatisch wählbar sind: TEXT (VTT) und PGS (libpgs, sofern
+  // aktiviert) → ohne Transcode. BILD-Untertitel ohne Client-Renderer (DVDSUB …) nur, wenn die
+  // Option dafür an ist (dann bewusst mit Transcode). Sonst aus → Direct Play bleibt.
+  const GRAPHIC_SUB_CODECS = ['pgssub', 'pgs', 'dvdsub', 'dvbsub', 'vobsub', 'sub'];
+  function isGraphicSub(s) { return GRAPHIC_SUB_CODECS.includes((s?.Codec || '').toLowerCase()); }
+  function subtitleAutoEligible(s) {
+    if (!isGraphicSub(s)) return true;                                  // Text → immer
+    const codec = (s?.Codec || '').toLowerCase();
+    if (['pgssub', 'pgs'].includes(codec)) return playbackPrefs.pgsRendering !== false;   // PGS → wenn Rendering an
+    return !!playbackPrefs.forcedGraphicSubs;                           // DVDSUB & Co. → nur per Option
+  }
   function pickForcedSubtitle(streams, audioIndex, serverDefault) {
     const audioLang = streams.find(s => s.Type === 'Audio' && s.Index === audioIndex)?.Language?.toLowerCase();
     const subs = streams.filter(s => s.Type === 'Subtitle');
-    const pick = subs.find(s => s.IsForced && audioLang && s.Language?.toLowerCase() === audioLang)
-              ?? subs.find(s => s.IsForced);
+    const pick = subs.find(s => s.IsForced && subtitleAutoEligible(s) && audioLang && s.Language?.toLowerCase() === audioLang)
+              ?? subs.find(s => s.IsForced && subtitleAutoEligible(s));
     if (pick) return pick.Index;
-    return serverDefault != null ? serverDefault : -1;
+    if (serverDefault != null) {
+      const def = subs.find(s => s.Index === serverDefault);
+      if (def && subtitleAutoEligible(def)) return serverDefault;
+    }
+    return -1;
   }
 
   function closeTrailer() {
@@ -202,7 +224,12 @@
         }
 
         // Parallel laden
-        loadSimilarItems(itemId);
+        // "Ähnliches" für Staffel/Episode über die SERIE abfragen (sonst liefert der Server
+        // ähnliche Staffeln verschiedener Serien). Bei einer Serie direkt deren ID.
+        const similarId = (fullItem.Type === 'Season' || fullItem.Type === 'Episode')
+          ? (fullItem.SeriesId || itemId)
+          : itemId;
+        loadSimilarItems(similarId);
         if (fullItem.Type === 'Episode' && fullItem.SeasonId) {
           loadRelatedItems(fullItem.SeasonId);
         } else if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
@@ -328,6 +355,16 @@
 
   function getRuntimeMinutes(ticks) {
     return !ticks ? "" : Math.round(ticks / 10000000 / 60) + ` ${$t.mins}`;
+  }
+
+  // Spoilerschutz: ungesehene Folgen leicht verschleiern. Ausgenommen sind Staffeln (Poster),
+  // bereits begonnene, gesehene und als Favorit markierte Folgen.
+  function epSpoiler(ep) {
+    return spoilerProtection
+      && ep?.Type === 'Episode'
+      && !ep.UserData?.Played
+      && !(ep.UserData?.PlaybackPositionTicks > 0)
+      && !ep.UserData?.IsFavorite;
   }
 
   function getMediaStreams(type) {
@@ -515,7 +552,7 @@
                     {#if openDropdown === 'resolution'}
                       <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
                         {#each fullItem.MediaSources as src}
-                          <button on:click={() => { selectedMediaSourceId = src.Id; onSourceChange(); closeDropdown(); }}
+                          <button on:click={() => { selectedMediaSourceId = src.Id; onSourceChange(); closeDropdown(); }} data-opt data-active={src.Id === selectedMediaSourceId || undefined}
                             class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {src.Id === selectedMediaSourceId ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                             {sourceLabel(src)}
                           </button>
@@ -550,7 +587,7 @@
                     {#if openDropdown === 'audio'}
                       <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
                         {#each getMediaStreams('Audio') as stream}
-                          <button on:click={() => { selectedAudioIndex = stream.Index; closeDropdown(); }}
+                          <button on:click={() => { selectedAudioIndex = stream.Index; closeDropdown(); }} data-opt data-active={stream.Index === selectedAudioIndex || undefined}
                             class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedAudioIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                             {audioLabel(stream)}
                           </button>
@@ -582,12 +619,12 @@
                     </button>
                     {#if openDropdown === 'subtitle'}
                       <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
-                        <button on:click={() => { selectedSubtitleIndex = -1; closeDropdown(); }}
+                        <button on:click={() => { selectedSubtitleIndex = -1; closeDropdown(); }} data-opt data-active={selectedSubtitleIndex === -1 || undefined}
                           class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {selectedSubtitleIndex === -1 ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                           {$t.subtitleOff}
                         </button>
                         {#each getMediaStreams('Subtitle') as stream}
-                          <button on:click={() => { selectedSubtitleIndex = stream.Index; closeDropdown(); }}
+                          <button on:click={() => { selectedSubtitleIndex = stream.Index; closeDropdown(); }} data-opt data-active={stream.Index === selectedSubtitleIndex || undefined}
                             class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedSubtitleIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                             {subtitleLabel(stream)}
                           </button>
@@ -626,7 +663,8 @@
                 class="shrink-0 group flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
                 <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 transition-all shadow-xl relative">
                   {#if getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')}
-                    <img src={getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')} alt={ep.Name} class="w-full h-full object-cover" loading="lazy" />
+                    <img src={getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')} alt={ep.Name} loading="lazy"
+                      class="w-full h-full object-cover transition-all duration-200 {epSpoiler(ep) ? 'blur-md scale-110' : ''}" />
                   {/if}
                   {#if itemProgress(ep) > 0}
                     <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">

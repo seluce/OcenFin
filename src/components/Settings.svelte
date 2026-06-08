@@ -14,6 +14,12 @@
   export let displaySettings     = { clock: true, hero: true, episodeCount: true };
   export let playbackPrefs       = { audioLanguage: 'default', subtitleLanguage: 'default', subtitleSize: 'normal' };
   export let libraries           = [];   // echte Mediatheken (für den Navigations-Editor)
+  export let publicUsers         = [];   // wählbare Profile (öffentliche Liste vom Server)
+  export let sharedProfile       = { enabled: false, members: [] };
+  export let sharedTokens        = {};   // eigener Token-Speicher fürs gemeinsame Schauen
+  export let onSharedToggle      = () => {};
+  export let onSharedSetMember   = async () => 'error';   // (slot, user, pw) → 'ok'|'needPassword'|'error'
+  export let onSharedRemoveMember = () => {};
 
   let showDisplayOptions = false;   // Unterpunkt ein-/ausklappen
 
@@ -57,7 +63,7 @@
   }
 
   // Version: YYYYMMDD — bei Updates hier anpassen
-  const APP_VERSION = '20260606';
+  const APP_VERSION = '20260608';
 
   const dispatch = createEventDispatcher();
 
@@ -73,6 +79,14 @@
   let qcCode       = '';
   let qcMessage    = '';
   let modalTimeout = null;  // für Memory-Leak-freies setTimeout
+
+  // Gemeinsames Schauen — Picker-Zustand
+  let sharedPickerSlot = null;   // 0 | 1 (welcher Steckplatz wird gefüllt)
+  let sharedPickerUser = null;   // gewähltes Profil (Passwort-Schritt)
+  let sharedPw    = '';
+  let sharedBusy  = false;
+  let sharedError = '';
+  $: sharedMembers = [0, 1].map(i => sharedProfile.members?.[i] || null);
 
   $: timeoutOptions = [
     { label: `1 ${$t.minuteShort}`,  value: 60  },
@@ -102,6 +116,36 @@
   function closeModal() {
     if (modalTimeout) clearTimeout(modalTimeout);
     activeModal = null;
+  }
+
+  // ── Gemeinsames Schauen ────────────────────────────────────────────────────
+  // Wählbar: nicht das eigene (Gemeinsam-)Profil, nicht das im anderen Steckplatz.
+  function pickableUsers(slot) {
+    const otherId = sharedMembers[slot === 0 ? 1 : 0]?.id;
+    return publicUsers.filter(u => u.Id !== selectedUser?.Id && u.Id !== otherId);
+  }
+  async function openSharedPicker(slot) {
+    sharedPickerSlot = slot; sharedPickerUser = null; sharedPw = ''; sharedError = '';
+    await openModal('sharedPicker');
+  }
+  async function chooseSharedUser(user) {
+    sharedError = '';
+    const sid = selectedServer?.id;
+    const hasToken = !!(sharedTokens[sid]?.[user.Id] || savedTokens[sid]?.[user.Id]);
+    if (user.HasPassword && !hasToken) {        // Passwort nötig → Eingabeschritt
+      sharedPickerUser = user; sharedPw = '';
+      await openModal('sharedPassword');
+      return;
+    }
+    await commitSharedUser(user, '');           // sonst sofort (vorhandener Token / kein Passwort)
+  }
+  async function commitSharedUser(user, pw) {
+    sharedBusy = true;
+    const r = await onSharedSetMember(sharedPickerSlot, user, pw);
+    sharedBusy = false;
+    if (r === 'ok')                 closeModal();
+    else if (r === 'needPassword')  { sharedPickerUser = user; await openModal('sharedPassword'); }
+    else                            sharedError = $t.errLogin;
   }
 
   function setLanguage(lang) {
@@ -234,6 +278,10 @@
   let avatarSaving = false;
   let avatarSaved  = false;                // kurzer Bestätigungshinweis nach dem Hochladen
   let hasEditedAvatar = false;             // false → Vorschau zeigt das echte aktuelle Profilbild
+  let avatarModalOpen = false;             // „Anpassen"-Modal (Icon + Farbe wählen)
+  function onAvatarModalKey(e) {
+    if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); avatarModalOpen = false; }
+  }
   // Effektive Werte nur fürs Rendern/Hochladen (Fallback auf Standard), Markierung bleibt an den Rohwerten.
   $: effectiveIcon  = avatarIcon  || AVATAR_ICON_KEYS[0];
   $: effectiveColor = avatarColor || AVATAR_COLORS[0];
@@ -242,6 +290,7 @@
   $: if (activeCategory !== 'security' && hasEditedAvatar) {
     hasEditedAvatar = false; avatarIcon = null; avatarColor = null;
   }
+  $: if (activeCategory !== 'security' && avatarModalOpen) avatarModalOpen = false;
 
   async function saveProfileImage() {
     if (avatarSaving) return;
@@ -288,11 +337,13 @@
   ];
 
   // Anzeige-Elemente gruppiert: Startseiten-Zeilen vs. allgemeine Oberfläche
+  $: sharedSetUp = sharedProfile.enabled && sharedProfile.members.filter(m => m && m.id).length >= 1;
   $: homeToggles = [
     { key: 'hero',            label: $t.displayHero },
     { key: 'libraries',       label: $t.displayLibraries },
     { key: 'nextUp',          label: $t.nextUp },
     { key: 'history',         label: $t.displayHistory },
+    ...(sharedSetUp ? [{ key: 'sharedSuggestions', label: $t.sharedSuggestions }] : []),
     { key: 'recommendations', label: $t.displayRecommendations },
     { key: 'latest',          label: $t.displayLatest },
     { key: 'collections',     label: $t.collections },
@@ -302,7 +353,7 @@
     { key: 'clock',           label: $t.displayClock },
     { key: 'episodeCount',    label: $t.displayEpisodeCount },
     { key: 'backdropPreview', label: $t.displayBackdropPreview },
-    { key: 'showChapters',    label: $t.displayChapters },
+    { key: 'spoilerProtection', label: $t.spoilerProtection },
   ];
 
   // Zwei-Spalten-Navigation: Kategorie links wählen, Inhalt rechts (kein langes Scrollen)
@@ -314,6 +365,7 @@
     { id: 'navigation', label: $t.settingsNavigation, icon: 'M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z' },
     { id: 'oled',       label: $t.screensaverSection, icon: 'M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
     { id: 'playback',   label: $t.playback,           icon: 'M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z' },
+    { id: 'subtitles',  label: $t.subtitles,          icon: 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z' },
     { id: 'security',   label: $t.profileSecurity,    icon: 'M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z' },
     { id: 'account',    label: $t.settingsAccount,    icon: 'M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.7 5.1a3.375 3.375 0 012.7-1.35h7.13c1.06 0 2.06.5 2.7 1.35l2.59 3.45a4.5 4.5 0 01.9 2.7' },
   ];
@@ -565,7 +617,7 @@
                 <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
-            <div bind:this={iconGridEl} class="grid grid-cols-4 gap-3">
+            <div bind:this={iconGridEl} class="grid grid-cols-5 gap-3 max-h-[58vh] overflow-y-auto hide-scrollbar p-2">
               {#each NAV_ICON_KEYS as key}
                 <button on:click={() => pickIcon(key)}
                   class="aspect-square flex items-center justify-center rounded-xl bg-gray-700 hover:bg-gray-600 focus:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
@@ -644,16 +696,6 @@
 
         <div class="h-px bg-gray-700"></div>
 
-        <!-- Standard-Untertitel -->
-        <button on:click={() => openModal('subtitleLang')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <span class="text-2xl text-white font-medium">{$t.subtitleLanguage}</span>
-          <span class="text-xl font-bold text-gray-300">{subtitleLangName}</span>
-        </button>
-
-        <div class="h-px bg-gray-700"></div>
-
         <!-- Sprungweite der Vor-/Zurück-Buttons (gestapelt + flex-1, damit per D-Pad erreichbar) -->
         <div class="p-6">
           <span class="text-2xl text-white font-medium block">{$t.seekInterval}</span>
@@ -668,6 +710,20 @@
             {/each}
           </div>
         </div>
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Kapitelmarken im Player anzeigen (Player-Anzeige-Element → gehört zur Wiedergabe) -->
+        <button on:click={() => toggleDisplay('showChapters')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <span class="text-2xl text-white font-medium">{$t.displayChapters}</span>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {displaySettings.showChapters ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {displaySettings.showChapters ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
 
         <div class="h-px bg-gray-700"></div>
 
@@ -718,39 +774,6 @@
           </div>
         </button>
 
-        <!-- Untertitel einbrennen: an = gebrannt (Styling erhalten, aber Transcode + harter Wechsel),
-             aus = VTT-Overlay (weicher Wechsel, kein Transcode, ohne Styling). Grafik-Untertitel brennen immer. -->
-        <button on:click={() => togglePlaybackPref('burnSubtitles')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{$t.burnSubtitles}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{$t.burnSubtitlesDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.burnSubtitles ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.burnSubtitles ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
-
-        <!-- Untertitelgröße — nur relevant (und sichtbar), wenn NICHT eingebrannt wird (WebVTT) -->
-        {#if !playbackPrefs.burnSubtitles}
-          <div class="p-6 border-t border-gray-700/50">
-            <span class="text-2xl text-white font-medium block">{$t.subtitleSize}</span>
-            <span class="text-gray-400 mt-1 mb-4 block text-sm">{$t.subtitleSizeDesc}</span>
-            <div class="flex gap-3">
-              {#each [['small', $t.sizeSmall], ['normal', $t.sizeNormal], ['large', $t.sizeLarge]] as [val, label]}
-                <button on:click={() => setSubtitleSize(val)}
-                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                         {playbackPrefs.subtitleSize === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                  {label}
-                </button>
-              {/each}
-            </div>
-          </div>
-        {/if}
-
         <!-- Schaust du noch? – Wiedergabe nach Inaktivität pausieren -->
         <button on:click={() => togglePlaybackPref('stillWatching')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
@@ -784,6 +807,86 @@
       </div>
     </section>
     {/if}
+
+    {#if activeCategory === 'subtitles'}
+    <section class="flex flex-col gap-4">
+      <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{$t.subtitles}</h2>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+
+        <!-- Standard-Untertitel: welche Spur automatisch gewählt wird -->
+        <button on:click={() => openModal('subtitleLang')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl">
+          <span class="text-2xl text-white font-medium">{$t.subtitleLanguage}</span>
+          <span class="text-xl font-bold text-gray-300">{subtitleLangName}</span>
+        </button>
+
+        <!-- Erzwungene/Standard-BILD-Untertitel (DVDSUB) automatisch wählen — braucht Transcode (kein Direct Play).
+             Text- und PGS-Untertitel werden ohnehin ohne Transcode automatisch gewählt. -->
+        <button on:click={() => togglePlaybackPref('forcedGraphicSubs')}
+          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <div>
+            <span class="text-2xl text-white font-medium block">{$t.forcedGraphicSubs}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{$t.forcedGraphicSubsDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.forcedGraphicSubs ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.forcedGraphicSubs ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        <!-- Untertitel einbrennen -->
+        <button on:click={() => togglePlaybackPref('burnSubtitles')}
+          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <div>
+            <span class="text-2xl text-white font-medium block">{$t.burnSubtitles}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{$t.burnSubtitlesDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.burnSubtitles ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.burnSubtitles ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        <!-- PGS-Rendering + Untertitelgröße sind irrelevant, wenn alles eingebrannt wird → dann ausblenden -->
+        {#if !playbackPrefs.burnSubtitles}
+          <button on:click={() => togglePlaybackPref('pgsRendering')}
+            class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
+                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+            <div>
+              <span class="text-2xl text-white font-medium block">{$t.pgsRendering}</span>
+              <span class="text-gray-400 mt-1 block text-sm">{$t.pgsRenderingDesc}</span>
+            </div>
+            <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                        {playbackPrefs.pgsRendering ? 'bg-blue-500' : 'bg-gray-600'}">
+              <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                          {playbackPrefs.pgsRendering ? 'translate-x-8' : ''}"></div>
+            </div>
+          </button>
+
+          <div class="p-6 border-t border-gray-700/50">
+            <span class="text-2xl text-white font-medium block">{$t.subtitleSize}</span>
+            <span class="text-gray-400 mt-1 mb-4 block text-sm">{$t.subtitleSizeDesc}</span>
+            <div class="flex gap-3">
+              {#each [['small', $t.sizeSmall], ['normal', $t.sizeNormal], ['large', $t.sizeLarge]] as [val, label]}
+                <button on:click={() => setSubtitleSize(val)}
+                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {playbackPrefs.subtitleSize === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                  {label}
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+      </div>
+    </section>
+    {/if}
+
     {#if activeCategory === 'security'}
     <section class="flex flex-col gap-4">
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{$t.profileSecurity}</h2>
@@ -802,29 +905,64 @@
             <span class="text-2xl text-white font-medium block">{$t.profilePicture}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.profilePictureHint}</span>
           </div>
-          <button on:click={saveProfileImage} disabled={avatarSaving || !hasEditedAvatar}
-            class="px-6 py-3 rounded-xl font-bold text-base shrink-0 focus:outline-none focus:ring-4 focus:ring-white transition-colors
-                   {avatarSaved ? 'bg-green-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50'}">
-            {avatarSaved ? $t.saved : avatarSaving ? $t.saving : $t.save}
-          </button>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          {#each AVATAR_ICON_KEYS as key}
-            <button on:click={() => { avatarIcon = key; hasEditedAvatar = true; }}
-              class="w-14 h-14 rounded-xl flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-white transition-all
-                     {avatarIcon === key ? 'bg-gray-600 ring-2 ring-blue-400' : 'bg-gray-700 hover:bg-gray-600'}">
-              <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[key]}/></svg>
+          <div class="flex gap-3 shrink-0">
+            <button on:click={() => avatarModalOpen = true}
+              class="px-5 py-3 rounded-xl font-bold text-base bg-gray-700 text-white hover:bg-gray-600 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+              {$t.customize}
             </button>
-          {/each}
-        </div>
-        <div class="flex flex-wrap gap-2">
-          {#each AVATAR_COLORS as color}
-            <button on:click={() => { avatarColor = color; hasEditedAvatar = true; }}
-              class="w-10 h-10 rounded-full focus:outline-none focus:ring-4 focus:ring-white transition-all {avatarColor === color ? 'ring-2 ring-white scale-110' : ''}"
-              style="background:{color}" aria-label="Farbe"></button>
-          {/each}
+            <button on:click={saveProfileImage} disabled={avatarSaving || !hasEditedAvatar}
+              class="px-6 py-3 rounded-xl font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-colors
+                     {avatarSaved ? 'bg-green-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50'}">
+              {avatarSaved ? $t.saved : avatarSaving ? $t.saving : $t.save}
+            </button>
+          </div>
         </div>
       </div>
+
+      <!-- „Anpassen"-Modal: Live-Vorschau + Icon-Raster + Farb-Swatches (Padding p-2 → Fokus-Ringe am Rand nicht abgeschnitten) -->
+      {#if avatarModalOpen}
+        <div class="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-8"
+             data-focus-trap on:keydown={onAvatarModalKey} role="dialog" tabindex="-1">
+          <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-2xl max-w-2xl w-full flex flex-col gap-5">
+            <div class="flex justify-between items-center">
+              <h3 class="text-2xl font-bold text-white">{$t.profilePicture}</h3>
+              <button on:click={() => avatarModalOpen = false} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <!-- Live-Vorschau -->
+            <div class="flex justify-center">
+              <div class="w-24 h-24 rounded-full flex items-center justify-center shadow-md" style="background:{effectiveColor}">
+                <svg class="w-12 h-12 text-white" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[effectiveIcon]}/></svg>
+              </div>
+            </div>
+            <!-- Icons links (volle 6er-Reihen) · Farben rechts als schmale 2er-Spalte → per D-Pad
+                 mit einem Rechts-Druck erreichbar, ohne durch alle Icon-Reihen zu navigieren. -->
+            <div class="flex gap-5 items-start">
+              <div class="grid grid-cols-6 gap-3 flex-1 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 content-start">
+                {#each AVATAR_ICON_KEYS as key}
+                  <button on:click={() => { avatarIcon = key; hasEditedAvatar = true; }}
+                    class="aspect-square flex items-center justify-center rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-all
+                           {effectiveIcon === key ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}">
+                    <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[key]}/></svg>
+                  </button>
+                {/each}
+              </div>
+              <div class="grid grid-cols-2 gap-2.5 shrink-0 p-2 content-start">
+                {#each AVATAR_COLORS as color}
+                  <button on:click={() => { avatarColor = color; hasEditedAvatar = true; }}
+                    class="w-10 h-10 rounded-full focus:outline-none focus:ring-4 focus:ring-white transition-all {effectiveColor === color ? 'ring-2 ring-white scale-110' : ''}"
+                    style="background:{color}" aria-label={$t.customize}></button>
+                {/each}
+              </div>
+            </div>
+            <button on:click={() => avatarModalOpen = false}
+              class="w-full py-3 rounded-xl font-bold text-base bg-blue-600 text-white hover:bg-blue-500 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+              {$t.close}
+            </button>
+          </div>
+        </div>
+      {/if}
 
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
@@ -873,6 +1011,59 @@
           </svg>
         </button>
 
+      </div>
+
+      <!-- Gemeinsames Schauen: zwei Profile zusammenführen -->
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+        <button on:click={onSharedToggle}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <div>
+            <span class="text-2xl text-white font-medium block">{$t.sharedWatching}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{$t.sharedWatchingDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {sharedProfile.enabled ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {sharedProfile.enabled ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        {#if sharedProfile.enabled}
+          <div class="h-px bg-gray-700"></div>
+          <div class="p-6 flex flex-col gap-4">
+            <span class="text-gray-400 text-sm">{$t.sharedWatchingPick}</span>
+            <div class="grid grid-cols-2 gap-4">
+              {#each [0, 1] as slot}
+                {@const m = sharedMembers[slot]}
+                <div class="bg-gray-900/60 border border-gray-700 rounded-xl p-4 flex flex-col items-center justify-center gap-2 min-h-[8rem]">
+                  {#if m}
+                    <span class="text-white font-bold text-lg text-center break-words">{m.name}</span>
+                    {#if sharedTokens[selectedServer?.id]?.[m.id] || savedTokens[selectedServer?.id]?.[m.id]}
+                      <span class="text-green-400 text-xs font-bold">{$t.sharedMemberReady}</span>
+                    {:else}
+                      <span class="text-amber-400 text-xs font-bold">{$t.sharedNeedsLogin}</span>
+                    {/if}
+                    <button on:click={() => onSharedRemoveMember(slot)}
+                      class="mt-1 text-red-400 hover:text-red-300 focus:text-red-300 text-sm font-bold
+                             focus:outline-none focus:ring-2 focus:ring-white rounded px-3 py-1.5">
+                      {$t.remove}
+                    </button>
+                  {:else}
+                    <button on:click={() => openSharedPicker(slot)}
+                      class="flex flex-col items-center gap-2 text-gray-400 hover:text-white focus:text-white
+                             focus:outline-none focus:ring-4 focus:ring-white rounded-lg px-4 py-3">
+                      <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+                      </svg>
+                      <span class="text-sm font-bold">{$t.selectProfile}</span>
+                    </button>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
       </div>
     </section>
     {/if}
@@ -1021,6 +1212,34 @@
         <button on:click={authorizeQuickConnect}
           class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-2xl py-6 rounded-xl
                  focus:outline-none focus:ring-4 focus:ring-white mt-2">{$t.qcAuthorizeBtn}</button>
+
+      {:else if activeModal === 'sharedPicker'}
+        <h2 class="text-4xl text-white font-bold mb-2">{$t.selectProfile}</h2>
+        <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
+          {#each pickableUsers(sharedPickerSlot) as u (u.Id)}
+            <button on:click={() => chooseSharedUser(u)}
+              class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
+                     bg-gray-900 hover:bg-blue-600 focus:bg-blue-600
+                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white">
+              {u.Name}
+            </button>
+          {:else}
+            <p class="text-gray-400 text-lg p-4">{$t.noProfiles}</p>
+          {/each}
+        </div>
+        {#if sharedError}<p class="text-red-400 font-bold">{sharedError}</p>{/if}
+
+      {:else if activeModal === 'sharedPassword'}
+        <h2 class="text-4xl text-white font-bold mb-2">{sharedPickerUser?.Name}</h2>
+        <input type="password" bind:value={sharedPw} placeholder={$t.password}
+          use:tvKeyboard
+          on:keydown={(e) => e.key === 'Enter' && commitSharedUser(sharedPickerUser, sharedPw)}
+          class="w-full bg-gray-900 text-white text-2xl p-6 rounded-xl border border-gray-600
+                 focus:outline-none focus:ring-4 focus:ring-blue-500" />
+        {#if sharedError}<p class="text-red-400 font-bold text-lg">{sharedError}</p>{/if}
+        <button on:click={() => commitSharedUser(sharedPickerUser, sharedPw)} disabled={sharedBusy}
+          class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-2xl py-6 rounded-xl
+                 focus:outline-none focus:ring-4 focus:ring-white mt-2 disabled:opacity-50">{$t.confirm}</button>
       {/if}
 
       <button on:click={closeModal}

@@ -21,11 +21,24 @@ function authHeader(token) {
 //    läuft, aber kein Ton). Server macht dann einen leichten reinen Audio-Transcode.
 //  • Transkodier-Ziel: HLS (TS/H.264/AAC) — über hls.js universell abspielbar.
 //  • Untertitel: VTT/SRT extern (als Spur), ASS/SSA/PGS/VOBSUB werden ins Bild gebrannt.
-export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false) {
+export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false, pgsClientRender = false) {
   // Textuntertitel (SubRip/ASS): bei burnSubtitles=true ins Bild brennen (mit Styling, aber
   // Transcode + harter Wechsel), sonst extern als VTT liefern → eigener Overlay-Renderer
   // (kein Styling, dafür Direct Play + weicher Wechsel). Grafik-Untertitel immer brennen.
   const textSub = burnSubtitles ? 'Encode' : 'External';
+  // PGS (Blu-ray-Bild-Untertitel): wenn der Client sie selbst rendert (libpgs), als External
+  // liefern → kein Transcode. Sonst brennen. DVDSUB hat keinen Client-Renderer → immer brennen.
+  const pgsSub = pgsClientRender ? 'External' : 'Encode';
+
+  // Läuft die App auf dem echten TV (webOS)? Dort dekodiert die Media-Pipeline auch DTS und
+  // Dolby TrueHD/Atmos → in Direct Play erlauben, damit der Server NICHT unnötig transkodiert.
+  // Im Browser-Dev (Firefox/Linux) bleibt es bei sicher dekodierbaren Codecs (sonst Bild ohne Ton).
+  const isWebOS = (typeof window !== 'undefined' && !!window.webOSSystem)
+               || (typeof navigator !== 'undefined' && /web0s|webos/i.test(navigator.userAgent || ''));
+  const tvAudio  = isWebOS ? ',dts,truehd' : '';
+  const baseAudio = `aac,mp3,ac3,eac3,flac,alac,opus,vorbis,pcm${tvAudio}`;
+  const tsAudio   = `aac,mp3,ac3,eac3${isWebOS ? ',dts' : ''}`;
+
   return {
     MaxStreamingBitrate: maxBitrate,
     MaxStaticBitrate: maxBitrate,
@@ -33,10 +46,10 @@ export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false
 
     DirectPlayProfiles: [
       // Video — der B4 dekodiert H.264, HEVC (inkl. HDR10/HLG/HDR10+/Dolby Vision),
-      // VP9 und AV1 in Hardware. AC3/EAC3 dekodiert webOS direkt; FLAC/ALAC/PCM ebenso.
-      { Container: 'mp4,m4v,mov',     Type: 'Video', VideoCodec: 'h264,hevc,vp9,av1', AudioCodec: 'aac,mp3,ac3,eac3,flac,alac,opus,vorbis,pcm' },
-      { Container: 'mkv',             Type: 'Video', VideoCodec: 'h264,hevc,vp9,av1', AudioCodec: 'aac,mp3,ac3,eac3,flac,alac,opus,vorbis,pcm' },
-      { Container: 'ts,m2ts,mpegts',  Type: 'Video', VideoCodec: 'h264,hevc',        AudioCodec: 'aac,mp3,ac3,eac3' },
+      // VP9 und AV1 in Hardware. AC3/EAC3/FLAC/ALAC/PCM überall; DTS/TrueHD nur auf dem TV.
+      { Container: 'mp4,m4v,mov',     Type: 'Video', VideoCodec: 'h264,hevc,vp9,av1', AudioCodec: baseAudio },
+      { Container: 'mkv',             Type: 'Video', VideoCodec: 'h264,hevc,vp9,av1', AudioCodec: baseAudio },
+      { Container: 'ts,m2ts,mpegts',  Type: 'Video', VideoCodec: 'h264,hevc',        AudioCodec: tsAudio },
       { Container: 'webm',            Type: 'Video', VideoCodec: 'vp9,av1',          AudioCodec: 'opus,vorbis' },
       { Container: 'mp3', Type: 'Audio' },
       { Container: 'aac', Type: 'Audio' },
@@ -76,9 +89,9 @@ export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false
       { Format: 'mov_text', Method: textSub },
       { Format: 'ass',      Method: textSub },   // gestylt: extern → Overlay ohne Styling, Encode → gebrannt mit Styling
       { Format: 'ssa',      Method: textSub },
-      { Format: 'pgssub',   Method: 'Encode'   }, // Grafik-Untertitel → immer brennen (kein VTT möglich)
+      { Format: 'pgssub',   Method: pgsSub     }, // Blu-ray-Bild-Untertitel → libpgs rendert clientseitig (External) oder brennen
       { Format: 'dvdsub',   Method: 'Encode'   },
-      { Format: 'pgs',      Method: 'Encode'   },
+      { Format: 'pgs',      Method: pgsSub     },
     ],
   };
 }
@@ -91,7 +104,7 @@ export async function getPlaybackInfo({
   audioStreamIndex = null, subtitleStreamIndex = null,
   maxBitrate = 120000000, startTicks = 0,
   enableDirectPlay = true, enableDirectStream = true, allowAudioStreamCopy = true,
-  burnSubtitles = false, mediaSourceId = null,
+  burnSubtitles = false, mediaSourceId = null, pgsClientRender = false,
 }) {
   // WICHTIG: Jellyfin liest AudioStreamIndex/SubtitleStreamIndex und die Enable*-Flags
   // aus dem QUERY-STRING (nur das DeviceProfile gehört in den Body). Genau so macht es
@@ -114,7 +127,7 @@ export async function getPlaybackInfo({
   // Body: DeviceProfile (Pflicht) + dieselben Felder zur Sicherheit (manche Versionen lesen sie hier).
   const body = {
     UserId: userId,
-    DeviceProfile: buildDeviceProfile(maxBitrate, burnSubtitles),
+    DeviceProfile: buildDeviceProfile(maxBitrate, burnSubtitles, pgsClientRender),
     MaxStreamingBitrate: maxBitrate,
     StartTimeTicks: startTicks,
     EnableDirectPlay: enableDirectPlay,
@@ -175,7 +188,7 @@ const _pfCache = new Map();   // itemId → { ts, key, promise }
 const _PF_TTL  = 25000;       // ~25 s gültig (so lange bleibt auch eine Transcode-Session offen)
 
 function _pfKey(p) {
-  return [p.itemId, p.audioStreamIndex ?? -1, p.subtitleStreamIndex ?? -1, !!p.burnSubtitles, p.mediaSourceId || ''].join('|');
+  return [p.itemId, p.audioStreamIndex ?? -1, p.subtitleStreamIndex ?? -1, !!p.burnSubtitles, p.mediaSourceId || '', !!p.pgsClientRender].join('|');
 }
 
 export function prefetchPlaybackInfo(params) {
@@ -240,4 +253,16 @@ export function externalSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, 
   // IMMER als WebVTT anfordern: unser Overlay-Renderer parst nur VTT, und stream.DeliveryUrl
   // zeigt häufig auf das Quellformat (.subrip/.srt). Jellyfin konvertiert hier on-the-fly.
   return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.vtt?api_key=${token}`;
+}
+
+// Liefert die rohe PGS-Untertitel-URL (.sup) für libpgs. Bevorzugt die vom Server berechnete
+// DeliveryUrl (richtiges Format), sonst der Standard-Stream-Endpunkt als .sup.
+export function pgsSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, token }) {
+  if (!stream) return null;
+  if (stream.DeliveryUrl) {
+    const u = stream.DeliveryUrl;
+    if (/^https?:/i.test(u)) return u;
+    return `${serverUrl}${u}${u.includes('api_key') ? '' : (u.includes('?') ? '&' : '?') + 'api_key=' + token}`;
+  }
+  return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.sup?api_key=${token}`;
 }

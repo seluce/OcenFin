@@ -13,6 +13,8 @@
   import ContextMenu from './components/ContextMenu.svelte';
   import Search      from './components/Search.svelte';
   import Settings    from './components/Settings.svelte';
+  import SyncPlayModal from './components/SyncPlay.svelte';
+  import { registerSession, listSyncGroups, createSyncGroup, joinSyncGroup, leaveSyncGroup, syncSocketUrl, setSyncIgnoreWait } from './syncplay.js';
 
   // ============================================================
   // APP PHASE
@@ -53,7 +55,8 @@
   let selectedUser     = null;
   let isLoggedIn       = false;
   let activeToken      = '';
-  let savedTokens      = {};  // { serverId: { userId: token } }
+  let savedTokens      = {};  // { serverId: { userId: token } } — Schnellwechsel (nur über Profil-Schalter)
+  let sharedTokens     = {};  // { serverId: { userId: token } } — gemeinsames Schauen, GETRENNT vom Schnellwechsel
 
   // Login-Unteransichten
   let showPasswordForm  = false;  // Passwort für ausgewähltes Profil
@@ -70,6 +73,7 @@
 
   const CLIENT_AUTH_HEADER =
     'MediaBrowser Client="OcenFin-TV", Device="LG Smart TV", DeviceId="oceonfin-tv-001", Version="1.0.0"';
+  const SYNC_DEVICE_ID = 'oceonfin-tv-001';   // muss zur DeviceId im Auth-Header passen (für den SyncPlay-Socket)
 
   // Hilfreich: auf welchen User der aktuelle Server-Token zeigt
   $: serverUrl = selectedServer?.url ?? '';
@@ -84,10 +88,10 @@
   let reduceAnimations = false;
 
   // Anzeige-Elemente (Uhr, Hero-Banner, Episodenanzahl, Mediatheken) — einzeln abschaltbar
-  let displaySettings = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, backdropPreview: true, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} };
+  let displaySettings = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} };
 
   // Standard-Audio-/Untertitelsprache
-  let playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', autoPlayNext: true, burnSubtitles: false, stillWatching: true, stillWatchingEpisodes: 3 };
+  let playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3 };
 
   // ── Profil-bezogene Einstellungen ───────────────────────────
   // Sprache + Anzeige + Wiedergabe + Animationen werden PRO BENUTZER gespeichert.
@@ -129,7 +133,8 @@
       displaySettings,
       playbackPrefs,
       reduceAnimations,
-      librarySorts
+      librarySorts,
+      sharedProfile
     }));
   }
 
@@ -142,10 +147,30 @@
       currentLang.set(p.language);
       localStorage.setItem('app_language', p.language);   // "zuletzt genutzt" aktualisieren
     }
-    displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, backdropPreview: true, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
-    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', autoPlayNext: true, burnSubtitles: false, stillWatching: true, stillWatchingEpisodes: 3, ...(p.playbackPrefs || {}) };
+    displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
+    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, ...(p.playbackPrefs || {}) };
     reduceAnimations = p.reduceAnimations ?? false;
     librarySorts     = p.librarySorts || {};   // gemerkte Sortierung pro Bibliothek
+    sharedProfile    = p.sharedProfile && Array.isArray(p.sharedProfile.members)
+                       ? { enabled: !!p.sharedProfile.enabled,
+                           members: [p.sharedProfile.members[0] || null, p.sharedProfile.members[1] || null] }
+                       : { enabled: false, members: [] };
+    // Migration: Member-Tokens, die (alt) nur im Schnellwechsel-Speicher liegen, in den eigenen
+    // Shared-Speicher kopieren → gemeinsames Schauen läuft unabhängig, Schnellwechsel kann frei aus.
+    const _sid = selectedServer?.id;
+    if (_sid) {
+      let _changed = false;
+      for (const m of sharedProfile.members) {
+        if (m?.id && !sharedTokens[_sid]?.[m.id] && savedTokens[_sid]?.[m.id]) {
+          if (!sharedTokens[_sid]) sharedTokens[_sid] = {};
+          sharedTokens[_sid][m.id] = savedTokens[_sid][m.id];
+          _changed = true;
+        }
+      }
+      if (_changed) { sharedTokens = { ...sharedTokens }; persistSharedTokens(); }
+    }
+    sharedWatchMode  = false;   // Filter startet pro Sitzung aus
+    partnersPlayedIds = null;
     applyingPrefs = false;
   }
 
@@ -278,6 +303,208 @@
   $: hasFilters = activeFilters.isFavorite || activeFilters.isPlayed || activeFilters.isNotPlayed
                   || selectedGenres.length > 0 || selectedFsk.length > 0;
 
+  // ── Gemeinsames Schauen ────────────────────────────────────────────────────
+  // Das eingeloggte (Gemeinsam-)Profil referenziert zwei andere Profile. Deren Tokens
+  // liegen in savedTokens (gekoppelt an "Token speichern"); hier nur ID + Name gemerkt.
+  let sharedProfile     = { enabled: false, members: [] };  // members: [{ id, name }]
+  let sharedWatchMode   = false;   // Bibliotheks-Filter "Gemeinsam schauen" aktiv
+  let partnersPlayedIds = null;    // Set: von BEIDEN komplett gesehene Item-IDs (aktuelle Bibliothek)
+  $: sharedReady = sharedProfile.enabled
+                   && sharedProfile.members.filter(m => m && m.id).length >= 1;
+  // Aufräumen: Option an, aber kein Profil hinterlegt → beim Verlassen der Einstellungen wieder aus.
+  $: if (viewState !== 'settings' && sharedProfile.enabled
+         && sharedProfile.members.filter(m => m && m.id).length === 0) {
+    sharedProfile = { ...sharedProfile, enabled: false };
+    saveUserPrefs();
+  }
+  // Token eines Mitglieds: eigener Shared-Speicher zuerst, sonst (falls der Nutzer den
+  // Schnellwechsel selbst aktiviert hat) der Schnellwechsel-Speicher.
+  function memberToken(m) {
+    const sid = selectedServer?.id;
+    return m && (sharedTokens[sid]?.[m.id] || savedTokens[sid]?.[m.id]);
+  }
+  // Bibliotheks-Grid: im "Gemeinsam schauen"-Modus alles ausblenden, was beide gesehen haben
+  $: visibleLibraryItems = (sharedWatchMode && partnersPlayedIds)
+                           ? currentItems.filter(i => !partnersPlayedIds.has(i.Id))
+                           : currentItems;
+  // Profil-Liste für die Einrichtung bereitstellen, falls noch nicht geladen
+  $: if (viewState === 'settings' && users.length === 0 && serverUrl) fetchUsers();
+
+  // ── Gemeinsame Vorschläge (Dashboard-Reihe „Für euch beide") ───────────────
+  let sharedSuggestions = [];
+  let _loadedSugKey     = null;
+  $: sharedSugKey = (sharedReady && displaySettings.sharedSuggestions)
+                    ? sharedProfile.members.filter(m => m?.id).map(m => m.id).join('|') : '';
+  $: if (!sharedSugKey && sharedSuggestions.length) sharedSuggestions = [];
+  $: if (viewState === 'dashboard' && sharedSugKey && sharedSugKey !== _loadedSugKey) loadSharedSuggestions();
+
+  // ── SyncPlay (Gruppen-Wiedergabe) — Phase 1: Gruppen verwalten ─────────────
+  let showSyncPlay = false;
+  let syncMyGroup  = null;    // { GroupId, GroupName, Participants } oder null
+  let syncGroups   = [];      // verfügbare Gruppen (ohne meine eigene)
+  let syncLoading  = false;
+  let syncPollTimer = null;
+  let syncJoined   = false;   // ist DIESE Sitzung in einer Gruppe? (maßgeblich, nicht der Profilname)
+  let syncMyGroupId = null;   // GroupId der eigenen Gruppe (vom Socket-GroupJoined bzw. beim Beitreten gesetzt)
+  // Phase 2: empfangene Wiedergabe-Kommandos + aktueller Gruppen-Queue-Stand (an den Player weitergereicht)
+  let syncCommand = null;   // letztes SyncPlayCommand { ...Data, _seq }
+  let syncCmdSeq  = 0;
+  let syncQueue   = null;   // { itemId, playlistItemId, positionTicks, isPlaying }
+
+  // Admin-Fernsteuerung (Jellyfin-Dashboard): Playstate/GeneralCommand über dieselbe WebSocket.
+  let remoteCommand = null;   // { command, seekTicks?, args?, _seq } → an den Player
+  let remoteCmdSeq  = 0;
+  let remoteMessage = null;   // { header, text } – Admin-Nachricht als Overlay
+  let remoteMessageTimer = null;
+  function showRemoteMessage(header, text, timeoutMs) {
+    // Jellyfins Standard-Header ("Message from Server") oder leerer Header → lokalisieren.
+    // Einen eigenen Header des Admins unverändert übernehmen.
+    const h = (header || '').trim();
+    const localized = (!h || h.toLowerCase() === 'message from server') ? $t.messageFromServer : h;
+    remoteMessage = { header: localized, text: text || '' };
+    if (remoteMessageTimer) clearTimeout(remoteMessageTimer);
+    const ms = timeoutMs && timeoutMs > 0 ? Math.min(timeoutMs, 30000) : 7000;
+    remoteMessageTimer = setTimeout(() => { remoteMessage = null; }, ms);
+  }
+  function dismissRemoteMessage() { if (remoteMessageTimer) clearTimeout(remoteMessageTimer); remoteMessage = null; }
+  let _lastSyncQueueItem = null;   // zuletzt automatisch geöffnetes Gruppen-Item (kein erneutes Öffnen nach Verlassen)
+  let _syncOpeningId = null;       // gerade im Öffnen befindlich (verhindert Doppel-Öffnen)
+  async function syncRefresh() {
+    if (!serverUrl || !activeToken) return;
+    syncLoading = true;
+    const all = await listSyncGroups(serverUrl, activeToken);
+    syncLoading = false;
+    // Meine Gruppe = die, der DIESE Sitzung beigetreten ist (per GroupId) — NICHT per Profilname,
+    // da derselbe User über mehrere Geräte gleichzeitig Mitglied sein kann.
+    const mine = (syncJoined && syncMyGroupId) ? all.find(g => g.GroupId === syncMyGroupId) || null : null;
+    syncMyGroup = mine;
+    syncGroups  = all.filter(g => g.GroupId !== syncMyGroupId);
+  }
+  function openSyncPlay() {
+    showSyncPlay = true;
+    syncRefresh();
+    if (syncPollTimer) clearInterval(syncPollTimer);
+    syncPollTimer = setInterval(syncRefresh, 4000);   // Mitglieder live aktualisieren, solange offen
+  }
+  function closeSyncPlay() {
+    showSyncPlay = false;
+    if (syncPollTimer) { clearInterval(syncPollTimer); syncPollTimer = null; }
+  }
+  async function syncCreate() { await createSyncGroup(serverUrl, activeToken, selectedUser?.Name || 'OcenFin'); syncJoined = true; await setSyncIgnoreWait(serverUrl, activeToken, false); await syncRefresh(); }
+  async function syncJoin(groupId) { await joinSyncGroup(serverUrl, activeToken, groupId); syncJoined = true; syncMyGroupId = groupId; await setSyncIgnoreWait(serverUrl, activeToken, false); await syncRefresh(); }
+  async function syncLeave() { await leaveSyncGroup(serverUrl, activeToken); syncJoined = false; syncMyGroupId = null; syncQueue = null; _lastSyncQueueItem = null; await syncRefresh(); }
+
+  // Auto-Laden: Item, das die Gruppe spielt, programmatisch im Player öffnen (springt per Ready→Unpause an die Gruppenposition).
+  async function openItemInPlayer(itemId) {
+    if (!itemId) return;
+    const norm = (s) => (s || '').replace(/-/g, '');
+    if (viewState === 'player' && norm(currentDetailItem?.Id) === norm(itemId)) return;  // läuft bereits
+    if (_syncOpeningId === norm(itemId)) return;                                          // gerade am Öffnen
+    _syncOpeningId = norm(itemId);
+    try {
+      const res = await fetch(`${serverUrl}/Users/${selectedUser.Id}/Items/${itemId}`, { headers: getAuthHeaders() });
+      if (res.ok) {
+        currentDetailItem   = await res.json();
+        activeAudioIndex    = -1;
+        activeSubtitleIndex = -1;
+        activeMediaSourceId = null;
+        viewState = 'player';
+        console.info('[SyncPlay] Auto-Laden →', currentDetailItem?.Name);
+      }
+    } catch {}
+    _syncOpeningId = null;
+  }
+
+  // ── SyncPlay WebSocket (Phase 2) ───────────────────────────────────────────
+  // Echtzeit-Kanal: Gruppen-Updates (Beitritt/Austritt) und – ab Schritt 2 –
+  // Wiedergabe-Kommandos (Play/Pause/Seek). Verbindet nach Login, hält sich per
+  // KeepAlive offen und verbindet bei Abbruch automatisch neu.
+  let syncSocket = null;
+  let syncSocketWanted = false;
+  let syncKeepAlive = null;
+  let syncReconnect = null;
+  function connectSyncSocket() {
+    syncSocketWanted = true;
+    if (!serverUrl || !activeToken) return;
+    if (syncSocket && (syncSocket.readyState === WebSocket.OPEN || syncSocket.readyState === WebSocket.CONNECTING)) return;
+    let ws;
+    try { ws = new WebSocket(syncSocketUrl(serverUrl, activeToken, SYNC_DEVICE_ID)); }
+    catch (e) { console.warn('[SyncPlay] Socket konnte nicht geöffnet werden', e); return; }
+    syncSocket = ws;
+    ws.onopen = () => {
+      console.info('[SyncPlay] Socket verbunden');
+      if (syncKeepAlive) clearInterval(syncKeepAlive);
+      syncKeepAlive = setInterval(() => { try { ws.send(JSON.stringify({ MessageType: 'KeepAlive' })); } catch {} }, 30000);
+    };
+    ws.onmessage = (ev) => {
+      let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+      handleSyncMessage(msg);
+    };
+    ws.onclose = () => {
+      if (syncKeepAlive) { clearInterval(syncKeepAlive); syncKeepAlive = null; }
+      console.info('[SyncPlay] Socket getrennt');
+      if (syncSocketWanted) { clearTimeout(syncReconnect); syncReconnect = setTimeout(connectSyncSocket, 5000); }
+    };
+    ws.onerror = () => { /* onclose folgt automatisch → Reconnect dort */ };
+  }
+  function disconnectSyncSocket() {
+    syncSocketWanted = false;
+    if (syncReconnect) { clearTimeout(syncReconnect); syncReconnect = null; }
+    if (syncKeepAlive) { clearInterval(syncKeepAlive); syncKeepAlive = null; }
+    if (syncSocket) { try { syncSocket.close(); } catch {} syncSocket = null; }
+  }
+  function handleSyncMessage(msg) {
+    if (!msg || !msg.MessageType) return;
+    if (msg.MessageType === 'SyncPlayGroupUpdate') {
+      const type = msg.Data?.Type;
+      // Eigene Mitgliedschaft maßgeblich am Socket festmachen (GroupId), nicht am Namen.
+      if (type === 'GroupJoined') { syncJoined = true; syncMyGroupId = msg.Data?.GroupId || syncMyGroupId; syncRefresh(); }
+      else if (['GroupLeft', 'NotInGroup', 'GroupDoesNotExist'].includes(type)) { syncJoined = false; syncMyGroupId = null; syncQueue = null; syncRefresh(); }
+      else if (['UserJoined', 'UserLeft'].includes(type)) syncRefresh();
+      else if (type === 'PlayQueue') {
+        // Aktueller Gruppen-Queue-Stand (welches Item, welche Position) → an den Player weitergereicht.
+        const q = msg.Data?.Data;
+        const entry = q?.Playlist?.[q?.PlayingItemIndex ?? 0];
+        syncQueue = entry
+          ? { itemId: entry.ItemId, playlistItemId: entry.PlaylistItemId, positionTicks: q.StartPositionTicks || 0, isPlaying: !!q.IsPlaying }
+          : null;
+        console.info('[SyncPlay] PlayQueue', syncQueue);
+        // Neues Gruppen-Item → automatisch öffnen (nur einmal pro Item; nicht erneut nach manuellem Verlassen).
+        const qid = syncQueue?.itemId || null;
+        if (syncMyGroup && qid && qid !== _lastSyncQueueItem) {
+          _lastSyncQueueItem = qid;
+          openItemInPlayer(qid);
+        }
+      }
+    } else if (msg.MessageType === 'SyncPlayCommand') {
+      // Wiedergabe-Kommando (Play/Pause/Seek) → an den Player; _seq dient dem Player als Dedupe-Marke.
+      syncCommand = { ...msg.Data, _seq: ++syncCmdSeq };
+      console.info('[SyncPlay] Kommando empfangen', syncCommand.Command, syncCommand.PositionTicks);
+    } else if (msg.MessageType === 'Playstate') {
+      // Admin-Fernsteuerung (Dashboard): Pause/Unpause/Stop/Seek/PlayPause/NextTrack → an den Player.
+      const cmd = msg.Data?.Command;
+      if (cmd) { remoteCommand = { command: cmd, seekTicks: msg.Data?.SeekPositionTicks ?? null, _seq: ++remoteCmdSeq }; }
+    } else if (msg.MessageType === 'GeneralCommand') {
+      const name = msg.Data?.Name;
+      if (name === 'DisplayMessage') {
+        const a = msg.Data?.Arguments || {};
+        showRemoteMessage(a.Header, a.Text, parseInt(a.TimeoutMs, 10) || 0);
+      } else if (name) {
+        // Lautstärke/Mute u. ä. → an den Player weiterreichen.
+        remoteCommand = { command: name, args: msg.Data?.Arguments || {}, _seq: ++remoteCmdSeq };
+      }
+    } else if (msg.MessageType === 'Play') {
+      // Admin "Auf diesem Gerät abspielen" → erstes Item öffnen.
+      const itemId = msg.Data?.ItemIds?.[0];
+      if (itemId) openItemInPlayer(itemId);
+    }
+  }
+  // Socket öffnen, sobald angemeldet — deckt regulären Login UND Auto-Wiederherstellung beim Reload ab.
+  $: if (isLoggedIn && activeToken && serverUrl && !syncSocketWanted) {
+    registerSession(serverUrl, activeToken);   // Sitzung als steuerbar registrieren (für SyncPlay)
+    connectSyncSocket();                        // SyncPlay-Echtzeitkanal öffnen
+  }
+
   // Sortierung
   let showSortMenu = false;
   let showExitConfirm = false;   // Bestätigungsdialog "App verlassen?" (Zurück am Dashboard)
@@ -356,6 +583,14 @@
   function persistSavedTokens() {
     localStorage.setItem('jellyfin_tokens_v2', JSON.stringify(savedTokens));
   }
+  // Eigener Speicher fürs gemeinsame Schauen — bewusst getrennt vom Schnellwechsel (savedTokens),
+  // damit das Einrichten NIE den Schnellwechsel-Schalter eines Profils beeinflusst.
+  function loadSharedTokens() {
+    try { return JSON.parse(localStorage.getItem('jellyfin_shared_tokens_v1') || '{}'); } catch { return {}; }
+  }
+  function persistSharedTokens() {
+    localStorage.setItem('jellyfin_shared_tokens_v1', JSON.stringify(sharedTokens));
+  }
   function loadScreensaverSettings() {
     try { return JSON.parse(localStorage.getItem('screensaver_settings') || '{}'); } catch { return {}; }
   }
@@ -417,6 +652,7 @@
     migrateOldData();
     savedServers        = loadSavedServers();
     savedTokens         = loadSavedTokens();
+    sharedTokens        = loadSharedTokens();
     screensaverSettings = { enabled: true, timeout: 90, ...loadScreensaverSettings() };
 
     // Gerätesprache für Vor-Login-Screens (Server-/Benutzerauswahl).
@@ -641,6 +877,159 @@
     } catch { }
   }
 
+  // ── Gemeinsames Schauen: Mitglieder & Datenbasis ───────────────────────────
+  function toggleSharedEnabled() {
+    sharedProfile = { ...sharedProfile, enabled: !sharedProfile.enabled };
+    if (!sharedProfile.enabled) { sharedWatchMode = false; partnersPlayedIds = null; }
+    saveUserPrefs();
+  }
+
+  // Ein Profil als Mitglied setzen. Nutzt einen gültigen gespeicherten Token; sonst wird
+  // mit pw einmal authentifiziert. KEIN Sitzungswechsel — das Gemeinsam-Profil bleibt aktiv.
+  // Rückgabe: 'ok' | 'needPassword' | 'error'
+  async function setSharedMember(slot, user, pw = '') {
+    if (!user || !selectedServer) return 'error';
+    const sid = selectedServer.id;
+    // Vorhandenen Token wiederverwenden (eigener Speicher oder selbst aktivierter Schnellwechsel).
+    let token = sharedTokens[sid]?.[user.Id] || savedTokens[sid]?.[user.Id];
+    if (token && !(await validateToken(token))) token = null;   // abgelaufen → neu anmelden
+    if (!token) {
+      if (user.HasPassword && !pw) return 'needPassword';
+      try {
+        const res = await fetch(`${serverUrl}/Users/AuthenticateByName`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': CLIENT_AUTH_HEADER },
+          body:    JSON.stringify({ Username: user.Name, Pw: pw || '' })
+        });
+        if (!res.ok) return 'error';
+        token = (await res.json()).AccessToken;
+      } catch { return 'error'; }
+    }
+    // Token NUR im eigenen Shared-Speicher ablegen — NIE in savedTokens. Der Schnellwechsel
+    // bleibt damit allein über den Profil-Schalter steuerbar (pro Benutzer selbst entschieden).
+    if (!sharedTokens[sid]) sharedTokens[sid] = {};
+    sharedTokens[sid][user.Id] = token;
+    sharedTokens = { ...sharedTokens };
+    persistSharedTokens();
+    const members = [sharedProfile.members[0] || null, sharedProfile.members[1] || null];
+    members[slot] = { id: user.Id, name: user.Name };
+    sharedProfile = { ...sharedProfile, members };
+    _loadedSugKey = null;   // Vorschläge neu berechnen
+    saveUserPrefs();
+    if (sharedWatchMode) loadPartnersPlayedIds(currentLibraryId);
+    return 'ok';
+  }
+
+  function removeSharedMember(slot) {
+    const members = [sharedProfile.members[0] || null, sharedProfile.members[1] || null];
+    const removed = members[slot];
+    members[slot] = null;
+    sharedProfile = { ...sharedProfile, members };
+    // Nur den eigenen Shared-Token entfernen — der Schnellwechsel-Token (savedTokens) bleibt unberührt.
+    const sid = selectedServer?.id;
+    if (removed?.id && sid && sharedTokens[sid]?.[removed.id]) {
+      delete sharedTokens[sid][removed.id];
+      sharedTokens = { ...sharedTokens };
+      persistSharedTokens();
+    }
+    _loadedSugKey = null;   // Vorschläge neu berechnen
+    saveUserPrefs();
+    if (sharedWatchMode) loadPartnersPlayedIds(currentLibraryId);
+  }
+
+  // Vereinigung der von den Mitgliedern komplett gesehenen Top-Level-Titel der Bibliothek.
+  // Jedes Profil mit eigenem Token (kein Admin). Wir holen alle Titel mit UserData und prüfen
+  // selbst auf Played=true — zuverlässiger als Filters=IsPlayed, das bei Serien nicht immer greift.
+  async function loadPartnersPlayedIds(libraryId) {
+    partnersPlayedIds = null;
+    if (!sharedWatchMode || !sharedReady || !libraryId) return;
+    const ids = new Set();
+    for (const m of sharedProfile.members) {
+      if (!m || !m.id) continue;
+      const token = memberToken(m);
+      if (!token) { console.warn('[Gemeinsam] Kein gültiger Token für', m.name, '– Profil neu hinterlegen.'); continue; }
+      try {
+        const res = await fetch(
+          `${serverUrl}/Users/${m.id}/Items?ParentId=${libraryId}&Recursive=true` +
+          `&IncludeItemTypes=Movie,Series&Fields=UserData&EnableImages=false` +
+          `&Limit=100000&EnableTotalRecordCount=false`,
+          { headers: { 'Authorization': `MediaBrowser Token="${token}"`, 'Content-Type': 'application/json' } }
+        );
+        if (!res.ok) { console.warn('[Gemeinsam] Abfrage fehlgeschlagen für', m.name, '· HTTP', res.status); continue; }
+        let n = 0;
+        (await res.json()).Items?.forEach(i => { if (i.UserData?.Played) { ids.add(i.Id); n++; } });
+        console.info('[Gemeinsam]', m.name, '→', n, 'komplett gesehene Titel');
+      } catch (e) { console.warn('[Gemeinsam] Fehler für', m.name, e); }
+    }
+    partnersPlayedIds = ids;
+  }
+
+  function toggleSharedWatch() {
+    sharedWatchMode = !sharedWatchMode;
+    if (sharedWatchMode) loadPartnersPlayedIds(currentLibraryId);
+    else partnersPlayedIds = null;
+  }
+
+  // Vorschläge, die zur GEMEINSAMEN Vorliebe passen und die noch keiner gesehen hat.
+  // Pro Mitglied einmal Katalog (mit Genres) holen → Genre-Gewichte (nur Genres, die ALLE mögen)
+  // und Vereinigung der gesehenen IDs. Dann ungesehene Titel nach Genre-Score ranken.
+  async function loadSharedSuggestions() {
+    if (!sharedSugKey) { sharedSuggestions = []; return; }
+    _loadedSugKey = sharedSugKey;   // Schlüssel vorab beanspruchen → kein Doppel-Fetch
+    const memberData = [];
+    for (const m of sharedProfile.members) {
+      if (!m?.id) continue;
+      const token = memberToken(m);
+      if (!token) continue;
+      try {
+        const res = await fetch(
+          `${serverUrl}/Users/${m.id}/Items?Recursive=true&IncludeItemTypes=Movie,Series` +
+          `&Fields=Genres,CommunityRating,UserData&EnableImageTypes=Primary&Limit=100000&EnableTotalRecordCount=false`,
+          { headers: { 'Authorization': `MediaBrowser Token="${token}"`, 'Content-Type': 'application/json' } }
+        );
+        if (!res.ok) continue;
+        const items = (await res.json()).Items || [];
+        const genreCount = {}; const watched = new Set();
+        for (const it of items) {
+          if (it.UserData?.Played) {
+            watched.add(it.Id);
+            for (const g of it.Genres || []) genreCount[g] = (genreCount[g] || 0) + 1;
+          }
+        }
+        memberData.push({ items, genreCount, watched });
+      } catch { }
+    }
+    if (!memberData.length) { sharedSuggestions = []; return; }
+
+    // Genre-Gewichte: Genres, die ALLE Mitglieder gesehen haben (Produkt der Häufigkeiten → „beide mögen es").
+    const allGenres = new Set();
+    memberData.forEach(d => Object.keys(d.genreCount).forEach(g => allGenres.add(g)));
+    const weights = {};
+    for (const g of allGenres) {
+      if (memberData.length >= 2) {
+        if (memberData.every(d => d.genreCount[g] > 0))
+          weights[g] = memberData.reduce((p, d) => p * d.genreCount[g], 1);
+      } else {
+        weights[g] = memberData[0].genreCount[g];
+      }
+    }
+    // Fallback: keine echte Schnittmenge → Summe über alle, damit überhaupt Vorschläge kommen.
+    if (!Object.keys(weights).length)
+      for (const g of allGenres) weights[g] = memberData.reduce((s, d) => s + (d.genreCount[g] || 0), 0);
+
+    const exclude = new Set();
+    memberData.forEach(d => d.watched.forEach(id => exclude.add(id)));
+
+    sharedSuggestions = memberData[0].items
+      .filter(it => !exclude.has(it.Id))
+      .map(it => ({ it, score: (it.Genres || []).reduce((s, g) => s + (weights[g] || 0), 0) }))
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score || (b.it.CommunityRating || 0) - (a.it.CommunityRating || 0))
+      .slice(0, 20)
+      .map(x => ({ ...x.it, UserData: {} }));   // UserData leeren → kein Fortschrittsbalken eines Mitglieds
+    console.info('[Gemeinsam] Vorschläge:', sharedSuggestions.length);
+  }
+
   async function validateToken(token) {
     try {
       const res = await fetch(`${serverUrl}/Users/Me`, {
@@ -785,6 +1174,9 @@
     showManualLogin  = false;
     qcCode           = null;
     clearInterval(qcPolling);
+    disconnectSyncSocket();              // SyncPlay-Socket schließen
+    closeSyncPlay(); syncMyGroup = null; syncGroups = []; syncQueue = null; syncCommand = null; _lastSyncQueueItem = null; syncJoined = false; syncMyGroupId = null;   // Gruppenstatus zurücksetzen
+    remoteCommand = null; dismissRemoteMessage();   // Admin-Fernsteuerung/Nachricht verwerfen
     viewState = 'dashboard';
     apiCache  = { dashboard: null, views: {} };
     navLibraries = [];
@@ -824,6 +1216,7 @@
     // Bestätigungsdialog offen → Zurück bricht ab (statt zu schließen)
     if (showExitConfirm) { showExitConfirm = false; e.preventDefault(); return; }
     // Offene Overlays zuerst schließen (gilt auch für Fernbedienungs-Zurück)
+    if (showSyncPlay)   { closeSyncPlay();         e.preventDefault(); return; }
     if (contextItem)    { contextItem = null;     e.preventDefault(); return; }
     if (showSortMenu)   { showSortMenu = false;   e.preventDefault(); return; }
     if (showFilterMenu) { showFilterMenu = false; e.preventDefault(); return; }
@@ -941,6 +1334,7 @@
     currentLibraryName           = library.Name;
     currentLibraryId             = library.Id;
     viewState                    = 'library';
+    if (sharedWatchMode) loadPartnersPlayedIds(library.Id);   // gesehene Titel beider Profile für diese Bibliothek
 
     if (letter !== null) {
       currentLetter = letter === '#' ? '' : letter;
@@ -1812,7 +2206,7 @@
         navHidden={displaySettings.navHidden}
         navIcons={displaySettings.navIcons}
         activeLibraryId={currentLibraryId}
-        on:navigate={(e) => { viewState = e.detail; if (e.detail === 'favorites') loadFavorites(); else focusMain(); }}
+        on:navigate={(e) => { if (e.detail === 'syncplay') { openSyncPlay(); } else { viewState = e.detail; if (e.detail === 'favorites') loadFavorites(); else focusMain(); } }}
         on:navigateLibrary={(e) => navigateToLibrary(e.detail, true)}
         on:switchUser={handleSwitchUser}
         on:logOutServer={handleLogout}
@@ -1832,6 +2226,8 @@
             recommendationRows={displaySettings.recommendationRows}
             showLatest={displaySettings.latest}
             showCollections={displaySettings.collections}
+            {sharedSuggestions}
+            showSharedSuggestions={sharedReady && displaySettings.sharedSuggestions}
             on:openLibrary={(e) => loadLibraryItems(e.detail)}
             on:librariesLoaded={(e) => navLibraries = e.detail}
             on:openDetails={(e) => showItemDetails(e.detail)}
@@ -1902,6 +2298,18 @@
                     {$t.filter}
                     {#if hasFilters}<span class="bg-blue-600 text-white text-xs px-2 py-1 rounded-full ml-1 font-bold">{$t.filterActive}</span>{/if}
                   </button>
+                  <!-- Gemeinsam schauen: blendet aus, was beide Profile schon gesehen haben -->
+                  {#if sharedReady}
+                    <button on:click={toggleSharedWatch}
+                      class="flex items-center gap-3 px-6 py-3 rounded-xl font-bold focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border focus:scale-105
+                             {sharedWatchMode ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-white'}"
+                      title={$t.watchTogether}>
+                      <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-2.5-1.34M5 11a3 3 0 102.5-1.34"/>
+                      </svg>
+                      {$t.watchTogether}
+                    </button>
+                  {/if}
                 </div>
               </div>
 
@@ -1942,7 +2350,7 @@
                     <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg animate-pulse"></div>
                   {/each}
                 {:else}
-                  {#each currentItems as item}
+                  {#each visibleLibraryItems as item}
                     <button on:click={() => showItemDetails(item)} data-item-id={item.Id}
                       on:focus={() => previewItem(item)} on:blur={cancelPreview}
                       use:longPress on:longpress={() => openContextMenu(item)}
@@ -1971,6 +2379,10 @@
                   {/each}
                 {/if}
               </div>
+
+              {#if sharedWatchMode && !isLoading && currentItems.length > 0 && visibleLibraryItems.length === 0}
+                <div class="text-center text-gray-400 py-24 text-lg">{$t.watchTogetherEmpty}</div>
+              {/if}
 
               {#if isFetchingMore}
                 <div class="w-full flex justify-center py-12 mt-8">
@@ -2007,6 +2419,10 @@
             {serverUrl} {activeToken} {selectedUser} {selectedServer} {savedTokens}
             {screensaverSettings} {reduceAnimations} {displaySettings} {playbackPrefs}
             libraries={navLibraries}
+            publicUsers={users} {sharedProfile} {sharedTokens}
+            onSharedToggle={toggleSharedEnabled}
+            onSharedSetMember={setSharedMember}
+            onSharedRemoveMember={removeSharedMember}
             on:toggleSave={toggleCurrentUserSave}
             on:switchUser={handleSwitchUser}
             on:logout={handleLogout}
@@ -2023,6 +2439,7 @@
           <Details
             item={currentDetailItem}
             {serverUrl} {activeToken} {selectedUser} {reduceAnimations} {playbackPrefs} {use24h}
+            spoilerProtection={displaySettings.spoilerProtection}
             on:close={returnFromDetails}
             on:openItemById={(e) => loadItemById(e.detail)}
             on:openPerson={(e) => openPerson(e.detail)}
@@ -2295,13 +2712,33 @@
           selectedSubtitleIndex={activeSubtitleIndex}
           mediaSourceId={activeMediaSourceId}
           {autoPlayStreak}
+          syncPlayOpen={showSyncPlay}
+          inSyncGroup={!!syncMyGroup}
+          {syncCommand}
+          {remoteCommand}
+          {syncQueue}
           on:exit={() => viewState = 'details'}
           on:libchanged={refreshLibraries}
           on:next={(e) => handleNextEpisode(e.detail)}
           on:prev={(e) => handlePrevEpisode(e.detail)}
+          on:syncplay={openSyncPlay}
         />
       {/key}
     </div>
+  {/if}
+
+  <!-- SYNCPLAY — Gruppen-Modal (über allem außer Screensaver) -->
+  {#if showSyncPlay}
+    <SyncPlayModal
+      group={syncMyGroup}
+      groups={syncGroups}
+      loading={syncLoading}
+      on:create={syncCreate}
+      on:join={(e) => syncJoin(e.detail)}
+      on:leave={syncLeave}
+      on:refresh={syncRefresh}
+      on:close={closeSyncPlay}
+    />
   {/if}
 
   <!-- KONTEXTMENÜ — über allem außer Screensaver -->
@@ -2319,6 +2756,23 @@
   <!-- UHRZEIT — oben rechts, sichtbar im App-Betrieb außer im Player -->
   {#if appPhase === 'app' && viewState !== 'player' && displaySettings.clock}
     <Clock {viewState} {use24h} />
+  {/if}
+
+  <!-- ADMIN-NACHRICHT — vom Jellyfin-Dashboard gesendet (DisplayMessage). Blendet sich selbst aus. -->
+  {#if remoteMessage}
+    <div role="status" class="fixed top-8 left-1/2 -translate-x-1/2 z-[200] w-[90%] max-w-xl pointer-events-none">
+      <div class="bg-gray-900/95 border border-gray-600 rounded-2xl shadow-2xl px-6 py-5 flex items-start gap-4">
+        <svg class="w-7 h-7 text-blue-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l1.3-3.9A7.96 7.96 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+        </svg>
+        <div class="min-w-0">
+          {#if remoteMessage.header}
+            <p class="text-lg font-bold text-white mb-1 break-words">{remoteMessage.header}</p>
+          {/if}
+          <p class="text-base text-gray-200 break-words whitespace-pre-wrap">{remoteMessage.text}</p>
+        </div>
+      </div>
+    </div>
   {/if}
 
   <!-- ============================================================
