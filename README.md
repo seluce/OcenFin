@@ -1,18 +1,22 @@
 # OcenFin - another Jellyfin WebOS Client
 
-OcenFin will be a native WebOS app for LG TVs. Let me be clear: I am not trying to create the ultimate WebOS Jellyfin app (based on AI); it is simply meant to serve my own needs. If you are looking for a feature-rich native app, check out MoonFin, Litefin, Breezyfin which also offers an native app for WebOS.
+OcenFin is a native WebOS app for LG TVs. Just to be clear: I don't want to build the ultimate WebOS Jellyfin app. I just built it for my own needs. If you want an app with many features, check out MoonFin, Litefin, or Breezyfin. They also offer native apps for WebOS.
 
-While the official Jellyfin app is available in the LG App Store, it is essentially just a browser wrapper. It's nothing more than the Jellyfin website, which is not optimized for WebOS (LG TVs). Our problem: We switch users on the TV very often. Doing this with the official app is quite annoying because you first have to log out the user, then select the server again, just to be able to select the correct user. Furthermore, the performance on our LG B4 was very sluggish. The picture quality is great, but the hardware isn't really designed for such crappy apps.
+The official Jellyfin app from the LG App Store is basically just a web browser wrapper. It's just the normal website, which is not optimized for WebOS. Our main problem: We switch users on the TV very often. In the official app, this is annoying. You have to log out, select the server again, and then choose the user. Also, the performance on our LG B4 TV was very slow. The picture quality of the TV is great, but the hardware struggles with heavy apps.
 
-Therefore, I thought about how the app could make more sense for us: First, a native app for WebOS, based on Svelte. The language allows us to ditch heavy frameworks and keep the app very lightweight. This should make the user experience much more pleasant. Certain elements are deliberately omitted, such as less relevant details.
+So I thought about how to make a better app for us: First, it should be a native WebOS app based on Svelte and Tailwind. Svelte helps us avoid heavy frameworks so the app stays very lightweight. This makes it much nicer to use. I also decided to hide some details that are not very important.
 
-Additionally, there is now a quick user switch feature to easily alternate between user profiles. If desired, you can have the password for your profile saved (via a token). This allows you to switch directly into that user profile without having to re-enter the password.
+Now, there is a quick user switch to easily change profiles. If you want, you can save your password (using a token). Then you can jump right into your profile without typing the password again.
 
-### Summary
-- OcenFin is based on Svelte (supports EN + DE)
-- Focuses on maximum speed for older devices
-- Deliberately omits certain elements
-- Emphasizes fast user switching
+### Features & Summary
+- **Multi-Language:** Supports English and German until now
+- **Svelte-based:** Very lightweight. No bundled framework required.
+- **Minimalist Design:** Made for WebOS. Focuses on speed for older devices by removing things you don't really need.
+- **Fast User Switching:** Switch between profiles quickly and easily.
+- **Save Passwords:** Save your password as a token for instant login.
+- **Custom Avatars:** Create your own profile picture directly on the TV using built-in SVG templates. No need to upload images.
+- **Shared Profile:** Compare different profiles in one view. Easily find a movie that nobody has watched yet.
+- **SyncPlay Support:** Watch movies together with the built-in SyncPlay feature.
 
 ### Screenshots
 
