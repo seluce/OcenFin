@@ -91,7 +91,7 @@ export const translations = {
     clearCache: "Clear cache",
     clearCacheDesc: "Reloads all content fresh.",
     subtitleSize: "Subtitle size",
-    subtitleSizeDesc: "Only applies to text (WebVTT) subtitles, not to PGS image subtitles.",
+    subtitleSizeDesc: "Applies to text (WebVTT) and PGS subtitles. VobSub/DVD subtitles scale too, where the server delivers them for client rendering.",
     sizeSmall: "Small",
     sizeNormal: "Normal",
     sizeLarge: "Large",
@@ -148,11 +148,11 @@ export const translations = {
     autoPlayNextDesc: "Starts the next episode automatically with a countdown.",
     burnSubtitles: "Burn in subtitles",
     burnSubtitlesDesc: "On: burned into the picture with styling (transcode). Off: soft overlay, no styling.",
-    pgsRendering: "Render PGS subtitles (experimental)",
-    pgsRenderingDesc: "On: show Blu-ray (PGS) subtitles in the client without transcoding. Off: burn them in (transcode).",
+    pgsRendering: "Render image subtitles in the client",
+    pgsRenderingDesc: "On: render PGS and, where the server delivers them, DVD/VobSub subtitles client-side, keeping Direct Play. Off: burn them in (transcode).",
     subtitles: "Subtitles",
-    forcedGraphicSubs: "Auto-pick forced image subtitles",
-    forcedGraphicSubsDesc: "On: forced/default image subtitles (DVDSUB) are picked automatically \u2014 this needs a transcode. Off: those films stay Direct Play (pick the subtitle manually). Text and PGS are always picked without transcoding.",
+    forcedGraphicSubs: "Auto-pick forced DVD subtitles",
+    forcedGraphicSubsDesc: "Applies to DVD/VobSub subtitles the server cannot deliver for client rendering. On: forced/default DVD subtitles are picked automatically (needs a transcode). Off: those titles stay Direct Play (pick manually). Where the server delivers them for client rendering, they render without a transcode.",
     messageFromServer: "Message from server",
     seekInterval: "Skip interval",
     seekIntervalDesc: "How far the rewind/forward buttons jump.",
@@ -166,6 +166,13 @@ export const translations = {
     profilePicture: "Profile picture",
     customize: "Customize",
     profilePictureHint: "Pick an avatar and color — synced to your account.",
+    screensaverBrightness: "Brightness",
+    brightnessDim: "Dimmed",
+    brightnessMedium: "Medium",
+    brightnessBright: "Bright",
+    avatarTabRecent: "Recently watched",
+    avatarTabSymbols: "Symbols",
+    avatarRecentEmpty: "Nothing watched yet. Once you watch a movie or show, its poster appears here to use as your avatar.",
     saving: "Saving…",
     saved: "Saved",
     exitTitle: "Exit OcenFin?",
@@ -242,10 +249,19 @@ export const translations = {
     rowsTwo: "2 rows",
 
     // Settings — OLED
-    screensaverSection: "OLED Protection",
+    screensaverSection: "Screen saver",
     screensaverTitle: "Screensaver",
     screensaverDesc: "Protects OLED from burn-in during inactivity.",
     screensaverAfter: "Activate after",
+    screensaverStyle: "Style",
+    screensaverModeClock: "Clock",
+    screensaverModeArt: "Art mode",
+    screensaverModeClockDesc: "Clock on black; gently shifts position.",
+    screensaverModeArtDesc: "Dimmed backdrops that cross-fade, with the title.",
+    screensaverArtSource: "Backdrops from",
+    screensaverArtWatched: "Watched / watching",
+    screensaverArtUnwatched: "Not yet watched",
+    screensaverArtRandom: "Random",
     minuteShort: "Min",
     secondShort: "sec",
 
@@ -300,6 +316,18 @@ export const translations = {
 
     // Settings — Account
     settingsAccount: "Account & Server",
+    statusSection: "Status / Logs",
+    debugLogging: "Diagnostic logging",
+    debugLoggingDesc: "Logs video, SyncPlay, playback and subtitle diagnostics to the browser console. Off by default; applies to all profiles on this device.",
+    statusAppVersion: "App version",
+    statusServerVersion: "Server version",
+    statusClientGraphicSubs: "DVD/VobSub client-side",
+    statusClientGraphicSubsDesc: "Whether the server delivers DVD/VobSub subtitles for client rendering without transcoding (newer server versions).",
+    statusChromium: "Chromium / WebView",
+    statusHls: "hls.js",
+    statusLibbitsub: "libbitsub",
+    statusYes: "Yes",
+    statusNo: "No",
 
     // Version
     version: "Version",
@@ -395,7 +423,7 @@ export const translations = {
     clearCache: "Cache leeren",
     clearCacheDesc: "Lädt alle Inhalte neu.",
     subtitleSize: "Untertitelgröße",
-    subtitleSizeDesc: "Gilt nur für Text-Untertitel (WebVTT), nicht für PGS-Bild-Untertitel.",
+    subtitleSizeDesc: "Gilt für Text- (WebVTT) und PGS-Untertitel. VobSub/DVD skaliert ebenfalls, sofern der Server sie clientseitig ausliefert.",
     sizeSmall: "Klein",
     sizeNormal: "Normal",
     sizeLarge: "Groß",
@@ -452,11 +480,11 @@ export const translations = {
     autoPlayNextDesc: "Startet die nächste Folge automatisch mit Countdown.",
     burnSubtitles: "Untertitel einbrennen",
     burnSubtitlesDesc: "An: ins Bild gebrannt mit Styling (Transcode). Aus: weiches Overlay, ohne Styling.",
-    pgsRendering: "PGS-Untertitel rendern (experimentell)",
-    pgsRenderingDesc: "An: Blu-ray-Untertitel (PGS) im Client zeigen, ohne Transcode. Aus: ins Bild brennen (Transcode).",
+    pgsRendering: "Bild-Untertitel im Client rendern",
+    pgsRenderingDesc: "An: PGS und, sofern der Server sie ausliefert, DVD/VobSub-Untertitel clientseitig rendern, Direct Play bleibt. Aus: ins Bild brennen (Transcode).",
     subtitles: "Untertitel",
-    forcedGraphicSubs: "Erzwungene Bild-Untertitel automatisch",
-    forcedGraphicSubsDesc: "An: erzwungene/Standard-Bild-Untertitel (DVDSUB) werden automatisch gew\u00e4hlt \u2014 daf\u00fcr ist ein Transcode n\u00f6tig. Aus: solche Filme bleiben Direct Play (Untertitel manuell w\u00e4hlbar). Text und PGS werden immer ohne Transcode gew\u00e4hlt.",
+    forcedGraphicSubs: "Erzwungene DVD-Untertitel automatisch",
+    forcedGraphicSubsDesc: "Betrifft DVD/VobSub-Untertitel, die der Server nicht clientseitig ausliefern kann. An: erzwungene/Standard-DVD-Untertitel werden automatisch gewählt (braucht einen Transcode). Aus: solche Titel bleiben Direct Play (manuell wählbar). Liefert der Server sie clientseitig aus, werden sie ohne Transcode gerendert.",
     messageFromServer: "Nachricht vom Server",
     seekInterval: "Sprungweite",
     seekIntervalDesc: "Wie weit die Vor-/Zurück-Buttons springen.",
@@ -470,6 +498,13 @@ export const translations = {
     profilePicture: "Profilbild",
     customize: "Anpassen",
     profilePictureHint: "Avatar und Farbe wählen — wird mit deinem Konto synchronisiert.",
+    screensaverBrightness: "Helligkeit",
+    brightnessDim: "Gedimmt",
+    brightnessMedium: "Mittel",
+    brightnessBright: "Hell",
+    avatarTabRecent: "Zuletzt gesehen",
+    avatarTabSymbols: "Symbole",
+    avatarRecentEmpty: "Noch nichts gesehen. Sobald du einen Film oder eine Serie schaust, erscheint das Poster hier als Avatar zur Auswahl.",
     saving: "Speichern…",
     saved: "Gespeichert",
     exitTitle: "OcenFin verlassen?",
@@ -546,10 +581,19 @@ export const translations = {
     rowsTwo: "2 Reihen",
 
     // Settings — OLED
-    screensaverSection: "OLED-Schutz",
+    screensaverSection: "Bildschirmschoner",
     screensaverTitle: "Bildschirmschoner",
     screensaverDesc: "Schützt das OLED-Display vor Einbrennen bei Inaktivität.",
     screensaverAfter: "Aktivierung nach",
+    screensaverStyle: "Art",
+    screensaverModeClock: "Uhr",
+    screensaverModeArt: "Art-Mode",
+    screensaverModeClockDesc: "Uhr auf Schwarz; wechselt sanft die Position.",
+    screensaverModeArtDesc: "Gedimmte Backdrops im Crossfade, mit Titel.",
+    screensaverArtSource: "Backdrops aus",
+    screensaverArtWatched: "Gesehen / aktuell",
+    screensaverArtUnwatched: "Noch nicht gesehen",
+    screensaverArtRandom: "Zufällig",
     minuteShort: "Min",
     secondShort: "Sek",
 
@@ -604,14 +648,23 @@ export const translations = {
 
     // Settings — Konto
     settingsAccount: "Konto & Server",
+    statusSection: "Status / Logs",
+    debugLogging: "Diagnose-Protokollierung",
+    debugLoggingDesc: "Protokolliert Video, SyncPlay, Wiedergabe und Untertitel in der Browser-Konsole. Standardmäßig aus; gilt geräteweit für alle Profile.",
+    statusAppVersion: "App-Version",
+    statusServerVersion: "Server-Version",
+    statusClientGraphicSubs: "DVD/VobSub clientseitig",
+    statusClientGraphicSubsDesc: "Ob der Server DVD/VobSub-Untertitel clientseitig ohne Transcode ausliefert (neuere Serverversionen).",
+    statusChromium: "Chromium / WebView",
+    statusHls: "hls.js",
+    statusLibbitsub: "libbitsub",
+    statusYes: "Ja",
+    statusNo: "Nein",
 
     // Version
     version: "Version",
   }
 };
-
-export const currentLang = writable("de");
-export const t = derived(currentLang, ($currentLang) => translations[$currentLang]);
 
 // Kuratierte Sprachliste für Audio-/Untertitel-Präferenz.
 // codes = ISO-639-2/B + /T + 2-Buchstaben, gegen die Jellyfin MediaStream.Language gematcht wird.
@@ -624,3 +677,30 @@ export const LANGUAGES = [
   { key: 'it', name: 'Italiano',  codes: ['ita', 'it'] },
   { key: 'ko', name: '한국어',     codes: ['kor', 'ko'] },
 ];
+
+// Erkennt die UI-Sprache beim Start: zuletzt gewählte Gerätesprache → sonst Gerätesprache des
+// TVs/Browsers (z. B. "de-DE" → "de") → sonst Englisch. Gematcht wird gegen die VORHANDENEN
+// Übersetzungen (Object.keys(translations)), damit neu hinzugefügte Sprachen automatisch greifen
+// und alles Unbekannte sauber auf Englisch zurückfällt.
+export function detectUiLang() {
+  const supported = Object.keys(translations);
+  try {
+    const saved = localStorage.getItem('app_language');
+    if (saved && supported.includes(saved)) return saved;
+  } catch {}
+  const navLangs = (typeof navigator !== 'undefined')
+    ? (navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language])
+    : [];
+  for (const raw of navLangs) {
+    if (!raw) continue;
+    const sub = String(raw).toLowerCase().split('-')[0];          // "de-DE" → "de"
+    if (supported.includes(sub)) return sub;                      // direkter Treffer (2-Buchstaben)
+    const viaCode = LANGUAGES.find(l => l.codes.includes(sub));   // 3-Buchstaben-Codes (ger/eng …) mappen
+    if (viaCode && supported.includes(viaCode.key)) return viaCode.key;
+  }
+  return supported.includes('en') ? 'en' : supported[0];          // Fallback: Englisch
+}
+
+export const currentLang = writable(detectUiLang());
+// Fällt eine (noch) nicht übersetzte Sprache auf Englisch zurück, statt undefined zu liefern.
+export const t = derived(currentLang, ($currentLang) => translations[$currentLang] || translations.en);

@@ -1,7 +1,7 @@
 <script>
   import { currentLang, t, LANGUAGES } from '../i18n.js';
   import { isBackKey, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng } from '../utils.js';
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions } from '../utils.js';
   import { createEventDispatcher, tick, onDestroy } from 'svelte';
 
   export let serverUrl;
@@ -13,6 +13,8 @@
   export let reduceAnimations    = false;
   export let displaySettings     = { clock: true, hero: true, episodeCount: true };
   export let playbackPrefs       = { audioLanguage: 'default', subtitleLanguage: 'default', subtitleSize: 'normal' };
+  export let serverVersion       = '';      // Jellyfin-Serverversion (Status-Seite)
+  export let serverVobSub        = false;   // liefert der Server Bild-Untertitel clientseitig aus?
   export let libraries           = [];   // echte Mediatheken (für den Navigations-Editor)
   export let publicUsers         = [];   // wählbare Profile (öffentliche Liste vom Server)
   export let sharedProfile       = { enabled: false, members: [] };
@@ -63,7 +65,7 @@
   }
 
   // Version: YYYYMMDD — bei Updates hier anpassen
-  const APP_VERSION = '20260608';
+  const APP_VERSION = '20260611';
 
   const dispatch = createEventDispatcher();
 
@@ -97,12 +99,7 @@
 
   onDestroy(() => { if (modalTimeout) clearTimeout(modalTimeout); });
 
-  function getAuthHeaders() {
-    return {
-      "Authorization": `MediaBrowser Token="${activeToken}"`,
-      "Content-Type":  "application/json"
-    };
-  }
+  const getAuthHeaders = () => authHeaders(activeToken);
 
   async function openModal(name) {
     pwMessage = ''; qcMessage = '';
@@ -186,6 +183,17 @@
     screensaverSettings = { ...screensaverSettings, ...patch };
     dispatch('screensaverChange', screensaverSettings);
   }
+
+  // Diagnose-Logging: geräteweiter Opt-in-Schalter (wie der Bildschirmschoner nicht profilgebunden).
+  // setDebug wirkt sofort auf alle dlog-Aufrufe (geteiltes utils-Modul); localStorage hält es fest.
+  let debugLogging = localStorage.getItem('ocenfin_debug') === '1';
+  function toggleDebugLogging() {
+    debugLogging = !debugLogging;
+    localStorage.setItem('ocenfin_debug', debugLogging ? '1' : '0');
+    setDebug(debugLogging);
+  }
+  // Versionen für die Status-Seite (Chromium aus UA, hls.js/libbitsub aus package.json) — statisch.
+  const envVersions = runtimeVersions();
 
   function toggleReduceAnimations() {
     reduceAnimations = !reduceAnimations;
@@ -272,31 +280,73 @@
     if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); iconPickerFor = null; }
   }
 
-  // --- Profilbild (Preset-Avatar → Jellyfin hochladen) ---
+  // --- Profilbild (Symbol-Avatar ODER Poster eines zuletzt gesehenen Titels → Jellyfin) ---
   let avatarIcon  = null;                  // null = noch nichts gewählt (kein Avatar markiert)
   let avatarColor = null;                  // null = noch nichts gewählt (keine Farbe markiert)
   let avatarSaving = false;
   let avatarSaved  = false;                // kurzer Bestätigungshinweis nach dem Hochladen
   let hasEditedAvatar = false;             // false → Vorschau zeigt das echte aktuelle Profilbild
-  let avatarModalOpen = false;             // „Anpassen"-Modal (Icon + Farbe wählen)
+  let avatarModalOpen = false;             // „Anpassen"-Modal
+  let avatarTab = 'recent';                // 'recent' = Poster zuletzt gesehener Titel, 'symbols' = Icon+Farbe
+  let recentTitles = [];                   // [{ id, name, imageUrl }] – neueste zuerst, dedupliziert
+  let recentLoading = false;
+  let avatarPoster = null;                 // im 'recent'-Tab gewähltes Poster (sonst null)
   function onAvatarModalKey(e) {
     if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); avatarModalOpen = false; }
   }
   // Effektive Werte nur fürs Rendern/Hochladen (Fallback auf Standard), Markierung bleibt an den Rohwerten.
   $: effectiveIcon  = avatarIcon  || AVATAR_ICON_KEYS[0];
   $: effectiveColor = avatarColor || AVATAR_COLORS[0];
-  // Beim Verlassen von "Profil & Sicherheit" ohne Speichern → Vorschau auf das echte Bild zurücksetzen,
-  // damit niemand denkt, die Auswahl sei bereits gespeichert.
+  // Beim Verlassen von "Profil & Sicherheit" ohne Speichern → Vorschau/Auswahl zurücksetzen.
   $: if (activeCategory !== 'security' && hasEditedAvatar) {
-    hasEditedAvatar = false; avatarIcon = null; avatarColor = null;
+    hasEditedAvatar = false; avatarIcon = null; avatarColor = null; avatarPoster = null;
   }
   $: if (activeCategory !== 'security' && avatarModalOpen) avatarModalOpen = false;
+
+  // Zuletzt gesehene Filme/Serien als Avatar-Vorschläge holen: neueste zuerst, Episoden → Serie,
+  // dedupliziert, max. so viele wie es Symbole gibt. Bei jedem Öffnen frisch (aktuelle Reihenfolge).
+  async function loadRecentTitles() {
+    recentLoading = true;
+    try {
+      const base = `${serverUrl}/Users/${selectedUser.Id}/Items?Recursive=true&IncludeItemTypes=Movie,Episode`
+        + `&Fields=SeriesId,SeriesPrimaryImageTag,UserData&EnableImageTypes=Primary&ImageTypeLimit=1`
+        + `&SortBy=DatePlayed&SortOrder=Descending&EnableTotalRecordCount=false&Limit=72`;
+      const [played, resume] = await Promise.all([
+        fetch(`${base}&Filters=IsPlayed`,    { headers: getAuthHeaders() }).then(r => r.ok ? r.json() : { Items: [] }),
+        fetch(`${base}&Filters=IsResumable`, { headers: getAuthHeaders() }).then(r => r.ok ? r.json() : { Items: [] }),
+      ]);
+      const all = [...(resume.Items || []), ...(played.Items || [])]
+        .sort((a, b) => new Date(b.UserData?.LastPlayedDate || 0) - new Date(a.UserData?.LastPlayedDate || 0));
+      const seen = new Set(); const list = [];
+      for (const it of all) {
+        const isEp = it.Type === 'Episode' && it.SeriesId;
+        const id   = isEp ? it.SeriesId : it.Id;
+        const tag  = isEp ? it.SeriesPrimaryImageTag : it.ImageTags?.Primary;
+        if (!id || !tag || seen.has(id)) continue;
+        seen.add(id);
+        list.push({
+          id,
+          name: isEp ? (it.SeriesName || it.Name) : it.Name,
+          imageUrl: `${serverUrl}/Items/${id}/Images/Primary?tag=${tag}&fillHeight=300&quality=90&api_key=${activeToken}`,
+        });
+        if (list.length >= AVATAR_ICON_KEYS.length) break;
+      }
+      recentTitles = list;
+    } catch { recentTitles = []; }
+    finally {
+      recentLoading = false;
+      avatarTab = recentTitles.length ? 'recent' : 'symbols';   // Neu-Nutzer ohne Historie → Symbole
+    }
+  }
+  function openAvatarModal() { avatarModalOpen = true; loadRecentTitles(); }
 
   async function saveProfileImage() {
     if (avatarSaving) return;
     avatarSaving = true; avatarSaved = false;
     try {
-      const base64 = await renderAvatarPng(effectiveIcon, effectiveColor);
+      const base64 = (avatarTab === 'recent' && avatarPoster)
+        ? await renderImageAvatarPng(avatarPoster.imageUrl)
+        : await renderAvatarPng(effectiveIcon, effectiveColor);
       const res = await fetch(`${serverUrl}/Users/${selectedUser.Id}/Images/Primary`, {
         method: 'POST',
         headers: { 'Authorization': `MediaBrowser Token="${activeToken}"`, 'Content-Type': 'image/png' },
@@ -368,6 +418,7 @@
     { id: 'subtitles',  label: $t.subtitles,          icon: 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z' },
     { id: 'security',   label: $t.profileSecurity,    icon: 'M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z' },
     { id: 'account',    label: $t.settingsAccount,    icon: 'M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.7 5.1a3.375 3.375 0 012.7-1.35h7.13c1.06 0 2.06.5 2.7 1.35l2.59 3.45a4.5 4.5 0 01.9 2.7' },
+    { id: 'status',     label: $t.statusSection,      icon: 'M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6' },
   ];
 </script>
 
@@ -656,22 +707,67 @@
 
         <!-- Timeout (nur wenn aktiv) -->
         {#if screensaverSettings.enabled}
+          <!-- Aktivierung nach -->
           <div class="h-px bg-gray-700"></div>
-          <div class="flex items-center justify-between px-6 py-4">
-            <span class="text-base text-gray-400 font-medium">{$t.screensaverAfter}</span>
-            <div class="flex gap-2">
+          <div class="p-6">
+            <span class="text-base text-gray-400 font-medium block mb-3">{$t.screensaverAfter}</span>
+            <div class="flex gap-3">
               {#each timeoutOptions as opt}
                 <button on:click={() => updateScreensaver({ timeout: opt.value })}
-                  class="px-5 py-2 rounded-lg font-bold text-sm transition-all
-                         focus:outline-none focus:ring-2 focus:ring-white
-                         {screensaverSettings.timeout === opt.value
-                           ? 'bg-blue-600 text-white'
-                           : 'bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-white focus:bg-gray-600 focus:text-white'}">
+                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {screensaverSettings.timeout === opt.value ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                   {opt.label}
                 </button>
               {/each}
             </div>
           </div>
+
+          <!-- Stil: Uhr vs. Art-Mode -->
+          <div class="h-px bg-gray-700"></div>
+          <div class="p-6">
+            <span class="text-base text-gray-400 font-medium block mb-3">{$t.screensaverStyle}</span>
+            <div class="flex gap-3">
+              {#each [['clock', $t.screensaverModeClock, $t.screensaverModeClockDesc], ['art', $t.screensaverModeArt, $t.screensaverModeArtDesc]] as [val, label, desc]}
+                <button on:click={() => updateScreensaver({ mode: val })}
+                  class="flex-1 text-left p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {screensaverSettings.mode === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                  <span class="block font-bold text-lg">{label}</span>
+                  <span class="block text-sm mt-0.5 {screensaverSettings.mode === val ? 'text-blue-100' : 'text-gray-500'}">{desc}</span>
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <!-- Backdrop-Quelle (nur im Art-Mode) -->
+          {#if screensaverSettings.mode === 'art'}
+            <div class="h-px bg-gray-700"></div>
+            <div class="p-6">
+              <span class="text-base text-gray-400 font-medium block mb-3">{$t.screensaverArtSource}</span>
+              <div class="flex gap-3">
+                {#each [['watched', $t.screensaverArtWatched], ['unwatched', $t.screensaverArtUnwatched], ['random', $t.screensaverArtRandom]] as [val, label]}
+                  <button on:click={() => updateScreensaver({ artSource: val })}
+                    class="flex-1 py-3 rounded-xl font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-all
+                           {screensaverSettings.artSource === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                    {label}
+                  </button>
+                {/each}
+              </div>
+            </div>
+            <!-- Helligkeit (nur Art-Mode) -->
+            <div class="h-px bg-gray-700"></div>
+            <div class="p-6">
+              <span class="text-base text-gray-400 font-medium block mb-3">{$t.screensaverBrightness}</span>
+              <div class="flex gap-3">
+                {#each [[0.45, $t.brightnessDim], [0.65, $t.brightnessMedium], [0.85, $t.brightnessBright]] as [val, label]}
+                  <button on:click={() => updateScreensaver({ brightness: val })}
+                    class="flex-1 py-3 rounded-xl font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-all
+                           {screensaverSettings.brightness === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                    {label}
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
         {/if}
 
       </div>
@@ -894,8 +990,10 @@
       <!-- Profilbild: Preset-Avatar + Hintergrundfarbe, wird als Jellyfin-Profilbild hochgeladen -->
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-6 shadow-xl flex flex-col gap-5">
         <div class="flex items-center gap-5">
-          <div class="w-20 h-20 rounded-full overflow-hidden flex items-center justify-center shrink-0 shadow-md" style="background:{(!hasEditedAvatar && selectedUser?.PrimaryImageTag) ? 'transparent' : effectiveColor}">
-            {#if !hasEditedAvatar && selectedUser?.PrimaryImageTag}
+          <div class="w-20 h-20 rounded-full overflow-hidden flex items-center justify-center shrink-0 shadow-md" style="background:{(hasEditedAvatar && avatarPoster) || (!hasEditedAvatar && selectedUser?.PrimaryImageTag) ? 'transparent' : effectiveColor}">
+            {#if hasEditedAvatar && avatarPoster}
+              <img src={avatarPoster.imageUrl} alt={avatarPoster.name} class="w-full h-full object-cover" />
+            {:else if !hasEditedAvatar && selectedUser?.PrimaryImageTag}
               <img src="{serverUrl}/Users/{selectedUser.Id}/Images/Primary?tag={selectedUser.PrimaryImageTag}" alt={$t.profilePicture} class="w-full h-full object-cover" />
             {:else}
               <svg class="w-11 h-11 text-white" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[effectiveIcon]}/></svg>
@@ -906,7 +1004,7 @@
             <span class="text-gray-400 mt-1 block text-sm">{$t.profilePictureHint}</span>
           </div>
           <div class="flex gap-3 shrink-0">
-            <button on:click={() => avatarModalOpen = true}
+            <button on:click={openAvatarModal}
               class="px-5 py-3 rounded-xl font-bold text-base bg-gray-700 text-white hover:bg-gray-600 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               {$t.customize}
             </button>
@@ -930,32 +1028,72 @@
                 <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
+            <!-- Umschalter: zuletzt gesehene Titel ↔ Symbole -->
+            <div class="flex gap-2 bg-gray-900/60 p-1 rounded-xl">
+              <button on:click={() => avatarTab = 'recent'}
+                class="flex-1 py-2.5 rounded-lg font-bold text-sm focus:outline-none focus:ring-4 focus:ring-white transition-colors
+                       {avatarTab === 'recent' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}">
+                {$t.avatarTabRecent}
+              </button>
+              <button on:click={() => avatarTab = 'symbols'}
+                class="flex-1 py-2.5 rounded-lg font-bold text-sm focus:outline-none focus:ring-4 focus:ring-white transition-colors
+                       {avatarTab === 'symbols' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}">
+                {$t.avatarTabSymbols}
+              </button>
+            </div>
             <!-- Live-Vorschau -->
             <div class="flex justify-center">
-              <div class="w-24 h-24 rounded-full flex items-center justify-center shadow-md" style="background:{effectiveColor}">
-                <svg class="w-12 h-12 text-white" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[effectiveIcon]}/></svg>
+              <div class="w-24 h-24 rounded-full overflow-hidden flex items-center justify-center shadow-md"
+                   style="background:{(avatarTab === 'recent' && avatarPoster) ? 'transparent' : effectiveColor}">
+                {#if avatarTab === 'recent' && avatarPoster}
+                  <img src={avatarPoster.imageUrl} alt={avatarPoster.name} class="w-full h-full object-cover" />
+                {:else}
+                  <svg class="w-12 h-12 text-white" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[effectiveIcon]}/></svg>
+                {/if}
               </div>
             </div>
-            <!-- Icons links (volle 6er-Reihen) · Farben rechts als schmale 2er-Spalte → per D-Pad
-                 mit einem Rechts-Druck erreichbar, ohne durch alle Icon-Reihen zu navigieren. -->
-            <div class="flex gap-5 items-start">
-              <div class="grid grid-cols-6 gap-3 flex-1 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 content-start">
-                {#each AVATAR_ICON_KEYS as key}
-                  <button on:click={() => { avatarIcon = key; hasEditedAvatar = true; }}
-                    class="aspect-square flex items-center justify-center rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-all
-                           {effectiveIcon === key ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}">
-                    <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[key]}/></svg>
-                  </button>
-                {/each}
+
+            {#if avatarTab === 'recent'}
+              {#if recentLoading}
+                <div class="flex justify-center py-10">
+                  <div class="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              {:else if recentTitles.length}
+                <!-- Poster zuletzt gesehener Titel (neueste zuerst), mittig in den runden Avatar zugeschnitten -->
+                <div class="grid grid-cols-6 gap-3 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 content-start">
+                  {#each recentTitles as t (t.id)}
+                    <button on:click={() => { avatarPoster = t; hasEditedAvatar = true; }} title={t.name}
+                      class="aspect-square rounded-xl overflow-hidden focus:outline-none focus:ring-4 focus:ring-white transition-all
+                             {avatarPoster?.id === t.id ? 'ring-4 ring-blue-500' : 'hover:opacity-80'}">
+                      <img src={t.imageUrl} alt={t.name} class="w-full h-full object-cover" />
+                    </button>
+                  {/each}
+                </div>
+              {:else}
+                <div class="text-center text-gray-400 py-10 px-4">{$t.avatarRecentEmpty}</div>
+              {/if}
+            {:else}
+              <!-- Icons links (volle 6er-Reihen) · Farben rechts als schmale 2er-Spalte → per D-Pad
+                   mit einem Rechts-Druck erreichbar, ohne durch alle Icon-Reihen zu navigieren. -->
+              <div class="flex gap-5 items-start">
+                <div class="grid grid-cols-6 gap-3 flex-1 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 content-start">
+                  {#each AVATAR_ICON_KEYS as key}
+                    <button on:click={() => { avatarIcon = key; hasEditedAvatar = true; }}
+                      class="aspect-square flex items-center justify-center rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-all
+                             {effectiveIcon === key ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}">
+                      <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[key]}/></svg>
+                    </button>
+                  {/each}
+                </div>
+                <div class="grid grid-cols-2 gap-2.5 shrink-0 p-2 content-start">
+                  {#each AVATAR_COLORS as color}
+                    <button on:click={() => { avatarColor = color; hasEditedAvatar = true; }}
+                      class="w-10 h-10 rounded-full focus:outline-none focus:ring-4 focus:ring-white transition-all {effectiveColor === color ? 'ring-2 ring-white scale-110' : ''}"
+                      style="background:{color}" aria-label={$t.customize}></button>
+                  {/each}
+                </div>
               </div>
-              <div class="grid grid-cols-2 gap-2.5 shrink-0 p-2 content-start">
-                {#each AVATAR_COLORS as color}
-                  <button on:click={() => { avatarColor = color; hasEditedAvatar = true; }}
-                    class="w-10 h-10 rounded-full focus:outline-none focus:ring-4 focus:ring-white transition-all {effectiveColor === color ? 'ring-2 ring-white scale-110' : ''}"
-                    style="background:{color}" aria-label={$t.customize}></button>
-                {/each}
-              </div>
-            </div>
+            {/if}
             <button on:click={() => avatarModalOpen = false}
               class="w-full py-3 rounded-xl font-bold text-base bg-blue-600 text-white hover:bg-blue-500 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               {$t.close}
@@ -1126,6 +1264,73 @@
         </button>
       </div>
 
+    </section>
+    {/if}
+
+    <!-- ══════════════════════════════════════════
+         STATUS / LOGS — Diagnose
+    ══════════════════════════════════════════ -->
+    {#if activeCategory === 'status'}
+    <section class="flex flex-col gap-4">
+      <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{$t.statusSection}</h2>
+
+      <!-- Diagnose-Logging Toggle (geräteweit, opt-in) -->
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+        <button on:click={toggleDebugLogging}
+          class="flex items-center justify-between w-full px-6 py-5 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left rounded-2xl">
+          <div class="pr-4">
+            <span class="text-2xl text-white font-medium block">{$t.debugLogging}</span>
+            <span class="text-gray-400 mt-0.5 block text-sm">{$t.debugLoggingDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {debugLogging ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {debugLogging ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+      </div>
+
+      <!-- Status-Infos: nur Dinge, die man woanders nicht sieht und die das App-Verhalten erklären -->
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-6 flex flex-col gap-4">
+        <div class="flex justify-between items-baseline gap-4">
+          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusAppVersion}</span>
+          <span class="text-white font-mono text-sm">{APP_VERSION}</span>
+        </div>
+        <div class="h-px bg-gray-700/70"></div>
+        <div class="flex justify-between items-baseline gap-4">
+          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusServerVersion}</span>
+          <span class="text-white font-mono text-sm">{serverVersion || '—'}</span>
+        </div>
+        <div class="h-px bg-gray-700/70"></div>
+        <div class="flex justify-between items-start gap-4">
+          <div class="pr-2">
+            <span class="text-sm text-gray-300 font-bold block">{$t.statusClientGraphicSubs}</span>
+            <span class="text-xs text-gray-500 mt-0.5 block">{$t.statusClientGraphicSubsDesc}</span>
+          </div>
+          <span class="font-mono text-sm font-bold shrink-0 mt-0.5 {serverVobSub ? 'text-green-400' : 'text-gray-400'}">
+            {serverVobSub ? $t.statusYes : $t.statusNo}
+          </span>
+        </div>
+      </div>
+
+      <!-- Umgebung / Bibliotheken — relevant beim Melden von Wiedergabe-/Untertitel-Problemen -->
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-6 flex flex-col gap-4">
+        <div class="flex justify-between items-baseline gap-4">
+          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusChromium}</span>
+          <span class="text-white font-mono text-sm">{envVersions.chromium || '—'}</span>
+        </div>
+        <div class="h-px bg-gray-700/70"></div>
+        <div class="flex justify-between items-baseline gap-4">
+          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusHls}</span>
+          <span class="text-white font-mono text-sm">{envVersions.hls || '—'}</span>
+        </div>
+        <div class="h-px bg-gray-700/70"></div>
+        <div class="flex justify-between items-baseline gap-4">
+          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusLibbitsub}</span>
+          <span class="text-white font-mono text-sm">{envVersions.libbitsub || '—'}</span>
+        </div>
+      </div>
     </section>
     {/if}
 

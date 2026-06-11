@@ -3,7 +3,7 @@
   // Wird von Details und Player verwendet. Steuerung über die Prop `mode`
   // (null = geschlossen). Schließen meldet sich per 'close'-Event beim Eltern.
   import { t } from '../i18n.js';
-  import { isBackKey, focusOnMount } from '../utils.js';
+  import { isBackKey, focusOnMount, dlog } from '../utils.js';
   import { createEventDispatcher } from 'svelte';
 
   export let mode = null;          // null | 'collection' | 'playlist'

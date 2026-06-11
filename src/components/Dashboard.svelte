@@ -1,6 +1,6 @@
 <script>
   import { t } from '../i18n.js';
-  import { itemProgress, connectionLost, longPress } from '../utils.js';
+  import { itemProgress, connectionLost, longPress, authHeaders, blurUp, itemBlurHash } from '../utils.js';
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
 
   export let serverUrl;
@@ -86,12 +86,7 @@
     }
   }
 
-  function getAuthHeaders() {
-    return {
-      "Authorization": `MediaBrowser Token="${activeToken}"`,
-      "Content-Type": "application/json"
-    };
-  }
+  const getAuthHeaders = () => authHeaders(activeToken);
 
   // Empfehlungen: Seeds aus zuletzt gesehenen Items, dann /Items/{id}/Similar.
   // Best Practice (Netflix/Plex): direkt im Dashboard, kein eigener Tab.
@@ -308,7 +303,7 @@
         <!-- Backdrop mit Verläufen -->
         {#each heroItems as h, i}
           {#if i === heroIndex && getHeroBackdrop(h)}
-            <img src={getHeroBackdrop(h)} alt={h.Name} fetchpriority="high" loading="eager" decoding="async"
+            <img src={getHeroBackdrop(h)} use:blurUp={itemBlurHash(h, 'Backdrop')} alt={h.Name} fetchpriority="high" loading="eager" decoding="async"
               class="absolute inset-0 w-full h-full object-cover hero-fade" />
           {/if}
         {/each}
@@ -370,7 +365,7 @@
                           border-4 border-transparent group-focus:border-white group-hover:border-gray-400
                           transition-all shadow-lg overflow-hidden">
                 {#if getItemImageUrl(library)}
-                  <img src={getItemImageUrl(library)} alt={library.Name}
+                  <img src={getItemImageUrl(library)} use:blurUp={itemBlurHash(library)} alt={library.Name}
                     class="w-full h-full object-cover opacity-80 group-focus:opacity-100" loading="lazy" />
                 {:else}
                   <span class="text-2xl text-gray-500 font-bold">{library.Name}</span>
@@ -395,7 +390,7 @@
                           border-4 border-transparent group-focus:border-white group-focus:scale-105
                           transition-all duration-200 shadow-xl relative">
                 {#if getItemImageUrl(item, 'landscape')}
-                  <img src={getItemImageUrl(item, 'landscape')} alt={item.Name}
+                  <img src={getItemImageUrl(item, 'landscape')} use:blurUp={itemBlurHash(item, 'Backdrop')} alt={item.Name}
                     class="w-full h-full object-cover" loading="lazy" />
                 {/if}
                 {#if itemProgress(item) > 0}
@@ -433,7 +428,7 @@
                           border-4 border-transparent group-focus:border-white group-focus:scale-105
                           transition-all duration-200 shadow-xl">
                 {#if getItemImageUrl(item, 'landscape')}
-                  <img src={getItemImageUrl(item, 'landscape')} alt={item.Name}
+                  <img src={getItemImageUrl(item, 'landscape')} use:blurUp={itemBlurHash(item, 'Backdrop')} alt={item.Name}
                     class="w-full h-full object-cover" loading="lazy" />
                 {/if}
               </div>
@@ -461,7 +456,7 @@
                           border-4 border-transparent group-focus:border-white
                           transition-colors duration-200 shadow-xl">
                 {#if getHistoryImageUrl(item)}
-                  <img src={getHistoryImageUrl(item)} alt={item.Name}
+                  <img src={getHistoryImageUrl(item)} use:blurUp={itemBlurHash(item, 'Backdrop')} alt={item.Name}
                     class="w-full h-full object-cover" loading="lazy" />
                 {/if}
                 {#if itemProgress(item) > 0}
@@ -494,7 +489,7 @@
                           border-4 border-transparent group-focus:border-white
                           transition-colors duration-200 shadow-xl">
                 {#if getItemImageUrl(item)}
-                  <img src={getItemImageUrl(item)} alt={item.Name}
+                  <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name}
                     class="w-full h-full object-cover" loading="lazy" />
                 {/if}
               </div>
@@ -522,7 +517,7 @@
                           border-4 border-transparent group-focus:border-white
                           transition-colors duration-200 shadow-xl">
                 {#if getItemImageUrl(item)}
-                  <img src={getItemImageUrl(item)} alt={item.Name}
+                  <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name}
                     class="w-full h-full object-cover" loading="lazy" />
                 {/if}
                 {#if itemProgress(item) > 0}
@@ -555,7 +550,7 @@
                           border-4 border-transparent group-focus:border-white
                           transition-colors duration-200 shadow-xl">
                 {#if getItemImageUrl(item)}
-                  <img src={getItemImageUrl(item)} alt={item.Name}
+                  <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name}
                     class="w-full h-full object-cover" loading="lazy" />
                 {/if}
                 {#if itemProgress(item) > 0}
@@ -588,7 +583,7 @@
                           border-4 border-transparent group-focus:border-white
                           transition-colors duration-200 shadow-xl">
                 {#if getItemImageUrl(item)}
-                  <img src={getItemImageUrl(item)} alt={item.Name}
+                  <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name}
                     class="w-full h-full object-cover" loading="lazy" />
                 {/if}
                 {#if itemProgress(item) > 0}
@@ -621,7 +616,7 @@
                           border-4 border-transparent group-focus:border-white
                           transition-colors duration-200 shadow-xl">
                 {#if getItemImageUrl(col)}
-                  <img src={getItemImageUrl(col)} alt={col.Name}
+                  <img src={getItemImageUrl(col)} use:blurUp={itemBlurHash(col)} alt={col.Name}
                     class="w-full h-full object-cover" loading="lazy" />
                 {:else}
                   <div class="w-full h-full flex items-center justify-center text-gray-600">

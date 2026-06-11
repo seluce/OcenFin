@@ -1,6 +1,6 @@
 <script>
   import { t, LANGUAGES } from '../i18n.js';
-  import { isBackKey, focusOnMount, personImageUrl, itemProgress } from '../utils.js';
+  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash } from '../utils.js';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
 
@@ -11,6 +11,7 @@
   export let reduceAnimations = false;   // Backdrop bei aktivem Sparmodus weglassen
   export let playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default' };
   export let use24h = true;   // Zeitformat für den „Endet um"-Chip (folgt der Einstellung)
+  export let serverVobSub = false;   // Server liefert VobSub/DVD extern (.mks, Jellyfin 12.0+)?
   export let spoilerProtection = true;   // ungesehene Folgen-Thumbnails leicht verschleiern
 
   const dispatch = createEventDispatcher();
@@ -165,16 +166,19 @@
   }
 
   // Wie Jellyfin im Standardmodus: erzwungenen ("Forced") Untertitel in der Sprache der
-  // gewählten Audiospur einblenden. Automatisch wählbar sind: TEXT (VTT) und PGS (libpgs, sofern
-  // aktiviert) → ohne Transcode. BILD-Untertitel ohne Client-Renderer (DVDSUB …) nur, wenn die
-  // Option dafür an ist (dann bewusst mit Transcode). Sonst aus → Direct Play bleibt.
+  // gewählten Audiospur einblenden. Automatisch wählbar sind: TEXT (VTT) immer; PGS, wenn
+  // clientseitiges Rendern an ist (libbitsub → Direct Play); VobSub/DVD ebenso, SOBALD der
+  // Server sie als .mks liefert (Jellyfin 12.0+) → dann ebenfalls Direct Play. Auf älteren
+  // Servern greift für DVD nur die Opt-out-Option (dann bewusst mit Transcode/Brennen).
   const GRAPHIC_SUB_CODECS = ['pgssub', 'pgs', 'dvdsub', 'dvbsub', 'vobsub', 'sub'];
   function isGraphicSub(s) { return GRAPHIC_SUB_CODECS.includes((s?.Codec || '').toLowerCase()); }
   function subtitleAutoEligible(s) {
     if (!isGraphicSub(s)) return true;                                  // Text → immer
+    if (playbackPrefs.pgsRendering === false) return false;            // Bild-Rendern global aus
     const codec = (s?.Codec || '').toLowerCase();
-    if (['pgssub', 'pgs'].includes(codec)) return playbackPrefs.pgsRendering !== false;   // PGS → wenn Rendering an
-    return !!playbackPrefs.forcedGraphicSubs;                           // DVDSUB & Co. → nur per Option
+    if (['pgssub', 'pgs'].includes(codec)) return true;               // PGS → clientseitig (Direct Play)
+    if (serverVobSub) return true;                                    // VobSub/DVD via .mks → clientseitig (Direct Play)
+    return !!playbackPrefs.forcedGraphicSubs;                          // alter Server: nur per Option (gebrannt)
   }
   function pickForcedSubtitle(streams, audioIndex, serverDefault) {
     const audioLang = streams.find(s => s.Type === 'Audio' && s.Index === audioIndex)?.Language?.toLowerCase();
@@ -193,9 +197,7 @@
     trailerEmbedUrl = null;
   }
 
-  function getAuthHeaders() {
-    return { "Authorization": `MediaBrowser Token="${activeToken}"`, "Content-Type": "application/json" };
-  }
+  const getAuthHeaders = () => authHeaders(activeToken);
 
   // Reaktiv: lädt neu, sobald 'item' prop sich ändert
   $: if (item) loadFullDetails(item.Id);
@@ -393,7 +395,7 @@
       <div class="relative">
         {#if !reduceAnimations && getItemBackdropUrl(fullItem)}
           <div class="absolute inset-0 z-0">
-            <img src={getItemBackdropUrl(fullItem)} alt="" class="w-full h-full object-cover object-top" />
+            <img src={getItemBackdropUrl(fullItem)} use:blurUp={itemBlurHash(fullItem, 'Backdrop')} alt="" class="w-full h-full object-cover object-top" />
             <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/60 to-gray-900/20"></div>
             <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/40 to-transparent"></div>
           </div>
@@ -423,7 +425,7 @@
 
         <div class="w-64 shrink-0 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800">
           {#if getItemImageUrl(fullItem)}
-            <img src={getItemImageUrl(fullItem)} alt={fullItem.Name} class="w-full h-full object-cover" />
+            <img src={getItemImageUrl(fullItem)} use:blurUp={itemBlurHash(fullItem)} alt={fullItem.Name} class="w-full h-full object-cover" />
           {/if}
         </div>
 
@@ -663,7 +665,7 @@
                 class="shrink-0 group flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
                 <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 transition-all shadow-xl relative">
                   {#if getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')}
-                    <img src={getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')} alt={ep.Name} loading="lazy"
+                    <img src={getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')} use:blurUp={itemBlurHash(ep)} alt={ep.Name} loading="lazy"
                       class="w-full h-full object-cover transition-all duration-200 {epSpoiler(ep) ? 'blur-md scale-110' : ''}" />
                   {/if}
                   {#if itemProgress(ep) > 0}
@@ -697,7 +699,7 @@
               <button on:click={() => dispatch('openPerson', person)} class="shrink-0 w-36 group focus:outline-none text-center">
                 <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto">
                   {#if personImageUrl(serverUrl, person)}
-                    <img src={personImageUrl(serverUrl, person)} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
+                    <img src={personImageUrl(serverUrl, person)} use:blurUp={itemBlurHash(person)} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}
                     <div class="w-full h-full flex items-center justify-center text-gray-600">
                       <svg class="w-14 h-14" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
@@ -721,7 +723,7 @@
               <button on:click={() => navigateTo(si.Id)} class="shrink-0 w-48 group flex flex-col focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
                   {#if getItemImageUrl(si, 'portrait')}
-                    <img src={getItemImageUrl(si, 'portrait')} alt={si.Name} class="w-full h-full object-cover" loading="lazy" />
+                    <img src={getItemImageUrl(si, 'portrait')} use:blurUp={itemBlurHash(si)} alt={si.Name} class="w-full h-full object-cover" loading="lazy" />
                   {/if}
                 </div>
                 <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full">{si.Name}</span>

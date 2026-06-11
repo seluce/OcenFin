@@ -1,9 +1,9 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, itemProgress, connectionLost, longPress, personImageUrl } from './utils.js';
+  import { isBackKey, focusOnMount, itemProgress, connectionLost, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash } from './utils.js';
   import { createFocusManager } from './spatialnav.js';
-  import { currentLang, t } from './i18n.js';
+  import { currentLang, t, detectUiLang } from './i18n.js';
   import Clock       from './components/Clock.svelte';
   import Screensaver from './components/Screensaver.svelte';
   import Dashboard   from './components/Dashboard.svelte';
@@ -55,6 +55,8 @@
   let selectedUser     = null;
   let isLoggedIn       = false;
   let activeToken      = '';
+  let serverVobSub     = false;   // liefert der Server VobSub/DVD extern als .mks? (Jellyfin 12.0+)
+  let serverVersion    = '';      // Jellyfin-Serverversion (für die Status-Seite)
   let savedTokens      = {};  // { serverId: { userId: token } } — Schnellwechsel (nur über Profil-Schalter)
   let sharedTokens     = {};  // { serverId: { userId: token } } — gemeinsames Schauen, GETRENNT vom Schnellwechsel
 
@@ -204,7 +206,7 @@
     saveUserPrefs();
   }
 
-  let screensaverSettings = { enabled: true, timeout: 90 };
+  let screensaverSettings = { enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45 };
   let showScreensaver     = false;
   let screensaverTimer    = null;
 
@@ -409,7 +411,7 @@
         activeSubtitleIndex = -1;
         activeMediaSourceId = null;
         viewState = 'player';
-        console.info('[SyncPlay] Auto-Laden →', currentDetailItem?.Name);
+        dlog('[SyncPlay] Auto-Laden →', currentDetailItem?.Name);
       }
     } catch {}
     _syncOpeningId = null;
@@ -432,7 +434,7 @@
     catch (e) { console.warn('[SyncPlay] Socket konnte nicht geöffnet werden', e); return; }
     syncSocket = ws;
     ws.onopen = () => {
-      console.info('[SyncPlay] Socket verbunden');
+      dlog('[SyncPlay] Socket verbunden');
       if (syncKeepAlive) clearInterval(syncKeepAlive);
       syncKeepAlive = setInterval(() => { try { ws.send(JSON.stringify({ MessageType: 'KeepAlive' })); } catch {} }, 30000);
     };
@@ -442,7 +444,7 @@
     };
     ws.onclose = () => {
       if (syncKeepAlive) { clearInterval(syncKeepAlive); syncKeepAlive = null; }
-      console.info('[SyncPlay] Socket getrennt');
+      dlog('[SyncPlay] Socket getrennt');
       if (syncSocketWanted) { clearTimeout(syncReconnect); syncReconnect = setTimeout(connectSyncSocket, 5000); }
     };
     ws.onerror = () => { /* onclose folgt automatisch → Reconnect dort */ };
@@ -468,7 +470,7 @@
         syncQueue = entry
           ? { itemId: entry.ItemId, playlistItemId: entry.PlaylistItemId, positionTicks: q.StartPositionTicks || 0, isPlaying: !!q.IsPlaying }
           : null;
-        console.info('[SyncPlay] PlayQueue', syncQueue);
+        dlog('[SyncPlay] PlayQueue', syncQueue);
         // Neues Gruppen-Item → automatisch öffnen (nur einmal pro Item; nicht erneut nach manuellem Verlassen).
         const qid = syncQueue?.itemId || null;
         if (syncMyGroup && qid && qid !== _lastSyncQueueItem) {
@@ -479,7 +481,7 @@
     } else if (msg.MessageType === 'SyncPlayCommand') {
       // Wiedergabe-Kommando (Play/Pause/Seek) → an den Player; _seq dient dem Player als Dedupe-Marke.
       syncCommand = { ...msg.Data, _seq: ++syncCmdSeq };
-      console.info('[SyncPlay] Kommando empfangen', syncCommand.Command, syncCommand.PositionTicks);
+      dlog('[SyncPlay] Kommando empfangen', syncCommand.Command, syncCommand.PositionTicks);
     } else if (msg.MessageType === 'Playstate') {
       // Admin-Fernsteuerung (Dashboard): Pause/Unpause/Stop/Seek/PlayPause/NextTrack → an den Player.
       const cmd = msg.Data?.Command;
@@ -653,12 +655,13 @@
     savedServers        = loadSavedServers();
     savedTokens         = loadSavedTokens();
     sharedTokens        = loadSharedTokens();
-    screensaverSettings = { enabled: true, timeout: 90, ...loadScreensaverSettings() };
+    screensaverSettings = { enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45, ...loadScreensaverSettings() };
+    setDebug(localStorage.getItem('ocenfin_debug') === '1');   // geräteweites Diagnose-Logging (opt-in)
 
-    // Gerätesprache für Vor-Login-Screens (Server-/Benutzerauswahl).
+    // Gerätesprache für Vor-Login-Screens (Server-/Benutzerauswahl): zuletzt gewählte Sprache →
+    // sonst Gerätesprache → sonst Englisch. Validiert gegen vorhandene Übersetzungen.
     // Profil-spezifische Einstellungen werden erst beim Login via applyUserPrefs geladen.
-    const deviceLang = localStorage.getItem('app_language');
-    if (deviceLang) currentLang.set(deviceLang);
+    currentLang.set(detectUiLang());
     prefsReady = true;   // ab jetzt werden Änderungen persistiert
 
     // Globale Back-Taste (WebOS Fernbedienung)
@@ -863,12 +866,7 @@
   // AUTH
   // ============================================================
 
-  function getAuthHeaders() {
-    return {
-      "Authorization": `MediaBrowser Token="${activeToken}"`,
-      "Content-Type":  "application/json"
-    };
-  }
+  const getAuthHeaders = () => authHeaders(activeToken);
 
   async function fetchUsers() {
     try {
@@ -958,7 +956,7 @@
         if (!res.ok) { console.warn('[Gemeinsam] Abfrage fehlgeschlagen für', m.name, '· HTTP', res.status); continue; }
         let n = 0;
         (await res.json()).Items?.forEach(i => { if (i.UserData?.Played) { ids.add(i.Id); n++; } });
-        console.info('[Gemeinsam]', m.name, '→', n, 'komplett gesehene Titel');
+        dlog('[Gemeinsam]', m.name, '→', n, 'komplett gesehene Titel');
       } catch (e) { console.warn('[Gemeinsam] Fehler für', m.name, e); }
     }
     partnersPlayedIds = ids;
@@ -1027,7 +1025,7 @@
       .sort((a, b) => b.score - a.score || (b.it.CommunityRating || 0) - (a.it.CommunityRating || 0))
       .slice(0, 20)
       .map(x => ({ ...x.it, UserData: {} }));   // UserData leeren → kein Fortschrittsbalken eines Mitglieds
-    console.info('[Gemeinsam] Vorschläge:', sharedSuggestions.length);
+    dlog('[Gemeinsam] Vorschläge:', sharedSuggestions.length);
   }
 
   async function validateToken(token) {
@@ -1103,6 +1101,38 @@
     manualPassword   = '';
     saveCurrentSession();
     scheduleScreensaver();
+    detectServerCapabilities();
+    refreshSharedMemberToken(user.Id, token);
+  }
+
+  // Jellyfin bindet Sessions an die DeviceId — meldet sich ein Profil auf demselben Gerät neu an,
+  // verfällt sein vorheriger Token. Ist dieses Profil Mitglied im Gemeinsam-Profil, frischen wir
+  // dessen gespeicherte Token-Momentaufnahme auf den neuen Token auf, sonst läuft das gemeinsame
+  // Schauen später ins 401. Nur Profile auffrischen, die bereits als Mitglied erfasst sind.
+  function refreshSharedMemberToken(userId, token) {
+    const sid = selectedServer?.id;
+    if (!sid || !token) return;
+    if (sharedTokens[sid]?.[userId] && sharedTokens[sid][userId] !== token) {
+      sharedTokens[sid][userId] = token;
+      sharedTokens = { ...sharedTokens };
+      persistSharedTokens();
+    }
+  }
+
+  // Einmalig die Serverversion prüfen → entscheidet, ob DVD/VobSub clientseitig (libbitsub via
+  // .mks) renderbar ist oder noch gebrannt werden muss. Fehlerhaft/alt → false (sicheres Brennen).
+  async function detectServerCapabilities() {
+    serverVobSub = false;
+    serverVersion = '';
+    try {
+      const res = await fetch(`${serverUrl}/System/Info/Public`);
+      if (res.ok) {
+        const info = await res.json();
+        serverVersion = info?.Version || '';
+        serverVobSub = serverSupportsVobSub(info?.Version);
+      }
+    } catch {}
+    dlog('[OcenFin] Server-Capabilities:', { version: serverVersion || '(unbekannt)', vobSub: serverVobSub });
   }
 
   // Quick Connect — Login-Flow (Code auf TV, Handy scannt)
@@ -1500,9 +1530,9 @@
       ]);
       const content = contentRes.ok ? ((await contentRes.json()).Items || []) : [];
       const persons = personRes.ok  ? ((await personRes.json()).Items  || []).map(p => ({ ...p, Type: 'Person' })) : [];
-      console.log('[OcenFin] Favoriten:', content.length, 'Titel,', persons.length, 'Personen');
+      dlog('[OcenFin] Favoriten:', content.length, 'Titel,', persons.length, 'Personen');
       favoriteItems = [...content, ...persons];
-    } catch (e) { console.log('[OcenFin] Favoriten-Fehler:', e?.message); }
+    } catch (e) { dlog('[OcenFin] Favoriten-Fehler:', e?.message); }
     finally { isLoadingFavorites = false; }
     await tick();
     const card = favoritesGrid?.querySelector('button');
@@ -1862,7 +1892,7 @@
   ============================================================ -->
   {#if appPhase === 'servers'}
     <div class="h-full flex items-center justify-center p-8">
-      <div class="w-full max-w-2xl flex flex-col gap-6">
+      <div data-focus-group="servers" class="w-full max-w-2xl flex flex-col gap-6">
 
         <div class="text-center mb-2">
           <h1 class="text-4xl font-bold text-blue-500 mb-1">{$t.title}</h1>
@@ -1920,6 +1950,7 @@
             <div class="flex gap-3">
               <button
                 on:click={() => selectedServer && connectToServer(selectedServer)}
+                use:focusOnMount
                 class="flex-1 bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white font-bold py-3 rounded-lg
                        focus:outline-none focus:ring-2 focus:ring-white transition-colors"
               >
@@ -2079,7 +2110,8 @@
               {$t.quickConnect}
             </button>
             <button on:click={() => { showPasswordForm = false; selectedUser = null; }}
-              class="text-gray-400 hover:text-white font-bold py-2 focus:outline-none">
+              class="w-full bg-gray-700/50 hover:bg-gray-600 text-gray-300 hover:text-white font-bold text-lg py-3.5 rounded-xl
+                     focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               {$t.back}
             </button>
             {#if loginError}<p class="text-red-400 mt-4 font-semibold">{loginError}</p>{/if}
@@ -2112,7 +2144,8 @@
               {$t.loginText}
             </button>
             <button on:click={() => showManualLogin = false}
-              class="text-gray-400 hover:text-white font-bold py-2 focus:outline-none">
+              class="w-full bg-gray-700/50 hover:bg-gray-600 text-gray-300 hover:text-white font-bold text-lg py-3.5 rounded-xl
+                     focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               {$t.back}
             </button>
             {#if loginError}<p class="text-red-400 mt-4 font-semibold">{loginError}</p>{/if}
@@ -2357,7 +2390,7 @@
                       class="group focus:outline-none text-left cv-auto">
                       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
                         {#if getItemImageUrl(item)}
-                          <img src={getItemImageUrl(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
+                          <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                         {/if}
                         <!-- Episodenanzahl bei Serien (abschaltbar in Einstellungen) -->
                         {#if displaySettings.episodeCount && item.Type === 'Series' && item.RecursiveItemCount}
@@ -2418,6 +2451,7 @@
           <Settings
             {serverUrl} {activeToken} {selectedUser} {selectedServer} {savedTokens}
             {screensaverSettings} {reduceAnimations} {displaySettings} {playbackPrefs}
+            {serverVersion} {serverVobSub}
             libraries={navLibraries}
             publicUsers={users} {sharedProfile} {sharedTokens}
             onSharedToggle={toggleSharedEnabled}
@@ -2438,7 +2472,7 @@
         {:else if viewState === 'details' && currentDetailItem}
           <Details
             item={currentDetailItem}
-            {serverUrl} {activeToken} {selectedUser} {reduceAnimations} {playbackPrefs} {use24h}
+            {serverUrl} {activeToken} {selectedUser} {reduceAnimations} {playbackPrefs} {use24h} {serverVobSub}
             spoilerProtection={displaySettings.spoilerProtection}
             on:close={returnFromDetails}
             on:openItemById={(e) => loadItemById(e.detail)}
@@ -2490,7 +2524,7 @@
                       class="group focus:outline-none text-left cv-auto">
                       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
                         {#if getItemImageUrl(item)}
-                          <img src={getItemImageUrl(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
+                          <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                         {/if}
                         {#if itemProgress(item) > 0}
                           <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
@@ -2542,7 +2576,7 @@
                           class="group focus:outline-none text-left cv-auto">
                           <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
                             {#if getItemImageUrl(item)}
-                              <img src={getItemImageUrl(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
+                              <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                             {/if}
                             {#if itemProgress(item) > 0}
                               <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
@@ -2565,7 +2599,7 @@
                       <button on:click={() => openPerson(p)} class="group focus:outline-none text-center cv-auto">
                         <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
                           {#if personImageUrl(serverUrl, p)}
-                            <img src={personImageUrl(serverUrl, p)} alt={p.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
+                            <img src={personImageUrl(serverUrl, p)} use:blurUp={itemBlurHash(p)} alt={p.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                           {:else}
                             <div class="w-full h-full flex items-center justify-center text-gray-600">
                               <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
@@ -2616,7 +2650,7 @@
                   {#each collectionItems as item, i (item.PlaylistItemId)}
                     <div class="flex items-center gap-4 bg-gray-800/60 rounded-xl p-3">
                       <div class="w-14 h-20 shrink-0 bg-gray-900 rounded-lg overflow-hidden">
-                        {#if getItemImageUrl(item)}<img src={getItemImageUrl(item)} alt={item.Name} class="w-full h-full object-cover"/>{/if}
+                        {#if getItemImageUrl(item)}<img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover"/>{/if}
                       </div>
                       <div class="flex-1 min-w-0">
                         {#if item.Type === 'Episode'}
@@ -2662,7 +2696,7 @@
                           class="group focus:outline-none text-left cv-auto">
                           <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
                             {#if getItemImageUrl(item)}
-                              <img src={getItemImageUrl(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
+                              <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                             {/if}
                             {#if itemProgress(item) > 0}
                               <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
@@ -2704,7 +2738,7 @@
       {#key currentDetailItem.Id}
         <Player
           item={currentDetailItem}
-          {serverUrl} {activeToken} {selectedUser} {playbackPrefs} {use24h}
+          {serverUrl} {activeToken} {selectedUser} {playbackPrefs} {use24h} {serverVobSub}
           showClock={displaySettings.clock}
           showChapters={displaySettings.showChapters}
           seekStep={displaySettings.seekStep}
@@ -2779,7 +2813,9 @@
        SCREENSAVER — oberste Ebene
   ============================================================ -->
   {#if showScreensaver}
-    <Screensaver {use24h} on:dismiss={resetActivity} />
+    <Screensaver {use24h} {serverUrl} token={activeToken} userId={activeUserId}
+      mode={screensaverSettings.mode} artSource={screensaverSettings.artSource} brightness={screensaverSettings.brightness}
+      on:dismiss={resetActivity} />
   {/if}
 
 </main>

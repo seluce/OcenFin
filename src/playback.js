@@ -6,6 +6,8 @@
 // gebrannt werden müssen, weil der Browser nur VTT rendern kann).
 // ============================================================
 
+import { dlog } from './utils.js';
+
 // Auth-Header — exakt im selben Format wie die übrigen (funktionierenden) API-Aufrufe der App,
 // damit PlaybackInfo nicht an einem abweichenden Header scheitert.
 function authHeader(token) {
@@ -21,14 +23,18 @@ function authHeader(token) {
 //    läuft, aber kein Ton). Server macht dann einen leichten reinen Audio-Transcode.
 //  • Transkodier-Ziel: HLS (TS/H.264/AAC) — über hls.js universell abspielbar.
 //  • Untertitel: VTT/SRT extern (als Spur), ASS/SSA/PGS/VOBSUB werden ins Bild gebrannt.
-export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false, pgsClientRender = false) {
+export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false, clientGraphicSubs = false, serverVobSub = false) {
   // Textuntertitel (SubRip/ASS): bei burnSubtitles=true ins Bild brennen (mit Styling, aber
   // Transcode + harter Wechsel), sonst extern als VTT liefern → eigener Overlay-Renderer
   // (kein Styling, dafür Direct Play + weicher Wechsel). Grafik-Untertitel immer brennen.
   const textSub = burnSubtitles ? 'Encode' : 'External';
-  // PGS (Blu-ray-Bild-Untertitel): wenn der Client sie selbst rendert (libpgs), als External
-  // liefern → kein Transcode. Sonst brennen. DVDSUB hat keinen Client-Renderer → immer brennen.
-  const pgsSub = pgsClientRender ? 'External' : 'Encode';
+  // Bild-Untertitel werden clientseitig via libbitsub gerendert (wenn aktiviert) → als External
+  // liefern → kein Transcode, Direct Play bleibt. Sonst brennen.
+  //   • PGS (Blu-ray): liefert Jellyfin schon immer extern als .sup → läuft überall.
+  //   • VobSub (DVD/dvdsub): liefert Jellyfin erst ab 12.0 als .mks-Container (PR #16552).
+  //     Auf älteren Servern NICHT extern möglich (404) → dort weiter brennen (serverVobSub=false).
+  const pgsSub = clientGraphicSubs ? 'External' : 'Encode';
+  const vobSub = (clientGraphicSubs && serverVobSub) ? 'External' : 'Encode';
 
   // Läuft die App auf dem echten TV (webOS)? Dort dekodiert die Media-Pipeline auch DTS und
   // Dolby TrueHD/Atmos → in Direct Play erlauben, damit der Server NICHT unnötig transkodiert.
@@ -89,8 +95,9 @@ export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false
       { Format: 'mov_text', Method: textSub },
       { Format: 'ass',      Method: textSub },   // gestylt: extern → Overlay ohne Styling, Encode → gebrannt mit Styling
       { Format: 'ssa',      Method: textSub },
-      { Format: 'pgssub',   Method: pgsSub     }, // Blu-ray-Bild-Untertitel → libpgs rendert clientseitig (External) oder brennen
-      { Format: 'dvdsub',   Method: 'Encode'   },
+      { Format: 'pgssub',   Method: pgsSub     }, // Blu-ray-Bild-Untertitel → libbitsub rendert clientseitig (External) oder brennen
+      { Format: 'dvdsub',   Method: vobSub     }, // DVD/VobSub → External (.mks) ab Jellyfin 12.0, sonst brennen
+      { Format: 'vobsub',   Method: vobSub     },
       { Format: 'pgs',      Method: pgsSub     },
     ],
   };
@@ -104,7 +111,7 @@ export async function getPlaybackInfo({
   audioStreamIndex = null, subtitleStreamIndex = null,
   maxBitrate = 120000000, startTicks = 0,
   enableDirectPlay = true, enableDirectStream = true, allowAudioStreamCopy = true,
-  burnSubtitles = false, mediaSourceId = null, pgsClientRender = false,
+  burnSubtitles = false, mediaSourceId = null, clientGraphicSubs = false, serverVobSub = false,
 }) {
   // WICHTIG: Jellyfin liest AudioStreamIndex/SubtitleStreamIndex und die Enable*-Flags
   // aus dem QUERY-STRING (nur das DeviceProfile gehört in den Body). Genau so macht es
@@ -127,7 +134,7 @@ export async function getPlaybackInfo({
   // Body: DeviceProfile (Pflicht) + dieselben Felder zur Sicherheit (manche Versionen lesen sie hier).
   const body = {
     UserId: userId,
-    DeviceProfile: buildDeviceProfile(maxBitrate, burnSubtitles, pgsClientRender),
+    DeviceProfile: buildDeviceProfile(maxBitrate, burnSubtitles, clientGraphicSubs, serverVobSub),
     MaxStreamingBitrate: maxBitrate,
     StartTimeTicks: startTicks,
     EnableDirectPlay: enableDirectPlay,
@@ -140,7 +147,7 @@ export async function getPlaybackInfo({
   if (audioStreamIndex !== null && audioStreamIndex !== -1)       body.AudioStreamIndex = audioStreamIndex;
   if (subtitleStreamIndex !== null && subtitleStreamIndex !== -1) body.SubtitleStreamIndex = subtitleStreamIndex;
   if (mediaSourceId) body.MediaSourceId = mediaSourceId;
-  console.log('[OcenFin] PlaybackInfo-Anfrage:', { audioStreamIndex, subtitleStreamIndex, enableDirectPlay, enableDirectStream, allowAudioStreamCopy });
+  dlog('[OcenFin] PlaybackInfo-Anfrage:', { audioStreamIndex, subtitleStreamIndex, enableDirectPlay, enableDirectStream, allowAudioStreamCopy });
 
   const res = await fetch(`${serverUrl}/Items/${itemId}/PlaybackInfo?${qs.toString()}`, {
     method: 'POST',
@@ -160,7 +167,7 @@ export async function getPlaybackInfo({
   const urlAudioIdx = ms?.TranscodingUrl?.match(/AudioStreamIndex=(-?\d+)/)?.[1] ?? null;
   const urlSubIdx   = ms?.TranscodingUrl?.match(/SubtitleStreamIndex=(-?\d+)/)?.[1] ?? null;
   // Ausführliche Diagnose — zeigt GENAU warum/wie der Server abspielt.
-  console.log('[OcenFin] PlaybackInfo:', {
+  dlog('[OcenFin] PlaybackInfo:', {
     method: ms?.TranscodingUrl ? 'Transcode' : (ms?.SupportsDirectPlay ? 'DirectPlay' : 'DirectStream'),
     transcoding: !!ms?.TranscodingUrl,
     subProtocol: ms?.TranscodingSubProtocol,
@@ -174,8 +181,8 @@ export async function getPlaybackInfo({
     subtitleStreams: (ms?.MediaStreams || []).filter(s => s.Type === 'Subtitle').map(s => `#${s.Index} ${s.Language || '?'} ${s.Codec} (${s.DeliveryMethod || '-'})`),
   });
   // Flach geloggt (ohne Aufklappen sichtbar): welche Spur der Server WIRKLICH nimmt + volle URL.
-  console.log(`[OcenFin] → Server wählte AudioStreamIndex=${urlAudioIdx} SubtitleStreamIndex=${urlSubIdx} | angefragt Audio=${audioStreamIndex}`);
-  if (ms?.TranscodingUrl) console.log('[OcenFin] TranscodingUrl:', ms.TranscodingUrl);
+  dlog(`[OcenFin] → Server wählte AudioStreamIndex=${urlAudioIdx} SubtitleStreamIndex=${urlSubIdx} | angefragt Audio=${audioStreamIndex}`);
+  if (ms?.TranscodingUrl) dlog('[OcenFin] TranscodingUrl:', ms.TranscodingUrl);
   return { mediaSource: ms, playSessionId: data.PlaySessionId || null };
 }
 
@@ -188,7 +195,7 @@ const _pfCache = new Map();   // itemId → { ts, key, promise }
 const _PF_TTL  = 25000;       // ~25 s gültig (so lange bleibt auch eine Transcode-Session offen)
 
 function _pfKey(p) {
-  return [p.itemId, p.audioStreamIndex ?? -1, p.subtitleStreamIndex ?? -1, !!p.burnSubtitles, p.mediaSourceId || '', !!p.pgsClientRender].join('|');
+  return [p.itemId, p.audioStreamIndex ?? -1, p.subtitleStreamIndex ?? -1, !!p.burnSubtitles, p.mediaSourceId || '', !!p.clientGraphicSubs, !!p.serverVobSub].join('|');
 }
 
 export function prefetchPlaybackInfo(params) {
@@ -204,7 +211,7 @@ export async function getPlaybackInfoFast(params) {
   if (entry && entry.key === _pfKey(params) && Date.now() - entry.ts < _PF_TTL) {
     _pfCache.delete(params.itemId);
     const info = await entry.promise;
-    if (info) { console.log('[OcenFin] PlaybackInfo aus Prefetch übernommen'); return info; }
+    if (info) { dlog('[OcenFin] PlaybackInfo aus Prefetch übernommen'); return info; }
   }
   return getPlaybackInfo(params);
 }
@@ -235,7 +242,7 @@ export function resolveStream({ serverUrl, token, itemId, mediaSource, audioStre
     url = setParam(url, 'SubtitleStreamIndex', subtitleStreamIndex === null ? -1 : subtitleStreamIndex);
 
     const isHls = (mediaSource.TranscodingSubProtocol || '').toLowerCase() === 'hls' || url.includes('.m3u8');
-    console.log('[OcenFin] TranscodingUrl gepatcht →', { audioStreamIndex, subtitleStreamIndex });
+    dlog('[OcenFin] TranscodingUrl gepatcht →', { audioStreamIndex, subtitleStreamIndex });
     return { url, isHls, method: 'Transcode', mediaSource };
   }
   // Direct Play / Direct Stream: vollständige, byte-seekbare Datei (Container unverändert;
@@ -255,14 +262,18 @@ export function externalSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, 
   return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.vtt?api_key=${token}`;
 }
 
-// Liefert die rohe PGS-Untertitel-URL (.sup) für libpgs. Bevorzugt die vom Server berechnete
-// DeliveryUrl (richtiges Format), sonst der Standard-Stream-Endpunkt als .sup.
-export function pgsSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, token }) {
+// Liefert die rohe Bild-Untertitel-URL für libbitsub. Bevorzugt IMMER die vom Server berechnete
+// DeliveryUrl (richtiges Format: PGS=.sup, VobSub=.mks ab Jellyfin 12.0). Fällt nur für PGS auf
+// den Standard-.sup-Endpunkt zurück — VobSub OHNE DeliveryUrl ist nicht abrufbar (alter Server).
+export function graphicSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, token }) {
   if (!stream) return null;
   if (stream.DeliveryUrl) {
     const u = stream.DeliveryUrl;
     if (/^https?:/i.test(u)) return u;
     return `${serverUrl}${u}${u.includes('api_key') ? '' : (u.includes('?') ? '&' : '?') + 'api_key=' + token}`;
   }
-  return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.sup?api_key=${token}`;
+  const codec = (stream.Codec || '').toLowerCase();
+  if (codec === 'pgssub' || codec === 'pgs')
+    return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.sup?api_key=${token}`;
+  return null;   // VobSub/DVDSub ohne DeliveryUrl → nicht clientseitig renderbar (brennen)
 }

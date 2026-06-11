@@ -1,5 +1,6 @@
 // Gemeinsame Hilfsfunktionen (geteilt zwischen App und Komponenten)
 import { writable } from 'svelte/store';
+import { dependencies as deps } from '../package.json';   // für Versions-Anzeige auf der Status-Seite
 
 // Verbindungsstatus: true, wenn ein API-Aufruf wegen Netzwerk-/Serverfehler scheitert.
 // App zeigt dann ein Hinweis-Banner. Wird bei Erfolg wieder zurückgesetzt.
@@ -267,6 +268,32 @@ export const AVATAR_COLORS = ['#3b82f6', '#0ea5e9', '#14b8a6', '#10b981', '#6366
 
 // Rendert Avatar (Icon auf Farbfläche) per Canvas zu einem PNG-Base64-String (ohne data:-Präfix).
 // Browser-only (nutzt document/canvas). Liefert ein Promise.
+// Rendert ein Bild (Film-/Serien-Poster) mittig quadratisch zugeschnitten in einen Avatar (PNG).
+// Das Bild wird per fetch als Blob geholt und über eine ObjectURL gezeichnet → kein Canvas-CORS-Taint,
+// sodass toDataURL funktioniert. imageUrl muss den api_key enthalten.
+export function renderImageAvatarPng(imageUrl, size = 256) {
+  return new Promise((resolve, reject) => {
+    fetch(imageUrl)
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+      .then(blob => {
+        const objUrl = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = canvas.height = size;
+          const ctx = canvas.getContext('2d');
+          const s = Math.min(img.width, img.height);          // mittiger quadratischer Ausschnitt (cover)
+          ctx.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, size, size);
+          URL.revokeObjectURL(objUrl);
+          resolve(canvas.toDataURL('image/png').split(',')[1]);
+        };
+        img.onerror = (e) => { URL.revokeObjectURL(objUrl); reject(e); };
+        img.src = objUrl;
+      })
+      .catch(reject);
+  });
+}
+
 export function renderAvatarPng(iconKey, bgColor, size = 256) {
   return new Promise((resolve, reject) => {
     const path = AVATAR_ICONS[iconKey] || AVATAR_ICONS.person;
@@ -285,4 +312,102 @@ export function renderAvatarPng(iconKey, bgColor, size = 256) {
     img.onerror = reject;
     img.src = 'data:image/svg+xml;base64,' + btoa(svg);
   });
+}
+
+// Liefert true, wenn die Jellyfin-Serverversion VobSub/DVD-Untertitel extern als .mks ausliefert
+// (Server-PR #16552, gemerged für die 12.0-/10.12-Linie). Auf älteren Servern false → DVD-Subs
+// müssen gebrannt werden. Robustes Parsen: unterstützt ab Major 12 ODER 10.12+.
+export function serverSupportsVobSub(version) {
+  if (!version || typeof version !== 'string') return false;
+  const m = version.match(/(\d+)\.(\d+)/);
+  if (!m) return false;
+  const major = parseInt(m[1], 10), minor = parseInt(m[2], 10);
+  if (major > 12) return true;
+  if (major === 12) return true;            // "Jellyfin 12.0"
+  if (major === 10 && minor >= 12) return true;  // 10.12.x
+  return false;
+}
+
+// Standard-Authentifizierungs-Header für Jellyfin-API-Aufrufe (Token + JSON-Content-Type).
+// Zentral, damit nicht jede Komponente ihre eigene Kopie pflegt.
+export function authHeaders(token) {
+  return {
+    "Authorization": `MediaBrowser Token="${token}"`,
+    "Content-Type": "application/json",
+  };
+}
+
+// --- Diagnose-Logging (opt-in, geräteweit) -------------------------------------------------
+// Ein zentraler Schalter gated alle Diagnose-Ausgaben. dlog() ersetzt console.log an den
+// Diagnosestellen (Video, SyncPlay, PlaybackInfo, libbitsub …). console.error bleibt immer aktiv.
+// Modul-State wird von allen Importeuren geteilt → ein setDebug() wirkt sofort überall.
+let _debug = false;
+export function setDebug(on) { _debug = !!on; }
+export function dlog(...args) { if (_debug) console.log(...args); }
+
+// --- Versionen für die Status-/Diagnose-Seite --------------------------------------------------
+// Chromium/WebView aus dem User-Agent; Abhängigkeits-Versionen direkt aus package.json (zieht bei
+// einem Update automatisch mit, sofort verfügbar, keine Laufzeit-Erfassung nötig).
+export function runtimeVersions() {
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+  const m = ua.match(/Chrom(?:e|ium)\/(\d+(?:\.\d+)*)/);
+  const dep = (name) => (deps?.[name] || '').replace(/^[\^~]/, '');
+  return { chromium: m ? m[1] : '', hls: dep('hls.js'), libbitsub: dep('libbitsub') };
+}
+
+// --- BlurHash: moderne „Blur-up"-Platzhalter für Bilder ----------------------------------------
+// Jellyfin liefert zu jedem Bild einen BlurHash. Wir dekodieren ihn (kompakt, ohne Abhängigkeit) zu
+// einer winzigen 32×32-Vorschau und legen sie als Hintergrund unter das <img> (use:blurUp). Bis das
+// scharfe Bild lädt, zeigt sich die unscharfe Vorschau statt einer grauen Box.
+const B83 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~';
+function b83(str) { let v = 0; for (const c of str) v = v * 83 + B83.indexOf(c); return v; }
+function sRGBtoLin(v) { const x = v / 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }
+function linToSRGB(v) { const x = Math.max(0, Math.min(1, v)); return x <= 0.0031308 ? Math.round(x * 12.92 * 255 + 0.5) : Math.round((1.055 * x ** (1 / 2.4) - 0.055) * 255 + 0.5); }
+
+export function decodeBlurHash(hash, width = 32, height = 32, punch = 1) {
+  if (!hash || hash.length < 6 || typeof document === 'undefined') return null;
+  try {
+    const sizeFlag = b83(hash[0]);
+    const numY = Math.floor(sizeFlag / 9) + 1, numX = (sizeFlag % 9) + 1;
+    const maxAC = (b83(hash[1]) + 1) / 166 * punch;
+    const colors = [];
+    for (let i = 0; i < numX * numY; i++) {
+      if (i === 0) { const v = b83(hash.substr(2, 4)); colors.push([sRGBtoLin(v >> 16), sRGBtoLin((v >> 8) & 255), sRGBtoLin(v & 255)]); }
+      else { const v = b83(hash.substr(4 + (i - 1) * 2, 2)); const q = n => { const c = (n - 9) / 9; return Math.sign(c) * c * c * maxAC; };
+             colors.push([q(Math.floor(v / (19 * 19))), q(Math.floor(v / 19) % 19), q(v % 19)]); }
+    }
+    const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext('2d'); const imgData = ctx.createImageData(width, height); const d = imgData.data;
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      let r = 0, g = 0, b = 0;
+      for (let j = 0; j < numY; j++) for (let i = 0; i < numX; i++) {
+        const basis = Math.cos(Math.PI * x * i / width) * Math.cos(Math.PI * y * j / height);
+        const c = colors[i + j * numX]; r += c[0] * basis; g += c[1] * basis; b += c[2] * basis;
+      }
+      const idx = 4 * (x + y * width);
+      d[idx] = linToSRGB(r); d[idx + 1] = linToSRGB(g); d[idx + 2] = linToSRGB(b); d[idx + 3] = 255;
+    }
+    ctx.putImageData(imgData, 0, 0);
+    return canvas.toDataURL();
+  } catch { return null; }
+}
+
+// Liefert den BlurHash eines Items für einen Bildtyp ('Primary'/'Backdrop'), oder null.
+export function itemBlurHash(item, type = 'Primary') {
+  if (!item?.ImageBlurHashes) return null;
+  const tag = type === 'Backdrop' ? item.BackdropImageTags?.[0] : item.ImageTags?.[type];
+  return tag ? (item.ImageBlurHashes[type]?.[tag] || null) : null;
+}
+
+// Svelte-Action: dekodierten BlurHash als Hintergrund eines <img> setzen (Cache je Hash).
+const _blurCache = new Map();
+export function blurUp(node, hash) {
+  const apply = (h) => {
+    if (!h) { node.style.backgroundImage = ''; return; }
+    let url = _blurCache.get(h);
+    if (url === undefined) { url = decodeBlurHash(h); _blurCache.set(h, url); }
+    if (url) { node.style.backgroundImage = `url(${url})`; node.style.backgroundSize = 'cover'; node.style.backgroundPosition = 'center'; }
+  };
+  apply(hash);
+  return { update: apply };
 }

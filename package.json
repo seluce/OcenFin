@@ -1,7 +1,7 @@
 {
   "name": "OcenFin",
   "private": true,
-  "version": "2026.6.8",
+  "version": "2026.6.11",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,6 +17,6 @@
   },
   "dependencies": {
     "hls.js": "^1.6.16",
-    "libpgs": "^0.8.1"
+    "libbitsub": "^1.10.1"
   }
 }

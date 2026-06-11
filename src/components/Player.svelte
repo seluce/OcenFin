@@ -1,10 +1,9 @@
 <script>
   import { t, currentLang } from '../i18n.js';
-  import { isBackKey, focusOnMount } from '../utils.js';
-  import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, pgsSubtitleUrl } from '../playback.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog } from '../utils.js';
+  import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady } from '../syncplay.js';
-  import * as libpgs from 'libpgs';
-  import pgsWorkerUrl from 'libpgs/dist/libpgs.worker.js?url';
+  import { PgsRenderer, VobSubRenderer } from 'libbitsub';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
 
@@ -26,6 +25,7 @@
   export let syncCommand = null;   // letztes empfangenes SyncPlayCommand { ...Data, _seq } (von App)
   export let syncQueue   = null;   // aktueller Gruppen-Queue-Stand (von App): { itemId, playlistItemId, positionTicks, isPlaying }
   export let remoteCommand = null; // Admin-Fernsteuerung (Dashboard): { command, seekTicks?, args?, _seq } (von App)
+  export let serverVobSub = false; // Server liefert VobSub/DVD extern (.mks, Jellyfin 12.0+)?
 
   const dispatch = createEventDispatcher();
 
@@ -108,7 +108,7 @@
   }
   // Diagnose-Logger für <video>-Lebenszyklus-Events
   function vlog(ev, extra) {
-    console.log(`[OcenFin] video:${ev}`, { method: playMethod, t: Math.round(videoElement?.currentTime || 0), ...(extra || {}) });
+    dlog(`[OcenFin] video:${ev}`, { method: playMethod, t: Math.round(videoElement?.currentTime || 0), ...(extra || {}) });
   }
   // Läuft die Zeit, läuft die Wiedergabe → Pufferzustand sicher aufheben.
   function onProgressTick() {
@@ -186,7 +186,7 @@
   function syncEmit(action) {
     if (!inSyncGroup || !syncReady) return;
     if (Date.now() < syncSuppressUntil) return;
-    console.info('[SyncPlay] →', action, posTicks());
+    dlog('[SyncPlay] →', action, posTicks());
     sendSyncCommand(serverUrl, activeToken, action, posTicks());
   }
   // Erster Start in einer Gruppe legt die Queue fest (Server spielt für alle los); spätere Plays = Unpause.
@@ -195,7 +195,7 @@
     // Transcode-Streams starten nach (Neu-)Laden ungewollt automatisch. Wenn die Gruppe pausiert ist
     // und kein echter Nutzer-Play vorliegt → wieder anhalten, nicht an die Gruppe melden.
     if (_groupWantsPaused && (Date.now() - _userPlayIntent) > 1500) {
-      console.info('[SyncPlay] Auto-Play unterdrückt (Gruppe pausiert)');
+      dlog('[SyncPlay] Auto-Play unterdrückt (Gruppe pausiert)');
       syncSuppressUntil = Date.now() + 600;
       videoElement?.pause();
       return;
@@ -204,7 +204,7 @@
     if (syncQueueSet) { syncEmit('Unpause'); return; }
     syncQueueSet = true;
     if (syncQueue && syncQueue.itemId === item.Id) { syncReady = true; return; }  // Gruppe spielt dieses Item bereits
-    console.info('[SyncPlay] → SetNewQueue', item.Id, posTicks());
+    dlog('[SyncPlay] → SetNewQueue', item.Id, posTicks());
     await setSyncQueue(serverUrl, activeToken, item.Id, posTicks());
     syncReady = true;
   }
@@ -220,14 +220,14 @@
   function syncReportBuffering() {
     if (!inSyncGroup || !syncQueue?.playlistItemId || _syncBuffering) return;
     _syncBuffering = true;
-    console.info('[SyncPlay] → Buffering', posTicks());
+    dlog('[SyncPlay] → Buffering', posTicks());
     sendSyncBuffering(serverUrl, activeToken, posTicks(), true, syncQueue.playlistItemId);
   }
   function syncReportReady() {
     if (!inSyncGroup || !syncQueue?.playlistItemId) return;
     if (!_syncBuffering && _syncReadySent) return;   // nichts Neues seit dem letzten Ready
     _syncBuffering = false; _syncReadySent = true;
-    console.info('[SyncPlay] → Ready', posTicks());
+    dlog('[SyncPlay] → Ready', posTicks());
     sendSyncReady(serverUrl, activeToken, posTicks(), true, syncQueue.playlistItemId);
   }
 
@@ -240,7 +240,7 @@
     const when  = cmd.When ? new Date(cmd.When).getTime() : Date.now();
     const delay = Math.max(0, when - Date.now());
     syncSuppressUntil = Date.now() + delay + 600;   // Backstop für Play/Pause-Folge-Events
-    console.info('[SyncPlay] ← anwenden', command, 'pos', Math.round(pos), 'in', delay, 'ms');
+    dlog('[SyncPlay] ← anwenden', command, 'pos', Math.round(pos), 'in', delay, 'ms');
     if (command === 'Seek') {
       _expectSeekEcho = true; videoElement.currentTime = pos; currentTime = pos;
     } else if (command === 'Pause') {
@@ -266,7 +266,7 @@
     if (!c || c._seq === _appliedRemoteSeq) return;
     _appliedRemoteSeq = c._seq;
     const cmd = (c.command || '').toString().toLowerCase();
-    console.info('[OcenFin] Admin-Fernsteuerung:', cmd);
+    dlog('[OcenFin] Admin-Fernsteuerung:', cmd);
     if (cmd === 'pause') videoElement?.pause();
     else if (cmd === 'unpause') videoElement?.play().catch(() => {});
     else if (cmd === 'playpause') togglePlay();
@@ -327,13 +327,24 @@
     if (hls) { try { hls.destroy(); } catch {} hls = null; }
     if (!forceTranscode) triedTranscodeFallback = false;   // frischer Versuch → Fallback wieder erlauben
     try {
+      // Für die Direct-Play-Entscheidung brauchen wir die Tonspuren des Titels. Beim Sprung über
+      // "nächste Folge" trägt das Episodenobjekt (aus der leichten Folgenliste) KEINE MediaStreams →
+      // einmalig nachladen, sonst schlägt die Standard-Audio-Erkennung fehl und es wird fälschlich
+      // transkodiert (während Direktstart aus den Details direkt läuft).
+      let titleStreams = (item?.MediaStreams?.length ? item.MediaStreams : mediaStreams) || [];
+      if (!titleStreams.length && item?.Id) {
+        try {
+          const r = await fetch(`${serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaStreams`, { headers: getAuthHeaders() });
+          if (r.ok) { const full = await r.json(); if (full?.MediaStreams?.length) titleStreams = full.MediaStreams; }
+        } catch {}
+      }
       // Audio gilt nur dann als "explizit" (→ Transcode, damit der Server die GEWÄHLTE Spur ausgibt),
-      // wenn der Index von der STANDARD-Tonspur abweicht. Die Default-Spur direkt mitzugeben ist
-      // harmlos und erhält Direct Play — sonst transkodiert jeder Titel mit deutscher Default-Spur.
-      const allStreams = (item?.MediaStreams?.length ? item.MediaStreams : mediaStreams) || [];
+      // wenn die Standardspur BEKANNT ist UND die gewählte davon abweicht. Ist die Standardspur
+      // unbekannt (keine Streams), wird NICHT transkodiert — Direct Play hat Vorrang.
+      const allStreams = titleStreams;
       const audioTracks = allStreams.filter(s => s.Type === 'Audio');
       const defaultAudioIndex = (audioTracks.find(s => s.IsDefault) || audioTracks[0])?.Index ?? -1;
-      const explicitAudio = audioIndex !== -1 && audioIndex !== defaultAudioIndex;
+      const explicitAudio = audioIndex !== -1 && defaultAudioIndex !== -1 && audioIndex !== defaultAudioIndex;
       // Ein Untertitel erzwingt nur dann einen Transcode, wenn er GEBRANNT wird:
       // Textuntertitel nur bei aktiviertem Einbrennen, Grafikuntertitel (PGS/VobSub) immer.
       // Externe Textuntertitel (VTT-Overlay) brauchen KEINEN Transcode → Direct Play bleibt möglich,
@@ -342,16 +353,19 @@
       const subStream  = subtitleIndex !== -1 ? subStreams.find(s => s.Index === subtitleIndex && s.Type === 'Subtitle') : null;
       const subCodec    = (subStream?.Codec || '').toLowerCase();
       const isPgsSub    = ['pgssub', 'pgs'].includes(subCodec);
-      const burnGraphic = ['dvdsub', 'dvbsub', 'vobsub', 'sub'].includes(subCodec);   // kein Client-Renderer → brennen
-      // PGS rendert libpgs clientseitig (wenn aktiviert) → kein Brennen, Direct Play bleibt.
-      const subWillBurn = subtitleIndex !== -1 && (playbackPrefs.burnSubtitles || burnGraphic || (isPgsSub && !pgsRender));
+      const isVobSub    = ['dvdsub', 'vobsub', 'sub'].includes(subCodec);          // DVD/VobSub → .mks ab 12.0
+      const isGraphicSub = isPgsSub || isVobSub || ['dvbsub'].includes(subCodec);
+      // libbitsub rendert clientseitig (wenn aktiviert): PGS immer, VobSub erst wenn der Server
+      // .mks liefert (Jellyfin 12.0+). Sonst muss der Grafik-Untertitel gebrannt werden.
+      const graphicClientRender = clientGraphicRender && (isPgsSub || (isVobSub && serverVobSub));
+      const subWillBurn = subtitleIndex !== -1 && (playbackPrefs.burnSubtitles || (isGraphicSub && !graphicClientRender));
 
       const enableDirectPlay = !explicitAudio && !subWillBurn && !forceTranscode;
       // Bei explizitem Audiowechsel/gebranntem Untertitel: DirectStream AUS + Audio NEU kodieren → der
       // Server gibt garantiert die GEWÄHLTE Spur aus, statt die Standardspur (deutsch) zu kopieren.
       const enableDirectStream = !explicitAudio && !subWillBurn && !forceTranscode;
       const allowAudioStreamCopy = !explicitAudio;
-      console.log('[OcenFin] setupPlayback →', { item: item?.Name, audioIndex, subtitleIndex, enableDirectPlay, enableDirectStream, allowAudioStreamCopy, forceTranscode });
+      dlog('[OcenFin] setupPlayback →', { item: item?.Name, audioIndex, subtitleIndex, enableDirectPlay, enableDirectStream, allowAudioStreamCopy, forceTranscode });
       // Direct Play: volle Bitrate; Transcode: deckeln, damit der Server in Echtzeit mitkommt.
       const requestBitrate = enableDirectPlay ? maxBitrate : Math.min(maxBitrate, TRANSCODE_MAX_BITRATE);
       const info = await getPlaybackInfoFast({
@@ -360,7 +374,7 @@
         maxBitrate: requestBitrate, startTicks: 0,   // Resume passiert client-seitig (seekToResume)
         enableDirectPlay, enableDirectStream, allowAudioStreamCopy,
         burnSubtitles: playbackPrefs.burnSubtitles,
-        pgsClientRender: pgsRender,
+        clientGraphicSubs: clientGraphicRender, serverVobSub,
         mediaSourceId,
       });
       if (info.playSessionId) playSessionId = info.playSessionId;
@@ -368,7 +382,7 @@
       currentMediaSource = ms;   // für den fliegenden Untertitel-Wechsel merken
       const resolved = resolveStream({ serverUrl, token: activeToken, itemId: item.Id, mediaSource: ms, audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex });
       playMethod = resolved.method;
-      console.log('[OcenFin] resolveStream →', { method: resolved.method, isHls: resolved.isHls, url: resolved.url });
+      dlog('[OcenFin] resolveStream →', { method: resolved.method, isHls: resolved.isHls, url: resolved.url });
       await attachSource(resolved.url, resolved.isHls);
       applySubtitleOverlay(subtitleIndex, ms);
     } catch (e) {
@@ -425,33 +439,90 @@
   let currentSubtitleText = '';
   let subtitleCues = [];           // [{ start, end, text }] in Sekunden
   let subtitleFetchToken = 0;      // ignoriert Antworten eines überholten Wechsels
-  let pgsRenderer = null;          // libpgs-Instanz für Bild-Untertitel (PGS), sonst null
-  // PGS clientseitig rendern? Nur wenn aktiviert UND nicht ohnehin alles eingebrannt wird.
-  $: pgsRender = playbackPrefs.pgsRendering && !playbackPrefs.burnSubtitles;
+  let graphicRenderer = null;      // libbitsub-Instanz für das AKTUELL sichtbare Bild-Untertitel-Overlay
+  let pendingRenderer = null;      // beim Sprachwechsel: neuer Renderer, der noch lädt (Altbild bleibt)
+  // Bild-Untertitel clientseitig rendern? Nur wenn aktiviert UND nicht ohnehin alles eingebrannt wird.
+  $: clientGraphicRender = playbackPrefs.pgsRendering && !playbackPrefs.burnSubtitles;
 
-  // Untertitel anwenden – routet je nach Codec: PGS → libpgs-Overlay, Text → VTT-Overlay.
+  // Untertitelgröße → libbitsub-Skalierung (Variante B: gilt für PGS UND VobSub, nicht nur VTT).
+  function graphicSubScale() {
+    const s = playbackPrefs.subtitleSize || 'normal';
+    return s === 'small' ? 0.85 : s === 'large' ? 1.25 : 1.0;
+  }
+  // Dateiname-Hinweis, damit libbitsub das Format erkennt (PGS=.sup, VobSub=.mks via DeliveryUrl).
+  function graphicSubFileName(url, stream) {
+    const m = (url.split('?')[0] || '').match(/\.(\w+)$/);
+    if (m) return `track.${m[1].toLowerCase()}`;
+    const codec = (stream?.Codec || '').toLowerCase();
+    return ['dvdsub', 'vobsub', 'sub'].includes(codec) ? 'track.mks' : 'track.sup';
+  }
+
+  // Untertitel anwenden – routet je nach Codec: PGS/VobSub → libbitsub-Overlay, Text → VTT-Overlay.
   function applySubtitleOverlay(index, ms) {
-    disposePgs();
-    if (index === -1 || !ms) { subtitleCues = []; return; }
+    if (index === -1 || !ms) { disposeGraphic(); subtitleCues = []; return; }
     const stream = (ms.MediaStreams || []).find(s => s.Index === index && s.Type === 'Subtitle');
     const codec  = (stream?.Codec || '').toLowerCase();
-    if (stream && ['pgssub', 'pgs'].includes(codec) && pgsRender) {
+    const isPgs = ['pgssub', 'pgs'].includes(codec);
+    const isVob = ['dvdsub', 'vobsub', 'sub'].includes(codec);
+    if (stream && clientGraphicRender && (isPgs || (isVob && serverVobSub))) {
       subtitleCues = [];                    // kein VTT-Overlay daneben
-      applyPgsSubtitle(stream, ms);
+      applyGraphicSubtitle(stream, ms);     // weicher Wechsel ohne Lücke (siehe unten)
     } else {
-      applyExternalSubtitleIfNeeded(index, ms);   // Text → VTT (PGS ohne Rendering ist gebrannt → nichts zu tun)
+      disposeGraphic();                     // verlässt Grafik → Overlay sofort entfernen
+      applyExternalSubtitleIfNeeded(index, ms);   // Text → VTT (gebrannte Grafik → nichts zu tun)
     }
   }
-  function applyPgsSubtitle(stream, ms) {
+  function applyGraphicSubtitle(stream, ms) {
     if (!videoElement) return;
-    const url = pgsSubtitleUrl({ serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: activeToken });
+    const url = graphicSubtitleUrl({ serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: activeToken });
+    if (!url) { disposeGraphic(); dlog('[OcenFin] Bild-Untertitel nicht abrufbar (Server liefert ihn nicht extern):', stream.Index); return; }
+    // Wechsel ohne Lücke: den NEUEN Renderer aufbauen, aber den alten erst entsorgen, wenn der
+    // neue fertig geparst ist ('loaded'). So bleibt der bisherige Untertitel sichtbar, bis der
+    // nächste bereit ist – kein Leer-Loch während der ~1–2 s Parsezeit. Noch nicht fertige
+    // Vorgänger werden bei erneutem Wechsel verworfen (schnelles Hin-und-Her).
+    if (pendingRenderer) { try { pendingRenderer.dispose(); } catch {} pendingRenderer = null; }
+    const codec = (stream?.Codec || '').toLowerCase();
+    let created = null;
+    const swapIn = () => {
+      if (created !== pendingRenderer) return;                 // bereits überholt → ignorieren
+      if (graphicRenderer && graphicRenderer !== created) { try { graphicRenderer.dispose(); } catch {} }
+      graphicRenderer = created;
+      pendingRenderer = null;
+    };
+    const opts = {
+      video: videoElement, subUrl: url,
+      displaySettings: { scale: graphicSubScale(), aspectMode: 'contain' },
+      // libbitsub-Warnungen (z. B. WORKER_FALLBACK: Worker kann das WASM im Inline-Setup nicht laden,
+      // Parsing läuft im Haupt-Thread) über unser gated dlog leiten → standardmäßig still im Log.
+      onWarning: (w) => dlog('[OcenFin] libbitsub-Hinweis:', w?.code || w?.message || w),
+      onError: (e) => {
+        dlog('[OcenFin] libbitsub-Fehler:', e?.code || '', e?.message || e);
+        if (created && created === pendingRenderer) { try { created.dispose(); } catch {} pendingRenderer = null; }
+      },
+      onEvent: (ev) => {
+        if (ev?.type === 'renderer-change') dlog('[OcenFin] libbitsub Backend:', ev.renderer);
+        else if (ev?.type === 'loaded') { dlog('[OcenFin] libbitsub geladen:', ev.format, 'cues=' + (ev.metadata?.cueCount ?? '?')); swapIn(); }
+      },
+    };
     try {
-      pgsRenderer = new libpgs.PgsRenderer({ video: videoElement, subUrl: url, workerUrl: pgsWorkerUrl });
-      console.log('[OcenFin] PGS-Untertitel via libpgs:', stream.Index);
-    } catch (e) { console.log('[OcenFin] PGS-Renderer-Fehler:', e?.message); }
+      // Codec ist bekannt → expliziten Renderer wählen (keine Format-Auto-Erkennung nötig).
+      created = ['pgssub', 'pgs'].includes(codec)
+        ? new PgsRenderer(opts)
+        : new VobSubRenderer({ ...opts, fileName: graphicSubFileName(url, stream) });   // VobSub/DVD: .mks-Container
+      pendingRenderer = created;
+      // Gibt es kein Altbild, wird das neue Overlay schlicht sichtbar, sobald es geladen ist.
+      if (!graphicRenderer) { graphicRenderer = created; pendingRenderer = null; }
+      dlog('[OcenFin] Bild-Untertitel via libbitsub:', stream.Index, stream.Codec);
+    } catch (e) { dlog('[OcenFin] libbitsub-Renderer-Fehler:', e?.message); pendingRenderer = null; }
   }
-  function disposePgs() {
-    if (pgsRenderer) { try { pgsRenderer.dispose(); } catch {} pgsRenderer = null; }
+  function disposeGraphic() {
+    if (pendingRenderer) { try { pendingRenderer.dispose(); } catch {} pendingRenderer = null; }
+    if (graphicRenderer) { try { graphicRenderer.dispose(); } catch {} graphicRenderer = null; }
+  }
+  // Größenänderung zur Laufzeit live auf den laufenden (und gerade ladenden) Renderer anwenden.
+  $: if ((graphicRenderer || pendingRenderer) && (playbackPrefs.subtitleSize || 'normal')) {
+    const sc = graphicSubScale();
+    for (const r of [graphicRenderer, pendingRenderer]) if (r) { try { r.setDisplaySettings({ scale: sc }); } catch {} }
   }
 
   // VTT-Zeitstempel "HH:MM:SS.mmm" oder "MM:SS.mmm" → Sekunden
@@ -500,8 +571,8 @@
       const text = await res.text();
       if (myToken !== subtitleFetchToken) return;
       subtitleCues = parseVtt(text);
-      console.log('[OcenFin] Untertitel geladen:', subtitleCues.length, 'Cues');
-    } catch (e) { console.log('[OcenFin] Untertitel-Fetch-Fehler:', e?.message); }
+      dlog('[OcenFin] Untertitel geladen:', subtitleCues.length, 'Cues');
+    } catch (e) { dlog('[OcenFin] Untertitel-Fetch-Fehler:', e?.message); }
   }
 
   // Intro Skipper / Media Segments
@@ -558,6 +629,7 @@
         serverUrl, userId: selectedUser.Id, token: activeToken, itemId: nextEpisode.Id,
         audioStreamIndex: selectedAudioIndex, subtitleStreamIndex: selectedSubtitleIndex,
         maxBitrate, burnSubtitles: playbackPrefs.burnSubtitles, mediaSourceId: null,
+        clientGraphicSubs: clientGraphicRender, serverVobSub,
       });
     }
     nextCountdown = COUNTDOWN_FROM;   // sofort sichtbar → Karte erscheint
@@ -698,7 +770,7 @@
     if (clockTimer)      clearInterval(clockTimer);
     clearBufferWatchdog();
     if (hls) { try { hls.destroy(); } catch {} hls = null; }
-    disposePgs();
+    disposeGraphic();
     reportPlaybackStopped();
   });
 
@@ -706,12 +778,7 @@
   // API
   // ============================================================
 
-  function getAuthHeaders() {
-    return {
-      "Authorization": `MediaBrowser Token="${activeToken}"`,
-      "Content-Type": "application/json"
-    };
-  }
+  const getAuthHeaders = () => authHeaders(activeToken);
 
   async function fetchMediaSources() {
     try {
@@ -737,31 +804,31 @@
       const res = await fetch(`${serverUrl}/MediaSegments/${item.Id}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const segs = (await res.json()).Items || [];
-        console.log('[OcenFin] Media-Segments:', segs.map(s => s.Type));
+        dlog('[OcenFin] Media-Segments:', segs.map(s => s.Type));
         const d = segs.length ? segmentsToIntroData(segs) : null;
         if (d) {
-          console.log('[OcenFin] Media-Segments → Intro', d.Introduction.Valid, '| Outro', d.Credits.Valid);
+          dlog('[OcenFin] Media-Segments → Intro', d.Introduction.Valid, '| Outro', d.Credits.Valid);
           introData = d; return;
         }
       } else {
-        console.log('[OcenFin] Media-Segments HTTP', res.status);   // z. B. 404 = Endpunkt fehlt, 401 = Auth
+        dlog('[OcenFin] Media-Segments HTTP', res.status);   // z. B. 404 = Endpunkt fehlt, 401 = Auth
       }
-    } catch (e) { console.log('[OcenFin] Media-Segments Fehler:', e?.message); }
+    } catch (e) { dlog('[OcenFin] Media-Segments Fehler:', e?.message); }
     // 2) Ältere ConfusedPolarBear-Plugin-API. Manche Versionen liefern das Intro flach
     //    ({ Valid, IntroStart, … }), andere als { Introduction, Credits } → beide Formen abfangen.
     try {
       const res = await fetch(`${serverUrl}/Episode/${item.Id}/IntroTimestamps/v1`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
-        console.log('[OcenFin] IntroTimestamps/v1:', JSON.stringify(data));
+        dlog('[OcenFin] IntroTimestamps/v1:', JSON.stringify(data));
         introData = (data.Introduction || data.Credits) ? data : { Introduction: data, Credits: { Valid: false } };
         return;
       } else {
-        console.log('[OcenFin] IntroTimestamps/v1 HTTP', res.status);
+        dlog('[OcenFin] IntroTimestamps/v1 HTTP', res.status);
       }
-    } catch (e) { console.log('[OcenFin] IntroTimestamps/v1 Fehler:', e?.message); }
+    } catch (e) { dlog('[OcenFin] IntroTimestamps/v1 Fehler:', e?.message); }
     // 3) Kein Plugin-Treffer → Kapitel-Fallback (greift reaktiv, sobald Kapitel geladen sind)
-    console.log('[OcenFin] Keine Media-Segments/Plugin-Daten → Kapitel-Fallback');
+    dlog('[OcenFin] Keine Media-Segments/Plugin-Daten → Kapitel-Fallback');
     segmentsChecked = true;
   }
 
@@ -879,7 +946,8 @@
         if (!s) return false;
         if ((s.DeliveryMethod || '').toLowerCase() === 'encode') return false;      // gebrannt → Neuladen
         const codec = (s.Codec || '').toLowerCase();
-        if (['pgssub', 'pgs'].includes(codec)) return pgsRender;    // PGS: clientseitig → weich, sonst gebrannt
+        if (['pgssub', 'pgs'].includes(codec)) return clientGraphicRender;          // PGS: clientseitig → weich, sonst gebrannt
+        if (['dvdsub', 'vobsub', 'sub'].includes(codec)) return clientGraphicRender && serverVobSub;  // VobSub: weich ab Jellyfin 12.0
         if (graphicCodecs.includes(codec)) return false;                            // andere Grafik → nicht als VTT
         return true;
       };
@@ -1157,7 +1225,10 @@
     on:suspend={() => vlog('suspend')}
     on:error={onVideoError}
     on:timeupdate={() => { if (!isSeeking) currentTime = videoElement?.currentTime ?? 0; onProgressTick(); }}
-    on:loadedmetadata={() => { vlog('loadedmetadata', { dur: Math.round(videoElement?.duration || 0), w: videoElement?.videoWidth, h: videoElement?.videoHeight }); seekToResume(); }}
+    on:loadedmetadata={() => {
+      vlog('loadedmetadata', { dur: Math.round(videoElement?.duration || 0), w: videoElement?.videoWidth, h: videoElement?.videoHeight });
+      seekToResume();
+    }}
     on:ended={onVideoEnded}
     on:click={togglePlay}
   />
