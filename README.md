@@ -18,6 +18,13 @@ Now, there is a quick user switch to easily change profiles. If you want, you ca
 - **Shared Profile:** Compare different profiles in one view. Easily find a movie that nobody has watched yet.
 - **SyncPlay Support:** Watch movies together with the built-in SyncPlay feature.
 
+### Work in Progress (Planned)
+- **libbitsub Integration:** Replacing `libpgs` with `libbitsub` to enable Direct Play for VobSub and DVDSub subtitles.
+- **Screensavers:** Adding different types of screensavers to choose from.
+- **Smarter Settings:** Expanding the settings menu with useful options that perfectly fit the app's philosophy.
+- **Additional Languages:** Planning to add support for more languages in the future.
+- **Under the Hood:** General stability improvements and bug fixes.
+
 ### Screenshots
 
 <p align="center">
