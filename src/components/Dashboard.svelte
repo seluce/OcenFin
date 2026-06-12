@@ -357,7 +357,7 @@
     {#if showLibraries && libraries.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-gray-400 mb-4 px-2">{$t.myMedia}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each libraries as library}
             <button on:click={() => dispatch('openLibrary', library)}
               class="shrink-0 group flex flex-col items-center focus:outline-none">
@@ -381,8 +381,8 @@
     <!-- WEITERSCHAUEN -->
     {#if continueWatching.length > 0}
       <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.continueWatching}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+        <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.continueWatchingRow}</h2>
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each continueWatching as item}
             <button on:click={() => dispatch('openDetails', item)} use:longPress on:longpress={() => dispatch('openContext', item)}
               class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
@@ -420,7 +420,7 @@
     {#if showNextUp && nextUp.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.nextUp}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each nextUp as item}
             <button on:click={() => dispatch('openDetails', item)} use:longPress on:longpress={() => dispatch('openContext', item)}
               class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
@@ -448,7 +448,7 @@
     {#if showHistory && recentlyWatched.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.recentlyWatched}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each recentlyWatched as item}
             <button on:click={() => dispatch('openDetails', item)} use:longPress on:longpress={() => dispatch('openContext', item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
@@ -481,7 +481,7 @@
     {#if showSharedSuggestions && sharedSuggestions.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.sharedSuggestions}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each sharedSuggestions as item}
             <button on:click={() => dispatch('openDetails', item)} use:longPress on:longpress={() => dispatch('openContext', item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
@@ -509,7 +509,7 @@
     {#each (showRecommendations ? recommendations.slice(0, recommendationRows) : []) as rec}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each rec.items as item}
             <button on:click={() => dispatch('openDetails', item)} use:longPress on:longpress={() => dispatch('openContext', item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
@@ -542,7 +542,7 @@
     {#if showLatest && latestMovies.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.latestMovies}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each latestMovies as item}
             <button on:click={() => dispatch('openDetails', item)} use:longPress on:longpress={() => dispatch('openContext', item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
@@ -575,7 +575,7 @@
     {#if showLatest && latestSeries.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.latestSeries}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each latestSeries as item}
             <button on:click={() => dispatch('openDetails', item)} use:longPress on:longpress={() => dispatch('openContext', item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
@@ -608,7 +608,7 @@
     {#if showCollections && collections.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.collections}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each collections as col}
             <button on:click={() => dispatch('openCollection', col)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
@@ -637,6 +637,9 @@
 <style>
   .hide-scrollbar::-webkit-scrollbar { display: none; }
   .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  /* scroll-snap: horizontale Reihen rasten beim Blättern an Kartengrenzen ein (proximity = sanft) */
+  .snap-row { scroll-snap-type: x proximity; scroll-padding-inline-start: 0.5rem; }
+  .snap-row > * { scroll-snap-align: start; }
 
   /* content-visibility: überspringt Rendering für Karten außerhalb des sichtbaren
      Bereichs (horizontale Reihen). Spart Layout-Arbeit bei vielen Reihen/Karten. */

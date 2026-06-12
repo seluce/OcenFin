@@ -270,7 +270,7 @@ export const AVATAR_COLORS = ['#3b82f6', '#0ea5e9', '#14b8a6', '#10b981', '#6366
 // Browser-only (nutzt document/canvas). Liefert ein Promise.
 // Rendert ein Bild (Film-/Serien-Poster) mittig quadratisch zugeschnitten in einen Avatar (PNG).
 // Das Bild wird per fetch als Blob geholt und über eine ObjectURL gezeichnet → kein Canvas-CORS-Taint,
-// sodass toDataURL funktioniert. imageUrl muss den api_key enthalten.
+// sodass toDataURL funktioniert. imageUrl muss den Token (ApiKey-Parameter) enthalten.
 export function renderImageAvatarPng(imageUrl, size = 256) {
   return new Promise((resolve, reject) => {
     fetch(imageUrl)
@@ -352,7 +352,7 @@ export function runtimeVersions() {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
   const m = ua.match(/Chrom(?:e|ium)\/(\d+(?:\.\d+)*)/);
   const dep = (name) => (deps?.[name] || '').replace(/^[\^~]/, '');
-  return { chromium: m ? m[1] : '', hls: dep('hls.js'), libbitsub: dep('libbitsub') };
+  return { chromium: m ? m[1] : '', hls: dep('hls.js'), libbitsub: dep('libbitsub'), jassub: dep('jassub') };
 }
 
 // --- BlurHash: moderne „Blur-up"-Platzhalter für Bilder ----------------------------------------

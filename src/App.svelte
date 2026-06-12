@@ -73,9 +73,23 @@
   let qcSecret  = null;
   let qcPolling = null;
 
+  const BASE_DEVICE_ID = 'oceonfin-tv-001';
+  // Eindeutige DeviceId pro Nutzer: Jellyfin erlaubt nur EINEN Token je DeviceId. Ohne diese Trennung
+  // macht das Anmelden eines zweiten Profils (z.B. fürs gemeinsame Schauen) den Token des ersten
+  // ungültig. Der gehashte Benutzername ist der nutzerspezifische Teil — er sanitisiert zugleich
+  // Sonderzeichen, die das Header-Format (Werte in Anführungszeichen) brechen könnten.
+  function deviceIdHash(name) {
+    let h = 5381; const s = String(name || '');
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+  function deviceIdFor(name) { return `${BASE_DEVICE_ID}-${deviceIdHash(name)}`; }
+  function authHeaderFor(name) {
+    return `MediaBrowser Client="OcenFin-TV", Device="LG Smart TV", DeviceId="${deviceIdFor(name)}", Version="1.0.0"`;
+  }
+  // Basis-Header ohne Nutzerbezug — nur für Quick Connect, weil der Nutzer beim Initiate noch unbekannt ist.
   const CLIENT_AUTH_HEADER =
-    'MediaBrowser Client="OcenFin-TV", Device="LG Smart TV", DeviceId="oceonfin-tv-001", Version="1.0.0"';
-  const SYNC_DEVICE_ID = 'oceonfin-tv-001';   // muss zur DeviceId im Auth-Header passen (für den SyncPlay-Socket)
+    `MediaBrowser Client="OcenFin-TV", Device="LG Smart TV", DeviceId="${BASE_DEVICE_ID}", Version="1.0.0"`;
 
   // Hilfreich: auf welchen User der aktuelle Server-Token zeigt
   $: serverUrl = selectedServer?.url ?? '';
@@ -93,7 +107,7 @@
   let displaySettings = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} };
 
   // Standard-Audio-/Untertitelsprache
-  let playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3 };
+  let playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3 };
 
   // ── Profil-bezogene Einstellungen ───────────────────────────
   // Sprache + Anzeige + Wiedergabe + Animationen werden PRO BENUTZER gespeichert.
@@ -150,7 +164,7 @@
       localStorage.setItem('app_language', p.language);   // "zuletzt genutzt" aktualisieren
     }
     displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
-    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, ...(p.playbackPrefs || {}) };
+    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, ...(p.playbackPrefs || {}) };
     reduceAnimations = p.reduceAnimations ?? false;
     librarySorts     = p.librarySorts || {};   // gemerkte Sortierung pro Bibliothek
     sharedProfile    = p.sharedProfile && Array.isArray(p.sharedProfile.members)
@@ -430,7 +444,7 @@
     if (!serverUrl || !activeToken) return;
     if (syncSocket && (syncSocket.readyState === WebSocket.OPEN || syncSocket.readyState === WebSocket.CONNECTING)) return;
     let ws;
-    try { ws = new WebSocket(syncSocketUrl(serverUrl, activeToken, SYNC_DEVICE_ID)); }
+    try { ws = new WebSocket(syncSocketUrl(serverUrl, activeToken, deviceIdFor(selectedUser?.Name))); }
     catch (e) { console.warn('[SyncPlay] Socket konnte nicht geöffnet werden', e); return; }
     syncSocket = ws;
     ws.onopen = () => {
@@ -896,7 +910,7 @@
       try {
         const res = await fetch(`${serverUrl}/Users/AuthenticateByName`, {
           method:  'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': CLIENT_AUTH_HEADER },
+          headers: { 'Content-Type': 'application/json', 'Authorization': authHeaderFor(user.Name) },
           body:    JSON.stringify({ Username: user.Name, Pw: pw || '' })
         });
         if (!res.ok) return 'error';
@@ -1072,7 +1086,7 @@
     try {
       const res = await fetch(`${serverUrl}/Users/AuthenticateByName`, {
         method:  "POST",
-        headers: { "Content-Type": "application/json", "Authorization": CLIENT_AUTH_HEADER },
+        headers: { "Content-Type": "application/json", "Authorization": authHeaderFor(username) },
         body:    JSON.stringify({ Username: username, Pw: pw })
       });
       if (res.ok) {

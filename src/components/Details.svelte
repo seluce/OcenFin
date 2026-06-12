@@ -659,7 +659,7 @@
             {:else}{$t.moreFromSeason} {fullItem.SeasonName || ''}
             {/if}
           </h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-8 px-2">
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-8 px-2 snap-row">
             {#each relatedItems as ep}
               <button on:click={() => { fullItem = null; loadFullDetails(ep.Id); }}
                 class="shrink-0 group flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
@@ -694,7 +694,7 @@
       {#if castMembers.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-cast">
           <h2 class="text-3xl font-bold text-white mb-6">{$t.cast}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-8 px-2">
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-8 px-2 snap-row">
             {#each castMembers as person}
               <button on:click={() => dispatch('openPerson', person)} class="shrink-0 w-36 group focus:outline-none text-center">
                 <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto">
@@ -718,7 +718,7 @@
       {#if similarItems.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-similar">
           <h2 class="text-3xl font-bold text-white mb-6">{$t.similar}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-8 px-2">
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-8 px-2 snap-row">
             {#each similarItems as si}
               <button on:click={() => navigateTo(si.Id)} class="shrink-0 w-48 group flex flex-col focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
@@ -841,4 +841,6 @@
 <style>
   .hide-scrollbar::-webkit-scrollbar { display: none; }
   .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .snap-row { scroll-snap-type: x proximity; scroll-padding-inline-start: 0.5rem; }
+  .snap-row > * { scroll-snap-align: start; }
 </style>

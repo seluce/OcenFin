@@ -48,7 +48,7 @@ function cy(r) { return r.top + r.height / 2; }
 //  1) Überlappung in der Querachse (gleiche Spalte/Zeile) — ideal.
 //  2) Kegel: Richtung dominiert die Querabweichung.
 //  3) Rückfall: irgendetwas in der Halbebene (stark nach Querversatz bestraft).
-function pickGeometric(dir, from, candidates, exclude) {
+function pickGeometric(dir, from, candidates, exclude, strictRow = false) {
   const fX = cx(from), fY = cy(from);
   let overlap = null, oS = Infinity;
   let cone = null, cS = Infinity;
@@ -82,6 +82,10 @@ function pickGeometric(dir, from, candidates, exclude) {
       align = Math.abs(r.top - from.top);
     }
     if (!valid || along <= 0) continue;
+    // Links/Rechts bleibt in derselben Zeile: Kandidaten ohne vertikale Überlappung (also aus einer
+    // anderen Reihe) werden ignoriert. So springt es am Zeilenrand nicht hoch/runter, sondern der
+    // Within-Pick liefert nichts → der Gruppen-Übergang (z.B. zur Sidebar) greift.
+    if (strictRow && (dir === 'ArrowLeft' || dir === 'ArrowRight') && perp !== 0) continue;
 
     if (perp === 0)            { const s = along + align * 0.3; if (s < oS) { oS = s; overlap = el; } }
     else if (along >= perp)    { const s = along + perp * 2;    if (s < cS) { cS = s; cone = el; } }
@@ -150,6 +154,21 @@ export function createFocusManager(isEnabled) {
     if (active && active.tagName === 'INPUT' && active.type === 'range' &&
         (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return;
 
+    // Text-Eingabefelder: Links/Rechts bewegt den Cursor INNERHALB des Textes, solange er nicht
+    // am Rand steht. Erst am Anfang (Links) bzw. Ende (Rechts) verlässt der Fokus das Feld. So
+    // kann man Geschriebenes korrigieren, ohne alles löschen zu müssen.
+    if (active && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') &&
+        ((active.tagName === 'INPUT' && /^(text|password|search|email|url|tel|)$/.test(active.type)) ||
+         active.tagName === 'TEXTAREA')) {
+      let start, end, len;
+      try { start = active.selectionStart; end = active.selectionEnd; len = (active.value || '').length; }
+      catch { return; }                                              // keine Selection-API → dem Browser überlassen
+      if (start === null) return;
+      if (e.key === 'ArrowLeft'  && !(start === 0   && end === 0))   return;   // links steht noch Text → Cursor bewegen
+      if (e.key === 'ArrowRight' && !(start === len && end === len)) return;   // rechts steht noch Text → Cursor bewegen
+      // sonst: Cursor am Rand → Fokus darf das Feld in diese Richtung verlassen (normale Navigation)
+    }
+
     const hasActive = active && active !== document.body;
     const from = hasActive ? rectOf(active)
                            : { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
@@ -159,7 +178,7 @@ export function createFocusManager(isEnabled) {
 
     // 1) Innerhalb der aktuellen Gruppe / des Modals
     if (scope) {
-      const within = pickGeometric(e.key, from, focusablesIn(scope), active);
+      const within = pickGeometric(e.key, from, focusablesIn(scope), active, true);
       if (within) { e.preventDefault(); focusEl(within); return; }
       if (trap) { e.preventDefault(); return; }   // Modal nicht verlassen
     }

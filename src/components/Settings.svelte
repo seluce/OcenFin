@@ -147,8 +147,10 @@
 
   function setLanguage(lang) {
     currentLang.set(lang);
+    try { localStorage.setItem('app_language', lang); } catch {}   // Wahl überlebt den Neustart
     closeModal();
   }
+  $: currentLangName = (LANGUAGES.find(l => l.key === $currentLang) || {}).name || 'English';
 
   async function changePassword() {
     pwMessage = '';
@@ -327,7 +329,7 @@
         list.push({
           id,
           name: isEp ? (it.SeriesName || it.Name) : it.Name,
-          imageUrl: `${serverUrl}/Items/${id}/Images/Primary?tag=${tag}&fillHeight=300&quality=90&api_key=${activeToken}`,
+          imageUrl: `${serverUrl}/Items/${id}/Images/Primary?tag=${tag}&fillHeight=300&quality=90&ApiKey=${activeToken}`,
         });
         if (list.length >= AVATAR_ICON_KEYS.length) break;
       }
@@ -462,7 +464,7 @@
             <span class="text-2xl text-white font-medium block">{$t.language}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.languageDesc}</span>
           </div>
-          <span class="text-xl font-bold text-gray-300">{$currentLang === 'de' ? 'Deutsch' : 'English'}</span>
+          <span class="text-xl font-bold text-gray-300">{currentLangName}</span>
         </button>
 
         <div class="h-px bg-gray-700"></div>
@@ -813,7 +815,10 @@
         <button on:click={() => toggleDisplay('showChapters')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
-          <span class="text-2xl text-white font-medium">{$t.displayChapters}</span>
+          <div>
+            <span class="text-2xl text-white font-medium block">{$t.displayChapters}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{$t.displayChaptersDesc}</span>
+          </div>
           <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
                       {displaySettings.showChapters ? 'bg-blue-500' : 'bg-gray-600'}">
             <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
@@ -961,6 +966,21 @@
                         {playbackPrefs.pgsRendering ? 'bg-blue-500' : 'bg-gray-600'}">
               <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
                           {playbackPrefs.pgsRendering ? 'translate-x-8' : ''}"></div>
+            </div>
+          </button>
+
+          <!-- ASS/SSA mit Original-Layout (JASSUB) — aus: schlichtes Text-Overlay, beides Direct Play -->
+          <button on:click={() => togglePlaybackPref('assRendering')}
+            class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
+                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+            <div>
+              <span class="text-2xl text-white font-medium block">{$t.assRendering}</span>
+              <span class="text-gray-400 mt-1 block text-sm">{$t.assRenderingDesc}</span>
+            </div>
+            <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                        {playbackPrefs.assRendering ? 'bg-blue-500' : 'bg-gray-600'}">
+              <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                          {playbackPrefs.assRendering ? 'translate-x-8' : ''}"></div>
             </div>
           </button>
 
@@ -1294,6 +1314,11 @@
       <!-- Status-Infos: nur Dinge, die man woanders nicht sieht und die das App-Verhalten erklären -->
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-6 flex flex-col gap-4">
         <div class="flex justify-between items-baseline gap-4">
+          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusChromium}</span>
+          <span class="text-white font-mono text-sm">{envVersions.chromium || '—'}</span>
+        </div>
+        <div class="h-px bg-gray-700/70"></div>
+        <div class="flex justify-between items-baseline gap-4">
           <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusAppVersion}</span>
           <span class="text-white font-mono text-sm">{APP_VERSION}</span>
         </div>
@@ -1317,11 +1342,6 @@
       <!-- Umgebung / Bibliotheken — relevant beim Melden von Wiedergabe-/Untertitel-Problemen -->
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-6 flex flex-col gap-4">
         <div class="flex justify-between items-baseline gap-4">
-          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusChromium}</span>
-          <span class="text-white font-mono text-sm">{envVersions.chromium || '—'}</span>
-        </div>
-        <div class="h-px bg-gray-700/70"></div>
-        <div class="flex justify-between items-baseline gap-4">
           <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusHls}</span>
           <span class="text-white font-mono text-sm">{envVersions.hls || '—'}</span>
         </div>
@@ -1329,6 +1349,11 @@
         <div class="flex justify-between items-baseline gap-4">
           <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusLibbitsub}</span>
           <span class="text-white font-mono text-sm">{envVersions.libbitsub || '—'}</span>
+        </div>
+        <div class="h-px bg-gray-700/70"></div>
+        <div class="flex justify-between items-baseline gap-4">
+          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusJassub}</span>
+          <span class="text-white font-mono text-sm">{envVersions.jassub || '—'}</span>
         </div>
       </div>
     </section>
@@ -1350,18 +1375,16 @@
 
       {#if activeModal === 'lang'}
         <h2 class="text-4xl text-white font-bold mb-2">{$t.language}</h2>
-        <button on:click={() => setLanguage('de')}
-          class="w-full text-left p-6 text-2xl font-bold text-white rounded-xl transition-colors
-                 focus:outline-none focus:ring-4 focus:ring-white
-                 {$currentLang === 'de' ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
-          🇩🇪&nbsp; Deutsch
-        </button>
-        <button on:click={() => setLanguage('en')}
-          class="w-full text-left p-6 text-2xl font-bold text-white rounded-xl transition-colors
-                 focus:outline-none focus:ring-4 focus:ring-white
-                 {$currentLang === 'en' ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
-          🇬🇧&nbsp; English
-        </button>
+        <div class="flex flex-col gap-3 max-h-[60vh] overflow-y-auto hide-scrollbar p-2 -m-2">
+          {#each LANGUAGES as l (l.key)}
+            <button on:click={() => setLanguage(l.key)}
+              class="w-full text-left p-6 text-2xl font-bold text-white rounded-xl transition-colors
+                     focus:outline-none focus:ring-4 focus:ring-white
+                     {$currentLang === l.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
+              {l.flag}&nbsp; {l.name}
+            </button>
+          {/each}
+        </div>
 
       {:else if activeModal === 'audioLang'}
         <h2 class="text-4xl text-white font-bold mb-2">{$t.audioLanguage}</h2>

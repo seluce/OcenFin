@@ -248,7 +248,7 @@ export function resolveStream({ serverUrl, token, itemId, mediaSource, audioStre
   // Direct Play / Direct Stream: vollständige, byte-seekbare Datei (Container unverändert;
   // serverseitige Tonspur-Wahl ist hier nicht möglich, daher keine Index-Parameter).
   const msId = mediaSource?.Id || itemId;
-  const url = `${serverUrl}/Videos/${itemId}/stream?static=true&mediaSourceId=${msId}&api_key=${token}`;
+  const url = `${serverUrl}/Videos/${itemId}/stream?static=true&mediaSourceId=${msId}&ApiKey=${token}`;
   const method = (mediaSource && mediaSource.SupportsDirectStream && !mediaSource.SupportsDirectPlay)
     ? 'DirectStream' : 'DirectPlay';
   return { url, isHls: false, method, mediaSource };
@@ -259,7 +259,15 @@ export function externalSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, 
   if (!stream) return null;
   // IMMER als WebVTT anfordern: unser Overlay-Renderer parst nur VTT, und stream.DeliveryUrl
   // zeigt häufig auf das Quellformat (.subrip/.srt). Jellyfin konvertiert hier on-the-fly.
-  return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.vtt?api_key=${token}`;
+  return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.vtt?ApiKey=${token}`;
+}
+
+// Liefert die Original-ASS/SSA-URL für JASSUB (clientseitiges Rendern mit vollem Styling).
+// Bewusst IMMER Stream.ass: liefert das Originalformat samt Styles statt der VTT-Konvertierung,
+// die Positionierung/Typesetting verwirft (SSA wird vom Server nach ASS gewandelt).
+export function assSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, token }) {
+  if (!stream) return null;
+  return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.ass?ApiKey=${token}`;
 }
 
 // Liefert die rohe Bild-Untertitel-URL für libbitsub. Bevorzugt IMMER die vom Server berechnete
@@ -270,10 +278,10 @@ export function graphicSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, t
   if (stream.DeliveryUrl) {
     const u = stream.DeliveryUrl;
     if (/^https?:/i.test(u)) return u;
-    return `${serverUrl}${u}${u.includes('api_key') ? '' : (u.includes('?') ? '&' : '?') + 'api_key=' + token}`;
+    return `${serverUrl}${u}${(u.includes('api_key') || u.includes('ApiKey')) ? '' : (u.includes('?') ? '&' : '?') + 'ApiKey=' + token}`;
   }
   const codec = (stream.Codec || '').toLowerCase();
   if (codec === 'pgssub' || codec === 'pgs')
-    return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.sup?api_key=${token}`;
+    return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.sup?ApiKey=${token}`;
   return null;   // VobSub/DVDSub ohne DeliveryUrl → nicht clientseitig renderbar (brennen)
 }

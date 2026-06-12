@@ -62,7 +62,7 @@ export async function leaveSyncGroup(serverUrl, token) {
 // http→ws, https→wss. Jellyfin schiebt darüber SyncPlayGroupUpdate / SyncPlayCommand.
 export function syncSocketUrl(serverUrl, token, deviceId) {
   const base = serverUrl.replace(/^http/i, 'ws');
-  return `${base}/socket?api_key=${encodeURIComponent(token)}&deviceId=${encodeURIComponent(deviceId)}`;
+  return `${base}/socket?ApiKey=${encodeURIComponent(token)}&deviceId=${encodeURIComponent(deviceId)}`;
 }
 
 // ── Phase 2: Wiedergabe-Synchronisation ──────────────────────────────────────

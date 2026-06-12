@@ -1,9 +1,15 @@
 <script>
   import { t, currentLang } from '../i18n.js';
   import { isBackKey, focusOnMount, authHeaders, dlog } from '../utils.js';
-  import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl } from '../playback.js';
+  import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady } from '../syncplay.js';
   import { PgsRenderer, VobSubRenderer } from 'libbitsub';
+  import JASSUB from 'jassub';
+  // Worker+WASM als echte Datei-URLs via Vite (?url) — dadurch läuft das ASS-Parsen/Rendern
+  // off-main-thread (der Vorteil, den libbitsub mit seinem Inline-Worker nicht bietet).
+  // Pfad: neuere jassub-Versionen legen die Dateien unter dist/wasm/ ab.
+  import jassubWorkerUrl from 'jassub/dist/wasm/jassub-worker.js?url';
+  import jassubWasmUrl from 'jassub/dist/wasm/jassub-worker.wasm?url';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
 
@@ -388,7 +394,7 @@
     } catch (e) {
       console.error('PlaybackInfo fehlgeschlagen, Fallback auf Direct Play:', e);
       playMethod = 'DirectPlay';
-      const url = `${serverUrl}/Videos/${item.Id}/stream?static=true&api_key=${activeToken}` +
+      const url = `${serverUrl}/Videos/${item.Id}/stream?static=true&ApiKey=${activeToken}` +
                   (audioIndex !== -1 ? `&AudioStreamIndex=${audioIndex}` : '');
       await attachSource(url, false);
     }
@@ -443,6 +449,9 @@
   let pendingRenderer = null;      // beim Sprachwechsel: neuer Renderer, der noch lädt (Altbild bleibt)
   // Bild-Untertitel clientseitig rendern? Nur wenn aktiviert UND nicht ohnehin alles eingebrannt wird.
   $: clientGraphicRender = playbackPrefs.pgsRendering && !playbackPrefs.burnSubtitles;
+  // ASS/SSA mit Original-Layout rendern (JASSUB)? Aus → schlichtes Text-Overlay, beides Direct Play.
+  let assRenderer = null;
+  $: clientAssRender = playbackPrefs.assRendering && !playbackPrefs.burnSubtitles;
 
   // Untertitelgröße → libbitsub-Skalierung (Variante B: gilt für PGS UND VobSub, nicht nur VTT).
   function graphicSubScale() {
@@ -459,18 +468,64 @@
 
   // Untertitel anwenden – routet je nach Codec: PGS/VobSub → libbitsub-Overlay, Text → VTT-Overlay.
   function applySubtitleOverlay(index, ms) {
-    if (index === -1 || !ms) { disposeGraphic(); subtitleCues = []; return; }
+    subtitleFetchToken++;   // laufende VTT-Fetches invalidieren (sonst Text-Overlay neben Grafik/ASS)
+    if (index === -1 || !ms) { disposeGraphic(); disposeAss(); subtitleCues = []; return; }
     const stream = (ms.MediaStreams || []).find(s => s.Index === index && s.Type === 'Subtitle');
     const codec  = (stream?.Codec || '').toLowerCase();
     const isPgs = ['pgssub', 'pgs'].includes(codec);
     const isVob = ['dvdsub', 'vobsub', 'sub'].includes(codec);
+    const isAss = ['ass', 'ssa'].includes(codec);
     if (stream && clientGraphicRender && (isPgs || (isVob && serverVobSub))) {
+      disposeAss();
       subtitleCues = [];                    // kein VTT-Overlay daneben
       applyGraphicSubtitle(stream, ms);     // weicher Wechsel ohne Lücke (siehe unten)
+    } else if (stream && isAss && clientAssRender && (stream.DeliveryMethod || '').toLowerCase() !== 'encode') {
+      disposeGraphic();
+      subtitleCues = [];                    // JASSUB rendert selbst → kein VTT-Overlay daneben
+      applyAssSubtitle(stream, ms);         // Original-Layout (Positionen, Fonts, Typesetting)
     } else {
-      disposeGraphic();                     // verlässt Grafik → Overlay sofort entfernen
+      disposeGraphic();                     // verlässt Grafik/ASS → Overlay sofort entfernen
+      disposeAss();
       applyExternalSubtitleIfNeeded(index, ms);   // Text → VTT (gebrannte Grafik → nichts zu tun)
     }
+  }
+  // ASS/SSA clientseitig mit vollem Styling rendern (JASSUB = libass als WASM; nutzt Jellyfin-Web
+  // ebenso). Anders als libbitsub lädt JASSUB Worker+WASM als echte Datei-URLs → off-main-thread,
+  // Spurwechsel via setTrackByUrl ohne Renderer-Neuaufbau.
+  function applyAssSubtitle(stream, ms) {
+    if (!videoElement) return;
+    const url = assSubtitleUrl({ serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: activeToken });
+    try {
+      if (assRenderer) {                       // weicher Spurwechsel (z.B. eng → deu)
+        assRenderer.setTrackByUrl(url);
+        dlog('[OcenFin] ASS-Spurwechsel via JASSUB:', stream.Index);
+        return;
+      }
+      assRenderer = new JASSUB({
+        video: videoElement,
+        subUrl: url,
+        workerUrl: jassubWorkerUrl,
+        wasmUrl: jassubWasmUrl,
+        fonts: attachmentFontUrls(ms),         // eingebettete MKV-Schriften → Layout originalgetreu
+      });
+      dlog('[OcenFin] ASS-Untertitel via JASSUB:', stream.Index, stream.Codec);
+    } catch (e) { dlog('[OcenFin] JASSUB-Fehler:', e?.message); disposeAss(); }
+  }
+  // Eingebettete Schriften (MKV-Attachments) als URLs fürs JASSUB-fonts-Array.
+  function attachmentFontUrls(ms) {
+    return (ms?.MediaAttachments || [])
+      .filter(a => /font|woff|ttf|otf|truetype|opentype/i.test(a.MimeType || '') || /\.(ttf|otf|woff2?)$/i.test(a.FileName || ''))
+      .map(a => {
+        const u = a.DeliveryUrl; if (!u) return null;
+        if (/^https?:/i.test(u)) return u;
+        return `${serverUrl}${u}${(u.includes('api_key') || u.includes('ApiKey')) ? '' : (u.includes('?') ? '&' : '?') + 'ApiKey=' + activeToken}`;
+      })
+      .filter(Boolean);
+  }
+  function disposeAss() {
+    if (!assRenderer) return;
+    try { if (assRenderer.destroy) assRenderer.destroy(); else if (assRenderer.dispose) assRenderer.dispose(); } catch {}
+    assRenderer = null;
   }
   function applyGraphicSubtitle(stream, ms) {
     if (!videoElement) return;
@@ -771,6 +826,7 @@
     clearBufferWatchdog();
     if (hls) { try { hls.destroy(); } catch {} hls = null; }
     disposeGraphic();
+    disposeAss();
     reportPlaybackStopped();
   });
 
