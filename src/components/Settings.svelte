@@ -65,7 +65,7 @@
   }
 
   // Version: YYYYMMDD — bei Updates hier anpassen
-  const APP_VERSION = '20260611';
+  const APP_VERSION = '20260613';
 
   const dispatch = createEventDispatcher();
 

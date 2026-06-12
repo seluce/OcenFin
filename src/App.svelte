@@ -1928,10 +1928,11 @@
         {#if savedServers.length > 0}
           <div class="flex flex-col gap-3">
             <p class="text-sm text-gray-400 uppercase tracking-wider font-bold ml-1">{$t.savedServers}</p>
-            {#each savedServers as server}
+            {#each savedServers as server, i}
               <div class="flex items-center gap-3">
                 <button
                   on:click={() => connectToServer(server)}
+                  use:focusOnMount={i === 0}
                   class="flex-1 flex items-center justify-between p-5 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700
                          border border-gray-600 hover:border-blue-500 focus:border-blue-500
                          rounded-xl text-left focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"

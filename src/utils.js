@@ -20,7 +20,7 @@ export function isBackKey(e) {
 }
 
 // Svelte-Action: fokussiert das Element beim Einblenden (für WebOS-D-Pad-Navigation)
-export function focusOnMount(node) { node.focus(); }
+export function focusOnMount(node, enabled = true) { if (enabled) node.focus(); }
 
 // Svelte-Action: Auf dem TV öffnet ein fokussiertes <input> SOFORT die Bildschirm-
 // tastatur — auch wenn man nur hin navigiert. Diese Action hält das Feld readonly
