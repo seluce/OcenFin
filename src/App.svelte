@@ -690,18 +690,21 @@
     try {
       // Auto-Login via gespeicherter Session
       const sessionStr = localStorage.getItem('current_session');
+      dlog('[restore] current_session vorhanden:', !!sessionStr);
       if (sessionStr) {
         try {
           const session = JSON.parse(sessionStr);
           const server  = savedServers.find(s => s.id === session.serverId);
+          dlog('[restore] Server gefunden:', !!server, '| Token:', !!session.token, '| userId:', !!session.userId);
           if (server && session.token && session.userId) {
             selectedServer = server;
             activeToken    = session.token;
 
-            if (await validateToken(session.token)) {
+            if (await validateToken(session.token, server.url)) {
               const res = await fetch(`${server.url}/Users/${session.userId}`, {
                 headers: getAuthHeaders()
               });
+              dlog('[restore] /Users/{id} HTTP', res.status);
               if (res.ok) {
                 selectedUser = await res.json();
                 isLoggedIn   = true;
@@ -709,18 +712,21 @@
                 applyUserPrefs(selectedUser.Id);   // Profil-Einstellungen laden
                 fetchUsers(); // Im Hintergrund für Benutzerwechsel
                 scheduleScreensaver();
+                dlog('[restore] Auto-Login erfolgreich:', selectedUser.Name);
                 return;
               }
             }
             // Token abgelaufen → User-Screen für diesen Server
+            dlog('[restore] Token ungültig → zurück zum Benutzer-Screen');
             clearCurrentSession();
             await connectToServer(server);
             return;
           }
-        } catch { clearCurrentSession(); }
+        } catch (e) { dlog('[restore] Fehler beim Wiederherstellen:', e?.message || e); clearCurrentSession(); }
       }
 
       // Kein Auto-Login → Server-Auswahl anzeigen
+      dlog('[restore] kein Auto-Login → Server-Auswahl');
       appPhase = 'servers';
     } finally {
       initializing = false;   // Splashscreen ausblenden (egal welcher Pfad)
@@ -1042,13 +1048,17 @@
     dlog('[Gemeinsam] Vorschläge:', sharedSuggestions.length);
   }
 
-  async function validateToken(token) {
+  // baseUrl explizit übergebbar: beim Auto-Login ist der reaktive serverUrl ($:) noch nicht
+  // aktualisiert (Svelte flusht Reaktivität erst nach dem synchronen Block), daher würde
+  // `${serverUrl}` dort auf '' zeigen → relativer Fetch auf die App-Origin statt auf den Server.
+  async function validateToken(token, baseUrl = serverUrl) {
     try {
-      const res = await fetch(`${serverUrl}/Users/Me`, {
+      const res = await fetch(`${baseUrl}/Users/Me`, {
         headers: { "Authorization": `MediaBrowser Token="${token}"` }
       });
+      if (!res.ok) dlog('[auth] Token-Validierung fehlgeschlagen — HTTP', res.status);
       return res.ok;
-    } catch { return false; }
+    } catch (e) { dlog('[auth] Token-Validierung — Netzwerkfehler:', e?.message || e); return false; }
   }
 
   /** Profil angeklickt — ggf. Schnellanmeldung per gespeichertem Token */
@@ -1070,10 +1080,11 @@
         finishLogin(user, storedToken);
         return;
       } else {
-        // Abgelaufener Token entfernen
-        delete savedTokens[selectedServer.id][user.Id];
-        savedTokens = { ...savedTokens };
-        persistSavedTokens();
+        // Token abgelehnt: Eintrag NICHT löschen — er steht für den Speicher-Wunsch des Nutzers.
+        // authenticateUser überschreibt ihn nach erfolgreicher Passwort-Anmeldung mit dem frischen
+        // Token. (Früher wurde hier gelöscht, wodurch sich der Schnellwechsel nach einem einzigen
+        // Token-Ablauf still selbst abschaltete.)
+        dlog('[auth] gespeicherter Token abgelehnt für', user.Name, '— Speicher-Wunsch bleibt, wird nach Passwort-Login erneuert');
       }
     }
 
