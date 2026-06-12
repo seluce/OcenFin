@@ -1,49 +1,88 @@
-# OcenFin - another Jellyfin WebOS Client
-
-OcenFin is a native WebOS app for LG TVs. Just to be clear: I don't want to build the ultimate WebOS Jellyfin app. I just built it for my own needs. If you want an app with many features, check out MoonFin, Litefin, or Breezyfin. They also offer native apps for WebOS.
-
-The official Jellyfin app from the LG App Store is basically just a web browser wrapper. It's just the normal website, which is not optimized for WebOS. Our main problem: We switch users on the TV very often. In the official app, this is annoying. You have to log out, select the server again, and then choose the user. Also, the performance on our LG B4 TV was very slow. The picture quality of the TV is great, but the hardware struggles with heavy apps.
-
-So I thought about how to make a better app for us: First, it should be a native WebOS app based on Svelte and Tailwind. Svelte helps us avoid heavy frameworks so the app stays very lightweight. This makes it much nicer to use. I also decided to hide some details that are not very important.
-
-Now, there is a quick user switch to easily change profiles. If you want, you can save your password (using a token). Then you can jump right into your profile without typing the password again.
-
-### Features & Summary
-- **Multi-Language:** Supports English and German until now
-- **Svelte-based:** Very lightweight. No bundled framework required.
-- **Minimalist Design:** Made for WebOS. Focuses on speed for older devices by removing things you don't really need.
-- **Fast User Switching:** Switch between profiles quickly and easily.
-- **Save Passwords:** Save your password as a token for instant login.
-- **Custom Avatars:** Create your own profile picture directly on the TV using built-in SVG templates. No need to upload images.
-- **Shared Profile:** Compare different profiles in one view. Easily find a movie that nobody has watched yet.
-- **SyncPlay Support:** Watch movies together with the built-in SyncPlay feature.
-
-### Work in Progress (Planned)
-- **libbitsub Integration:** Replacing `libpgs` with `libbitsub` to enable Direct Play for VobSub and DVDSub subtitles.
-- **Screensavers:** Adding different types of screensavers to choose from.
-- **Smarter Settings:** Expanding the settings menu with useful options that perfectly fit the app's philosophy.
-- **Additional Languages:** Planning to add support for more languages in the future.
-- **Under the Hood:** General stability improvements and bug fixes.
-
-### Screenshots
+<h1 align="center">OcenFin – another Jellyfin WebOS Client</h1>
 
 <p align="center">
-  <a href="https://github.com/user-attachments/assets/0ea903ba-1145-4705-b18e-4316f310b48e" target="_blank">
-    <img src="https://github.com/user-attachments/assets/0ea903ba-1145-4705-b18e-4316f310b48e" width="48%" alt="OcenFin Screenshot 1" />
+  <a href="https://github.com/seluce/OcenFin/issues"><img src="https://img.shields.io/github/issues/seluce/OcenFin?style=flat-square&color=blue" alt="Open Issues"></a>
+  <a href="https://github.com/seluce/OcenFin/stargazers"><img src="https://img.shields.io/github/stars/seluce/OcenFin?style=flat-square&color=yellow" alt="GitHub Stars"></a>
+  <a href="https://github.com/seluce/OcenFin/network/members"><img src="https://img.shields.io/github/forks/seluce/OcenFin?style=flat-square&color=lightgrey" alt="GitHub Forks"></a>
+</p>
+
+> OcenFin is a native WebOS app for LG TVs. Just to be clear: I don't want to build the ultimate Jellyfin app. I just built it for my own needs. If you want an app with many features, check out MoonFin, Litefin, or Breezyfin. They also offer native apps for WebOS. 
+
+The official Jellyfin app from the LG App Store is basically just a web browser wrapper. It's just the normal website, which is not optimized for WebOS. My main problem was that I switch users on the TV very often. In the official app, this is annoying. Also, the performance on my LG B4 TV was very slow. 
+
+So I decided to build a better app: A native WebOS app based on Svelte and Tailwind. I hid some details that are not very important to keep it clean and simple.
+
+---
+
+## Features
+
+* **Fast User Switching:** Switch between profiles quickly and easily. 
+* **Save Passwords:** You can save your password as a token. Then you can jump right into your profile without typing the password again.
+* **Shared Profile:** If you use a shared profile, you can link two personal profiles to it. It hides movies or series that one of you has already seen. This makes it easy to find something new to watch together.
+* **Custom Avatars:** Create your own profile picture directly on the TV. You can use your recently watched shows or movies as a background. Or you can choose an SVG icon with a custom background. No need to upload images.
+* **WebSockets & SyncPlay:** Full WebSocket support for remote commands from the Jellyfin server and SyncPlay features to watch together.
+* **Direct Play Focus:** I use `libbitsub`, `jassub`, and `hls` to support many formats. This helps to run Direct Play on the TV and avoid transcoding on the server, even for complex subtitles like VobSub and DVDSub.
+* **Multi-Language:** The app supports English, German, Spanish, French, Italian, Dutch, Portuguese, and Polish.
+
+---
+
+## Under the Hood
+
+OcenFin is made for WebOS and focuses on speed for older devices.
+
+* **Tech Stack:** Built with Svelte and Tailwind CSS.
+* **No Frameworks:** Svelte helps me avoid heavy frameworks. This keeps the app very lightweight and fast.
+* **Minimalist Design:** I removed things you don't really need to keep the interface clean and fast.
+
+---
+
+## Work in Progress
+
+* **Keep it Simple:** Instead of blindly adding new features, my main focus is on making the existing app better, faster, and more stable.
+* **Smarter Settings:** Expanding the settings menu with useful options that perfectly fit the app's philosophy.
+
+---
+
+## Screenshots
+
+<p align="center">
+  <a href="https://github.com/user-attachments/assets/1c8d59cf-ef20-428a-ba4b-f331f40e242d" target="_blank">
+    <img src="https://github.com/user-attachments/assets/1c8d59cf-ef20-428a-ba4b-f331f40e242d" width="49%" alt="Screenshot 1" />
   </a>
-  <a href="https://github.com/user-attachments/assets/c9983d9d-cca2-40df-80ee-443466aca4b7" target="_blank">
-    <img src="https://github.com/user-attachments/assets/c9983d9d-cca2-40df-80ee-443466aca4b7" width="48%" alt="OcenFin Screenshot 2" />
+  <a href="https://github.com/user-attachments/assets/441a8c18-ffe7-4ff7-982c-0bbcf134d59f" target="_blank">
+    <img src="https://github.com/user-attachments/assets/441a8c18-ffe7-4ff7-982c-0bbcf134d59f" width="49%" alt="Screenshot 2" />
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/user-attachments/assets/39d89a07-fc4b-42b5-abdb-3c2f23d03a61" target="_blank">
-    <img src="https://github.com/user-attachments/assets/39d89a07-fc4b-42b5-abdb-3c2f23d03a61" width="31%" alt="OcenFin Screenshot 3" />
+  <a href="https://github.com/user-attachments/assets/40144986-febc-4756-a5ba-524d99fd6469" target="_blank">
+    <img src="https://github.com/user-attachments/assets/40144986-febc-4756-a5ba-524d99fd6469" width="49%" alt="Screenshot 3" />
   </a>
-  <a href="https://github.com/user-attachments/assets/e5e0a18a-b321-49b5-8492-0f0fdc07baf1" target="_blank">
-    <img src="https://github.com/user-attachments/assets/e5e0a18a-b321-49b5-8492-0f0fdc07baf1" width="31%" alt="OcenFin Screenshot 4" />
-  </a>
-  <a href="https://github.com/user-attachments/assets/454029be-c3b6-4522-9958-5031b29e2587" target="_blank">
-    <img src="https://github.com/user-attachments/assets/454029be-c3b6-4522-9958-5031b29e2587" width="31%" alt="OcenFin Screenshot 5" />
+  <a href="https://github.com/user-attachments/assets/88aa63ca-3a52-4b2a-b772-a110ff964d9e" target="_blank">
+    <img src="https://github.com/user-attachments/assets/88aa63ca-3a52-4b2a-b772-a110ff964d9e" width="49%" alt="Screenshot 4" />
   </a>
 </p>
+
+<p align="center">
+  <a href="https://github.com/user-attachments/assets/0be50e3d-c67c-4227-927d-03bde367fab8" target="_blank">
+    <img src="https://github.com/user-attachments/assets/0be50e3d-c67c-4227-927d-03bde367fab8" width="32%" alt="Screenshot 5" />
+  </a>
+  <a href="https://github.com/user-attachments/assets/f8f42db7-528e-4f3b-b8e6-36f98182ef4d" target="_blank">
+    <img src="https://github.com/user-attachments/assets/f8f42db7-528e-4f3b-b8e6-36f98182ef4d" width="32%" alt="Screenshot 6" />
+  </a>
+  <a href="https://github.com/user-attachments/assets/f80ad213-5295-4ceb-a878-bf86f88254cf" target="_blank">
+    <img src="https://github.com/user-attachments/assets/f80ad213-5295-4ceb-a878-bf86f88254cf" width="32%" alt="Screenshot 7" />
+  </a>
+</p>
+
+> **Note:** The images in the screenshots are just examples and demos. They do not show any real content.
+
+## Star History
+
+<a href="https://star-history.com/#seluce/OcenFin&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=seluce/OcenFin&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=seluce/OcenFin&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=seluce/OcenFin&type=Date" />
+ </picture>
+</a>****
