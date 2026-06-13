@@ -36,6 +36,16 @@ OcenFin is made for WebOS and focuses on speed for older devices.
 
 ---
 
+## Installation
+
+You can install OcenFin via an `.ipk` file. **No root is required.**
+
+1. **Prepare the TV:** Install the official "Developer Mode" app from the LG Content Store on your TV and enable it.
+2. **Sideload from PC:** To install the app from your computer to the TV, I highly recommend using **[dev-manager-desktop](https://github.com/webosbrew/dev-manager-desktop)**. It provides a very easy-to-use graphical interface.
+3. **Bypass the 50-Hour Limit:** LG restricts developer apps to a 50-hour lifespan. To keep OcenFin working permanently, use `dev-manager-desktop` to also install the **"Auto Dev Token Refresh"** app on your TV. It automatically resets the timer in the background so your apps never expire.
+
+---
+
 ## Work in Progress
 
 * **Keep it Simple:** Instead of blindly adding new features, my main focus is on making the existing app better, faster, and more stable.
@@ -64,14 +74,11 @@ OcenFin is made for WebOS and focuses on speed for older devices.
 </p>
 
 <p align="center">
-  <a href="https://github.com/user-attachments/assets/0be50e3d-c67c-4227-927d-03bde367fab8" target="_blank">
-    <img src="https://github.com/user-attachments/assets/0be50e3d-c67c-4227-927d-03bde367fab8" width="32%" alt="Screenshot 5" />
-  </a>
   <a href="https://github.com/user-attachments/assets/f8f42db7-528e-4f3b-b8e6-36f98182ef4d" target="_blank">
-    <img src="https://github.com/user-attachments/assets/f8f42db7-528e-4f3b-b8e6-36f98182ef4d" width="32%" alt="Screenshot 6" />
+    <img src="https://github.com/user-attachments/assets/f8f42db7-528e-4f3b-b8e6-36f98182ef4d" width="49%" alt="Screenshot 6" />
   </a>
   <a href="https://github.com/user-attachments/assets/f80ad213-5295-4ceb-a878-bf86f88254cf" target="_blank">
-    <img src="https://github.com/user-attachments/assets/f80ad213-5295-4ceb-a878-bf86f88254cf" width="32%" alt="Screenshot 7" />
+    <img src="https://github.com/user-attachments/assets/f80ad213-5295-4ceb-a878-bf86f88254cf" width="49%" alt="Screenshot 7" />
   </a>
 </p>
 
@@ -85,4 +92,4 @@ OcenFin is made for WebOS and focuses on speed for older devices.
    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=seluce/OcenFin&type=Date" />
    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=seluce/OcenFin&type=Date" />
  </picture>
-</a>****
+</a>
