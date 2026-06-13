@@ -344,6 +344,17 @@ export default {
     trickplay: "Vignettes d'aperçu au défilement",
     trickplayDesc: "Affiche une vignette de l'instant pendant la recherche (si le serveur les a générées). Désactivé : nom du chapitre et heure uniquement.",
 
+    statusTv: "Téléviseur",
+    statusResolution: "Résolution",
+    statusUnknown: "Inconnu",
+    statusCodecsBrowser: "Codecs (décodeur du navigateur)",
+    statusOnlyOnTv: "Disponible uniquement sur le téléviseur",
+
+    statusGroupApp: "App et serveur",
+    statusGroupComponents: "Composants",
+
+    statusAtmosHint: "Avec une barre de son en (e)ARC, Non peut s'afficher même si l'Atmos fonctionne — le téléviseur transmet le son à la barre de son.",
+
     // Version
     version: "Version",
 };

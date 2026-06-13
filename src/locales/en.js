@@ -344,6 +344,17 @@ export default {
     trickplay: "Scrubbing preview thumbnails",
     trickplayDesc: "Shows a thumbnail of the moment while seeking (if the server generated them). Off: chapter name and time only.",
 
+    statusTv: "TV",
+    statusResolution: "Resolution",
+    statusUnknown: "Unknown",
+    statusCodecsBrowser: "Codecs (browser decoder)",
+    statusOnlyOnTv: "Only available on the TV",
+
+    statusGroupApp: "App & server",
+    statusGroupComponents: "Components",
+
+    statusAtmosHint: "With a soundbar over (e)ARC this can show No even though Atmos works — the TV passes the audio through to the soundbar.",
+
     // Version
     version: "Version",
 };

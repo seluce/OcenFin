@@ -344,6 +344,17 @@ export default {
     trickplay: "Miniatury podglądu podczas przewijania",
     trickplayDesc: "Pokazuje miniaturę danego momentu podczas przewijania (jeśli serwer je wygenerował). Wył.: tylko nazwa rozdziału i czas.",
 
+    statusTv: "Telewizor",
+    statusResolution: "Rozdzielczość",
+    statusUnknown: "Nieznane",
+    statusCodecsBrowser: "Kodeki (dekoder przeglądarki)",
+    statusOnlyOnTv: "Dostępne tylko na telewizorze",
+
+    statusGroupApp: "Aplikacja i serwer",
+    statusGroupComponents: "Komponenty",
+
+    statusAtmosHint: "Przy soundbarze przez (e)ARC może tu być Nie, mimo że Atmos działa — telewizor przekazuje dźwięk do soundbara.",
+
     // Version
     version: "Wersja",
 };

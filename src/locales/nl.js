@@ -344,6 +344,17 @@ export default {
     trickplay: "Voorbeeldminiaturen bij spoelen",
     trickplayDesc: "Toont tijdens het spoelen een miniatuur van het moment (als de server ze heeft gegenereerd). Uit: alleen hoofdstuknaam en tijd.",
 
+    statusTv: "Tv",
+    statusResolution: "Resolutie",
+    statusUnknown: "Onbekend",
+    statusCodecsBrowser: "Codecs (browserdecoder)",
+    statusOnlyOnTv: "Alleen beschikbaar op de tv",
+
+    statusGroupApp: "App en server",
+    statusGroupComponents: "Componenten",
+
+    statusAtmosHint: "Met een soundbar via (e)ARC kan hier Nee staan terwijl Atmos toch werkt — de tv geeft het geluid door aan de soundbar.",
+
     // Version
     version: "Versie",
 };

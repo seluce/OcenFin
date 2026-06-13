@@ -344,6 +344,17 @@ export default {
     trickplay: "Miniaturas de vista previa al avanzar",
     trickplayDesc: "Muestra una miniatura del momento al buscar (si el servidor las generó). Desactivado: solo nombre del capítulo y tiempo.",
 
+    statusTv: "Televisor",
+    statusResolution: "Resolución",
+    statusUnknown: "Desconocido",
+    statusCodecsBrowser: "Códecs (decodificador del navegador)",
+    statusOnlyOnTv: "Solo disponible en el televisor",
+
+    statusGroupApp: "App y servidor",
+    statusGroupComponents: "Componentes",
+
+    statusAtmosHint: "Con una barra de sonido por (e)ARC puede aparecer No aunque Atmos funcione — el televisor transmite el audio a la barra de sonido.",
+
     // Version
     version: "Versión",
 };

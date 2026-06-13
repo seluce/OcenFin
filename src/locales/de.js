@@ -344,6 +344,17 @@ export default {
     trickplay: "Vorschaubilder beim Spulen",
     trickplayDesc: "Zeigt beim Spulen ein Vorschaubild der jeweiligen Szene (sofern vom Server erzeugt). Aus: nur Kapitelname und Zeit.",
 
+    statusTv: "Fernseher",
+    statusResolution: "Auflösung",
+    statusUnknown: "Unbekannt",
+    statusCodecsBrowser: "Codecs (Browser-Decoder)",
+    statusOnlyOnTv: "Nur am Fernseher verfügbar",
+
+    statusGroupApp: "App & Server",
+    statusGroupComponents: "Komponenten",
+
+    statusAtmosHint: "Bei einer Soundbar über (e)ARC kann hier Nein stehen, obwohl Atmos funktioniert — der Fernseher reicht den Ton an die Soundbar durch.",
+
     // Version
     version: "Version",
 };

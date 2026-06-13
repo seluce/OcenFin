@@ -1,8 +1,8 @@
 <script>
   import { currentLang, t, LANGUAGES } from '../i18n.js';
   import { isBackKey, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions } from '../utils.js';
-  import { createEventDispatcher, tick, onDestroy } from 'svelte';
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs } from '../utils.js';
+  import { createEventDispatcher, tick, onDestroy, onMount } from 'svelte';
 
   export let serverUrl;
   export let activeToken;
@@ -196,6 +196,31 @@
   }
   // Versionen für die Status-Seite (Chromium aus UA, hls.js/libbitsub aus package.json) — statisch.
   const envVersions = runtimeVersions();
+
+  // Fernseher-Fähigkeiten für die Status-Seite: Panel-Flags (deviceInfo) + Codec-Probe (Browser).
+  let tvInfo = null;        // { available, modelName, uhd, uhd8K, oled, hdr10, dolbyVision, dolbyAtmos, ... }
+  let codecs = {};          // { h264, hevc, vp9, av1 } – laut Browser-Decoder
+  onMount(async () => {
+    codecs = probeBrowserCodecs();
+    tvInfo = await getTvDeviceInfo();
+  });
+  $: tvResolution = !tvInfo?.available ? null
+       : tvInfo.uhd8K === true ? '8K'
+       : tvInfo.uhd === true ? '4K (UHD)'
+       : (tvInfo.screenWidth ? `${tvInfo.screenWidth}×${tvInfo.screenHeight}` : null);
+  // Tri-State: true → Ja (grün), false → Nein (grau), undefined → Unbekannt (gedämpft)
+  const capText  = (v) => v === true ? $t.statusYes : v === false ? $t.statusNo : $t.statusUnknown;
+  const capClass = (v) => v === true ? 'text-green-400' : v === false ? 'text-gray-400' : 'text-gray-600';
+  // Einklappbare Status-Gruppen (fokussierbare Kopfzeilen → D-Pad kann nach unten wandern/scrollen).
+  // Fernseher standardmäßig zugeklappt, da nicht für jeden sofort relevant.
+  let openStatus = { tv: false, runtime: true, components: true };
+  const toggleStatus = (k) => { openStatus = { ...openStatus, [k]: !openStatus[k] }; };
+  // Beim Fokussieren einer Kopfzeile die ganze Karte (inkl. Inhalt) sichtbar scrollen — sonst
+  // bliebe der Inhalt der untersten offenen Gruppe verdeckt (kein fokussierbares Element darunter).
+  const scrollGroupIntoView = (e) => {
+    const card = e.currentTarget?.parentElement;
+    if (card?.scrollIntoView) card.scrollIntoView({ block: 'nearest' });
+  };
 
   function toggleReduceAnimations() {
     reduceAnimations = !reduceAnimations;
@@ -1341,50 +1366,122 @@
         </button>
       </div>
 
-      <!-- Status-Infos: nur Dinge, die man woanders nicht sieht und die das App-Verhalten erklären -->
-      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-6 flex flex-col gap-4">
-        <div class="flex justify-between items-baseline gap-4">
-          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusChromium}</span>
-          <span class="text-white font-mono text-sm">{envVersions.chromium || '—'}</span>
-        </div>
-        <div class="h-px bg-gray-700/70"></div>
-        <div class="flex justify-between items-baseline gap-4">
-          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusAppVersion}</span>
-          <span class="text-white font-mono text-sm">{APP_VERSION}</span>
-        </div>
-        <div class="h-px bg-gray-700/70"></div>
-        <div class="flex justify-between items-baseline gap-4">
-          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusServerVersion}</span>
-          <span class="text-white font-mono text-sm">{serverVersion || '—'}</span>
-        </div>
-        <div class="h-px bg-gray-700/70"></div>
-        <div class="flex justify-between items-start gap-4">
-          <div class="pr-2">
-            <span class="text-sm text-gray-300 font-bold block">{$t.statusClientGraphicSubs}</span>
-            <span class="text-xs text-gray-500 mt-0.5 block">{$t.statusClientGraphicSubsDesc}</span>
-          </div>
-          <span class="font-mono text-sm font-bold shrink-0 mt-0.5 {serverVobSub ? 'text-green-400' : 'text-gray-400'}">
-            {serverVobSub ? $t.statusYes : $t.statusNo}
+      <!-- Status-Gruppen: einklappbar. Fokussierbare Kopfzeilen geben dem D-Pad Stufen nach unten
+           (behebt das Scrollen) und ein Rechts-Sprungziel aus dem Menü. -->
+
+      <!-- Fernseher (standardmäßig zugeklappt): Panel-Fähigkeiten (deviceInfo) + Codec-Probe -->
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+        <button on:click={() => toggleStatus('tv')} on:focus={scrollGroupIntoView}
+          class="flex items-center justify-between w-full p-6 rounded-t-2xl {openStatus.tv ? '' : 'rounded-b-2xl'} hover:bg-gray-700/50 focus:bg-gray-700/50 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-colors text-left gap-4">
+          <span class="text-sm text-gray-300 uppercase tracking-wider font-bold flex items-center gap-3">
+            <svg class="w-4 h-4 shrink-0 transition-transform {openStatus.tv ? 'rotate-90' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+            {$t.statusTv}
           </span>
-        </div>
+          <span class="font-mono text-xs text-gray-500 truncate">{tvInfo?.available ? `${tvInfo.modelName || ''}${tvInfo.oled === true ? ' · OLED' : ''}` : $t.statusOnlyOnTv}</span>
+        </button>
+        {#if openStatus.tv}
+          <div class="px-6 pb-6 flex flex-col gap-4">
+            {#if tvInfo?.available}
+              <div class="flex justify-between items-baseline gap-4">
+                <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusResolution}</span>
+                <span class="text-white font-mono text-sm">{tvResolution || '—'}</span>
+              </div>
+              <div class="h-px bg-gray-700/70"></div>
+              <div class="flex justify-between items-baseline gap-4">
+                <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">HDR10</span>
+                <span class="font-mono text-sm font-bold {capClass(tvInfo.hdr10)}">{capText(tvInfo.hdr10)}</span>
+              </div>
+              <div class="h-px bg-gray-700/70"></div>
+              <div class="flex justify-between items-baseline gap-4">
+                <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">Dolby Vision</span>
+                <span class="font-mono text-sm font-bold {capClass(tvInfo.dolbyVision)}">{capText(tvInfo.dolbyVision)}</span>
+              </div>
+              <div class="h-px bg-gray-700/70"></div>
+              <div class="flex justify-between items-baseline gap-4">
+                <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">Dolby Atmos</span>
+                <span class="font-mono text-sm font-bold {capClass(tvInfo.dolbyAtmos)}">{capText(tvInfo.dolbyAtmos)}</span>
+              </div>
+              {#if tvInfo.dolbyAtmos === false}
+                <p class="text-xs text-gray-500 leading-snug">{$t.statusAtmosHint}</p>
+              {/if}
+              <div class="h-px bg-gray-700/70"></div>
+            {/if}
+            <span class="text-xs text-gray-500 uppercase tracking-wider font-bold">{$t.statusCodecsBrowser}</span>
+            <div class="flex flex-wrap gap-x-6 gap-y-2">
+              {#each [{ l: 'H.264', k: 'h264' }, { l: 'HEVC', k: 'hevc' }, { l: 'VP9', k: 'vp9' }, { l: 'AV1', k: 'av1' }] as c}
+                <span class="font-mono text-sm font-bold {codecs[c.k] ? 'text-green-400' : 'text-gray-400'}">{c.l}: {codecs[c.k] ? $t.statusYes : $t.statusNo}</span>
+              {/each}
+            </div>
+          </div>
+        {/if}
       </div>
 
-      <!-- Umgebung / Bibliotheken — relevant beim Melden von Wiedergabe-/Untertitel-Problemen -->
-      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-6 flex flex-col gap-4">
-        <div class="flex justify-between items-baseline gap-4">
-          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusHls}</span>
-          <span class="text-white font-mono text-sm">{envVersions.hls || '—'}</span>
-        </div>
-        <div class="h-px bg-gray-700/70"></div>
-        <div class="flex justify-between items-baseline gap-4">
-          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusLibbitsub}</span>
-          <span class="text-white font-mono text-sm">{envVersions.libbitsub || '—'}</span>
-        </div>
-        <div class="h-px bg-gray-700/70"></div>
-        <div class="flex justify-between items-baseline gap-4">
-          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusJassub}</span>
-          <span class="text-white font-mono text-sm">{envVersions.jassub || '—'}</span>
-        </div>
+      <!-- App & Server -->
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+        <button on:click={() => toggleStatus('runtime')} on:focus={scrollGroupIntoView}
+          class="flex items-center justify-between w-full p-6 rounded-t-2xl {openStatus.runtime ? '' : 'rounded-b-2xl'} hover:bg-gray-700/50 focus:bg-gray-700/50 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-colors text-left">
+          <span class="text-sm text-gray-300 uppercase tracking-wider font-bold flex items-center gap-3">
+            <svg class="w-4 h-4 shrink-0 transition-transform {openStatus.runtime ? 'rotate-90' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+            {$t.statusGroupApp}
+          </span>
+        </button>
+        {#if openStatus.runtime}
+          <div class="px-6 pb-6 flex flex-col gap-4">
+            <div class="flex justify-between items-baseline gap-4">
+              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusChromium}</span>
+              <span class="text-white font-mono text-sm">{envVersions.chromium || '—'}</span>
+            </div>
+            <div class="h-px bg-gray-700/70"></div>
+            <div class="flex justify-between items-baseline gap-4">
+              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusAppVersion}</span>
+              <span class="text-white font-mono text-sm">{APP_VERSION}</span>
+            </div>
+            <div class="h-px bg-gray-700/70"></div>
+            <div class="flex justify-between items-baseline gap-4">
+              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusServerVersion}</span>
+              <span class="text-white font-mono text-sm">{serverVersion || '—'}</span>
+            </div>
+            <div class="h-px bg-gray-700/70"></div>
+            <div class="flex justify-between items-start gap-4">
+              <div class="pr-2">
+                <span class="text-sm text-gray-300 font-bold block">{$t.statusClientGraphicSubs}</span>
+                <span class="text-xs text-gray-500 mt-0.5 block">{$t.statusClientGraphicSubsDesc}</span>
+              </div>
+              <span class="font-mono text-sm font-bold shrink-0 mt-0.5 {serverVobSub ? 'text-green-400' : 'text-gray-400'}">
+                {serverVobSub ? $t.statusYes : $t.statusNo}
+              </span>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Komponenten — relevant beim Melden von Wiedergabe-/Untertitel-Problemen -->
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+        <button on:click={() => toggleStatus('components')} on:focus={scrollGroupIntoView}
+          class="flex items-center justify-between w-full p-6 rounded-t-2xl {openStatus.components ? '' : 'rounded-b-2xl'} hover:bg-gray-700/50 focus:bg-gray-700/50 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-colors text-left">
+          <span class="text-sm text-gray-300 uppercase tracking-wider font-bold flex items-center gap-3">
+            <svg class="w-4 h-4 shrink-0 transition-transform {openStatus.components ? 'rotate-90' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+            {$t.statusGroupComponents}
+          </span>
+        </button>
+        {#if openStatus.components}
+          <div class="px-6 pb-6 flex flex-col gap-4">
+            <div class="flex justify-between items-baseline gap-4">
+              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusHls}</span>
+              <span class="text-white font-mono text-sm">{envVersions.hls || '—'}</span>
+            </div>
+            <div class="h-px bg-gray-700/70"></div>
+            <div class="flex justify-between items-baseline gap-4">
+              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusLibbitsub}</span>
+              <span class="text-white font-mono text-sm">{envVersions.libbitsub || '—'}</span>
+            </div>
+            <div class="h-px bg-gray-700/70"></div>
+            <div class="flex justify-between items-baseline gap-4">
+              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusJassub}</span>
+              <span class="text-white font-mono text-sm">{envVersions.jassub || '—'}</span>
+            </div>
+          </div>
+        {/if}
       </div>
     </section>
     {/if}

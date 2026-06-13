@@ -344,6 +344,17 @@ export default {
     trickplay: "Anteprime durante lo scorrimento",
     trickplayDesc: "Mostra un'anteprima del momento durante la ricerca (se il server le ha generate). Disattivato: solo nome del capitolo e ora.",
 
+    statusTv: "Televisore",
+    statusResolution: "Risoluzione",
+    statusUnknown: "Sconosciuto",
+    statusCodecsBrowser: "Codec (decoder del browser)",
+    statusOnlyOnTv: "Disponibile solo sul televisore",
+
+    statusGroupApp: "App e server",
+    statusGroupComponents: "Componenti",
+
+    statusAtmosHint: "Con una soundbar via (e)ARC può comparire No anche se l'Atmos funziona — il televisore inoltra l'audio alla soundbar.",
+
     // Version
     version: "Versione",
 };

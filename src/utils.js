@@ -355,6 +355,58 @@ export function runtimeVersions() {
   return { chromium: m ? m[1] : '', hls: dep('hls.js'), libbitsub: dep('libbitsub'), jassub: dep('jassub') };
 }
 
+// --- TV-Fähigkeiten ----------------------------------------------------------------------------
+// Panel-Wahrheit über webOSTV.js (webOS.deviceInfo). Liefert harte Flags (HDR10/Dolby Vision/
+// Atmos/UHD/OLED) direkt vom Fernseher. Capability-Flags können je nach Firmware fehlen → wir
+// geben sie roh weiter (true/false/undefined), damit die UI "✓ / ✗ / unbekannt" unterscheiden kann.
+// Im Browser-Dev (kein window.webOS) → { available:false }.
+export function getTvDeviceInfo() {
+  return new Promise((resolve) => {
+    try {
+      const w = typeof window !== 'undefined' ? window : null;
+      if (!w || !w.webOS || typeof w.webOS.deviceInfo !== 'function') { resolve({ available: false }); return; }
+      let done = false;
+      const finish = (info) => { if (!done) { done = true; resolve(info); } };
+      w.webOS.deviceInfo((d) => finish({
+        available: true,
+        modelName:   d?.modelName || null,
+        webosMajor:  (typeof d?.versionMajor === 'number') ? d.versionMajor : null,
+        screenWidth: d?.screenWidth || null,
+        screenHeight:d?.screenHeight || null,
+        uhd:         d?.uhd,
+        uhd8K:       d?.uhd8K,
+        oled:        d?.oled,
+        hdr10:       d?.hdr10,
+        dolbyVision: d?.dolbyVision,
+        dolbyAtmos:  d?.dolbyAtmos,
+      }));
+      // Manche Firmware ruft den Callback nicht → nach 2 s aufgeben.
+      setTimeout(() => finish({ available: false }), 2000);
+    } catch { resolve({ available: false }); }
+  });
+}
+
+// Codec-Probe über die Browser-Pipeline (canPlayType / MediaSource). ACHTUNG: spiegelt den
+// Browser-Decoder, NICHT zwingend die TV-Hardware (auf altem webOS unterschätzt das HEVC). Daher
+// in der UI als "Browser-Decoder" gekennzeichnet. true = abspielbar laut Browser.
+export function probeBrowserCodecs() {
+  if (typeof document === 'undefined') return {};
+  const v = document.createElement('video');
+  const ok = (mime) => {
+    try {
+      const c = v.canPlayType(mime);
+      const m = (typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported) ? MediaSource.isTypeSupported(mime) : false;
+      return c === 'probably' || c === 'maybe' || m;
+    } catch { return false; }
+  };
+  return {
+    h264: ok('video/mp4; codecs="avc1.640028"'),
+    hevc: ok('video/mp4; codecs="hev1.1.6.L153.B0"') || ok('video/mp4; codecs="hvc1.1.6.L153.B0"'),
+    vp9:  ok('video/mp4; codecs="vp09.00.10.08"')    || ok('video/webm; codecs="vp9"'),
+    av1:  ok('video/mp4; codecs="av01.0.08M.08"')    || ok('video/webm; codecs="av01.0.08M.08"'),
+  };
+}
+
 // --- BlurHash: moderne „Blur-up"-Platzhalter für Bilder ----------------------------------------
 // Jellyfin liefert zu jedem Bild einen BlurHash. Wir dekodieren ihn (kompakt, ohne Abhängigkeit) zu
 // einer winzigen 32×32-Vorschau und legen sie als Hintergrund unter das <img> (use:blurUp). Bis das
