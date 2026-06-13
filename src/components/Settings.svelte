@@ -903,7 +903,7 @@
         <!-- Wiedergabeinfos – Info-Button im Player freischalten (Live-Details als Overlay) -->
         <button on:click={() => togglePlaybackPref('showPlaybackInfo')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.playbackInfo}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.playbackInfoDesc}</span>
@@ -918,7 +918,7 @@
         <!-- Vorschaubilder beim Spulen (Trickplay) – opt-out, fällt auf Kapitel/Zeit zurück -->
         <button on:click={() => togglePlaybackPref('trickplay')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.trickplay}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.trickplayDesc}</span>
@@ -933,7 +933,7 @@
         <!-- Schaust du noch? – Wiedergabe nach Inaktivität pausieren -->
         <button on:click={() => togglePlaybackPref('stillWatching')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.stillWatching}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.stillWatchingDesc}</span>
@@ -946,7 +946,7 @@
         </button>
 
         {#if playbackPrefs.stillWatching}
-          <div class="p-6 border-t border-gray-700/50">
+          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
             <span class="text-2xl text-white font-medium block">{$t.stillWatchingAfter}</span>
             <div class="flex gap-3 mt-4">
               {#each [2, 3, 4] as n}
@@ -981,7 +981,7 @@
              Text- und PGS-Untertitel werden ohnehin ohne Transcode automatisch gewählt. -->
         <button on:click={() => togglePlaybackPref('forcedGraphicSubs')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.forcedGraphicSubs}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.forcedGraphicSubsDesc}</span>
@@ -996,7 +996,7 @@
         <!-- Untertitel einbrennen -->
         <button on:click={() => togglePlaybackPref('burnSubtitles')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.burnSubtitles}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.burnSubtitlesDesc}</span>
@@ -1012,7 +1012,7 @@
         {#if !playbackPrefs.burnSubtitles}
           <button on:click={() => togglePlaybackPref('pgsRendering')}
             class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
             <div>
               <span class="text-2xl text-white font-medium block">{$t.pgsRendering}</span>
               <span class="text-gray-400 mt-1 block text-sm">{$t.pgsRenderingDesc}</span>
@@ -1027,7 +1027,7 @@
           <!-- ASS/SSA mit Original-Layout (JASSUB) — aus: schlichtes Text-Overlay, beides Direct Play -->
           <button on:click={() => togglePlaybackPref('assRendering')}
             class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
             <div>
               <span class="text-2xl text-white font-medium block">{$t.assRendering}</span>
               <span class="text-gray-400 mt-1 block text-sm">{$t.assRenderingDesc}</span>
@@ -1039,7 +1039,7 @@
             </div>
           </button>
 
-          <div class="p-6 border-t border-gray-700/50">
+          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
             <span class="text-2xl text-white font-medium block">{$t.subtitleSize}</span>
             <span class="text-gray-400 mt-1 mb-4 block text-sm">{$t.subtitleSizeDesc}</span>
             <div class="flex gap-3">
@@ -1135,7 +1135,7 @@
                 </div>
               {:else if recentTitles.length}
                 <!-- Poster zuletzt gesehener Titel (neueste zuerst), mittig in den runden Avatar zugeschnitten -->
-                <div class="grid grid-cols-6 gap-3 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 content-start">
+                <div class="grid grid-cols-6 gap-3 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 scroll-py-3 content-start">
                   {#each recentTitles as t (t.id)}
                     <button on:click={() => { avatarPoster = t; hasEditedAvatar = true; }} title={t.name}
                       class="aspect-square rounded-xl overflow-hidden focus:outline-none focus:ring-4 focus:ring-white transition-all
@@ -1151,7 +1151,7 @@
               <!-- Icons links (volle 6er-Reihen) · Farben rechts als schmale 2er-Spalte → per D-Pad
                    mit einem Rechts-Druck erreichbar, ohne durch alle Icon-Reihen zu navigieren. -->
               <div class="flex gap-5 items-start">
-                <div class="grid grid-cols-6 gap-3 flex-1 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 content-start">
+                <div class="grid grid-cols-6 gap-3 flex-1 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 scroll-py-3 content-start">
                   {#each AVATAR_ICON_KEYS as key}
                     <button on:click={() => { avatarIcon = key; hasEditedAvatar = true; }}
                       class="aspect-square flex items-center justify-center rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-all
@@ -1230,7 +1230,7 @@
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
         <button on:click={onSharedToggle}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.sharedWatching}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.sharedWatchingDesc}</span>
