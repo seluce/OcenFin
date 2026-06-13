@@ -2245,8 +2245,8 @@
           <!-- Profile -->
           {#if users.length > 0}
             <div class="flex flex-wrap justify-center gap-10">
-              {#each users as user}
-                <button on:click={() => handleUserClick(user)} class="flex flex-col items-center group focus:outline-none">
+              {#each users as user, i}
+                <button on:click={() => handleUserClick(user)} use:focusOnMount={i === 0} class="flex flex-col items-center group focus:outline-none">
                   <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl transition-all">
                     {#if user.PrimaryImageTag}
                       <img src="{serverUrl}/Users/{user.Id}/Images/Primary?tag={user.PrimaryImageTag}" alt={user.Name} class="w-full h-full object-cover"/>
