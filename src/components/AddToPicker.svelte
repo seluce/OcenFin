@@ -127,7 +127,7 @@
 
       <!-- Neu erstellen -->
       <div class="flex gap-2">
-        <input bind:value={newName} placeholder={$t.createNew}
+        <input bind:value={newName} placeholder={$t.createNew} maxlength="100"
           class="flex-1 bg-gray-900 text-white text-lg px-4 py-3 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white placeholder-gray-500"/>
         <button on:click={createNew} disabled={!newName.trim() || busy}
           class="bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold px-6 py-3 rounded-lg focus:outline-none focus:ring-4 focus:ring-white transition-colors">
