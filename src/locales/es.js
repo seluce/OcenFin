@@ -341,6 +341,9 @@ export default {
     infoBuffer: "Búfer",
     infoDropped: "Fotogramas perdidos",
 
+    trickplay: "Miniaturas de vista previa al avanzar",
+    trickplayDesc: "Muestra una miniatura del momento al buscar (si el servidor las generó). Desactivado: solo nombre del capítulo y tiempo.",
+
     // Version
     version: "Versión",
 };

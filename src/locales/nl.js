@@ -341,6 +341,9 @@ export default {
     infoBuffer: "Buffer",
     infoDropped: "Verloren beelden",
 
+    trickplay: "Voorbeeldminiaturen bij spoelen",
+    trickplayDesc: "Toont tijdens het spoelen een miniatuur van het moment (als de server ze heeft gegenereerd). Uit: alleen hoofdstuknaam en tijd.",
+
     // Version
     version: "Versie",
 };

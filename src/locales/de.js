@@ -341,6 +341,9 @@ export default {
     infoBuffer: "Puffer",
     infoDropped: "Verworfene Bilder",
 
+    trickplay: "Vorschaubilder beim Spulen",
+    trickplayDesc: "Zeigt beim Spulen ein Vorschaubild der jeweiligen Szene (sofern vom Server erzeugt). Aus: nur Kapitelname und Zeit.",
+
     // Version
     version: "Version",
 };

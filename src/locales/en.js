@@ -341,6 +341,9 @@ export default {
     infoBuffer: "Buffer",
     infoDropped: "Dropped frames",
 
+    trickplay: "Scrubbing preview thumbnails",
+    trickplayDesc: "Shows a thumbnail of the moment while seeking (if the server generated them). Off: chapter name and time only.",
+
     // Version
     version: "Version",
 };

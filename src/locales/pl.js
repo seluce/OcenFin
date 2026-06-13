@@ -341,6 +341,9 @@ export default {
     infoBuffer: "Bufor",
     infoDropped: "Utracone klatki",
 
+    trickplay: "Miniatury podglądu podczas przewijania",
+    trickplayDesc: "Pokazuje miniaturę danego momentu podczas przewijania (jeśli serwer je wygenerował). Wył.: tylko nazwa rozdziału i czas.",
+
     // Version
     version: "Wersja",
 };

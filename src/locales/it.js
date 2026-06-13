@@ -341,6 +341,9 @@ export default {
     infoBuffer: "Buffer",
     infoDropped: "Fotogrammi persi",
 
+    trickplay: "Anteprime durante lo scorrimento",
+    trickplayDesc: "Mostra un'anteprima del momento durante la ricerca (se il server le ha generate). Disattivato: solo nome del capitolo e ora.",
+
     // Version
     version: "Versione",
 };

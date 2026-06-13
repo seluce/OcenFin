@@ -351,6 +351,42 @@
     else if (infoInterval) { clearInterval(infoInterval); infoInterval = null; }
   }
 
+  // --- Trickplay: Vorschaubilder beim Spulen (Jellyfin 10.9+) -------------------------------
+  // Jellyfin liefert Kachel-Sheets (z. B. 10×10 Thumbnails/Bild). Wir berechnen pro Zeit das
+  // richtige Sheet + die Position darin und schneiden es per background-position aus. Sheets
+  // bleiben im Browser-Cache → flüssiges Scrubben, nur an Sheet-Grenzen wird neu geladen.
+  let trickplayInfo = null;   // { width, Width, Height, TileWidth, TileHeight, ThumbnailCount, Interval }
+  let trickplayMsId = null;
+  function parseTrickplay(data) {
+    trickplayInfo = null; trickplayMsId = null;
+    const tp = data?.Trickplay;
+    if (!tp) return;
+    // mediaSourceId-Schlüssel: bevorzugt die laufende Quelle, sonst der erste Eintrag.
+    const srcId = data.MediaSources?.[0]?.Id;
+    const msId  = (srcId && tp[srcId]) ? srcId : Object.keys(tp)[0];
+    const byWidth = msId && tp[msId];
+    if (!byWidth) return;
+    const w = Object.keys(byWidth).map(Number).filter(n => !isNaN(n)).sort((a, b) => b - a)[0]; // größte Breite
+    if (!w || !byWidth[String(w)]) return;
+    trickplayInfo = { width: w, ...byWidth[String(w)] };
+    trickplayMsId = msId;
+  }
+  $: trickplayTile = (isSeeking && playbackPrefs.trickplay !== false && trickplayInfo && duration > 0) ? computeTrickplayTile(seekTime) : null;
+  function computeTrickplayTile(t) {
+    const { Interval, TileWidth, TileHeight, Width, Height, width, ThumbnailCount } = trickplayInfo;
+    if (!Interval || !TileWidth || !TileHeight || !Width || !Height) return null;
+    const idx     = Math.min(Math.max(0, Math.floor((t * 1000) / Interval)), (ThumbnailCount || 1) - 1);
+    const perTile = TileWidth * TileHeight;
+    const sheet   = Math.floor(idx / perTile);
+    const local   = idx % perTile;
+    return {
+      url: `${serverUrl}/Videos/${item.Id}/Trickplay/${width}/${sheet}.jpg?ApiKey=${activeToken}&MediaSourceId=${trickplayMsId}`,
+      x: (local % TileWidth) * Width,
+      y: Math.floor(local / TileWidth) * Height,
+      w: Width, h: Height,
+    };
+  }
+
   // ============================================================
   // WIEDERGABE-AUFBAU — PlaybackInfo entscheidet Direct Play vs. Transcode
   // ============================================================
@@ -868,7 +904,7 @@
   async function fetchMediaSources() {
     try {
       const res = await fetch(
-        `${serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaSources,Chapters`,
+        `${serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaSources,Chapters,Trickplay`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
@@ -877,6 +913,7 @@
         // Spurenliste nur für die Auswahl-UI (Audio/Untertitel). Die tatsächliche
         // Lieferung (Spur vs. eingebrannt) entscheidet PlaybackInfo in setupPlayback.
         if (data.MediaSources?.[0]?.MediaStreams) mediaStreams = data.MediaSources[0].MediaStreams;
+        parseTrickplay(data);
       }
     } catch (e) { console.error('fetchMediaSources:', e); }
   }
@@ -1450,6 +1487,14 @@
             <!-- Vorschau folgt dem Scrubber; Kapitelname (falls vorhanden) darüber gestapelt → keine Überlappung -->
             <div class="absolute bottom-full mb-4 -translate-x-1/2 pointer-events-none whitespace-nowrap flex flex-col items-center gap-0.5"
                  style="left: {Math.min(96, Math.max(4, seekPct))}%;">
+              {#if trickplayTile}
+                <!-- Trickplay-Vorschaubild: aus dem Kachel-Sheet ausgeschnitten -->
+                <div class="rounded-lg overflow-hidden shadow-2xl ring-1 ring-white/25 mb-1.5"
+                     style="width:{trickplayTile.w}px; height:{trickplayTile.h}px;
+                            background-image:url('{trickplayTile.url}');
+                            background-position:-{trickplayTile.x}px -{trickplayTile.y}px;
+                            background-repeat:no-repeat;"></div>
+              {/if}
               {#if showChapters && currentChapterName}
                 <span class="text-sm font-semibold text-white/80 drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">{currentChapterName}</span>
               {/if}

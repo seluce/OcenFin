@@ -341,6 +341,9 @@ export default {
     infoBuffer: "Tampon",
     infoDropped: "Images perdues",
 
+    trickplay: "Vignettes d'aperçu au défilement",
+    trickplayDesc: "Affiche une vignette de l'instant pendant la recherche (si le serveur les a générées). Désactivé : nom du chapitre et heure uniquement.",
+
     // Version
     version: "Version",
 };
