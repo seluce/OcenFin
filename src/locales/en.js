@@ -330,6 +330,10 @@ export default {
     statusYes: "Yes",
     statusNo: "No",
 
+    renamePlaylist: "Rename playlist",
+    deletePlaylist: "Delete playlist",
+    deletePlaylistConfirm: "Delete this playlist permanently?",
+
     // Version
     version: "Version",
 };

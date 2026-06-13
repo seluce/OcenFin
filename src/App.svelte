@@ -1280,7 +1280,7 @@
     if      (viewState === 'player')   { viewState = 'details';        e.preventDefault(); }
     else if (viewState === 'details')  { returnFromDetails();          e.preventDefault(); }
     else if (viewState === 'person')   { viewState = personReturnView; e.preventDefault(); }
-    else if (viewState === 'collection') { if (playlistEditMode) playlistEditMode = false; else viewState = collectionReturnView; e.preventDefault(); }
+    else if (viewState === 'collection') { if (renamingPlaylist) renamingPlaylist = false; else if (confirmDeletePlaylist) confirmDeletePlaylist = false; else if (playlistEditMode) playlistEditMode = false; else viewState = collectionReturnView; e.preventDefault(); }
     else if (viewState === 'library')  { viewState = 'dashboard';      e.preventDefault(); }
     else if (viewState === 'settings') { viewState = 'dashboard';      e.preventDefault(); }
     else if (viewState === 'search')   { viewState = 'dashboard';      e.preventDefault(); }
@@ -1513,11 +1513,72 @@
   async function removePlaylistItem(item) {
     if (!currentCollection || !item?.PlaylistItemId) return;
     collectionItems = collectionItems.filter(i => i.PlaylistItemId !== item.PlaylistItemId);
+    // Kinderzahl der Übersichts-Kachel mitziehen (für Platzhalter bei leerer Liste, ohne Reload)
+    const gi = currentItems.find(x => x.Id === currentCollection.Id);
+    if (gi) { gi.ChildCount = collectionItems.length; currentItems = [...currentItems]; }
     try {
       const res = await fetch(`${serverUrl}/Playlists/${currentCollection.Id}/Items?EntryIds=${item.PlaylistItemId}`,
         { method: 'DELETE', headers: getAuthHeaders() });
       if (!res.ok) console.warn('[OcenFin] Entfernen fehlgeschlagen', res.status);
     } catch (e) { console.warn('[OcenFin] Entfernen-Fehler', e); }
+  }
+  // Ganze Wiedergabeliste löschen (Inline-Sicherheitsabfrage im Bearbeiten-Modus).
+  let confirmDeletePlaylist = false;
+  async function deletePlaylist() {
+    if (!currentCollection || currentCollection.Type !== 'Playlist') return;
+    const id = currentCollection.Id;
+    try {
+      const res = await fetch(`${serverUrl}/Items/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
+      if (!res.ok) { console.warn('[OcenFin] Playlist löschen fehlgeschlagen', res.status); return; }
+    } catch (e) { console.warn('[OcenFin] Playlist-Löschen-Fehler', e); return; }
+    currentItems          = currentItems.filter(i => i.Id !== id);   // sofort aus dem Grid
+    confirmDeletePlaylist = false;
+    playlistEditMode      = false;
+
+    await refreshLibraries();   // Sidebar/Menü neu laden (Playlist verschwindet)
+
+    // War es die letzte Playlist, entfernt Jellyfin die ganze "Playlists"-Bibliothek.
+    // Dann existiert die Rück-Ansicht nicht mehr → zurück aufs Dashboard.
+    const playlistsLibGone = !navLibraries.some(l => l.CollectionType === 'playlists');
+    if (collectionReturnView === 'library' && playlistsLibGone) {
+      currentLibraryId = null;
+      viewState        = 'dashboard';
+    } else {
+      viewState = collectionReturnView;
+    }
+  }
+
+  // Playlist umbenennen (Inline-Eingabe im Bearbeiten-Modus).
+  let renamingPlaylist = false;
+  let renameValue      = '';
+  let renameError      = false;
+  function startRename() {
+    renameValue           = currentCollectionName;
+    confirmDeletePlaylist = false;
+    renameError           = false;
+    renamingPlaylist      = true;
+  }
+  async function savePlaylistName() {
+    const name = renameValue.trim();
+    if (!currentCollection || !name) { renameError = true; return; }
+    if (name === currentCollectionName) { renamingPlaylist = false; return; }
+    const id = currentCollection.Id;
+    renameError = false;
+    try {
+      // Playlist-eigener Update-Endpunkt: nutzt die Besitzrechte des Nutzers (kein Admin-Recht nötig).
+      // POST /Items/{id} wäre Metadaten-Bearbeitung und verlangt Adminrechte — daher hier bewusst nicht.
+      const res = await fetch(`${serverUrl}/Playlists/${id}`, {
+        method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ Name: name })
+      });
+      if (!res.ok) { console.warn('[OcenFin] Umbenennen fehlgeschlagen', res.status); renameError = true; return; }
+    } catch (e) { console.warn('[OcenFin] Umbenennen-Fehler', e); renameError = true; return; }
+    // Lokal sofort spiegeln (Titel, Übersichts-Kachel, Sidebar)
+    currentCollectionName = name;
+    currentCollection     = { ...currentCollection, Name: name };
+    const gi = currentItems.find(x => x.Id === id);
+    if (gi) { gi.Name = name; currentItems = [...currentItems]; }
+    renamingPlaylist = false;
+    refreshLibraries();
   }
 
   // Favoriten — eigene Ansicht (Filme, Serien, Sammlungen), aus dem Menü erreichbar.
@@ -2415,7 +2476,12 @@
                       use:longPress on:longpress={() => openContextMenu(item)}
                       class="group focus:outline-none text-left cv-auto">
                       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
-                        {#if getItemImageUrl(item)}
+                        {#if item.Type === 'Playlist' && item.ChildCount === 0}
+                          <!-- Leere Wiedergabeliste: neutraler Platzhalter statt veraltetem Jellyfin-Collage-Bild -->
+                          <div class="w-full h-full flex items-center justify-center text-gray-600">
+                            <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
+                          </div>
+                        {:else if getItemImageUrl(item)}
                           <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                         {/if}
                         <!-- Episodenanzahl bei Serien (abschaltbar in Einstellungen) -->
@@ -2651,8 +2717,8 @@
                 class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
                 {$t.back}
               </button>
-              {#if currentCollection?.Type === 'Playlist' && collectionItems.length > 0}
-                <button on:click={() => playlistEditMode = !playlistEditMode}
+              {#if currentCollection?.Type === 'Playlist'}
+                <button on:click={() => { playlistEditMode = !playlistEditMode; confirmDeletePlaylist = false; renamingPlaylist = false; }}
                   class="ml-auto px-6 py-2 rounded-lg font-bold focus:outline-none focus:ring-4 focus:ring-white transition-colors
                          {playlistEditMode ? 'bg-blue-600 text-white' : 'bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white'}">
                   {playlistEditMode ? $t.done : $t.edit}
@@ -2670,9 +2736,9 @@
                   <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg animate-pulse"></div>
                 {/each}
               </div>
-            {:else if collectionItems.length > 0}
-              {#if playlistEditMode}
-                <div class="flex flex-col gap-2 pr-4 max-w-4xl">
+            {:else if playlistEditMode}
+              <div class="flex flex-col gap-2 pr-4 max-w-4xl">
+                {#if collectionItems.length > 0}
                   {#each collectionItems as item, i (item.PlaylistItemId)}
                     <div class="flex items-center gap-4 bg-gray-800/60 rounded-xl p-3">
                       <div class="w-14 h-20 shrink-0 bg-gray-900 rounded-lg overflow-hidden">
@@ -2701,8 +2767,66 @@
                       </button>
                     </div>
                   {/each}
+                {:else}
+                  <p class="text-gray-500 font-bold py-6 text-center">{$t.noItems}</p>
+                {/if}
+
+                <!-- Playlist verwalten: Umbenennen / Löschen (auch bei leerer Liste erreichbar) -->
+                <div class="mt-4 border-t border-gray-700/70 pt-4">
+                  {#if renamingPlaylist}
+                    <div class="flex flex-col gap-2">
+                      <div class="flex items-center gap-3 flex-wrap">
+                        <input
+                          bind:value={renameValue}
+                          use:focusOnMount
+                          maxlength="100"
+                          on:input={() => renameError = false}
+                          on:keydown={(e) => { if (e.key === 'Enter') savePlaylistName(); }}
+                          class="flex-1 min-w-[220px] bg-gray-900 text-white text-lg px-4 py-3 rounded-lg border border-gray-600
+                                 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <button on:click={savePlaylistName}
+                          class="px-6 py-3 rounded-lg font-bold bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+                          {$t.save}
+                        </button>
+                        <button on:click={() => renamingPlaylist = false}
+                          class="px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+                          {$t.cancel}
+                        </button>
+                      </div>
+                      {#if renameError}
+                        <p class="text-red-400 text-sm font-semibold">{$t.actionFailed}</p>
+                      {/if}
+                    </div>
+                  {:else if confirmDeletePlaylist}
+                    <div class="flex items-center gap-4 flex-wrap">
+                      <span class="text-gray-200 font-semibold">{$t.deletePlaylistConfirm}</span>
+                      <button on:click={deletePlaylist}
+                        class="px-6 py-3 rounded-lg font-bold bg-red-600 hover:bg-red-500 focus:bg-red-500 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+                        {$t.deletePlaylist}
+                      </button>
+                      <button on:click={() => confirmDeletePlaylist = false} use:focusOnMount
+                        class="px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+                        {$t.cancel}
+                      </button>
+                    </div>
+                  {:else}
+                    <div class="flex items-center gap-3 flex-wrap">
+                      <button on:click={startRename}
+                        class="flex items-center gap-3 px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                        {$t.renamePlaylist}
+                      </button>
+                      <button on:click={() => confirmDeletePlaylist = true}
+                        class="flex items-center gap-3 px-6 py-3 rounded-lg font-bold bg-red-900/40 hover:bg-red-900/60 focus:bg-red-900/60 text-red-300 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-red-500 transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-7 0v12a1 1 0 001 1h6a1 1 0 001-1V7"/></svg>
+                        {$t.deletePlaylist}
+                      </button>
+                    </div>
+                  {/if}
                 </div>
-              {:else}
+              </div>
+            {:else if collectionItems.length > 0}
               {@const groups = [
                 { label: $t.movies,   items: collectionItems.filter(i => i.Type === 'Movie') },
                 { label: $t.series,   items: collectionItems.filter(i => i.Type === 'Series') },
@@ -2743,7 +2867,6 @@
                   </div>
                 {/each}
               </div>
-              {/if}
             {:else}
               <div class="flex items-center justify-center h-64">
                 <p class="text-2xl text-gray-500 font-bold">{$t.noItems}</p>

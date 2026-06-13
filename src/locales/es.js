@@ -330,6 +330,10 @@ export default {
     statusYes: "Sí",
     statusNo: "No",
 
+    renamePlaylist: "Renombrar lista de reproducción",
+    deletePlaylist: "Eliminar lista de reproducción",
+    deletePlaylistConfirm: "¿Eliminar esta lista de reproducción de forma permanente?",
+
     // Version
     version: "Versión",
 };
