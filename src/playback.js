@@ -36,14 +36,15 @@ export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false
   const pgsSub = clientGraphicSubs ? 'External' : 'Encode';
   const vobSub = (clientGraphicSubs && serverVobSub) ? 'External' : 'Encode';
 
-  // Läuft die App auf dem echten TV (webOS)? Dort dekodiert die Media-Pipeline auch DTS und
-  // Dolby TrueHD/Atmos → in Direct Play erlauben, damit der Server NICHT unnötig transkodiert.
-  // Im Browser-Dev (Firefox/Linux) bleibt es bei sicher dekodierbaren Codecs (sonst Bild ohne Ton).
+  // Läuft die App auf dem echten TV (webOS)? Dort dekodiert die Media-Pipeline auch DTS, Dolby
+  // TrueHD/Atmos und MP2 (europäische DVB-/TS-Inhalte) → in Direct Play erlauben, damit der Server
+  // NICHT unnötig transkodiert. Im Browser-Dev (Firefox/Linux) bleibt es bei sicher dekodierbaren
+  // Codecs (sonst Bild ohne Ton). Alle Zusätze sind rein additiv → können Direct Play nur erweitern.
   const isWebOS = (typeof window !== 'undefined' && !!window.webOSSystem)
                || (typeof navigator !== 'undefined' && /web0s|webos/i.test(navigator.userAgent || ''));
-  const tvAudio  = isWebOS ? ',dts,truehd' : '';
+  const tvAudio  = isWebOS ? ',dts,truehd,mp2' : '';
   const baseAudio = `aac,mp3,ac3,eac3,flac,alac,opus,vorbis,pcm${tvAudio}`;
-  const tsAudio   = `aac,mp3,ac3,eac3${isWebOS ? ',dts' : ''}`;
+  const tsAudio   = `aac,mp3,ac3,eac3${isWebOS ? ',dts,truehd,mp2' : ''}`;
 
   return {
     MaxStreamingBitrate: maxBitrate,
