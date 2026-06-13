@@ -323,6 +323,34 @@
   $: audioStreams    = mediaStreams.filter(s => s.Type === 'Audio');
   $: subtitleStreams = mediaStreams.filter(s => s.Type === 'Subtitle');
 
+  // --- Wiedergabeinfo-Overlay (opt-in via playbackPrefs.showPlaybackInfo) ---------------------
+  let showInfoOverlay = false;
+  let infoInterval    = null;
+  let liveStats       = { bufferAhead: 0, dropped: 0, total: 0, width: 0, height: 0 };
+  $: infoVideoStream  = mediaStreams.find(s => s.Type === 'Video');
+  $: infoAudioStream  = (selectedAudioIndex >= 0)
+        ? mediaStreams.find(s => s.Index === selectedAudioIndex)
+        : (mediaStreams.find(s => s.Type === 'Audio' && s.IsDefault) || mediaStreams.find(s => s.Type === 'Audio'));
+  $: playMethodLabel  = playMethod === 'Transcode' ? 'Transcode' : (playMethod === 'DirectStream' ? 'Direct Stream' : 'Direct Play');
+  $: playMethodColor  = playMethod === 'Transcode' ? 'text-amber-400' : (playMethod === 'DirectStream' ? 'text-sky-400' : 'text-green-400');
+  const fmtBitrate = (bps) => bps ? (bps >= 1e6 ? (bps/1e6).toFixed(1) + ' Mbit/s' : Math.round(bps/1e3) + ' kbit/s') : null;
+  function updateLiveStats() {
+    if (!videoElement) return;
+    let ahead = 0;
+    try {
+      const b = videoElement.buffered, t = videoElement.currentTime;
+      for (let i = 0; i < b.length; i++) { if (t >= b.start(i) && t <= b.end(i)) { ahead = b.end(i) - t; break; } }
+    } catch {}
+    let dropped = 0, total = 0;
+    try { const q = videoElement.getVideoPlaybackQuality?.(); if (q) { dropped = q.droppedVideoFrames; total = q.totalVideoFrames; } } catch {}
+    liveStats = { bufferAhead: Math.round(ahead), dropped, total, width: videoElement.videoWidth || 0, height: videoElement.videoHeight || 0 };
+  }
+  function toggleInfoOverlay() {
+    showInfoOverlay = !showInfoOverlay;
+    if (showInfoOverlay) { updateLiveStats(); infoInterval = setInterval(updateLiveStats, 1000); }
+    else if (infoInterval) { clearInterval(infoInterval); infoInterval = null; }
+  }
+
   // ============================================================
   // WIEDERGABE-AUFBAU — PlaybackInfo entscheidet Direct Play vs. Transcode
   // ============================================================
@@ -823,6 +851,7 @@
     if (countdownTimer)  clearInterval(countdownTimer);
     if (seekCommitTimer) clearTimeout(seekCommitTimer);
     if (clockTimer)      clearInterval(clockTimer);
+    if (infoInterval)    clearInterval(infoInterval);
     clearBufferWatchdog();
     if (hls) { try { hls.destroy(); } catch {} hls = null; }
     disposeGraphic();
@@ -1322,6 +1351,50 @@
     </div>
   {/if}
 
+  <!-- WIEDERGABEINFO-OVERLAY (opt-in, vom Info-Button getoggelt) -->
+  {#if showInfoOverlay}
+    <div class="absolute top-8 left-8 z-[55] bg-black/75 backdrop-blur-md border border-gray-700 rounded-xl px-5 py-4 text-sm shadow-2xl pointer-events-none max-w-sm animate-fade-in">
+      <div class="text-gray-400 uppercase tracking-wider text-xs font-bold mb-3">{$t.playbackInfo}</div>
+      <div class="flex flex-col gap-1.5">
+        <div class="flex justify-between gap-8">
+          <span class="text-gray-500">{$t.infoMethod}</span>
+          <span class="font-bold {playMethodColor}">{playMethodLabel}</span>
+        </div>
+        {#if infoVideoStream}
+          <div class="flex justify-between gap-8">
+            <span class="text-gray-500">{$t.infoVideo}</span>
+            <span class="text-white font-mono text-right">{[
+              infoVideoStream.Codec ? infoVideoStream.Codec.toUpperCase() : null,
+              (liveStats.width && liveStats.height) ? `${liveStats.width}×${liveStats.height}` : (infoVideoStream.Width ? `${infoVideoStream.Width}×${infoVideoStream.Height}` : null),
+              infoVideoStream.AverageFrameRate ? `${infoVideoStream.AverageFrameRate.toFixed(0)} fps` : null,
+              fmtBitrate(infoVideoStream.BitRate)
+            ].filter(Boolean).join(' · ')}</span>
+          </div>
+        {/if}
+        {#if infoAudioStream}
+          <div class="flex justify-between gap-8">
+            <span class="text-gray-500">{$t.audio}</span>
+            <span class="text-white font-mono text-right">{[
+              infoAudioStream.Codec ? infoAudioStream.Codec.toUpperCase() : null,
+              infoAudioStream.ChannelLayout,
+              infoAudioStream.Language
+            ].filter(Boolean).join(' · ')}</span>
+          </div>
+        {/if}
+        <div class="flex justify-between gap-8">
+          <span class="text-gray-500">{$t.infoBuffer}</span>
+          <span class="text-white font-mono">{liveStats.bufferAhead}s</span>
+        </div>
+        {#if liveStats.total > 0}
+          <div class="flex justify-between gap-8">
+            <span class="text-gray-500">{$t.infoDropped}</span>
+            <span class="text-white font-mono">{liveStats.dropped} / {liveStats.total}</span>
+          </div>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
   <!-- HAUPT-OVERLAY — Klick auf die leere Bildfläche (|self, nicht auf Buttons) pausiert/spielt -->
   <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/50 flex flex-col justify-between p-10 transition-opacity duration-500 z-50
               {showControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}"
@@ -1513,6 +1586,19 @@
               <text x="12" y="15.6" text-anchor="middle" font-size="8.5" font-weight="700" fill="currentColor" stroke="none" font-family="ui-sans-serif, system-ui, sans-serif">CC</text>
             </svg>
           </button>
+
+          <!-- WIEDERGABEINFOS — nur wenn in den Einstellungen freigeschaltet -->
+          {#if playbackPrefs.showPlaybackInfo}
+            <button on:click|stopPropagation={toggleInfoOverlay} title={$t.playbackInfo} aria-label={$t.playbackInfo}
+              class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
+                     {showInfoOverlay ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
+              <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="9"/>
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 11v5"/>
+                <circle cx="12" cy="8" r="0.6" fill="currentColor" stroke="none"/>
+              </svg>
+            </button>
+          {/if}
         </div>
       </div>
     </div>

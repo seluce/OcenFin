@@ -334,6 +334,13 @@ export default {
     deletePlaylist: "Eliminar lista de reprodução",
     deletePlaylistConfirm: "Eliminar esta lista de reprodução permanentemente?",
 
+    playbackInfo: "Informação de reprodução",
+    playbackInfoDesc: "Adiciona um botão no leitor que mostra detalhes de reprodução em direto (método, codec, taxa de bits, buffer).",
+    infoMethod: "Método",
+    infoVideo: "Vídeo",
+    infoBuffer: "Buffer",
+    infoDropped: "Fotogramas perdidos",
+
     // Version
     version: "Versão",
 };

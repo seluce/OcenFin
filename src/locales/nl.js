@@ -334,6 +334,13 @@ export default {
     deletePlaylist: "Afspeellijst verwijderen",
     deletePlaylistConfirm: "Deze afspeellijst definitief verwijderen?",
 
+    playbackInfo: "Afspeelinfo",
+    playbackInfoDesc: "Voegt een knop toe in de speler die live afspeeldetails toont (methode, codec, bitrate, buffer).",
+    infoMethod: "Methode",
+    infoVideo: "Video",
+    infoBuffer: "Buffer",
+    infoDropped: "Verloren beelden",
+
     // Version
     version: "Versie",
 };

@@ -334,6 +334,13 @@ export default {
     deletePlaylist: "Elimina playlist",
     deletePlaylistConfirm: "Eliminare definitivamente questa playlist?",
 
+    playbackInfo: "Info di riproduzione",
+    playbackInfoDesc: "Aggiunge un pulsante nel lettore che mostra i dettagli di riproduzione in tempo reale (metodo, codec, bitrate, buffer).",
+    infoMethod: "Metodo",
+    infoVideo: "Video",
+    infoBuffer: "Buffer",
+    infoDropped: "Fotogrammi persi",
+
     // Version
     version: "Versione",
 };

@@ -334,6 +334,13 @@ export default {
     deletePlaylist: "Usuń playlistę",
     deletePlaylistConfirm: "Usunąć tę playlistę na stałe?",
 
+    playbackInfo: "Informacje o odtwarzaniu",
+    playbackInfoDesc: "Dodaje w odtwarzaczu przycisk pokazujący szczegóły odtwarzania na żywo (metoda, kodek, bitrate, bufor).",
+    infoMethod: "Metoda",
+    infoVideo: "Wideo",
+    infoBuffer: "Bufor",
+    infoDropped: "Utracone klatki",
+
     // Version
     version: "Wersja",
 };

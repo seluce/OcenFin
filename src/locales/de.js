@@ -334,6 +334,13 @@ export default {
     deletePlaylist: "Playlist löschen",
     deletePlaylistConfirm: "Diese Playlist endgültig löschen?",
 
+    playbackInfo: "Wiedergabeinfos",
+    playbackInfoDesc: "Fügt im Player einen Button hinzu, der Live-Wiedergabedetails zeigt (Methode, Codec, Bitrate, Puffer).",
+    infoMethod: "Methode",
+    infoVideo: "Video",
+    infoBuffer: "Puffer",
+    infoDropped: "Verworfene Bilder",
+
     // Version
     version: "Version",
 };
