@@ -18,6 +18,7 @@
   "dependencies": {
     "hls.js": "^1.6.16",
     "jassub": "^2.5.6",
-    "libbitsub": "^1.10.1"
+    "libbitsub": "^1.10.1",
+    "qrcode": "^1.5.4"
   }
 }
