@@ -521,6 +521,15 @@
   // und webOS rendert native Cues ohnehin unzuverlässig. So haben wir volle Kontrolle.
   let currentSubtitleText = '';
   let subtitleCues = [];           // [{ start, end, text }] in Sekunden
+  // Untertitel-Versatz (nur Text-Overlay = VTT/SRT/ASS-zu-VTT). + = Untertitel später (verzögert),
+  // − = früher. Pro Spur/Titel zurückgesetzt; bewusst NICHT gespeichert (ist inhaltsspezifisch).
+  let subtitleOffset = 0;
+  function adjustSubtitleOffset(delta) {
+    subtitleOffset = Math.round(Math.max(-10, Math.min(10, subtitleOffset + delta)) * 10) / 10;
+  }
+  function formatOffset(s) {
+    return (s > 0 ? '+' : '') + s.toFixed(1).replace('.', ',') + ' s';
+  }
   let subtitleFetchToken = 0;      // ignoriert Antworten eines überholten Wechsels
   let graphicRenderer = null;      // libbitsub-Instanz für das AKTUELL sichtbare Bild-Untertitel-Overlay
   let pendingRenderer = null;      // beim Sprachwechsel: neuer Renderer, der noch lädt (Altbild bleibt)
@@ -561,6 +570,7 @@
   // Untertitel anwenden – routet je nach Codec: PGS/VobSub → libbitsub-Overlay, Text → VTT-Overlay.
   function applySubtitleOverlay(index, ms) {
     subtitleFetchToken++;   // laufende VTT-Fetches invalidieren (sonst Text-Overlay neben Grafik/ASS)
+    subtitleOffset = 0;     // neuer Spurwechsel → Versatz zurücksetzen (inhaltsspezifisch)
     if (index === -1 || !ms) { disposeGraphic(); disposeAss(); subtitleCues = []; return; }
     const stream = (ms.MediaStreams || []).find(s => s.Index === index && s.Type === 'Subtitle');
     const codec  = (stream?.Codec || '').toLowerCase();
@@ -697,7 +707,7 @@
 
   // Aktiven Cue aus der aktuellen Zeit ableiten (reaktiv, folgt currentTime)
   $: currentSubtitleText = subtitleCues.length
-    ? (subtitleCues.find(c => currentTime >= c.start && currentTime <= c.end)?.text ?? '')
+    ? (subtitleCues.find(c => (currentTime - subtitleOffset) >= c.start && (currentTime - subtitleOffset) <= c.end)?.text ?? '')
     : '';
 
   async function applyExternalSubtitleIfNeeded(index, ms) {
@@ -1715,6 +1725,19 @@
                 {stream.DisplayTitle || stream.Language || 'Unbekannt'}
               </button>
             {/each}
+          {/if}
+
+          {#if subtitleCues.length > 0}
+            <div class="mt-3 pt-3 border-t border-gray-700/60 flex items-center justify-between gap-3 px-1">
+              <span class="text-sm text-gray-300 font-medium">{$t.subtitleOffset}</span>
+              <div class="flex items-center gap-2">
+                <button on:click={() => adjustSubtitleOffset(-0.5)} aria-label="-0,5 s"
+                  class="w-9 h-9 rounded-lg bg-gray-800 text-white text-xl font-bold leading-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white hover:bg-gray-700 focus:bg-gray-700 transition-colors">−</button>
+                <span class="text-sm font-mono text-white w-16 text-center tabular-nums">{formatOffset(subtitleOffset)}</span>
+                <button on:click={() => adjustSubtitleOffset(0.5)} aria-label="+0,5 s"
+                  class="w-9 h-9 rounded-lg bg-gray-800 text-white text-xl font-bold leading-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white hover:bg-gray-700 focus:bg-gray-700 transition-colors">+</button>
+              </div>
+            </div>
           {/if}
 
         </div>

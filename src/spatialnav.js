@@ -141,6 +141,14 @@ function nearestGroup(dir, from, currentGroup) {
 // abzuschalten. Gibt eine Aufräumfunktion zurück.
 export function createFocusManager(isEnabled) {
   function onFocusIn(e) {
+    // Ist ein Modal/Banner als Trap offen, darf der Fokus es nicht verlassen — auch nicht durch
+    // einen programmatischen focus() einer parallel mountenden Ansicht (z. B. Filme-Autofokus,
+    // während der "Server nicht erreichbar"-Banner erscheint). Dann Fokus zurück ins Modal holen.
+    const trap = activeTrap();
+    if (trap && !trap.contains(e.target)) {
+      const back = focusablesIn(trap)[0];
+      if (back && back !== e.target) { back.focus(); return; }
+    }
     const g = groupOf(e.target);
     if (g) lastFocus.set(g, e.target);
   }

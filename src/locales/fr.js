@@ -384,6 +384,9 @@ export default {
     share: "Partager",
     shareHint: "Scannez avec votre téléphone pour consulter ou partager le titre.",
 
+    // Untertitel-Versatz
+    subtitleOffset: "Décalage",
+
     // Version
     version: "Version",
 };

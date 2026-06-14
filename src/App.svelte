@@ -406,6 +406,38 @@
     showSyncPlay = false;
     if (syncPollTimer) { clearInterval(syncPollTimer); syncPollTimer = null; }
   }
+
+  // ── Auto-Reconnect: solange der Server nicht erreichbar ist, regelmäßig leicht anpingen.
+  // /System/Info/Public ist unauthentifiziert → unabhängig vom Token-Zustand. Kommt der Server
+  // zurück, schließt sich der Banner von selbst (soft-clear, kein Reload → Platz bleibt erhalten).
+  let reconnectTimer = null;
+  function manageReconnect(lost) {
+    if (lost && serverUrl) {
+      if (reconnectTimer) return;
+      reconnectTimer = setInterval(async () => {
+        try {
+          const r = await fetch(`${serverUrl}/System/Info/Public`, { cache: 'no-store' });
+          if (r.ok) connectionLost.set(false);
+        } catch { /* weiter versuchen */ }
+      }, 5000);
+    } else if (reconnectTimer) {
+      clearInterval(reconnectTimer); reconnectTimer = null;
+    }
+  }
+  $: manageReconnect($connectionLost);
+
+  // Banner-Buttons. "Erneut versuchen" prüft SOFORT, ohne Reload → dein Platz bleibt erhalten:
+  // ist der Server zurück, schließt der Banner; sonst bleibt er (Auto-Reconnect läuft weiter).
+  let retryBtnEl;
+  async function retryNow() {
+    try {
+      const r = await fetch(`${serverUrl}/System/Info/Public`, { cache: 'no-store' });
+      if (r.ok) connectionLost.set(false);
+    } catch { /* weiterhin weg → Banner bleibt */ }
+  }
+  // Fokus zuverlässig auf den Button legen, wenn der Banner erscheint (er mountet durch ein
+  // Hintergrund-Ereignis; use:focusOnMount griff dort nicht — tick() nach dem Flush gewinnt).
+  $: if ($connectionLost) tick().then(() => retryBtnEl?.focus());
   async function syncCreate() { await createSyncGroup(serverUrl, activeToken, selectedUser?.Name || 'OcenFin'); syncJoined = true; await setSyncIgnoreWait(serverUrl, activeToken, false); await syncRefresh(); }
   async function syncJoin(groupId) { await joinSyncGroup(serverUrl, activeToken, groupId); syncJoined = true; syncMyGroupId = groupId; await setSyncIgnoreWait(serverUrl, activeToken, false); await syncRefresh(); }
   async function syncLeave() { await leaveSyncGroup(serverUrl, activeToken); syncJoined = false; syncMyGroupId = null; syncQueue = null; _lastSyncQueueItem = null; await syncRefresh(); }
@@ -1944,13 +1976,19 @@
   {/if}
 
   {#if $connectionLost && !initializing}
-    <div class="fixed top-0 left-0 right-0 z-[500] bg-red-600/95 text-white px-6 py-3 flex items-center justify-center gap-4 shadow-lg" transition:fade={{ duration: 200 }}>
-      <svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 010 12.728m-3.536-3.536a4 4 0 010-5.656M12 12h.01M5.636 5.636a9 9 0 000 12.728"/></svg>
-      <span class="font-bold">{$t.connectionLostMsg}</span>
-      <button on:click={() => location.reload()}
-        class="bg-white text-red-700 font-bold px-4 py-1.5 rounded-lg focus:outline-none focus:ring-4 focus:ring-white/60 hover:bg-gray-100">
-        {$t.retry}
-      </button>
+    <div class="fixed inset-0 z-[500] bg-black/60 flex flex-col items-stretch" data-focus-trap transition:fade={{ duration: 200 }}>
+      <div class="bg-red-600/95 text-white px-6 py-4 flex flex-wrap items-center justify-center gap-4 shadow-lg">
+        <svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 010 12.728m-3.536-3.536a4 4 0 010-5.656M12 12h.01M5.636 5.636a9 9 0 000 12.728"/></svg>
+        <span class="font-bold text-lg">{$t.connectionLostMsg}</span>
+        <button on:click={retryNow} bind:this={retryBtnEl}
+          class="bg-white text-red-700 font-bold px-5 py-2 rounded-lg focus:outline-none focus:ring-4 focus:ring-white/70 hover:bg-gray-100 transition-colors">
+          {$t.retry}
+        </button>
+        <button on:click={() => { connectionLost.set(false); handleLogout(); }}
+          class="bg-red-800 text-white font-bold px-5 py-2 rounded-lg focus:outline-none focus:ring-4 focus:ring-white/70 hover:bg-red-900 transition-colors">
+          {$t.switchServer}
+        </button>
+      </div>
     </div>
   {/if}
 

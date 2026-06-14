@@ -384,6 +384,9 @@ export default {
     share: "Udostępnij",
     shareHint: "Zeskanuj telefonem, aby wyszukać lub udostępnić tytuł.",
 
+    // Untertitel-Versatz
+    subtitleOffset: "Przesunięcie",
+
     // Version
     version: "Wersja",
 };

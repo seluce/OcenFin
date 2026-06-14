@@ -384,6 +384,9 @@ export default {
     share: "Delen",
     shareHint: "Scan met je telefoon om de titel op te zoeken of te delen.",
 
+    // Untertitel-Versatz
+    subtitleOffset: "Verschuiving",
+
     // Version
     version: "Versie",
 };

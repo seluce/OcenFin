@@ -1107,7 +1107,7 @@
           <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
             <span class="text-2xl text-white font-medium block mb-4">{$t.subtitleEdge}</span>
             <div class="flex gap-3">
-              {#each [['shadow', $t.edgeShadow], ['outline', $t.edgeOutline], ['none', $t.styleNone]] as [val, label]}
+              {#each [['none', $t.styleNone], ['shadow', $t.edgeShadow], ['outline', $t.edgeOutline]] as [val, label]}
                 <button on:click={() => setSubtitlePref('subtitleEdge', val)}
                   class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                          {(playbackPrefs.subtitleEdge || 'shadow') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">

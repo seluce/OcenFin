@@ -384,6 +384,9 @@ export default {
     share: "Teilen",
     shareHint: "Mit dem Handy scannen, um den Titel nachzuschlagen oder zu teilen.",
 
+    // Untertitel-Versatz
+    subtitleOffset: "Versatz",
+
     // Version
     version: "Version",
 };

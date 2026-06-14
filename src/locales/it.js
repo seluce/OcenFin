@@ -384,6 +384,9 @@ export default {
     share: "Condividi",
     shareHint: "Scansiona con il telefono per cercare o condividere il titolo.",
 
+    // Untertitel-Versatz
+    subtitleOffset: "Sfasamento",
+
     // Version
     version: "Versione",
 };
