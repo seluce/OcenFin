@@ -1008,14 +1008,19 @@
         );
         if (!res.ok) continue;
         const items = (await res.json()).Items || [];
-        const genreCount = {}; const watched = new Set();
+        const genreCount = {}; const engaged = new Set();
         for (const it of items) {
-          if (it.UserData?.Played) {
-            watched.add(it.Id);
+          const u = it.UserData || {};
+          if (u.Played) {
+            // Genre-Vorlieben nur aus FERTIG Gesehenem ableiten (klares Signal).
             for (const g of it.Genres || []) genreCount[g] = (genreCount[g] || 0) + 1;
           }
+          // Vom Vorschlag ausschließen: fertig ODER angefangen. PlaybackPositionTicks greift nur bei
+          // Filmen — bei Serien zeigen PlayCount (>0 = Episode gesehen) bzw. PlayedPercentage den Fortschritt.
+          if (u.Played || (u.PlaybackPositionTicks || 0) > 0 || (u.PlayCount || 0) > 0 || (u.PlayedPercentage || 0) > 0)
+            engaged.add(it.Id);
         }
-        memberData.push({ items, genreCount, watched });
+        memberData.push({ items, genreCount, watched: engaged });
       } catch { }
     }
     if (!memberData.length) { sharedSuggestions = []; return; }

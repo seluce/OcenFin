@@ -143,11 +143,22 @@
   }
   async function commitSharedUser(user, pw) {
     sharedBusy = true;
-    const r = await onSharedSetMember(sharedPickerSlot, user, pw);
+    const slot = sharedPickerSlot;
+    const r = await onSharedSetMember(slot, user, pw);
     sharedBusy = false;
-    if (r === 'ok')                 closeModal();
+    if (r === 'ok') {
+      closeModal();
+      await tick();   // Slot zeigt jetzt den Entfernen-Button → Fokus dorthin (statt verloren an die Sidebar)
+      document.querySelector(`[data-slot-btn="${slot}"]`)?.focus();
+    }
     else if (r === 'needPassword')  { sharedPickerUser = user; await openModal('sharedPassword'); }
     else                            sharedError = $t.errLogin;
+  }
+  // Mitglied entfernen + Fokus auf den dann erscheinenden „Profil wählen"-Button desselben Slots.
+  async function removeMember(slot) {
+    await onSharedRemoveMember(slot);
+    await tick();
+    document.querySelector(`[data-slot-btn="${slot}"]`)?.focus();
   }
 
   function setLanguage(lang) {
@@ -1323,13 +1334,13 @@
                     {:else}
                       <span class="text-amber-400 text-xs font-bold">{$t.sharedNeedsLogin}</span>
                     {/if}
-                    <button on:click={() => onSharedRemoveMember(slot)}
+                    <button data-slot-btn={slot} on:click={() => removeMember(slot)}
                       class="mt-1 text-red-400 hover:text-red-300 focus:text-red-300 text-sm font-bold
                              focus:outline-none focus:ring-2 focus:ring-white rounded px-3 py-1.5">
                       {$t.remove}
                     </button>
                   {:else}
-                    <button on:click={() => openSharedPicker(slot)}
+                    <button data-slot-btn={slot} on:click={() => openSharedPicker(slot)}
                       class="flex flex-col items-center gap-2 text-gray-400 hover:text-white focus:text-white
                              focus:outline-none focus:ring-4 focus:ring-white rounded-lg px-4 py-3">
                       <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
