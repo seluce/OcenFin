@@ -1496,7 +1496,7 @@
 
       <!-- PROGRESS BAR — sauberes Scrubbing, Kapitelmarken nur wenn aktiviert -->
       <div class="flex items-center gap-4 w-full">
-        <span class="text-sm font-mono w-16 tabular-nums">{formatTime(displayTime)}</span>
+        <span class="text-xl font-mono w-24 tabular-nums">{formatTime(displayTime)}</span>
         <div class="relative flex-1 flex items-center">
           <input
             type="range"
@@ -1538,10 +1538,10 @@
         </div>
         <div class="relative shrink-0">
           {#if timeMode === 'end'}
-            <span class="absolute bottom-full right-2 mb-0.5 text-[11px] font-medium text-gray-400 whitespace-nowrap pointer-events-none">{$t.endsAt}</span>
+            <span class="absolute bottom-full right-2 mb-1 text-sm font-medium text-gray-400 whitespace-nowrap pointer-events-none">{$t.endsAt}</span>
           {/if}
           <button on:click|stopPropagation={cycleTimeMode}
-            class="text-sm font-mono text-right tabular-nums cursor-pointer rounded-md px-2 py-1
+            class="text-xl font-mono text-right tabular-nums cursor-pointer rounded-md px-2 py-1
                    transition-colors hover:text-blue-300
                    focus:text-white focus:bg-blue-600 focus:ring-2 focus:ring-white focus:outline-none">
             {rightTimeLabel}
