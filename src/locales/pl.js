@@ -365,6 +365,21 @@ export default {
     logQrHint: "Zeskanuj telefonem, aby przenieść ostatnie wiersze (np. e-mailem).",
     logBackToText: "Powrót do tekstu",
 
+    // Untertitel-Styling (nur Text)
+    subtitleColor: "Kolor",
+    subtitleEdge: "Krawędź",
+    subtitleBackground: "Tło",
+    subtitleStyleHint: "Dotyczy tylko napisów tekstowych (np. SRT/VTT). Napisy obrazkowe jak PGS można jedynie skalować.",
+    colorWhite: "Biały",
+    colorYellow: "Żółty",
+    colorGreen: "Zielony",
+    colorCyan: "Cyjan",
+    edgeShadow: "Cień",
+    edgeOutline: "Kontur",
+    styleNone: "Brak",
+    bgSemi: "Półprzezr.",
+    bgSolid: "Pełne",
+
     // Version
     version: "Wersja",
 };

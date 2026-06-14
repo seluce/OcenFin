@@ -365,6 +365,21 @@ export default {
     logQrHint: "Mit dem Handy scannen, um die letzten Zeilen zu übertragen (z. B. per E-Mail).",
     logBackToText: "Zurück zum Text",
 
+    // Untertitel-Styling (nur Text)
+    subtitleColor: "Farbe",
+    subtitleEdge: "Rand",
+    subtitleBackground: "Hintergrund",
+    subtitleStyleHint: "Gilt nur für Textuntertitel (z. B. SRT/VTT). Bild-Untertitel wie PGS lassen sich nur skalieren.",
+    colorWhite: "Weiß",
+    colorYellow: "Gelb",
+    colorGreen: "Grün",
+    colorCyan: "Cyan",
+    edgeShadow: "Schatten",
+    edgeOutline: "Kontur",
+    styleNone: "Ohne",
+    bgSemi: "Halbklar",
+    bgSolid: "Deckend",
+
     // Version
     version: "Version",
 };

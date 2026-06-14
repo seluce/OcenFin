@@ -365,6 +365,21 @@ export default {
     logQrHint: "Digitalize com o telemóvel para transferir as últimas linhas (p. ex. por e-mail).",
     logBackToText: "Voltar ao texto",
 
+    // Untertitel-Styling (nur Text)
+    subtitleColor: "Cor",
+    subtitleEdge: "Borda",
+    subtitleBackground: "Fundo",
+    subtitleStyleHint: "Aplica-se apenas a legendas de texto (p. ex. SRT/VTT). Legendas de imagem como PGS só podem ser redimensionadas.",
+    colorWhite: "Branco",
+    colorYellow: "Amarelo",
+    colorGreen: "Verde",
+    colorCyan: "Ciano",
+    edgeShadow: "Sombra",
+    edgeOutline: "Contorno",
+    styleNone: "Nenhum",
+    bgSemi: "Semi",
+    bgSolid: "Sólido",
+
     // Version
     version: "Versão",
 };

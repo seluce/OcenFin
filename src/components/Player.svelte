@@ -530,6 +530,21 @@
   let assRenderer = null;
   $: clientAssRender = playbackPrefs.assRendering && !playbackPrefs.burnSubtitles;
 
+  // Textuntertitel-Styling (NUR fürs .subtitle-box-Overlay = WebVTT/SRT). PGS/VobSub sind Bitmaps
+  // (nur skalierbar), ASS bringt sein eigenes Styling mit. Defaults = bisheriges Verhalten.
+  $: subColor = ({ white:'#ffffff', yellow:'#ffe14d', green:'#6dff6d', cyan:'#66e0ff' })[playbackPrefs.subtitleColor || 'white'] || '#ffffff';
+  $: subEdgeCss = (playbackPrefs.subtitleEdge === 'outline')
+        ? '-webkit-text-stroke:0.35vh #000;paint-order:stroke fill;text-shadow:0 0 3px rgba(0,0,0,.55);'
+        : (playbackPrefs.subtitleEdge === 'none')
+        ? '-webkit-text-stroke:0;text-shadow:none;'
+        : '-webkit-text-stroke:0;text-shadow:0 1px 2px #000,0 2px 8px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.9);';
+  $: subBgCss = (playbackPrefs.subtitleBackground === 'solid')
+        ? 'background:#000;padding:0.05em 0.5em;border-radius:0.5vh;'
+        : (playbackPrefs.subtitleBackground === 'semi')
+        ? 'background:rgba(0,0,0,.6);padding:0.05em 0.5em;border-radius:0.5vh;'
+        : 'background:transparent;';
+  $: subStyle = `color:${subColor};${subEdgeCss}${subBgCss}`;
+
   // Untertitelgröße → libbitsub-Skalierung (Variante B: gilt für PGS UND VobSub, nicht nur VTT).
   function graphicSubScale() {
     const s = playbackPrefs.subtitleSize || 'normal';
@@ -1715,7 +1730,7 @@
   {#if currentSubtitleText}
     <div class="absolute inset-x-0 z-[65] flex justify-center px-[8%] pointer-events-none transition-all duration-200
                 {showControls ? 'bottom-44' : 'bottom-[7%]'}">
-      <span class="subtitle-box sub-{playbackPrefs.subtitleSize || 'normal'}">{currentSubtitleText}</span>
+      <span class="subtitle-box sub-{playbackPrefs.subtitleSize || 'normal'}" style={subStyle}>{currentSubtitleText}</span>
     </div>
   {/if}
 

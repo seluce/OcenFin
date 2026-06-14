@@ -365,6 +365,21 @@ export default {
     logQrHint: "Scansiona con il telefono per trasferire le ultime righe (es. via e-mail).",
     logBackToText: "Torna al testo",
 
+    // Untertitel-Styling (nur Text)
+    subtitleColor: "Colore",
+    subtitleEdge: "Bordo",
+    subtitleBackground: "Sfondo",
+    subtitleStyleHint: "Vale solo per i sottotitoli di testo (es. SRT/VTT). I sottotitoli immagine come PGS possono solo essere ridimensionati.",
+    colorWhite: "Bianco",
+    colorYellow: "Giallo",
+    colorGreen: "Verde",
+    colorCyan: "Ciano",
+    edgeShadow: "Ombra",
+    edgeOutline: "Contorno",
+    styleNone: "Nessuno",
+    bgSemi: "Semi",
+    bgSolid: "Pieno",
+
     // Version
     version: "Versione",
 };

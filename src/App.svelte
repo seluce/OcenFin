@@ -107,7 +107,7 @@
   let displaySettings = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} };
 
   // Standard-Audio-/Untertitelsprache
-  let playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true };
+  let playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true };
 
   // ── Profil-bezogene Einstellungen ───────────────────────────
   // Sprache + Anzeige + Wiedergabe + Animationen werden PRO BENUTZER gespeichert.
@@ -164,7 +164,7 @@
       localStorage.setItem('app_language', p.language);   // "zuletzt genutzt" aktualisieren
     }
     displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
-    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true, ...(p.playbackPrefs || {}) };
+    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true, ...(p.playbackPrefs || {}) };
     reduceAnimations = p.reduceAnimations ?? false;
     librarySorts     = p.librarySorts || {};   // gemerkte Sortierung pro Bibliothek
     sharedProfile    = p.sharedProfile && Array.isArray(p.sharedProfile.members)
@@ -969,14 +969,14 @@
       try {
         const res = await fetch(
           `${serverUrl}/Users/${m.id}/Items?ParentId=${libraryId}&Recursive=true` +
-          `&IncludeItemTypes=Movie,Series&Filters=IsPlayed&EnableImages=false` +
+          `&IncludeItemTypes=Movie,Series&Fields=UserData&EnableImages=false` +
           `&Limit=100000&EnableTotalRecordCount=false`,
           { headers: { 'Authorization': `MediaBrowser Token="${token}"`, 'Content-Type': 'application/json' } }
         );
         if (!res.ok) { console.warn('[Gemeinsam] Abfrage fehlgeschlagen für', m.name, '· HTTP', res.status); continue; }
         let n = 0;
-        // Server liefert dank Filters=IsPlayed bereits nur gesehene Titel → direkt übernehmen.
-        (await res.json()).Items?.forEach(i => { ids.add(i.Id); n++; });
+        // Clientseitig auf UserData.Played prüfen — zuverlässiger als Filters=IsPlayed (greift bei Serien nicht immer).
+        (await res.json()).Items?.forEach(i => { if (i.UserData?.Played) { ids.add(i.Id); n++; } });
         dlog('[Gemeinsam]', m.name, '→', n, 'komplett gesehene Titel');
       } catch (e) { console.warn('[Gemeinsam] Fehler für', m.name, e); }
     }

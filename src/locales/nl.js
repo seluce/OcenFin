@@ -365,6 +365,21 @@ export default {
     logQrHint: "Scan met je telefoon om de laatste regels over te zetten (bijv. per e-mail).",
     logBackToText: "Terug naar tekst",
 
+    // Untertitel-Styling (nur Text)
+    subtitleColor: "Kleur",
+    subtitleEdge: "Rand",
+    subtitleBackground: "Achtergrond",
+    subtitleStyleHint: "Geldt alleen voor tekstondertitels (bijv. SRT/VTT). Beeldondertitels zoals PGS kunnen alleen worden geschaald.",
+    colorWhite: "Wit",
+    colorYellow: "Geel",
+    colorGreen: "Groen",
+    colorCyan: "Cyaan",
+    edgeShadow: "Schaduw",
+    edgeOutline: "Contour",
+    styleNone: "Geen",
+    bgSemi: "Semi",
+    bgSolid: "Vol",
+
     // Version
     version: "Versie",
 };

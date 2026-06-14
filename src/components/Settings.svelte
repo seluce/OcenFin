@@ -58,6 +58,11 @@
     playbackPrefs = { ...playbackPrefs, subtitleSize: size };
     dispatch('playbackPrefsChange', playbackPrefs);
   }
+  // Generisch für die Text-Styling-Selektoren (Farbe/Rand/Hintergrund).
+  function setSubtitlePref(key, val) {
+    playbackPrefs = { ...playbackPrefs, [key]: val };
+    dispatch('playbackPrefsChange', playbackPrefs);
+  }
 
   function setStillWatchingEpisodes(n) {
     playbackPrefs = { ...playbackPrefs, stillWatchingEpisodes: n };
@@ -1067,6 +1072,47 @@
                 <button on:click={() => setSubtitleSize(val)}
                   class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                          {playbackPrefs.subtitleSize === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                  {label}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <!-- Textuntertitel-Styling (Farbe/Rand/Hintergrund) — nur WebVTT/SRT, nicht PGS/VobSub -->
+          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+            <span class="text-2xl text-white font-medium block">{$t.subtitleColor}</span>
+            <span class="text-gray-400 mt-1 mb-4 block text-sm">{$t.subtitleStyleHint}</span>
+            <div class="flex gap-3">
+              {#each [['white', $t.colorWhite], ['yellow', $t.colorYellow], ['green', $t.colorGreen], ['cyan', $t.colorCyan]] as [val, label]}
+                <button on:click={() => setSubtitlePref('subtitleColor', val)}
+                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {(playbackPrefs.subtitleColor || 'white') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                  {label}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+            <span class="text-2xl text-white font-medium block mb-4">{$t.subtitleEdge}</span>
+            <div class="flex gap-3">
+              {#each [['shadow', $t.edgeShadow], ['outline', $t.edgeOutline], ['none', $t.styleNone]] as [val, label]}
+                <button on:click={() => setSubtitlePref('subtitleEdge', val)}
+                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {(playbackPrefs.subtitleEdge || 'shadow') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                  {label}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+            <span class="text-2xl text-white font-medium block mb-4">{$t.subtitleBackground}</span>
+            <div class="flex gap-3">
+              {#each [['none', $t.styleNone], ['semi', $t.bgSemi], ['solid', $t.bgSolid]] as [val, label]}
+                <button on:click={() => setSubtitlePref('subtitleBackground', val)}
+                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {(playbackPrefs.subtitleBackground || 'none') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                   {label}
                 </button>
               {/each}
