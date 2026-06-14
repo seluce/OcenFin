@@ -109,6 +109,27 @@
   let showMediaInfo   = false;   // Medieninformationen-Modal
   let mediaInfoScroll;           // Scroll-Container des Modals (für D-Pad-Scrollen)
 
+  // Teilen: QR-Code mit öffentlichem Titel-Link (IMDb/TMDb) — jeder kann ihn scannen, kein Serverzugang nötig.
+  let showShare = false;
+  let shareQrUrl = null;
+  function buildShareTarget(item) {
+    const p = item?.ProviderIds || {};
+    if (p.Imdb) return `https://www.imdb.com/title/${p.Imdb}/`;
+    if (p.Tmdb && (item.Type === 'Movie' || item.Type === 'Series'))
+      return `https://www.themoviedb.org/${item.Type === 'Series' ? 'tv' : 'movie'}/${p.Tmdb}`;
+    // Kein öffentlicher Link → Titel als Text (Scan zeigt den Titel zum Nachschlagen, nie ein toter Link).
+    return item?.ProductionYear ? `${item.Name} (${item.ProductionYear})` : (item?.Name || '');
+  }
+  async function openShare() {
+    showShare = true;
+    shareQrUrl = null;
+    try {
+      const mod = await import('qrcode');   // bereits vorhandene Abhängigkeit, dynamisch geladen
+      const toDataURL = (mod.default && mod.default.toDataURL) ? mod.default.toDataURL : mod.toDataURL;
+      shareQrUrl = await toDataURL(buildShareTarget(fullItem) || ' ', { margin: 1, width: 360, errorCorrectionLevel: 'M' });
+    } catch (e) { console.warn('[OcenFin] Teilen-QR fehlgeschlagen', e); }
+  }
+
   function formatBytes(bytes) {
     if (!bytes) return null;
     const gb = bytes / 1073741824;
@@ -529,6 +550,11 @@
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
                       {$t.addToCollection}
                     </button>
+                    <button on:click={() => { closeDropdown(false); openShare(); }}
+                      class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
+                      <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+                      {$t.share}
+                    </button>
                   </div>
                 {/if}
               </div>
@@ -830,6 +856,28 @@
           {/each}
         </div>
       {/each}
+    </div>
+  </div>
+{/if}
+
+<!-- Teilen: QR-Code mit Titel-Link (IMDb/TMDb) zum Scannen -->
+{#if showShare}
+  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8 animate-fade-in"
+    on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showShare = false; } }}>
+    <div data-modal data-focus-trap
+      class="bg-gray-800 border border-gray-700 rounded-2xl p-8 w-full max-w-lg flex flex-col items-center gap-5 shadow-2xl">
+      <div class="flex items-center justify-between gap-4 w-full">
+        <h2 class="text-3xl text-white font-bold">{$t.share}</h2>
+        <button on:click={() => showShare = false} use:focusOnMount
+          class="px-5 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
+                 focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.close}</button>
+      </div>
+      {#if shareQrUrl}
+        <img src={shareQrUrl} alt="QR" class="rounded-xl bg-white p-3"
+             style="width:320px;height:320px;max-width:40vh;max-height:40vh;" />
+      {/if}
+      <p class="text-white font-bold text-center break-words">{fullItem?.Name}</p>
+      <p class="text-gray-400 text-base text-center max-w-md">{$t.shareHint}</p>
     </div>
   </div>
 {/if}

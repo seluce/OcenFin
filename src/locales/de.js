@@ -380,6 +380,10 @@ export default {
     bgSemi: "Halbklar",
     bgSolid: "Deckend",
 
+    // Teilen
+    share: "Teilen",
+    shareHint: "Mit dem Handy scannen, um den Titel nachzuschlagen oder zu teilen.",
+
     // Version
     version: "Version",
 };

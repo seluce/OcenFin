@@ -380,6 +380,10 @@ export default {
     bgSemi: "Semi",
     bgSolid: "Sólido",
 
+    // Teilen
+    share: "Compartir",
+    shareHint: "Escanea con el móvil para consultar o compartir el título.",
+
     // Version
     version: "Versión",
 };
