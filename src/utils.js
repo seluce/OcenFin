@@ -343,7 +343,47 @@ export function authHeaders(token) {
 // Modul-State wird von allen Importeuren geteilt → ein setDebug() wirkt sofort überall.
 let _debug = false;
 export function setDebug(on) { _debug = !!on; }
-export function dlog(...args) { if (_debug) console.log(...args); }
+
+// --- In-App-Log-Puffer ----------------------------------------------------------------------
+// Ring-Puffer, damit Nutzer Logs ohne 'ares inspect' sehen/teilen können. console.error/warn
+// werden IMMER erfasst (auch ohne Debug-Modus → nach einem Fehler ist der Log schon da);
+// dlog-Zeilen nur bei aktivem Debug. Das Original-Konsolenverhalten bleibt unverändert.
+const LOG_BUFFER_MAX = 300;
+let _logBuffer = [];
+function _stringify(args) {
+  return args.map(a => {
+    if (typeof a === 'string') return a;
+    if (a instanceof Error) return a.message || String(a);
+    try { return JSON.stringify(a); } catch { return String(a); }
+  }).join(' ');
+}
+function _pushLog(level, args) {
+  try {
+    _logBuffer.push({ t: Date.now(), level, msg: _stringify(args) });
+    if (_logBuffer.length > LOG_BUFFER_MAX) _logBuffer.shift();
+  } catch {}
+}
+export function dlog(...args) { if (_debug) { _pushLog('log', args); console.log(...args); } }
+export function clearLogBuffer() { _logBuffer = []; }
+export function formatLog(maxChars = 0) {
+  const pad = (n) => String(n).padStart(2, '0');
+  let lines = _logBuffer.map(e => {
+    const d = new Date(e.t);
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${e.level.toUpperCase().padEnd(5)} ${e.msg}`;
+  });
+  let text = lines.join('\n');
+  // Für den QR-Code: nur das Ende (jüngste Zeilen) bis maxChars zurückgeben.
+  if (maxChars > 0 && text.length > maxChars) text = '…\n' + text.slice(text.length - maxChars);
+  return text;
+}
+// console.error/warn zusätzlich in den Puffer spiegeln (einmalig, Original bleibt aktiv).
+if (typeof console !== 'undefined' && !console.__ocenfinLogHook) {
+  const _origErr = console.error.bind(console);
+  const _origWarn = console.warn.bind(console);
+  console.error = (...a) => { _pushLog('error', a); _origErr(...a); };
+  console.warn  = (...a) => { _pushLog('warn', a); _origWarn(...a); };
+  console.__ocenfinLogHook = true;
+}
 
 // --- Versionen für die Status-/Diagnose-Seite --------------------------------------------------
 // Chromium/WebView aus dem User-Agent; Abhängigkeits-Versionen direkt aus package.json (zieht bei

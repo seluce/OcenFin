@@ -459,6 +459,13 @@
       const resolved = resolveStream({ serverUrl, token: activeToken, itemId: item.Id, mediaSource: ms, audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex });
       playMethod = resolved.method;
       dlog('[OcenFin] resolveStream →', { method: resolved.method, isHls: resolved.isHls, url: resolved.url });
+      // Warum transkodiert der Server? TranscodeReasons nennt es direkt (VideoCodecNotSupported,
+      // AudioCodecNotSupported, ContainerBitrateExceedsLimit, SubtitleCodecNotSupported …).
+      // Als warn → landet immer im Log-Puffer, auch ohne Debug-Modus.
+      if (resolved.method === 'Transcode') {
+        const reasons = ms?.TranscodeReasons;
+        console.warn('[OcenFin] Transcode —', (Array.isArray(reasons) && reasons.length) ? reasons.join(', ') : 'Grund nicht gemeldet');
+      }
       await attachSource(resolved.url, resolved.isHls);
       applySubtitleOverlay(subtitleIndex, ms);
     } catch (e) {

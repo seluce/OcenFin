@@ -355,6 +355,16 @@ export default {
 
     statusAtmosHint: "Con una barra de sonido por (e)ARC puede aparecer No aunque Atmos funcione — el televisor transmite el audio a la barra de sonido.",
 
+    // In-App-Log-Viewer
+    clear: "Borrar",
+    logShow: "Mostrar registro",
+    logShowDesc: "Ver, copiar o compartir los registros actuales como código QR.",
+    logTitle: "Registro",
+    logEmpty: "Aún no hay entradas.",
+    logQrButton: "Código QR",
+    logQrHint: "Escanea con el móvil para transferir las últimas líneas (p. ej. por correo).",
+    logBackToText: "Volver al texto",
+
     // Version
     version: "Versión",
 };

@@ -355,6 +355,16 @@ export default {
 
     statusAtmosHint: "Avec une barre de son en (e)ARC, Non peut s'afficher même si l'Atmos fonctionne — le téléviseur transmet le son à la barre de son.",
 
+    // In-App-Log-Viewer
+    clear: "Effacer",
+    logShow: "Afficher le journal",
+    logShowDesc: "Consulter, copier ou partager les journaux actuels via un QR code.",
+    logTitle: "Journal",
+    logEmpty: "Aucune entrée pour le moment.",
+    logQrButton: "QR code",
+    logQrHint: "Scannez avec votre téléphone pour transférer les dernières lignes (par e-mail par ex.).",
+    logBackToText: "Retour au texte",
+
     // Version
     version: "Version",
 };

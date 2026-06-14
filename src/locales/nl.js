@@ -355,6 +355,16 @@ export default {
 
     statusAtmosHint: "Met een soundbar via (e)ARC kan hier Nee staan terwijl Atmos toch werkt — de tv geeft het geluid door aan de soundbar.",
 
+    // In-App-Log-Viewer
+    clear: "Wissen",
+    logShow: "Logboek tonen",
+    logShowDesc: "Huidige logs bekijken, kopiëren of delen als QR-code.",
+    logTitle: "Logboek",
+    logEmpty: "Nog geen vermeldingen.",
+    logQrButton: "QR-code",
+    logQrHint: "Scan met je telefoon om de laatste regels over te zetten (bijv. per e-mail).",
+    logBackToText: "Terug naar tekst",
+
     // Version
     version: "Versie",
 };

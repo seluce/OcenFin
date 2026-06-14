@@ -355,6 +355,16 @@ export default {
 
     statusAtmosHint: "Com uma soundbar por (e)ARC pode aparecer Não mesmo que o Atmos funcione — o televisor encaminha o som para a soundbar.",
 
+    // In-App-Log-Viewer
+    clear: "Limpar",
+    logShow: "Mostrar registo",
+    logShowDesc: "Ver, copiar ou partilhar os registos atuais como código QR.",
+    logTitle: "Registo",
+    logEmpty: "Ainda sem entradas.",
+    logQrButton: "Código QR",
+    logQrHint: "Digitalize com o telemóvel para transferir as últimas linhas (p. ex. por e-mail).",
+    logBackToText: "Voltar ao texto",
+
     // Version
     version: "Versão",
 };

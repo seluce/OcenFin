@@ -355,6 +355,16 @@ export default {
 
     statusAtmosHint: "Con una soundbar via (e)ARC può comparire No anche se l'Atmos funziona — il televisore inoltra l'audio alla soundbar.",
 
+    // In-App-Log-Viewer
+    clear: "Svuota",
+    logShow: "Mostra registro",
+    logShowDesc: "Visualizza, copia o condividi i log attuali come codice QR.",
+    logTitle: "Registro",
+    logEmpty: "Ancora nessuna voce.",
+    logQrButton: "Codice QR",
+    logQrHint: "Scansiona con il telefono per trasferire le ultime righe (es. via e-mail).",
+    logBackToText: "Torna al testo",
+
     // Version
     version: "Versione",
 };

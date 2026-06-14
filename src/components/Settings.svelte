@@ -1,7 +1,7 @@
 <script>
   import { currentLang, t, LANGUAGES } from '../i18n.js';
-  import { isBackKey, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs } from '../utils.js';
+  import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer } from '../utils.js';
   import { createEventDispatcher, tick, onDestroy, onMount } from 'svelte';
 
   export let serverUrl;
@@ -194,6 +194,26 @@
     localStorage.setItem('ocenfin_debug', debugLogging ? '1' : '0');
     setDebug(debugLogging);
   }
+
+  // In-App-Log-Viewer: Puffer anzeigen, leeren, als QR (letzte Zeilen) teilen.
+  // Kein "Kopieren": Auf dem TV gibt es kein Ziel zum Einfügen — QR (aufs Handy) und
+  // Abfotografieren sind die sinnvollen Wege.
+  let showLog = false;
+  let logText = '';
+  let qrDataUrl = null;
+  let qrBtnEl;   // für Fokus-Rückgabe beim Verlassen der QR-Ansicht
+  function openLog()  { logText = formatLog(); qrDataUrl = null; showLog = true; }
+  function clearLog() { clearLogBuffer(); logText = formatLog(); qrDataUrl = null; }
+  function hideQr()   { qrDataUrl = null; tick().then(() => qrBtnEl?.focus()); }
+  async function showLogQr() {
+    try {
+      const mod = await import('qrcode');   // dynamisch → nicht im Start-Bundle
+      const toDataURL = (mod.default && mod.default.toDataURL) ? mod.default.toDataURL : mod.toDataURL;
+      const tail = formatLog(1200);         // nur die jüngsten ~1200 Zeichen (QR-Kapazität)
+      qrDataUrl = await toDataURL(tail || ' ', { margin: 1, width: 360, errorCorrectionLevel: 'L' });
+    } catch (e) { console.warn('[OcenFin] QR-Erzeugung fehlgeschlagen', e); }
+  }
+
   // Versionen für die Status-Seite (Chromium aus UA, hls.js/libbitsub aus package.json) — statisch.
   const envVersions = runtimeVersions();
 
@@ -1366,6 +1386,17 @@
         </button>
       </div>
 
+      <!-- Protokoll anzeigen: In-App-Log-Viewer (kein ares inspect nötig) -->
+      <button on:click={openLog}
+        class="flex items-center justify-between w-full px-6 py-5 bg-gray-800/80 border border-gray-700 rounded-2xl
+               hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+        <div class="pr-4">
+          <span class="text-2xl text-white font-medium block">{$t.logShow}</span>
+          <span class="text-gray-400 mt-0.5 block text-sm">{$t.logShowDesc}</span>
+        </div>
+        <svg class="w-7 h-7 text-gray-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </button>
+
       <!-- Status-Gruppen: einklappbar. Fokussierbare Kopfzeilen geben dem D-Pad Stufen nach unten
            (behebt das Scrollen) und ein Rechts-Sprungziel aus dem Menü. -->
 
@@ -1489,6 +1520,50 @@
     </div>
   </div>
 </div>
+
+<!-- ══════════════════════════════════════════
+     PROTOKOLL-VIEWER (eigenes Modal, breiter als die Standard-Modals)
+══════════════════════════════════════════ -->
+{#if showLog}
+  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8 animate-fade-in"
+    on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); if (qrDataUrl) hideQr(); else showLog = false; } }}>
+
+    <div data-modal data-focus-trap
+      class="bg-gray-800 border border-gray-700 p-8 rounded-2xl w-full max-w-4xl max-h-[88vh] flex flex-col gap-5 shadow-2xl">
+
+      <div class="flex items-center justify-between gap-4 shrink-0">
+        <h2 class="text-4xl text-white font-bold">{$t.logTitle}</h2>
+        <div class="flex items-center gap-3">
+          <button bind:this={qrBtnEl} on:click={showLogQr}
+            class="px-5 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white
+                   focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.logQrButton}</button>
+          <button on:click={() => showLog = false} use:focusOnMount
+            class="px-5 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
+                   focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.close}</button>
+        </div>
+      </div>
+
+      {#if qrDataUrl}
+        <div class="flex flex-col items-center justify-center gap-5 flex-1 min-h-0">
+          <img src={qrDataUrl} alt="QR" class="rounded-xl bg-white p-3"
+               style="width:320px;height:320px;max-width:40vh;max-height:40vh;" />
+          <p class="text-gray-400 text-lg text-center max-w-md">{$t.logQrHint}</p>
+          <button on:click={hideQr} use:focusOnMount
+            class="px-6 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
+                   focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.logBackToText}</button>
+        </div>
+      {:else}
+        <pre class="flex-1 min-h-0 overflow-auto hide-scrollbar bg-black/50 rounded-xl p-5 text-sm text-gray-300
+                    font-mono whitespace-pre-wrap break-words leading-relaxed">{logText || $t.logEmpty}</pre>
+        <div class="flex justify-end shrink-0">
+          <button on:click={clearLog}
+            class="px-6 py-3 rounded-xl font-bold bg-gray-700 hover:bg-red-600 focus:bg-red-600 text-white
+                   focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.clear}</button>
+        </div>
+      {/if}
+    </div>
+  </div>
+{/if}
 
 <!-- ══════════════════════════════════════════
      MODAL (Sprache / Passwort / Quick Connect)

@@ -355,6 +355,16 @@ export default {
 
     statusAtmosHint: "With a soundbar over (e)ARC this can show No even though Atmos works — the TV passes the audio through to the soundbar.",
 
+    // In-App-Log-Viewer
+    clear: "Clear",
+    logShow: "Show log",
+    logShowDesc: "View, copy or share the current logs as a QR code.",
+    logTitle: "Log",
+    logEmpty: "No entries yet.",
+    logQrButton: "QR code",
+    logQrHint: "Scan with your phone to transfer the latest lines (e.g. by email).",
+    logBackToText: "Back to text",
+
     // Version
     version: "Version",
 };
