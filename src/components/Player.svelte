@@ -172,9 +172,15 @@
       if (inSyncGroup) return;
       wasPlayingBeforeSync = isPlaying;
       videoElement?.pause();
-    } else if (wasPlayingBeforeSync) {
-      videoElement?.play().catch(() => {});
-      wasPlayingBeforeSync = false;
+    } else {
+      if (wasPlayingBeforeSync) {
+        videoElement?.play().catch(() => {});
+        wasPlayingBeforeSync = false;
+      }
+      // Fokus zurück in den Player + HUD zeigen. Ohne das bleibt der Fokus am
+      // geschlossenen SyncPlay-Dialog hängen und der Player nimmt keine Eingaben mehr an.
+      resetControlsTimeout();
+      tick().then(() => playerContainer?.focus());
     }
   }
 
