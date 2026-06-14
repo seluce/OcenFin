@@ -969,13 +969,14 @@
       try {
         const res = await fetch(
           `${serverUrl}/Users/${m.id}/Items?ParentId=${libraryId}&Recursive=true` +
-          `&IncludeItemTypes=Movie,Series&Fields=UserData&EnableImages=false` +
+          `&IncludeItemTypes=Movie,Series&Filters=IsPlayed&EnableImages=false` +
           `&Limit=100000&EnableTotalRecordCount=false`,
           { headers: { 'Authorization': `MediaBrowser Token="${token}"`, 'Content-Type': 'application/json' } }
         );
         if (!res.ok) { console.warn('[Gemeinsam] Abfrage fehlgeschlagen für', m.name, '· HTTP', res.status); continue; }
         let n = 0;
-        (await res.json()).Items?.forEach(i => { if (i.UserData?.Played) { ids.add(i.Id); n++; } });
+        // Server liefert dank Filters=IsPlayed bereits nur gesehene Titel → direkt übernehmen.
+        (await res.json()).Items?.forEach(i => { ids.add(i.Id); n++; });
         dlog('[Gemeinsam]', m.name, '→', n, 'komplett gesehene Titel');
       } catch (e) { console.warn('[Gemeinsam] Fehler für', m.name, e); }
     }
