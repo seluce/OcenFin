@@ -387,6 +387,10 @@ export default {
     // Untertitel-Versatz
     subtitleOffset: "Desfase",
 
+    // Kennwort anzeigen/verbergen
+    showPassword: "Mostrar contraseña",
+    hidePassword: "Ocultar contraseña",
+
     // Version
     version: "Versión",
 };

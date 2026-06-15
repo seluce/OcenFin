@@ -387,6 +387,10 @@ export default {
     // Untertitel-Versatz
     subtitleOffset: "Verschuiving",
 
+    // Kennwort anzeigen/verbergen
+    showPassword: "Wachtwoord tonen",
+    hidePassword: "Wachtwoord verbergen",
+
     // Version
     version: "Versie",
 };

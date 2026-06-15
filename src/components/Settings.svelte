@@ -82,7 +82,9 @@
   let activeModal  = null;
   let modalReturnFocus = null;   // Auslöser-Button, auf den der Fokus nach dem Schließen zurückkehrt
   let currentPw    = '';
+  let showCurrentPw = false;  // Augen-Umschalter fürs aktuelle Kennwort
   let newPw        = '';
+  let showNewPw    = false;   // Augen-Umschalter: neues Kennwort kurz einblenden zum Prüfen
   let pwMessage    = '';
   let qcCode       = '';
   let qcMessage    = '';
@@ -110,7 +112,7 @@
   async function openModal(name) {
     modalReturnFocus = document.activeElement;
     pwMessage = ''; qcMessage = '';
-    currentPw = ''; newPw = ''; qcCode = '';
+    currentPw = ''; newPw = ''; qcCode = ''; showNewPw = false; showCurrentPw = false;
     if (modalTimeout) clearTimeout(modalTimeout);
     activeModal = name;
     await tick();
@@ -1687,16 +1689,40 @@
 
       {:else if activeModal === 'password'}
         <h2 class="text-4xl text-white font-bold mb-2">{$t.changePassword}</h2>
-        <input type="password" bind:value={currentPw} placeholder={$t.currentPassword}
-          use:tvKeyboard
-          on:keydown={(e) => e.key === 'Enter' && changePassword()}
-          class="w-full bg-gray-900 text-white text-2xl p-6 rounded-xl border border-gray-600
-                 focus:outline-none focus:ring-4 focus:ring-blue-500" />
-        <input type="password" bind:value={newPw} placeholder={$t.newPassword}
-          use:tvKeyboard
-          on:keydown={(e) => e.key === 'Enter' && changePassword()}
-          class="w-full bg-gray-900 text-white text-2xl p-6 rounded-xl border border-gray-600
-                 focus:outline-none focus:ring-4 focus:ring-blue-500" />
+        <div class="relative">
+          <input type={showCurrentPw ? 'text' : 'password'} bind:value={currentPw} placeholder={$t.currentPassword}
+            use:tvKeyboard
+            on:keydown={(e) => e.key === 'Enter' && changePassword()}
+            class="w-full bg-gray-900 text-white text-2xl p-6 pr-20 rounded-xl border border-gray-600
+                   focus:outline-none focus:ring-4 focus:ring-blue-500" />
+          <button type="button" on:click={() => showCurrentPw = !showCurrentPw}
+            aria-label={showCurrentPw ? $t.hidePassword : $t.showPassword} title={showCurrentPw ? $t.hidePassword : $t.showPassword}
+            class="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-lg text-gray-400 hover:text-white focus:text-white
+                   focus:outline-none focus:ring-2 focus:ring-white transition-colors">
+            {#if showCurrentPw}
+              <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>
+            {:else}
+              <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+            {/if}
+          </button>
+        </div>
+        <div class="relative">
+          <input type={showNewPw ? 'text' : 'password'} bind:value={newPw} placeholder={$t.newPassword}
+            use:tvKeyboard
+            on:keydown={(e) => e.key === 'Enter' && changePassword()}
+            class="w-full bg-gray-900 text-white text-2xl p-6 pr-20 rounded-xl border border-gray-600
+                   focus:outline-none focus:ring-4 focus:ring-blue-500" />
+          <button type="button" on:click={() => showNewPw = !showNewPw}
+            aria-label={showNewPw ? $t.hidePassword : $t.showPassword} title={showNewPw ? $t.hidePassword : $t.showPassword}
+            class="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-lg text-gray-400 hover:text-white focus:text-white
+                   focus:outline-none focus:ring-2 focus:ring-white transition-colors">
+            {#if showNewPw}
+              <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>
+            {:else}
+              <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+            {/if}
+          </button>
+        </div>
         {#if pwMessage}<p class="text-blue-400 font-bold text-lg">{pwMessage}</p>{/if}
         <button on:click={changePassword}
           class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-2xl py-6 rounded-xl

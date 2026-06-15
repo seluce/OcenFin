@@ -387,6 +387,10 @@ export default {
     // Untertitel-Versatz
     subtitleOffset: "Przesunięcie",
 
+    // Kennwort anzeigen/verbergen
+    showPassword: "Pokaż hasło",
+    hidePassword: "Ukryj hasło",
+
     // Version
     version: "Wersja",
 };

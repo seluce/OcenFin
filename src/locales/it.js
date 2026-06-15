@@ -387,6 +387,10 @@ export default {
     // Untertitel-Versatz
     subtitleOffset: "Sfasamento",
 
+    // Kennwort anzeigen/verbergen
+    showPassword: "Mostra password",
+    hidePassword: "Nascondi password",
+
     // Version
     version: "Versione",
 };
