@@ -125,6 +125,10 @@ function focusEl(el) {
 // Eintrittspunkt einer Gruppe beim Übergang: zuletzt fokussiert (falls noch sichtbar),
 // sonst geometrisch nächstes in Richtung, sonst überhaupt nächstes.
 function entryOf(group, dir, from) {
+  // Als aktiv markiertes Element bevorzugen (z.B. der aktuelle Sidebar-Eintrag): Beim Wechsel in
+  // die Gruppe landet der Fokus so immer auf dem aktiven Element, nicht auf dem zuletzt fokussierten.
+  const current = group.querySelector('[data-group-current]');
+  if (current && isVisible(current)) return current;
   const remembered = lastFocus.get(group);
   if (remembered && group.contains(remembered) && isVisible(remembered)) return remembered;
   const cands = focusablesIn(group);

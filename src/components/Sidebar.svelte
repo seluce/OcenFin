@@ -148,6 +148,7 @@
     {#each navItems as navItem (navItem.id)}
       <button
         on:click={() => activate(navItem)}
+        data-group-current={activeNavId === navItem.id ? '' : null}
         on:focus={(e) => e.currentTarget.scrollIntoView({ block: 'nearest' })}
         class="w-full flex items-center gap-6 px-4 py-3.5 rounded-xl transition-colors focus:outline-none shrink-0
                {activeNavId === navItem.id
