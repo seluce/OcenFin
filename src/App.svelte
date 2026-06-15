@@ -726,6 +726,17 @@
     window.addEventListener('offline', () => connectionLost.set(true));
     window.addEventListener('online',  () => connectionLost.set(false));
 
+    // webOS-Lifecycle: Kehrt man über Home zur (suspendierten) App zurück, feuert webOSRelaunch.
+    // Auf manchen Builds/appinfo-Konfigurationen (handlesRelaunch:true) bleibt die App dann im
+    // Hintergrund hängen und startet scheinbar nicht — wir holen sie deshalb explizit in den
+    // Vordergrund. Harmlos, falls webOS das ohnehin selbst übernimmt.
+    const toForeground = () => {
+      dlog('[Lifecycle] webOSRelaunch → activate');
+      try { window.PalmSystem?.activate?.(); } catch (e) { console.warn('[Lifecycle] activate failed:', e); }
+      try { window.webOSSystem?.activate?.(); } catch { /* nicht vorhanden */ }
+    };
+    document.addEventListener('webOSRelaunch', toForeground, true);
+
     // webOS-System-Screensaver aktiv ablehnen, solange OcenFins eigener Screensaver aktiv ist —
     // sonst lägen zwei Screensaver übereinander und man müsste zweimal drücken. webOS fragt über
     // die Luna-API vor dem Anzeigen nach; wir antworten mit ack:false (= bitte nicht zeigen, wir
