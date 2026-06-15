@@ -718,11 +718,32 @@
     // Netzwerkstatus überwachen (Banner bei Verbindungsverlust)
     window.addEventListener('offline', () => connectionLost.set(true));
     window.addEventListener('online',  () => connectionLost.set(false));
-    // webOS-Screensaver/Overlay: kehrt die App danach in den sichtbaren Zustand zurück, schließen
-    // wir unseren eigenen Screensaver gleich mit → kein doppelter Tastendruck (LG zuerst, dann wir).
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && showScreensaver) resetActivity();
-    });
+
+    // webOS-System-Screensaver aktiv ablehnen, solange OcenFins eigener Screensaver aktiv ist —
+    // sonst lägen zwei Screensaver übereinander und man müsste zweimal drücken. webOS fragt über
+    // die Luna-API vor dem Anzeigen nach; wir antworten mit ack:false (= bitte nicht zeigen, wir
+    // schützen das OLED selbst). Ist OcenFins Screensaver aus, lassen wir webOS zu (ack:true).
+    if (window.webOS?.service?.request) {
+      window.webOS.service.request('luna://com.webos.service.tvpower', {
+        method: 'power/registerScreenSaverRequest',
+        parameters: { subscribe: true, clientName: 'ocenfin' },
+        subscribe: true,
+        onSuccess: (res) => {
+          // Erste Antwort bestätigt nur die Registrierung (ohne state); danach kommt state je Anfrage.
+          if (res?.state !== 'Active') { dlog('[Screensaver] Luna registriert, returnValue=', res?.returnValue); return; }
+          const decline = screensaverSettings.enabled;   // OcenFin-Screensaver an → webOS ablehnen
+          dlog('[Screensaver] webOS-Anfrage →', decline ? 'abgelehnt (ack:false)' : 'zugelassen (ack:true)');
+          window.webOS.service.request('luna://com.webos.service.tvpower', {
+            method: 'power/responseScreenSaverRequest',
+            parameters: { clientName: 'ocenfin', ack: !decline, timestamp: res.timestamp },
+            onFailure: (e) => console.warn('[Screensaver] response-Fehler:', e?.errorText || e?.errorCode || e),
+          });
+        },
+        onFailure: (err) => console.warn('[Screensaver] Luna-Registrierung fehlgeschlagen:', err?.errorText || err?.errorCode || err),
+      });
+    } else {
+      dlog('[Screensaver] webOS-Service nicht verfügbar (kein webOS / Browser)');
+    }
 
     try {
       // Auto-Login via gespeicherter Session
