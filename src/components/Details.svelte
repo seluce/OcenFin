@@ -127,7 +127,7 @@
       const mod = await import('qrcode');   // bereits vorhandene Abhängigkeit, dynamisch geladen
       const toDataURL = (mod.default && mod.default.toDataURL) ? mod.default.toDataURL : mod.toDataURL;
       shareQrUrl = await toDataURL(buildShareTarget(fullItem) || ' ', { margin: 1, width: 360, errorCorrectionLevel: 'M' });
-    } catch (e) { console.warn('[OcenFin] Teilen-QR fehlgeschlagen', e); }
+    } catch (e) { console.warn('[OcenFin] share QR failed', e); }
   }
 
   function formatBytes(bytes) {
@@ -324,8 +324,9 @@
         method: willBePlayed ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
-    } catch {
+    } catch (e) {
       // Bei Fehler zurückrollen
+      console.warn('[OcenFin] played-status toggle failed, rolled back:', e);
       fullItem.UserData = { ...fullItem.UserData, Played: !willBePlayed };
       fullItem = fullItem;
     }
@@ -340,7 +341,8 @@
         method: willBeFav ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
-    } catch {
+    } catch (e) {
+      console.warn('[OcenFin] favorite toggle failed, rolled back:', e);
       fullItem.UserData = { ...fullItem.UserData, IsFavorite: !willBeFav };
       fullItem = fullItem;
     }

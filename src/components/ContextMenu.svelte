@@ -42,7 +42,7 @@
     try {
       await fetch(`${serverUrl}${path}`, { method, headers: headers() });
     } catch (e) {
-      console.error('Kontextaktion fehlgeschlagen', e);
+      console.error('context action failed', e);
     }
     busy = false;
   }

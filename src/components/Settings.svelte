@@ -227,7 +227,7 @@
       const toDataURL = (mod.default && mod.default.toDataURL) ? mod.default.toDataURL : mod.toDataURL;
       const tail = formatLog(1200);         // nur die jüngsten ~1200 Zeichen (QR-Kapazität)
       qrDataUrl = await toDataURL(tail || ' ', { margin: 1, width: 360, errorCorrectionLevel: 'L' });
-    } catch (e) { console.warn('[OcenFin] QR-Erzeugung fehlgeschlagen', e); }
+    } catch (e) { console.warn('[OcenFin] QR generation failed', e); }
   }
 
   // Versionen für die Status-Seite (Chromium aus UA, hls.js/libbitsub aus package.json) — statisch.
@@ -420,7 +420,7 @@
       dispatch('profileImageChanged');     // App lädt selectedUser neu → Sidebar zeigt es sofort
       setTimeout(() => avatarSaved = false, 2500);
     } catch (e) {
-      console.error('[OcenFin] Profilbild-Upload fehlgeschlagen:', e);
+      console.error('[OcenFin] avatar upload failed:', e);
     } finally {
       avatarSaving = false;
     }

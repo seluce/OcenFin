@@ -94,7 +94,7 @@
       }
 
       if (query.trim().length >= 2 && (results.length > 0 || people.length > 0)) saveToHistory(query);
-    } catch (e) { console.error("Suche fehlgeschlagen:", e); }
+    } catch (e) { console.error("search failed:", e); }
     finally     { isLoading = false; }
   }
 

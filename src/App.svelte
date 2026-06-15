@@ -457,7 +457,7 @@
         activeSubtitleIndex = -1;
         activeMediaSourceId = null;
         viewState = 'player';
-        dlog('[SyncPlay] Auto-Laden →', currentDetailItem?.Name);
+        dlog('[SyncPlay] auto-load →', currentDetailItem?.Name);
       }
     } catch {}
     _syncOpeningId = null;
@@ -477,10 +477,10 @@
     if (syncSocket && (syncSocket.readyState === WebSocket.OPEN || syncSocket.readyState === WebSocket.CONNECTING)) return;
     let ws;
     try { ws = new WebSocket(syncSocketUrl(serverUrl, activeToken, deviceIdFor(selectedUser?.Name))); }
-    catch (e) { console.warn('[SyncPlay] Socket konnte nicht geöffnet werden', e); return; }
+    catch (e) { console.warn('[SyncPlay] socket could not be opened', e); return; }
     syncSocket = ws;
     ws.onopen = () => {
-      dlog('[SyncPlay] Socket verbunden');
+      dlog('[SyncPlay] socket connected');
       if (syncKeepAlive) clearInterval(syncKeepAlive);
       syncKeepAlive = setInterval(() => { try { ws.send(JSON.stringify({ MessageType: 'KeepAlive' })); } catch {} }, 30000);
     };
@@ -490,7 +490,7 @@
     };
     ws.onclose = () => {
       if (syncKeepAlive) { clearInterval(syncKeepAlive); syncKeepAlive = null; }
-      dlog('[SyncPlay] Socket getrennt');
+      dlog('[SyncPlay] socket disconnected');
       if (syncSocketWanted) { clearTimeout(syncReconnect); syncReconnect = setTimeout(connectSyncSocket, 5000); }
     };
     ws.onerror = () => { /* onclose folgt automatisch → Reconnect dort */ };
@@ -527,7 +527,7 @@
     } else if (msg.MessageType === 'SyncPlayCommand') {
       // Wiedergabe-Kommando (Play/Pause/Seek) → an den Player; _seq dient dem Player als Dedupe-Marke.
       syncCommand = { ...msg.Data, _seq: ++syncCmdSeq };
-      dlog('[SyncPlay] Kommando empfangen', syncCommand.Command, syncCommand.PositionTicks);
+      dlog('[SyncPlay] command received', syncCommand.Command, syncCommand.PositionTicks);
     } else if (msg.MessageType === 'Playstate') {
       // Admin-Fernsteuerung (Dashboard): Pause/Unpause/Stop/Seek/PlayPause/NextTrack → an den Player.
       const cmd = msg.Data?.Command;
@@ -730,30 +730,30 @@
         subscribe: true,
         onSuccess: (res) => {
           // Erste Antwort bestätigt nur die Registrierung (ohne state); danach kommt state je Anfrage.
-          if (res?.state !== 'Active') { dlog('[Screensaver] Luna registriert, returnValue=', res?.returnValue); return; }
+          if (res?.state !== 'Active') { dlog('[Screensaver] Luna registered, returnValue=', res?.returnValue); return; }
           const decline = screensaverSettings.enabled;   // OcenFin-Screensaver an → webOS ablehnen
-          dlog('[Screensaver] webOS-Anfrage →', decline ? 'abgelehnt (ack:false)' : 'zugelassen (ack:true)');
+          dlog('[Screensaver] webOS request →', decline ? 'declined (ack:false)' : 'allowed (ack:true)');
           window.webOS.service.request('luna://com.webos.service.tvpower', {
             method: 'power/responseScreenSaverRequest',
             parameters: { clientName: 'ocenfin', ack: !decline, timestamp: res.timestamp },
-            onFailure: (e) => console.warn('[Screensaver] response-Fehler:', e?.errorText || e?.errorCode || e),
+            onFailure: (e) => console.warn('[Screensaver] response error:', e?.errorText || e?.errorCode || e),
           });
         },
-        onFailure: (err) => console.warn('[Screensaver] Luna-Registrierung fehlgeschlagen:', err?.errorText || err?.errorCode || err),
+        onFailure: (err) => console.warn('[Screensaver] Luna registration failed:', err?.errorText || err?.errorCode || err),
       });
     } else {
-      dlog('[Screensaver] webOS-Service nicht verfügbar (kein webOS / Browser)');
+      dlog('[Screensaver] webOS service unavailable (no webOS / browser)');
     }
 
     try {
       // Auto-Login via gespeicherter Session
       const sessionStr = localStorage.getItem('current_session');
-      dlog('[restore] current_session vorhanden:', !!sessionStr);
+      dlog('[restore] current_session present:', !!sessionStr);
       if (sessionStr) {
         try {
           const session = JSON.parse(sessionStr);
           const server  = savedServers.find(s => s.id === session.serverId);
-          dlog('[restore] Server gefunden:', !!server, '| Token:', !!session.token, '| userId:', !!session.userId);
+          dlog('[restore] server found:', !!server, '| token:', !!session.token, '| userId:', !!session.userId);
           if (server && session.token && session.userId) {
             selectedServer = server;
             activeToken    = session.token;
@@ -770,21 +770,21 @@
                 applyUserPrefs(selectedUser.Id);   // Profil-Einstellungen laden
                 fetchUsers(); // Im Hintergrund für Benutzerwechsel
                 scheduleScreensaver();
-                dlog('[restore] Auto-Login erfolgreich:', selectedUser.Name);
+                dlog('[restore] auto-login successful:', selectedUser.Name);
                 return;
               }
             }
             // Token abgelaufen → User-Screen für diesen Server
-            dlog('[restore] Token ungültig → zurück zum Benutzer-Screen');
+            dlog('[restore] token invalid → back to user screen');
             clearCurrentSession();
             await connectToServer(server);
             return;
           }
-        } catch (e) { dlog('[restore] Fehler beim Wiederherstellen:', e?.message || e); clearCurrentSession(); }
+        } catch (e) { dlog('[restore] restore failed:', e?.message || e); clearCurrentSession(); }
       }
 
       // Kein Auto-Login → Server-Auswahl anzeigen
-      dlog('[restore] kein Auto-Login → Server-Auswahl');
+      dlog('[restore] no auto-login → server selection');
       appPhase = 'servers';
     } finally {
       initializing = false;   // Splashscreen ausblenden (egal welcher Pfad)
@@ -888,7 +888,8 @@
       } else {
         serverConnectError = $t.errInvalid;
       }
-    } catch {
+    } catch (e) {
+      console.warn('[Server] connection failed:', e);
       serverConnectError = $t.errOffline;
     } finally {
       isConnecting = false;
@@ -922,7 +923,8 @@
       } else {
         serverConnectError = $t.errInvalid;
       }
-    } catch {
+    } catch (e) {
+      console.warn('[Server] connection failed:', e);
       serverConnectError = $t.errOffline;
     } finally {
       isConnecting = false;
@@ -950,7 +952,8 @@
     try {
       const res = await fetch(`${serverUrl}/Users/Public`);
       if (res.ok) users = await res.json();
-    } catch { }
+      else console.warn('[Server] user list HTTP', res.status);
+    } catch (e) { console.warn('[Server] could not load user list:', e); }
   }
 
   // ── Gemeinsames Schauen: Mitglieder & Datenbasis ───────────────────────────
@@ -1023,7 +1026,7 @@
     for (const m of sharedProfile.members) {
       if (!m || !m.id) continue;
       const token = memberToken(m);
-      if (!token) { console.warn('[Gemeinsam] Kein gültiger Token für', m.name, '– Profil neu hinterlegen.'); continue; }
+      if (!token) { console.warn('[Shared] no valid token for', m.name, '– please re-add profile.'); continue; }
       try {
         const res = await fetch(
           `${serverUrl}/Users/${m.id}/Items?ParentId=${libraryId}&Recursive=true` +
@@ -1031,12 +1034,12 @@
           `&Limit=100000&EnableTotalRecordCount=false`,
           { headers: { 'Authorization': `MediaBrowser Token="${token}"`, 'Content-Type': 'application/json' } }
         );
-        if (!res.ok) { console.warn('[Gemeinsam] Abfrage fehlgeschlagen für', m.name, '· HTTP', res.status); continue; }
+        if (!res.ok) { console.warn('[Shared] query failed for', m.name, '· HTTP', res.status); continue; }
         let n = 0;
         // Clientseitig auf UserData.Played prüfen — zuverlässiger als Filters=IsPlayed (greift bei Serien nicht immer).
         (await res.json()).Items?.forEach(i => { if (i.UserData?.Played) { ids.add(i.Id); n++; } });
-        dlog('[Gemeinsam]', m.name, '→', n, 'komplett gesehene Titel');
-      } catch (e) { console.warn('[Gemeinsam] Fehler für', m.name, e); }
+        dlog('[Shared]', m.name, '→', n, 'fully-watched titles');
+      } catch (e) { console.warn('[Shared] error for', m.name, e); }
     }
     partnersPlayedIds = ids;
   }
@@ -1106,7 +1109,7 @@
       .sort((a, b) => b.score - a.score || (b.it.CommunityRating || 0) - (a.it.CommunityRating || 0))
       .slice(0, 20)
       .map(x => ({ ...x.it, UserData: {} }));   // UserData leeren → kein Fortschrittsbalken eines Mitglieds
-    dlog('[Gemeinsam] Vorschläge:', sharedSuggestions.length);
+    dlog('[Shared] suggestions:', sharedSuggestions.length);
   }
 
   // baseUrl explizit übergebbar: beim Auto-Login ist der reaktive serverUrl ($:) noch nicht
@@ -1117,9 +1120,9 @@
       const res = await fetch(`${baseUrl}/Users/Me`, {
         headers: { "Authorization": `MediaBrowser Token="${token}"` }
       });
-      if (!res.ok) dlog('[auth] Token-Validierung fehlgeschlagen — HTTP', res.status);
+      if (!res.ok) dlog('[auth] token validation failed — HTTP', res.status);
       return res.ok;
-    } catch (e) { dlog('[auth] Token-Validierung — Netzwerkfehler:', e?.message || e); return false; }
+    } catch (e) { dlog('[auth] token validation — network error:', e?.message || e); return false; }
   }
 
   /** Profil angeklickt — ggf. Schnellanmeldung per gespeichertem Token */
@@ -1145,7 +1148,7 @@
         // authenticateUser überschreibt ihn nach erfolgreicher Passwort-Anmeldung mit dem frischen
         // Token. (Früher wurde hier gelöscht, wodurch sich der Schnellwechsel nach einem einzigen
         // Token-Ablauf still selbst abschaltete.)
-        dlog('[auth] gespeicherter Token abgelehnt für', user.Name, '— Speicher-Wunsch bleibt, wird nach Passwort-Login erneuert');
+        dlog('[auth] stored token rejected for', user.Name, '— save preference kept, refreshed after password login');
       }
     }
 
@@ -1218,7 +1221,7 @@
         serverVobSub = serverSupportsVobSub(info?.Version);
       }
     } catch {}
-    dlog('[OcenFin] Server-Capabilities:', { version: serverVersion || '(unbekannt)', vobSub: serverVobSub });
+    dlog('[OcenFin] server capabilities:', { version: serverVersion || '(unknown)', vobSub: serverVobSub });
   }
 
   // Quick Connect — Login-Flow (Code auf TV, Handy scannt)
@@ -1578,8 +1581,8 @@
     try {
       const res = await fetch(`${serverUrl}/Playlists/${currentCollection.Id}/Items/${item.PlaylistItemId}/Move/${toIndex}`,
         { method: 'POST', headers: getAuthHeaders() });
-      if (!res.ok) console.warn('[OcenFin] Verschieben fehlgeschlagen', res.status);
-    } catch (e) { console.warn('[OcenFin] Verschieben-Fehler', e); }
+      if (!res.ok) console.warn('[OcenFin] move failed', res.status);
+    } catch (e) { console.warn('[OcenFin] move error', e); }
   }
   async function removePlaylistItem(item) {
     if (!currentCollection || !item?.PlaylistItemId) return;
@@ -1590,8 +1593,8 @@
     try {
       const res = await fetch(`${serverUrl}/Playlists/${currentCollection.Id}/Items?EntryIds=${item.PlaylistItemId}`,
         { method: 'DELETE', headers: getAuthHeaders() });
-      if (!res.ok) console.warn('[OcenFin] Entfernen fehlgeschlagen', res.status);
-    } catch (e) { console.warn('[OcenFin] Entfernen-Fehler', e); }
+      if (!res.ok) console.warn('[OcenFin] remove failed', res.status);
+    } catch (e) { console.warn('[OcenFin] remove error', e); }
   }
   // Ganze Wiedergabeliste löschen (Inline-Sicherheitsabfrage im Bearbeiten-Modus).
   let confirmDeletePlaylist = false;
@@ -1600,8 +1603,8 @@
     const id = currentCollection.Id;
     try {
       const res = await fetch(`${serverUrl}/Items/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
-      if (!res.ok) { console.warn('[OcenFin] Playlist löschen fehlgeschlagen', res.status); return; }
-    } catch (e) { console.warn('[OcenFin] Playlist-Löschen-Fehler', e); return; }
+      if (!res.ok) { console.warn('[OcenFin] playlist delete failed', res.status); return; }
+    } catch (e) { console.warn('[OcenFin] playlist delete error', e); return; }
     currentItems          = currentItems.filter(i => i.Id !== id);   // sofort aus dem Grid
     confirmDeletePlaylist = false;
     playlistEditMode      = false;
@@ -1641,8 +1644,8 @@
       const res = await fetch(`${serverUrl}/Playlists/${id}`, {
         method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ Name: name })
       });
-      if (!res.ok) { console.warn('[OcenFin] Umbenennen fehlgeschlagen', res.status); renameError = true; return; }
-    } catch (e) { console.warn('[OcenFin] Umbenennen-Fehler', e); renameError = true; return; }
+      if (!res.ok) { console.warn('[OcenFin] rename failed', res.status); renameError = true; return; }
+    } catch (e) { console.warn('[OcenFin] rename error', e); renameError = true; return; }
     // Lokal sofort spiegeln (Titel, Übersichts-Kachel, Sidebar)
     currentCollectionName = name;
     currentCollection     = { ...currentCollection, Name: name };
@@ -1687,9 +1690,9 @@
       ]);
       const content = contentRes.ok ? ((await contentRes.json()).Items || []) : [];
       const persons = personRes.ok  ? ((await personRes.json()).Items  || []).map(p => ({ ...p, Type: 'Person' })) : [];
-      dlog('[OcenFin] Favoriten:', content.length, 'Titel,', persons.length, 'Personen');
+      dlog('[OcenFin] favorites:', content.length, 'titles,', persons.length, 'persons');
       favoriteItems = [...content, ...persons];
-    } catch (e) { dlog('[OcenFin] Favoriten-Fehler:', e?.message); }
+    } catch (e) { dlog('[OcenFin] favorites error:', e?.message); }
     finally { isLoadingFavorites = false; }
     await tick();
     const card = favoritesGrid?.querySelector('button');
@@ -1730,7 +1733,7 @@
     try {
       await fetch(`${serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${currentPerson.Id}`,
         { method: next ? 'POST' : 'DELETE', headers: getAuthHeaders() });
-    } catch { currentPersonFav = !next; }
+    } catch (e) { console.warn('[OcenFin] person favorite failed, rolled back:', e); currentPersonFav = !next; }
   }
 
   // Filmografie nach Typ gruppieren (nur Filme / Serien). Folgen werden bewusst weggelassen –

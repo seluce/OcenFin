@@ -404,25 +404,34 @@ export function getTvDeviceInfo() {
   return new Promise((resolve) => {
     try {
       const w = typeof window !== 'undefined' ? window : null;
-      if (!w || !w.webOS || typeof w.webOS.deviceInfo !== 'function') { resolve({ available: false }); return; }
+      if (!w || !w.webOS || typeof w.webOS.deviceInfo !== 'function') {
+        dlog('[DeviceInfo] webOS.deviceInfo unavailable (browser / no webOS)');
+        resolve({ available: false }); return;
+      }
       let done = false;
       const finish = (info) => { if (!done) { done = true; resolve(info); } };
-      w.webOS.deviceInfo((d) => finish({
-        available: true,
-        modelName:   d?.modelName || null,
-        webosMajor:  (typeof d?.versionMajor === 'number') ? d.versionMajor : null,
-        screenWidth: d?.screenWidth || null,
-        screenHeight:d?.screenHeight || null,
-        uhd:         d?.uhd,
-        uhd8K:       d?.uhd8K,
-        oled:        d?.oled,
-        hdr10:       d?.hdr10,
-        dolbyVision: d?.dolbyVision,
-        dolbyAtmos:  d?.dolbyAtmos,
-      }));
+      w.webOS.deviceInfo((d) => {
+        dlog('[DeviceInfo] detected:', { modelName: d?.modelName, webos: d?.versionMajor, uhd: d?.uhd, oled: d?.oled, hdr10: d?.hdr10, dolbyVision: d?.dolbyVision, dolbyAtmos: d?.dolbyAtmos });
+        finish({
+          available: true,
+          modelName:   d?.modelName || null,
+          webosMajor:  (typeof d?.versionMajor === 'number') ? d.versionMajor : null,
+          screenWidth: d?.screenWidth || null,
+          screenHeight:d?.screenHeight || null,
+          uhd:         d?.uhd,
+          uhd8K:       d?.uhd8K,
+          oled:        d?.oled,
+          hdr10:       d?.hdr10,
+          dolbyVision: d?.dolbyVision,
+          dolbyAtmos:  d?.dolbyAtmos,
+        });
+      });
       // Manche Firmware ruft den Callback nicht → nach 2 s aufgeben.
-      setTimeout(() => finish({ available: false }), 2000);
-    } catch { resolve({ available: false }); }
+      setTimeout(() => {
+        if (!done) console.warn('[DeviceInfo] no response from webOS.deviceInfo after 2 s — panel detection degraded');
+        finish({ available: false });
+      }, 2000);
+    } catch (e) { console.warn('[DeviceInfo] error:', e); resolve({ available: false }); }
   });
 }
 

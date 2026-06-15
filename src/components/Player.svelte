@@ -124,13 +124,13 @@
     // MediaError-Code hilft bei der Diagnose: 3 = DECODE (Codec/Decoder),
     // 4 = SRC_NOT_SUPPORTED (Format/Container), 2 = NETWORK.
     const err = videoElement?.error;
-    console.error('[OcenFin] <video> Fehler:', { code: err?.code, message: err?.message, playMethod });
+    console.error('[OcenFin] <video> error:', { code: err?.code, message: err?.message, playMethod });
     // Direct Play am Gerät gescheitert (z.B. MKV-Demux/Audio nicht abspielbar) →
     // EINMALIG auf Transcode zurückfallen, statt sofort die Fehlerseite zu zeigen.
     // Genau dieses "erst Direct Play versuchen, dann transkodieren" machen LiteFin/Breezefin.
     if (playMethod !== 'Transcode' && !triedTranscodeFallback) {
       triedTranscodeFallback = true;
-      console.warn('[OcenFin] Direct Play fehlgeschlagen → erzwinge Transcode-Fallback');
+      console.warn('[OcenFin] Direct Play failed → forcing transcode fallback');
       clearBufferWatchdog();
       isBuffering = true; playbackError = false;
       setupPlayback(selectedAudioIndex, selectedSubtitleIndex, true);
@@ -207,7 +207,7 @@
     // Transcode-Streams starten nach (Neu-)Laden ungewollt automatisch. Wenn die Gruppe pausiert ist
     // und kein echter Nutzer-Play vorliegt → wieder anhalten, nicht an die Gruppe melden.
     if (_groupWantsPaused && (Date.now() - _userPlayIntent) > 1500) {
-      dlog('[SyncPlay] Auto-Play unterdrückt (Gruppe pausiert)');
+      dlog('[SyncPlay] auto-play suppressed (group paused)');
       syncSuppressUntil = Date.now() + 600;
       videoElement?.pause();
       return;
@@ -252,7 +252,7 @@
     const when  = cmd.When ? new Date(cmd.When).getTime() : Date.now();
     const delay = Math.max(0, when - Date.now());
     syncSuppressUntil = Date.now() + delay + 600;   // Backstop für Play/Pause-Folge-Events
-    dlog('[SyncPlay] ← anwenden', command, 'pos', Math.round(pos), 'in', delay, 'ms');
+    dlog('[SyncPlay] ← apply', command, 'pos', Math.round(pos), 'in', delay, 'ms');
     if (command === 'Seek') {
       _expectSeekEcho = true; videoElement.currentTime = pos; currentTime = pos;
     } else if (command === 'Pause') {
@@ -278,7 +278,7 @@
     if (!c || c._seq === _appliedRemoteSeq) return;
     _appliedRemoteSeq = c._seq;
     const cmd = (c.command || '').toString().toLowerCase();
-    dlog('[OcenFin] Admin-Fernsteuerung:', cmd);
+    dlog('[OcenFin] admin remote:', cmd);
     if (cmd === 'pause') videoElement?.pause();
     else if (cmd === 'unpause') videoElement?.play().catch(() => {});
     else if (cmd === 'playpause') togglePlay();
@@ -464,12 +464,12 @@
       // Als warn → landet immer im Log-Puffer, auch ohne Debug-Modus.
       if (resolved.method === 'Transcode') {
         const reasons = ms?.TranscodeReasons;
-        console.warn('[OcenFin] Transcode —', (Array.isArray(reasons) && reasons.length) ? reasons.join(', ') : 'Grund nicht gemeldet');
+        console.warn('[OcenFin] Transcode —', (Array.isArray(reasons) && reasons.length) ? reasons.join(', ') : 'reason not reported');
       }
       await attachSource(resolved.url, resolved.isHls);
       applySubtitleOverlay(subtitleIndex, ms);
     } catch (e) {
-      console.error('PlaybackInfo fehlgeschlagen, Fallback auf Direct Play:', e);
+      console.error('PlaybackInfo failed, falling back to Direct Play:', e);
       playMethod = 'DirectPlay';
       const url = `${serverUrl}/Videos/${item.Id}/stream?static=true&ApiKey=${activeToken}` +
                   (audioIndex !== -1 ? `&AudioStreamIndex=${audioIndex}` : '');
@@ -493,7 +493,7 @@
           hls.attachMedia(videoElement);
           hls.on(Hls.Events.ERROR, (_e, data) => {
             // Ausführliche Diagnose: Typ, Detail, Codec-Hinweis, HTTP-Status
-            console.error('[OcenFin] hls.js Fehler:', {
+            console.error('[OcenFin] hls.js error:', {
               type: data?.type, details: data?.details, fatal: data?.fatal,
               reason: data?.reason || data?.err?.message,
               httpStatus: data?.response?.code, url: data?.url,
@@ -504,7 +504,7 @@
           videoElement.src = url;   // letzter Versuch nativ
         }
       } catch (err) {
-        console.error('hls.js konnte nicht geladen werden:', err);
+        console.error('hls.js could not be loaded:', err);
         videoElement.src = url;
       }
     } else {
@@ -600,7 +600,7 @@
     try {
       if (assRenderer) {                       // weicher Spurwechsel (z.B. eng → deu)
         assRenderer.setTrackByUrl(url);
-        dlog('[OcenFin] ASS-Spurwechsel via JASSUB:', stream.Index);
+        dlog('[OcenFin] ASS track switch via JASSUB:', stream.Index);
         return;
       }
       assRenderer = new JASSUB({
@@ -610,8 +610,8 @@
         wasmUrl: jassubWasmUrl,
         fonts: attachmentFontUrls(ms),         // eingebettete MKV-Schriften → Layout originalgetreu
       });
-      dlog('[OcenFin] ASS-Untertitel via JASSUB:', stream.Index, stream.Codec);
-    } catch (e) { dlog('[OcenFin] JASSUB-Fehler:', e?.message); disposeAss(); }
+      dlog('[OcenFin] ASS subtitle via JASSUB:', stream.Index, stream.Codec);
+    } catch (e) { dlog('[OcenFin] JASSUB error:', e?.message); disposeAss(); }
   }
   // Eingebettete Schriften (MKV-Attachments) als URLs fürs JASSUB-fonts-Array.
   function attachmentFontUrls(ms) {
@@ -632,7 +632,7 @@
   function applyGraphicSubtitle(stream, ms) {
     if (!videoElement) return;
     const url = graphicSubtitleUrl({ serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: activeToken });
-    if (!url) { disposeGraphic(); dlog('[OcenFin] Bild-Untertitel nicht abrufbar (Server liefert ihn nicht extern):', stream.Index); return; }
+    if (!url) { disposeGraphic(); dlog('[OcenFin] image subtitle not available (server does not provide it externally):', stream.Index); return; }
     // Wechsel ohne Lücke: den NEUEN Renderer aufbauen, aber den alten erst entsorgen, wenn der
     // neue fertig geparst ist ('loaded'). So bleibt der bisherige Untertitel sichtbar, bis der
     // nächste bereit ist – kein Leer-Loch während der ~1–2 s Parsezeit. Noch nicht fertige
@@ -651,14 +651,14 @@
       displaySettings: { scale: graphicSubScale(), aspectMode: 'contain' },
       // libbitsub-Warnungen (z. B. WORKER_FALLBACK: Worker kann das WASM im Inline-Setup nicht laden,
       // Parsing läuft im Haupt-Thread) über unser gated dlog leiten → standardmäßig still im Log.
-      onWarning: (w) => dlog('[OcenFin] libbitsub-Hinweis:', w?.code || w?.message || w),
+      onWarning: (w) => dlog('[OcenFin] libbitsub notice:', w?.code || w?.message || w),
       onError: (e) => {
-        dlog('[OcenFin] libbitsub-Fehler:', e?.code || '', e?.message || e);
+        dlog('[OcenFin] libbitsub error:', e?.code || '', e?.message || e);
         if (created && created === pendingRenderer) { try { created.dispose(); } catch {} pendingRenderer = null; }
       },
       onEvent: (ev) => {
-        if (ev?.type === 'renderer-change') dlog('[OcenFin] libbitsub Backend:', ev.renderer);
-        else if (ev?.type === 'loaded') { dlog('[OcenFin] libbitsub geladen:', ev.format, 'cues=' + (ev.metadata?.cueCount ?? '?')); swapIn(); }
+        if (ev?.type === 'renderer-change') dlog('[OcenFin] libbitsub backend:', ev.renderer);
+        else if (ev?.type === 'loaded') { dlog('[OcenFin] libbitsub loaded:', ev.format, 'cues=' + (ev.metadata?.cueCount ?? '?')); swapIn(); }
       },
     };
     try {
@@ -669,8 +669,8 @@
       pendingRenderer = created;
       // Gibt es kein Altbild, wird das neue Overlay schlicht sichtbar, sobald es geladen ist.
       if (!graphicRenderer) { graphicRenderer = created; pendingRenderer = null; }
-      dlog('[OcenFin] Bild-Untertitel via libbitsub:', stream.Index, stream.Codec);
-    } catch (e) { dlog('[OcenFin] libbitsub-Renderer-Fehler:', e?.message); pendingRenderer = null; }
+      dlog('[OcenFin] image subtitle via libbitsub:', stream.Index, stream.Codec);
+    } catch (e) { dlog('[OcenFin] libbitsub renderer error:', e?.message); pendingRenderer = null; }
   }
   function disposeGraphic() {
     if (pendingRenderer) { try { pendingRenderer.dispose(); } catch {} pendingRenderer = null; }
@@ -728,8 +728,8 @@
       const text = await res.text();
       if (myToken !== subtitleFetchToken) return;
       subtitleCues = parseVtt(text);
-      dlog('[OcenFin] Untertitel geladen:', subtitleCues.length, 'Cues');
-    } catch (e) { dlog('[OcenFin] Untertitel-Fetch-Fehler:', e?.message); }
+      dlog('[OcenFin] subtitles loaded:', subtitleCues.length, 'cues');
+    } catch (e) { dlog('[OcenFin] subtitle fetch error:', e?.message); }
   }
 
   // Intro Skipper / Media Segments
@@ -964,16 +964,16 @@
       const res = await fetch(`${serverUrl}/MediaSegments/${item.Id}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const segs = (await res.json()).Items || [];
-        dlog('[OcenFin] Media-Segments:', segs.map(s => s.Type));
+        dlog('[OcenFin] media segments:', segs.map(s => s.Type));
         const d = segs.length ? segmentsToIntroData(segs) : null;
         if (d) {
-          dlog('[OcenFin] Media-Segments → Intro', d.Introduction.Valid, '| Outro', d.Credits.Valid);
+          dlog('[OcenFin] media segments → intro', d.Introduction.Valid, '| outro', d.Credits.Valid);
           introData = d; return;
         }
       } else {
-        dlog('[OcenFin] Media-Segments HTTP', res.status);   // z. B. 404 = Endpunkt fehlt, 401 = Auth
+        dlog('[OcenFin] media segments HTTP', res.status);   // z. B. 404 = Endpunkt fehlt, 401 = Auth
       }
-    } catch (e) { dlog('[OcenFin] Media-Segments Fehler:', e?.message); }
+    } catch (e) { dlog('[OcenFin] media segments error:', e?.message); }
     // 2) Ältere ConfusedPolarBear-Plugin-API. Manche Versionen liefern das Intro flach
     //    ({ Valid, IntroStart, … }), andere als { Introduction, Credits } → beide Formen abfangen.
     try {
@@ -986,9 +986,9 @@
       } else {
         dlog('[OcenFin] IntroTimestamps/v1 HTTP', res.status);
       }
-    } catch (e) { dlog('[OcenFin] IntroTimestamps/v1 Fehler:', e?.message); }
+    } catch (e) { dlog('[OcenFin] IntroTimestamps/v1 error:', e?.message); }
     // 3) Kein Plugin-Treffer → Kapitel-Fallback (greift reaktiv, sobald Kapitel geladen sind)
-    dlog('[OcenFin] Keine Media-Segments/Plugin-Daten → Kapitel-Fallback');
+    dlog('[OcenFin] no media segments / plugin data → chapter fallback');
     segmentsChecked = true;
   }
 
