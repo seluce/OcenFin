@@ -50,12 +50,21 @@ function cy(r) { return r.top + r.height / 2; }
 //  3) Rückfall: irgendetwas in der Halbebene (stark nach Querversatz bestraft).
 function pickGeometric(dir, from, candidates, exclude, strictRow = false) {
   const fX = cx(from), fY = cy(from);
+  // Horizontale Sprungleiste (z.B. A-Z) ist nur per Links/Rechts erreichbar. Steht der Fokus
+  // außerhalb, werden ihre Buttons bei Hoch/Runter ignoriert — so springt es nicht seitlich
+  // zur A-Z-Leiste, wenn die nächste Grid-Reihe noch lädt. Innerhalb der Leiste bleibt Hoch/
+  // Runter normal (Buchstabennavigation).
+  const fromHbar = exclude ? exclude.closest('[data-hbar]') : null;
   let overlap = null, oS = Infinity;
   let cone = null, cS = Infinity;
   let fall = null, fS = Infinity;
 
   for (const el of candidates) {
     if (el === exclude) continue;
+    if (dir === 'ArrowUp' || dir === 'ArrowDown') {
+      const elHbar = el.closest('[data-hbar]');
+      if (elHbar && elHbar !== fromHbar) continue;
+    }
     const r = rectOf(el);
     const mX = cx(r), mY = cy(r);
     let along, perp, valid, ov, align;
@@ -186,7 +195,17 @@ export function createFocusManager(isEnabled) {
 
     // 1) Innerhalb der aktuellen Gruppe / des Modals
     if (scope) {
-      const within = pickGeometric(e.key, from, focusablesIn(scope), active, true);
+      let within = pickGeometric(e.key, from, focusablesIn(scope), active, true);
+      // Eintritt von außen IN eine Sprungleiste (per Links/Rechts): direkt auf das aktuell
+      // markierte Element (data-hbar-current, z.B. der ausgewählte Buchstabe) springen statt
+      // auf das geometrisch nächste. Innerhalb der Leiste bleibt die Navigation normal.
+      if (within && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        const bar = within.closest('[data-hbar]');
+        if (bar && !bar.contains(active)) {
+          const cur = bar.querySelector('[data-hbar-current]');
+          if (cur && isVisible(cur)) within = cur;
+        }
+      }
       if (within) { e.preventDefault(); focusEl(within); return; }
       if (trap) { e.preventDefault(); return; }   // Modal nicht verlassen
     }

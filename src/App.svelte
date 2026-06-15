@@ -567,7 +567,7 @@
   ];
   // Cache nur für die Standardansicht (Name aufsteigend) — andere Sortierungen
   // bypassen den Cache wie Filter. A-Z-Leiste ergibt nur bei Namenssortierung Sinn.
-  $: isDefaultSort = currentSort.by === 'SortName' && currentSort.order === 'Ascending';
+  $: showLetterBar = currentSort.by === 'SortName';   // A-Z-Leiste: bei Namenssortierung in beiden Richtungen sinnvoll
 
   // Synchrone Variante für loadLibraryItems: die reaktive `hasFilters` wird erst
   // im nächsten Tick aktualisiert — beim sofortigen Aufruf nach toggleFilter wäre
@@ -718,6 +718,11 @@
     // Netzwerkstatus überwachen (Banner bei Verbindungsverlust)
     window.addEventListener('offline', () => connectionLost.set(true));
     window.addEventListener('online',  () => connectionLost.set(false));
+    // webOS-Screensaver/Overlay: kehrt die App danach in den sichtbaren Zustand zurück, schließen
+    // wir unseren eigenen Screensaver gleich mit → kein doppelter Tastendruck (LG zuerst, dann wir).
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && showScreensaver) resetActivity();
+    });
 
     try {
       // Auto-Login via gespeicherter Session
@@ -1410,6 +1415,16 @@
     loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, currentLetter || null);
   }
 
+  // Buchstabensprung als Server-Filter. Aufsteigend: ab Buchstabe aufwärts. Absteigend: ab
+  // Buchstabe abwärts → Namen unterhalb des nächsten Buchstabens (G→"H"), sodass alle G-Titel
+  // enthalten sind und die Liste absteigend bei G beginnt. (Vergleich ist case-insensitiv.)
+  function letterFilter() {
+    if (!currentLetter) return '';
+    if (currentSort.order === 'Ascending') return `&NameStartsWithOrGreater=${currentLetter}`;
+    const next = String.fromCharCode(currentLetter.charCodeAt(0) + 1);   // 'A'→'B' … 'Z'→'['
+    return `&NameLessThan=${encodeURIComponent(next)}`;
+  }
+
   async function loadLibraryItems(library, letter = null) {
     if (currentLibraryId !== library.Id) {
       activeFilters  = { isFavorite: false, isPlayed: false, isNotPlayed: false };
@@ -1445,7 +1460,7 @@
     currentItems = [];
 
     let url = `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${library.Id}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=0`;
-    if (currentLetter) url += `&NameStartsWithOrGreater=${currentLetter}`;
+    url += letterFilter();
     url += getFilterQuery();
 
     try {
@@ -1708,7 +1723,7 @@
     if (isFetchingMore || currentItems.length >= totalLibraryItems || !currentLibraryId) return;
     isFetchingMore = true;
     let url = `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${currentItems.length}`;
-    if (currentLetter) url += `&NameStartsWithOrGreater=${currentLetter}`;
+    url += letterFilter();
     url += getFilterQuery();
     try {
       const res = await fetch(url, { headers: getAuthHeaders() });
@@ -2560,12 +2575,13 @@
             </div>
 
             <!-- A-Z (nur bei Namenssortierung sinnvoll) -->
-            {#if isDefaultSort}
-            <div class="w-16 shrink-0 bg-gradient-to-l from-gray-950/85 via-gray-950/55 to-transparent backdrop-blur-sm flex flex-col items-center justify-between py-6 overflow-y-auto hide-scrollbar z-10">
+            {#if showLetterBar}
+            <div data-hbar class="w-16 shrink-0 bg-gradient-to-l from-gray-950/85 via-gray-950/55 to-transparent backdrop-blur-sm flex flex-col items-center justify-between py-6 overflow-y-auto hide-scrollbar z-10">
               {#each alphabet as letter}
                 <button
                   on:click={() => { showJumpLetter(letter); loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, letter); }}
                   on:focus={() => showJumpLetter(letter)}
+                  data-hbar-current={activeLetter === letter ? '' : null}
                   class="w-10 h-10 flex items-center justify-center rounded-full text-sm font-bold drop-shadow
                          focus:outline-none focus:ring-4 focus:ring-white transition-all transform focus:scale-125
                          {activeLetter === letter ? 'text-white bg-blue-600 shadow-lg scale-110' : 'text-gray-300/80 hover:text-white hover:bg-white/10'}"
