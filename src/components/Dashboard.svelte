@@ -202,11 +202,22 @@
     const seenSeries = new Set();
     const out = [];
     for (const it of items) {
+      let entry = it;
       if (it.Type === 'Episode' && it.SeriesId) {
         if (seenSeries.has(it.SeriesId)) continue;
         seenSeries.add(it.SeriesId);
+        // Verlauf: die Serie als EIN Eintrag zeigen (nicht die einzelne Folge). "Weiterschauen"
+        // deckt die konkrete Folge schon ab; hier zählt nur, welche Serie zuletzt lief.
+        entry = {
+          Id: it.SeriesId,
+          Name: it.SeriesName,
+          Type: 'Series',
+          ImageTags: it.SeriesPrimaryImageTag ? { Primary: it.SeriesPrimaryImageTag } : undefined,
+          PrimaryImageAspectRatio: 0.6667,
+          ImageBlurHashes: it.ImageBlurHashes,
+        };
       }
-      out.push(it);
+      out.push(entry);
       if (out.length >= 16) break;
     }
     return out;
