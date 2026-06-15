@@ -487,11 +487,13 @@
 
 <div class="flex h-full">
 
-  <!-- LINKS: Kategorie-Navigation -->
-  <nav class="w-72 shrink-0 bg-gray-900/60 border-r border-gray-800 p-6 pt-16 flex flex-col gap-2 overflow-y-auto hide-scrollbar">
+  <!-- LINKS: Kategorie-Navigation. data-hbar: per Links/Rechts betreten, Hoch/Runter bewegt sich
+       innerhalb; beim Eintritt von rechts landet der Fokus auf der aktiven Kategorie (data-hbar-current). -->
+  <nav data-hbar class="w-72 shrink-0 bg-gray-900/60 border-r border-gray-800 p-6 pt-16 flex flex-col gap-2 overflow-y-auto hide-scrollbar">
     <h1 class="text-3xl font-bold text-white mb-4 ml-2">{$t.settings}</h1>
     {#each categories as cat}
       <button on:click={() => activeCategory = cat.id}
+        data-hbar-current={activeCategory === cat.id ? '' : null}
         class="flex items-center gap-4 px-4 py-4 rounded-xl text-left font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                {activeCategory === cat.id ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800 focus:bg-gray-800'}">
         <svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
