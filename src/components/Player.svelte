@@ -103,14 +103,24 @@
   }
   function clearBufferWatchdog() { clearTimeout(bufferWatchdog); bufferWatchdog = null; }
 
+  // Mini-Aussetzer (< ~300 ms) sollen den Spinner nicht aufblitzen lassen → verzögert einblenden.
+  let spinnerTimer = null;
+  function clearSpinner() { if (spinnerTimer) { clearTimeout(spinnerTimer); spinnerTimer = null; } }
+
   function onPlayable() {            // canplay / playing
+    clearSpinner();
     isBuffering = false;
     playbackError = false;
     clearBufferWatchdog();
   }
   function onWaiting() {             // waiting / stalled
-    isBuffering = true;
+    if (videoElement?.paused) return;   // pausiert ist KEIN Puffern → kein Spinner
     armBufferWatchdog();
+    if (isBuffering || spinnerTimer) return;
+    spinnerTimer = setTimeout(() => {
+      spinnerTimer = null;
+      if (!videoElement?.paused) isBuffering = true;
+    }, 300);
   }
   // Diagnose-Logger für <video>-Lebenszyklus-Events
   function vlog(ev, extra) {
@@ -118,6 +128,7 @@
   }
   // Läuft die Zeit, läuft die Wiedergabe → Pufferzustand sicher aufheben.
   function onProgressTick() {
+    clearSpinner();
     if (isBuffering) { isBuffering = false; clearBufferWatchdog(); }
   }
   function onVideoError() {
@@ -488,7 +499,9 @@
       try {
         const Hls = (await import('hls.js')).default;
         if (Hls.isSupported()) {
-          hls = new Hls({ maxBufferLength: 30, enableWorker: true, backBufferLength: 30 });
+          // Mehr Vorauspuffer (60 s, bis 120 s bei freiem Netz) → robuster gegen Aussetzer auf
+          // langsamem Netz/Server. backBufferLength klein halten (Speicher am TV schonen).
+          hls = new Hls({ maxBufferLength: 60, maxMaxBufferLength: 120, enableWorker: true, backBufferLength: 30 });
           hls.loadSource(url);
           hls.attachMedia(videoElement);
           hls.on(Hls.Events.ERROR, (_e, data) => {
@@ -1372,10 +1385,11 @@
 
   <video
     bind:this={videoElement}
+    preload="auto"
     class="w-full h-full object-contain"
     on:play={() => { vlog('play'); isPlaying = true; onPlayable(); onLocalPlay(); }}
     on:playing={() => { vlog('playing'); onPlayable(); syncReportReady(); }}
-    on:pause={() => { isPlaying = false; isBuffering = false; clearBufferWatchdog(); onLocalPause(); }}
+    on:pause={() => { isPlaying = false; clearSpinner(); isBuffering = false; clearBufferWatchdog(); onLocalPause(); }}
     on:seeked={onLocalSeeked}
     on:seeking={syncReportBuffering}
     on:waiting={() => { vlog('waiting'); onWaiting(); syncReportBuffering(); }}
