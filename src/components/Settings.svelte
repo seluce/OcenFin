@@ -80,6 +80,7 @@
   );
 
   let activeModal  = null;
+  let modalReturnFocus = null;   // Auslöser-Button, auf den der Fokus nach dem Schließen zurückkehrt
   let currentPw    = '';
   let newPw        = '';
   let pwMessage    = '';
@@ -107,6 +108,7 @@
   const getAuthHeaders = () => authHeaders(activeToken);
 
   async function openModal(name) {
+    modalReturnFocus = document.activeElement;
     pwMessage = ''; qcMessage = '';
     currentPw = ''; newPw = ''; qcCode = '';
     if (modalTimeout) clearTimeout(modalTimeout);
@@ -218,7 +220,7 @@
   let logText = '';
   let qrDataUrl = null;
   let qrBtnEl;   // für Fokus-Rückgabe beim Verlassen der QR-Ansicht
-  function openLog()  { logText = formatLog(); qrDataUrl = null; showLog = true; }
+  function openLog()  { modalReturnFocus = document.activeElement; logText = formatLog(); qrDataUrl = null; showLog = true; }
   function clearLog() { clearLogBuffer(); logText = formatLog(); qrDataUrl = null; }
   function hideQr()   { qrDataUrl = null; tick().then(() => qrBtnEl?.focus()); }
   async function showLogQr() {
@@ -366,6 +368,15 @@
   }
   $: if (activeCategory !== 'security' && avatarModalOpen) avatarModalOpen = false;
 
+  // Nach dem Schließen eines Modals (egal welches/wie) den Fokus auf den auslösenden Button zurücklegen.
+  $: {
+    const anyModalOpen = !!activeModal || avatarModalOpen || showLog;
+    if (!anyModalOpen && modalReturnFocus) {
+      const el = modalReturnFocus; modalReturnFocus = null;
+      tick().then(() => el?.focus());
+    }
+  }
+
   // Zuletzt gesehene Filme/Serien als Avatar-Vorschläge holen: neueste zuerst, Episoden → Serie,
   // dedupliziert, max. so viele wie es Symbole gibt. Bei jedem Öffnen frisch (aktuelle Reihenfolge).
   async function loadRecentTitles() {
@@ -401,7 +412,7 @@
       avatarTab = recentTitles.length ? 'recent' : 'symbols';   // Neu-Nutzer ohne Historie → Symbole
     }
   }
-  function openAvatarModal() { avatarModalOpen = true; loadRecentTitles(); }
+  function openAvatarModal() { modalReturnFocus = document.activeElement; avatarModalOpen = true; loadRecentTitles(); }
 
   async function saveProfileImage() {
     if (avatarSaving) return;
@@ -508,8 +519,9 @@
     </div>
   </nav>
 
-  <!-- RECHTS: Inhalt der aktiven Kategorie -->
-  <div class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16">
+  <!-- RECHTS: Inhalt der aktiven Kategorie. data-enter-top: beim Wechsel von links startet der
+       Fokus immer am obersten Element der jeweiligen Kategorie, nicht geometrisch in der Mitte. -->
+  <div data-enter-top class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16">
     <div class="max-w-4xl flex flex-col gap-10 pb-32">
     <!-- ══════════════════════════════════════════
          1. DARSTELLUNG

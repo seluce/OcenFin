@@ -209,6 +209,13 @@ export function createFocusManager(isEnabled) {
           const cur = bar.querySelector('[data-hbar-current]');
           if (cur && isVisible(cur)) within = cur;
         }
+        // Betritt man einen "oben-anfangen"-Bereich (z.B. den Einstellungs-Detailbereich) von
+        // außen, immer auf dessen oberstes fokussierbares Element statt geometrisch in die Mitte.
+        const top = within.closest('[data-enter-top]');
+        if (top && !top.contains(active)) {
+          const first = focusablesIn(top)[0];
+          if (first) within = first;
+        }
       }
       if (within) { e.preventDefault(); focusEl(within); return; }
       if (trap) { e.preventDefault(); return; }   // Modal nicht verlassen

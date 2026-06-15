@@ -555,6 +555,13 @@
 
   // Sortierung
   let showSortMenu = false;
+  let sortFilterReturn = null;   // Auslöser-Button für Fokus-Rückgabe nach Schließen
+  // Fokus nach dem Schließen von Sortieren/Filtern zurück auf den auslösenden Button.
+  $: if (!showSortMenu && !showFilterMenu && sortFilterReturn) {
+    const el = sortFilterReturn; sortFilterReturn = null;
+    tick().then(() => el?.focus());
+  }
+
   let showExitConfirm = false;   // Bestätigungsdialog "App verlassen?" (Zurück am Dashboard)
   let currentSort  = { by: 'SortName', order: 'Ascending' };
   let librarySorts = {};   // pro Bibliothek gemerkte Sortierung (im Profil gespeichert)
@@ -2479,7 +2486,7 @@
                     {$t.shuffle}
                   </button>
                   <!-- Sortierung -->
-                  <button on:click={() => showSortMenu = true}
+                  <button on:click={(e) => { sortFilterReturn = e.currentTarget; showSortMenu = true; }}
                     class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
                            focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105"
                     title={$t.sortBy}>
@@ -2489,7 +2496,7 @@
                     {$t.sortBy}
                   </button>
                   <!-- Filter -->
-                  <button on:click={() => showFilterMenu = true}
+                  <button on:click={(e) => { sortFilterReturn = e.currentTarget; showFilterMenu = true; }}
                     class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
                            focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -3059,7 +3066,7 @@
     <div class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full max-w-xl flex flex-col gap-4 shadow-2xl">
       <div class="flex justify-between items-center mb-2">
         <h2 class="text-4xl text-white font-bold">{$t.sortBy}</h2>
-        <button on:click={() => showSortMenu = false}
+        <button on:click={() => showSortMenu = false} use:focusOnMount
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
@@ -3102,7 +3109,7 @@
       <!-- Kopf (fix) -->
       <div class="flex justify-between items-center p-8 pb-4 shrink-0">
         <h2 class="text-4xl text-white font-bold">{$t.filter}</h2>
-        <button on:click={() => showFilterMenu = false}
+        <button on:click={() => showFilterMenu = false} use:focusOnMount
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>

@@ -111,6 +111,13 @@
 
   // Teilen: QR-Code mit öffentlichem Titel-Link (IMDb/TMDb) — jeder kann ihn scannen, kein Serverzugang nötig.
   let showShare = false;
+  let kebabBtnEl;                 // Drei-Punkte-Button (immer im DOM)
+  let shareReturnFocus = null;    // Fokus-Rückgabe nach Schließen des Teilen-Modals
+  // Nach dem Schließen des Teilen-Modals den Fokus zurück auf die drei Punkte legen.
+  $: if (!showShare && shareReturnFocus) {
+    const el = shareReturnFocus; shareReturnFocus = null;
+    tick().then(() => el?.focus());
+  }
   let shareQrUrl = null;
   function buildShareTarget(item) {
     const p = item?.ProviderIds || {};
@@ -121,6 +128,7 @@
     return item?.ProductionYear ? `${item.Name} (${item.ProductionYear})` : (item?.Name || '');
   }
   async function openShare() {
+    shareReturnFocus = kebabBtnEl;
     showShare = true;
     shareQrUrl = null;
     try {
@@ -531,7 +539,7 @@
 
             {#if fullItem.MediaSources?.length > 0}
               <div class="relative" data-dropdown data-focus-trap={openDropdown === 'kebab' || undefined}>
-                <button on:click={(e) => toggleDropdown('kebab', e)} aria-label={$t.more} title={$t.more}
+                <button bind:this={kebabBtnEl} on:click={(e) => toggleDropdown('kebab', e)} aria-label={$t.more} title={$t.more}
                   class="p-4 rounded-xl bg-gray-800 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg">
                   <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
                 </button>
