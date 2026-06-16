@@ -1,6 +1,6 @@
 <script>
   import { currentLang } from '../i18n.js';
-  import { authHeaders } from '../utils.js';
+  import { authHeaders, serverUrl, activeToken } from '../utils.js';
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
 
   const dispatch = createEventDispatcher();
@@ -9,8 +9,6 @@
   export let mode      = 'clock';         // 'clock' | 'art'
   export let artSource = 'watched';       // 'watched' | 'unwatched' | 'random'
   export let brightness = 0.45;           // Art-Mode-Helligkeit (0.45 gedimmt = OLED-Standard)
-  export let serverUrl = '';
-  export let token     = '';
   export let userId    = '';
 
   let timeString = '', dateString = '';
@@ -49,17 +47,17 @@
   let artReady = false;                       // true → Backdrops anzeigen statt Uhr-Fallback
 
   async function fetchBackdrops(filter) {
-    const url = `${serverUrl}/Users/${userId}/Items?Recursive=true&IncludeItemTypes=Movie,Series`
+    const url = `${$serverUrl}/Users/${userId}/Items?Recursive=true&IncludeItemTypes=Movie,Series`
               + `${filter}&SortBy=Random&Limit=80&Fields=BackdropImageTags&ImageTypeLimit=1`
               + `&EnableImageTypes=Backdrop&EnableTotalRecordCount=false`;
-    const res = await fetch(url, { headers: authHeaders(token) });
+    const res = await fetch(url, { headers: authHeaders($activeToken) });
     if (!res.ok) return [];
     const data = await res.json();
     return (data.Items || [])
       .filter(it => it.BackdropImageTags && it.BackdropImageTags.length)
       .map(it => ({
         id: it.Id,
-        url: `${serverUrl}/Items/${it.Id}/Images/Backdrop/0?tag=${it.BackdropImageTags[0]}&maxWidth=1920&quality=85&ApiKey=${token}`,
+        url: `${$serverUrl}/Items/${it.Id}/Images/Backdrop/0?tag=${it.BackdropImageTags[0]}&maxWidth=1920&quality=85&ApiKey=${$activeToken}`,
         title: it.Name || '',
       }));
   }
@@ -67,22 +65,22 @@
   // Next Up = nächste Folge laufender Serien → für "aktuell". Liefert Episoden; gezeigt wird das
   // SERIEN-Backdrop (über SeriesId + geerbte ParentBackdropImageTags) mit dem Serientitel.
   async function fetchNextUp() {
-    const url = `${serverUrl}/Shows/NextUp?UserId=${userId}&Limit=40&Fields=ParentBackdropImageTags`
+    const url = `${$serverUrl}/Shows/NextUp?UserId=${userId}&Limit=40&Fields=ParentBackdropImageTags`
               + `&ImageTypeLimit=1&EnableImageTypes=Backdrop&EnableTotalRecordCount=false`;
-    const res = await fetch(url, { headers: authHeaders(token) });
+    const res = await fetch(url, { headers: authHeaders($activeToken) });
     if (!res.ok) return [];
     const data = await res.json();
     return (data.Items || [])
       .filter(ep => ep.SeriesId && ep.ParentBackdropImageTags && ep.ParentBackdropImageTags.length)
       .map(ep => ({
         id: ep.SeriesId,
-        url: `${serverUrl}/Items/${ep.SeriesId}/Images/Backdrop/0?tag=${ep.ParentBackdropImageTags[0]}&maxWidth=1920&quality=85&ApiKey=${token}`,
+        url: `${$serverUrl}/Items/${ep.SeriesId}/Images/Backdrop/0?tag=${ep.ParentBackdropImageTags[0]}&maxWidth=1920&quality=85&ApiKey=${$activeToken}`,
         title: ep.SeriesName || ep.Name || '',
       }));
   }
 
   async function loadArt() {
-    if (!serverUrl || !userId || !token) return;
+    if (!$serverUrl || !userId || !$activeToken) return;
     try {
       let list;
       if (artSource === 'watched') {

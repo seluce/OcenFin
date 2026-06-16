@@ -1,11 +1,9 @@
 <script>
   import { currentLang, t, LANGUAGES } from '../i18n.js';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn, uiFade, dropTrapOnOutro } from '../utils.js';
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn, uiFade, dropTrapOnOutro, serverUrl, activeToken } from '../utils.js';
   import { createEventDispatcher, tick, onDestroy, onMount } from 'svelte';
 
-  export let serverUrl;
-  export let activeToken;
   export let selectedUser;
   export let selectedServer;
   export let savedTokens        = {};
@@ -107,7 +105,7 @@
 
   onDestroy(() => { if (modalTimeout) clearTimeout(modalTimeout); });
 
-  const getAuthHeaders = () => authHeaders(activeToken);
+  const getAuthHeaders = () => authHeaders($activeToken);
 
   async function openModal(name) {
     modalFocus.capture();
@@ -175,7 +173,7 @@
   async function changePassword() {
     pwMessage = '';
     try {
-      const res = await fetch(`${serverUrl}/Users/${selectedUser.Id}/Password`, {
+      const res = await fetch(`${$serverUrl}/Users/${selectedUser.Id}/Password`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ Id: selectedUser.Id, CurrentPw: currentPw, NewPw: newPw })
@@ -191,7 +189,7 @@
   async function authorizeQuickConnect() {
     qcMessage = '';
     try {
-      const res = await fetch(`${serverUrl}/QuickConnect/Authorize`, {
+      const res = await fetch(`${$serverUrl}/QuickConnect/Authorize`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ Code: qcCode })
@@ -381,7 +379,7 @@
   async function loadRecentTitles() {
     recentLoading = true;
     try {
-      const base = `${serverUrl}/Users/${selectedUser.Id}/Items?Recursive=true&IncludeItemTypes=Movie,Episode`
+      const base = `${$serverUrl}/Users/${selectedUser.Id}/Items?Recursive=true&IncludeItemTypes=Movie,Episode`
         + `&Fields=SeriesId,SeriesPrimaryImageTag,UserData&EnableImageTypes=Primary&ImageTypeLimit=1`
         + `&SortBy=DatePlayed&SortOrder=Descending&EnableTotalRecordCount=false&Limit=72`;
       const [played, resume] = await Promise.all([
@@ -400,7 +398,7 @@
         list.push({
           id,
           name: isEp ? (it.SeriesName || it.Name) : it.Name,
-          imageUrl: `${serverUrl}/Items/${id}/Images/Primary?tag=${tag}&fillHeight=300&quality=90&ApiKey=${activeToken}`,
+          imageUrl: `${$serverUrl}/Items/${id}/Images/Primary?tag=${tag}&fillHeight=300&quality=90&ApiKey=${$activeToken}`,
         });
         if (list.length >= AVATAR_ICON_KEYS.length) break;
       }
@@ -420,9 +418,9 @@
       const base64 = (avatarTab === 'recent' && avatarPoster)
         ? await renderImageAvatarPng(avatarPoster.imageUrl)
         : await renderAvatarPng(effectiveIcon, effectiveColor);
-      const res = await fetch(`${serverUrl}/Users/${selectedUser.Id}/Images/Primary`, {
+      const res = await fetch(`${$serverUrl}/Users/${selectedUser.Id}/Images/Primary`, {
         method: 'POST',
-        headers: { 'Authorization': `MediaBrowser Token="${activeToken}"`, 'Content-Type': 'image/png' },
+        headers: { 'Authorization': `MediaBrowser Token="${$activeToken}"`, 'Content-Type': 'image/png' },
         body: base64,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1159,7 +1157,7 @@
             {#if hasEditedAvatar && avatarPoster}
               <img src={avatarPoster.imageUrl} alt={avatarPoster.name} class="w-full h-full object-cover" />
             {:else if !hasEditedAvatar && selectedUser?.PrimaryImageTag}
-              <img src="{serverUrl}/Users/{selectedUser.Id}/Images/Primary?tag={selectedUser.PrimaryImageTag}" alt={$t.profilePicture} class="w-full h-full object-cover" />
+              <img src="{$serverUrl}/Users/{selectedUser.Id}/Images/Primary?tag={selectedUser.PrimaryImageTag}" alt={$t.profilePicture} class="w-full h-full object-cover" />
             {:else}
               <svg class="w-11 h-11 text-white" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[effectiveIcon]}/></svg>
             {/if}

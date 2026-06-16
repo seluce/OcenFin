@@ -1,10 +1,8 @@
 <script>
   import { t } from '../i18n.js';
-  import { personImageUrl, authHeaders, blurUp, itemBlurHash } from '../utils.js';
+  import { personImageUrl, authHeaders, blurUp, itemBlurHash, serverUrl, activeToken } from '../utils.js';
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
 
-  export let serverUrl;
-  export let activeToken;
   export let selectedUser;
 
   const dispatch = createEventDispatcher();
@@ -56,7 +54,7 @@
   $: episodes = results.filter(r => r.Type === 'Episode');
   let people  = [];
 
-  const getAuthHeaders = () => authHeaders(activeToken);
+  const getAuthHeaders = () => authHeaders($activeToken);
 
   function onSearchInput() {
     clearTimeout(searchTimeout);
@@ -69,9 +67,9 @@
     try {
       // Titel + Personen parallel suchen
       const [itemsRes, peopleRes] = await Promise.all([
-        fetch(`${serverUrl}/Users/${selectedUser.Id}/Items?searchTerm=${encodeURIComponent(query)}&Recursive=true&IncludeItemTypes=Movie,Series,Episode&Limit=24&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName`,
+        fetch(`${$serverUrl}/Users/${selectedUser.Id}/Items?searchTerm=${encodeURIComponent(query)}&Recursive=true&IncludeItemTypes=Movie,Series,Episode&Limit=24&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName`,
           { headers: getAuthHeaders() }),
-        fetch(`${serverUrl}/Persons?searchTerm=${encodeURIComponent(query)}&Limit=10&userId=${selectedUser.Id}`,
+        fetch(`${$serverUrl}/Persons?searchTerm=${encodeURIComponent(query)}&Limit=10&userId=${selectedUser.Id}`,
           { headers: getAuthHeaders() })
       ]);
       if (itemsRes.ok) results = (await itemsRes.json()).Items || [];
@@ -84,7 +82,7 @@
         const checked = await Promise.all(found.map(async p => {
           try {
             const c = await fetch(
-              `${serverUrl}/Users/${selectedUser.Id}/Items?PersonIds=${p.Id}&Recursive=true&IncludeItemTypes=Movie,Series&Limit=0`,
+              `${$serverUrl}/Users/${selectedUser.Id}/Items?PersonIds=${p.Id}&Recursive=true&IncludeItemTypes=Movie,Series&Limit=0`,
               { headers: getAuthHeaders() }
             );
             return ((await c.json()).TotalRecordCount || 0) > 0 ? p : null;
@@ -101,14 +99,14 @@
   function getItemImageUrl(item, format = 'portrait') {
     if (format === 'landscape') {
       if (item.Type === 'Episode' && item.ImageTags?.Primary)
-        return `${serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
+        return `${$serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
       if (item.BackdropImageTags?.length > 0)
-        return `${serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+        return `${$serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
     }
     if (item.ImageTags?.Primary)
-      return `${serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&quality=80&format=webp`;
+      return `${$serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&quality=80&format=webp`;
     if (item.SeriesPrimaryImageTag)
-      return `${serverUrl}/Items/${item.SeriesId}/Images/Primary?tag=${item.SeriesPrimaryImageTag}&fillHeight=400&quality=80&format=webp`;
+      return `${$serverUrl}/Items/${item.SeriesId}/Images/Primary?tag=${item.SeriesPrimaryImageTag}&fillHeight=400&quality=80&format=webp`;
     return null;
   }
 </script>
@@ -233,8 +231,8 @@
             {#each people as p}
               <button on:click={() => dispatch('openPerson', p)} class="shrink-0 w-40 group focus:outline-none text-center">
                 <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto">
-                  {#if personImageUrl(serverUrl, p)}
-                    <img src={personImageUrl(serverUrl, p)} use:blurUp={itemBlurHash(p)} alt={p.Name} class="w-full h-full object-cover" loading="lazy" />
+                  {#if personImageUrl($serverUrl, p)}
+                    <img src={personImageUrl($serverUrl, p)} use:blurUp={itemBlurHash(p)} alt={p.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}
                     <div class="w-full h-full flex items-center justify-center text-gray-600">
                       <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>

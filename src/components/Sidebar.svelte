@@ -1,10 +1,9 @@
 <script>
   import { t } from '../i18n.js';
-  import { isBackKey, focusOnMount, buildNavEntries, applyNavConfig } from '../utils.js';
+  import { isBackKey, focusOnMount, buildNavEntries, applyNavConfig, serverUrl } from '../utils.js';
   import { createEventDispatcher } from 'svelte';
 
   export let selectedUser;
-  export let serverUrl;
   export let viewState;
   export let activeLibraryId = null;    // Id der aktuell geöffneten Mediathek (für Aktiv-Zustand)
   export let libraries = [];            // echte Mediatheken des Profils (dynamische Einträge)
@@ -39,7 +38,7 @@
 
   function getAvatarUrl(user) {
     if (user?.PrimaryImageTag)
-      return `${serverUrl}/Users/${user.Id}/Images/Primary?tag=${user.PrimaryImageTag}`;
+      return `${$serverUrl}/Users/${user.Id}/Images/Primary?tag=${user.PrimaryImageTag}`;
     return null;
   }
 

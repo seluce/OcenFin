@@ -25,6 +25,12 @@ export function dropTrapOnOutro(e) {
 // App zeigt dann ein Hinweis-Banner. Wird bei Erfolg wieder zurückgesetzt.
 export const connectionLost = writable(false);
 
+// App-weite Quelle der Wahrheit für Server-URL und Zugangstoken. Ersetzt schrittweise das
+// Prop-Drilling durch ~9 Komponenten: App speist diese Stores, Komponenten lesen $serverUrl /
+// $activeToken direkt. Token ändert sich bei Login/Logout/Relaunch → Store propagiert automatisch.
+export const serverUrl = writable('');
+export const activeToken = writable('');
+
 // Fokus-Rückgabe nach dem Schließen eines Modals/Overlays: beim Öffnen den Auslöser merken,
 // beim Schließen dorthin zurückspringen. capture()/restore() (inkl. tick-Timing) sind hier
 // vereinheitlicht; WANN restore() läuft, entscheidet jede Komponente über ihre eigene Reactive,

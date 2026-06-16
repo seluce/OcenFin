@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, itemProgress, connectionLost, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro } from './utils.js';
+  import { isBackKey, focusOnMount, itemProgress, connectionLost, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, serverUrl as serverUrlStore, activeToken as activeTokenStore } from './utils.js';
   import { createFocusManager } from './spatialnav.js';
   import { currentLang, t, detectUiLang } from './i18n.js';
   import Clock       from './components/Clock.svelte';
@@ -93,6 +93,9 @@
 
   // Hilfreich: auf welchen User der aktuelle Server-Token zeigt
   $: serverUrl = selectedServer?.url ?? '';
+  // App-weite Stores speisen (parallel zu den bestehenden Props; Komponenten werden schrittweise umgestellt).
+  $: serverUrlStore.set(serverUrl);
+  $: activeTokenStore.set(activeToken);
   $: isCurrentUserSaved = !!(
     selectedUser && selectedServer &&
     savedTokens[selectedServer.id]?.[selectedUser.Id]
@@ -2413,7 +2416,6 @@
 
       <Sidebar
         {selectedUser}
-        {serverUrl}
         {viewState}
         showLogo={displaySettings.showLogo}
         libraries={navLibraries}
@@ -2432,7 +2434,7 @@
         {#if viewState === 'dashboard'}
           {#key dashboardReloadKey}
           <Dashboard
-            {serverUrl} {selectedUser} {activeToken} {apiCache} {reduceAnimations}
+            {selectedUser} {apiCache} {reduceAnimations}
             showHero={displaySettings.hero}
             showLibraries={displaySettings.libraries}
             showHistory={displaySettings.history}
@@ -2631,13 +2633,13 @@
           </div>
 
         {:else if viewState === 'search'}
-          <Search {serverUrl} {activeToken} {selectedUser}
+          <Search {selectedUser}
             on:openDetails={(e) => showItemDetails(e.detail)}
             on:openPerson={(e) => openPerson(e.detail)} />
 
         {:else if viewState === 'settings'}
           <Settings
-            {serverUrl} {activeToken} {selectedUser} {selectedServer} {savedTokens}
+            {selectedUser} {selectedServer} {savedTokens}
             {screensaverSettings} {reduceAnimations} {displaySettings} {playbackPrefs}
             {serverVersion} {serverVobSub}
             libraries={navLibraries}
@@ -2660,7 +2662,7 @@
         {:else if viewState === 'details' && currentDetailItem}
           <Details
             item={currentDetailItem}
-            {serverUrl} {activeToken} {selectedUser} {reduceAnimations} {playbackPrefs} {use24h} {serverVobSub}
+            {selectedUser} {reduceAnimations} {playbackPrefs} {use24h} {serverVobSub}
             spoilerProtection={displaySettings.spoilerProtection}
             on:close={returnFromDetails}
             on:openItemById={(e) => loadItemById(e.detail)}
@@ -2983,7 +2985,7 @@
       {#key currentDetailItem.Id}
         <Player
           item={currentDetailItem}
-          {serverUrl} {activeToken} {selectedUser} {playbackPrefs} {use24h} {serverVobSub}
+          {selectedUser} {playbackPrefs} {use24h} {serverVobSub}
           showClock={displaySettings.clock}
           showChapters={displaySettings.showChapters}
           seekStep={displaySettings.seekStep}
@@ -3024,7 +3026,6 @@
   {#if contextItem}
     <ContextMenu
       item={contextItem}
-      {serverUrl} {activeToken}
       userId={activeUserId}
       on:close={() => contextItem = null}
       on:changed={onContextChanged}
@@ -3058,7 +3059,7 @@
        SCREENSAVER — oberste Ebene
   ============================================================ -->
   {#if showScreensaver}
-    <Screensaver {use24h} {serverUrl} token={activeToken} userId={activeUserId}
+    <Screensaver {use24h} userId={activeUserId}
       mode={screensaverSettings.mode} artSource={screensaverSettings.artSource} brightness={screensaverSettings.brightness}
       on:dismiss={resetActivity} />
   {/if}

@@ -1,6 +1,6 @@
 <script>
   import { t, currentLang } from '../i18n.js';
-  import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro } from '../utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro, serverUrl, activeToken } from '../utils.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady } from '../syncplay.js';
   import { PgsRenderer, VobSubRenderer } from 'libbitsub';
@@ -14,8 +14,6 @@
   import AddToPicker from './AddToPicker.svelte';
 
   export let item;
-  export let serverUrl;
-  export let activeToken;
   export let selectedAudioIndex;
   export let selectedSubtitleIndex;
   export let mediaSourceId = null;   // gewählte Version (FullHD/4K); null = Server-Standard
@@ -210,7 +208,7 @@
     if (!inSyncGroup || !syncReady) return;
     if (Date.now() < syncSuppressUntil) return;
     dlog('[SyncPlay] →', action, posTicks());
-    sendSyncCommand(serverUrl, activeToken, action, posTicks());
+    sendSyncCommand($serverUrl, $activeToken, action, posTicks());
   }
   // Erster Start in einer Gruppe legt die Queue fest (Server spielt für alle los); spätere Plays = Unpause.
   async function onLocalPlay() {
@@ -228,7 +226,7 @@
     syncQueueSet = true;
     if (syncQueue && syncQueue.itemId === item.Id) { syncReady = true; return; }  // Gruppe spielt dieses Item bereits
     dlog('[SyncPlay] → SetNewQueue', item.Id, posTicks());
-    await setSyncQueue(serverUrl, activeToken, item.Id, posTicks());
+    await setSyncQueue($serverUrl, $activeToken, item.Id, posTicks());
     syncReady = true;
   }
   function onLocalPause() { syncEmit('Pause'); }
@@ -244,14 +242,14 @@
     if (!inSyncGroup || !syncQueue?.playlistItemId || _syncBuffering) return;
     _syncBuffering = true;
     dlog('[SyncPlay] → Buffering', posTicks());
-    sendSyncBuffering(serverUrl, activeToken, posTicks(), true, syncQueue.playlistItemId);
+    sendSyncBuffering($serverUrl, $activeToken, posTicks(), true, syncQueue.playlistItemId);
   }
   function syncReportReady() {
     if (!inSyncGroup || !syncQueue?.playlistItemId) return;
     if (!_syncBuffering && _syncReadySent) return;   // nichts Neues seit dem letzten Ready
     _syncBuffering = false; _syncReadySent = true;
     dlog('[SyncPlay] → Ready', posTicks());
-    sendSyncReady(serverUrl, activeToken, posTicks(), true, syncQueue.playlistItemId);
+    sendSyncReady($serverUrl, $activeToken, posTicks(), true, syncQueue.playlistItemId);
   }
 
   // Empfangenes Gruppen-Kommando anwenden (mit grobem Zeitbezug über "When"; Feinabgleich = Phase 2b).
@@ -397,7 +395,7 @@
     const sheet   = Math.floor(idx / perTile);
     const local   = idx % perTile;
     return {
-      url: `${serverUrl}/Videos/${item.Id}/Trickplay/${width}/${sheet}.jpg?ApiKey=${activeToken}&MediaSourceId=${trickplayMsId}`,
+      url: `${$serverUrl}/Videos/${item.Id}/Trickplay/${width}/${sheet}.jpg?ApiKey=${$activeToken}&MediaSourceId=${trickplayMsId}`,
       x: (local % TileWidth) * Width,
       y: Math.floor(local / TileWidth) * Height,
       w: Width, h: Height,
@@ -421,7 +419,7 @@
       let titleStreams = (item?.MediaStreams?.length ? item.MediaStreams : mediaStreams) || [];
       if (!titleStreams.length && item?.Id) {
         try {
-          const r = await fetch(`${serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaStreams`, { headers: getAuthHeaders() });
+          const r = await fetch(`${$serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaStreams`, { headers: getAuthHeaders() });
           if (r.ok) { const full = await r.json(); if (full?.MediaStreams?.length) titleStreams = full.MediaStreams; }
         } catch {}
       }
@@ -456,7 +454,7 @@
       // Direct Play: volle Bitrate; Transcode: deckeln, damit der Server in Echtzeit mitkommt.
       const requestBitrate = enableDirectPlay ? maxBitrate : Math.min(maxBitrate, TRANSCODE_MAX_BITRATE);
       const info = await getPlaybackInfoFast({
-        serverUrl, userId: selectedUser.Id, token: activeToken, itemId: item.Id,
+        serverUrl: $serverUrl, userId: selectedUser.Id, token: $activeToken, itemId: item.Id,
         audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex,
         maxBitrate: requestBitrate, startTicks: 0,   // Resume passiert client-seitig (seekToResume)
         enableDirectPlay, enableDirectStream, allowAudioStreamCopy,
@@ -467,7 +465,7 @@
       if (info.playSessionId) playSessionId = info.playSessionId;
       const ms = info.mediaSource;
       currentMediaSource = ms;   // für den fliegenden Untertitel-Wechsel merken
-      const resolved = resolveStream({ serverUrl, token: activeToken, itemId: item.Id, mediaSource: ms, audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex });
+      const resolved = resolveStream({ serverUrl: $serverUrl, token: $activeToken, itemId: item.Id, mediaSource: ms, audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex });
       playMethod = resolved.method;
       dlog('[OcenFin] resolveStream →', { method: resolved.method, isHls: resolved.isHls, url: resolved.url });
       // Warum transkodiert der Server? TranscodeReasons nennt es direkt (VideoCodecNotSupported,
@@ -482,7 +480,7 @@
     } catch (e) {
       console.error('PlaybackInfo failed, falling back to Direct Play:', e);
       playMethod = 'DirectPlay';
-      const url = `${serverUrl}/Videos/${item.Id}/stream?static=true&ApiKey=${activeToken}` +
+      const url = `${$serverUrl}/Videos/${item.Id}/stream?static=true&ApiKey=${$activeToken}` +
                   (audioIndex !== -1 ? `&AudioStreamIndex=${audioIndex}` : '');
       await attachSource(url, false);
     }
@@ -609,7 +607,7 @@
   // Spurwechsel via setTrackByUrl ohne Renderer-Neuaufbau.
   function applyAssSubtitle(stream, ms) {
     if (!videoElement) return;
-    const url = assSubtitleUrl({ serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: activeToken });
+    const url = assSubtitleUrl({ serverUrl: $serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: $activeToken });
     try {
       if (assRenderer) {                       // weicher Spurwechsel (z.B. eng → deu)
         assRenderer.setTrackByUrl(url);
@@ -633,7 +631,7 @@
       .map(a => {
         const u = a.DeliveryUrl; if (!u) return null;
         if (/^https?:/i.test(u)) return u;
-        return `${serverUrl}${u}${(u.includes('api_key') || u.includes('ApiKey')) ? '' : (u.includes('?') ? '&' : '?') + 'ApiKey=' + activeToken}`;
+        return `${$serverUrl}${u}${(u.includes('api_key') || u.includes('ApiKey')) ? '' : (u.includes('?') ? '&' : '?') + 'ApiKey=' + $activeToken}`;
       })
       .filter(Boolean);
   }
@@ -644,7 +642,7 @@
   }
   function applyGraphicSubtitle(stream, ms) {
     if (!videoElement) return;
-    const url = graphicSubtitleUrl({ serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: activeToken });
+    const url = graphicSubtitleUrl({ serverUrl: $serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: $activeToken });
     if (!url) { disposeGraphic(); dlog('[OcenFin] image subtitle not available (server does not provide it externally):', stream.Index); return; }
     // Wechsel ohne Lücke: den NEUEN Renderer aufbauen, aber den alten erst entsorgen, wenn der
     // neue fertig geparst ist ('loaded'). So bleibt der bisherige Untertitel sichtbar, bis der
@@ -734,7 +732,7 @@
     const graphic = ['pgssub', 'dvdsub', 'pgs', 'dvbsub', 'vobsub', 'sub'].includes((stream.Codec || '').toLowerCase());
     if (method === 'encode' || graphic) return;   // gebrannt oder Grafik-Untertitel → kein VTT-Overlay
 
-    const url = externalSubtitleUrl({ serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: activeToken });
+    const url = externalSubtitleUrl({ serverUrl: $serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: $activeToken });
     try {
       const res = await fetch(url);
       if (!res.ok || myToken !== subtitleFetchToken) return;   // überholt oder Fehler
@@ -796,7 +794,7 @@
     // damit der Wechsel den Roundtrip spart. Greift nur, wenn die Parameter beim Wechsel passen.
     if (nextEpisode?.Id) {
       prefetchPlaybackInfo({
-        serverUrl, userId: selectedUser.Id, token: activeToken, itemId: nextEpisode.Id,
+        serverUrl: $serverUrl, userId: selectedUser.Id, token: $activeToken, itemId: nextEpisode.Id,
         audioStreamIndex: selectedAudioIndex, subtitleStreamIndex: selectedSubtitleIndex,
         maxBitrate, burnSubtitles: playbackPrefs.burnSubtitles, mediaSourceId: null,
         clientGraphicSubs: clientGraphicRender, serverVobSub,
@@ -950,12 +948,12 @@
   // API
   // ============================================================
 
-  const getAuthHeaders = () => authHeaders(activeToken);
+  const getAuthHeaders = () => authHeaders($activeToken);
 
   async function fetchMediaSources() {
     try {
       const res = await fetch(
-        `${serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaSources,Chapters,Trickplay`,
+        `${$serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaSources,Chapters,Trickplay`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
@@ -974,7 +972,7 @@
     // 1) Moderne Media-Segments-API (Intro Skipper ab Jellyfin 10.9 liefert hierüber).
     //    Ohne Typ-Filter abfragen und selbst filtern — robuster gegen Server-/Versionsunterschiede.
     try {
-      const res = await fetch(`${serverUrl}/MediaSegments/${item.Id}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${$serverUrl}/MediaSegments/${item.Id}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const segs = (await res.json()).Items || [];
         dlog('[OcenFin] media segments:', segs.map(s => s.Type));
@@ -990,7 +988,7 @@
     // 2) Ältere ConfusedPolarBear-Plugin-API. Manche Versionen liefern das Intro flach
     //    ({ Valid, IntroStart, … }), andere als { Introduction, Credits } → beide Formen abfangen.
     try {
-      const res = await fetch(`${serverUrl}/Episode/${item.Id}/IntroTimestamps/v1`, { headers: getAuthHeaders() });
+      const res = await fetch(`${$serverUrl}/Episode/${item.Id}/IntroTimestamps/v1`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         dlog('[OcenFin] IntroTimestamps/v1:', JSON.stringify(data));
@@ -1043,7 +1041,7 @@
     if (item.Type !== 'Episode' || !item.SeriesId) return;
     try {
       const res = await fetch(
-        `${serverUrl}/Shows/${item.SeriesId}/Episodes?UserId=${selectedUser.Id}`,
+        `${$serverUrl}/Shows/${item.SeriesId}/Episodes?UserId=${selectedUser.Id}`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
@@ -1056,7 +1054,7 @@
 
   async function reportPlaybackStart() {
     try {
-      await fetch(`${serverUrl}/Sessions/Playing`, {
+      await fetch(`${$serverUrl}/Sessions/Playing`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -1071,7 +1069,7 @@
   async function reportPlaybackProgress() {
     if (!isPlaying || !videoElement) return;
     try {
-      await fetch(`${serverUrl}/Sessions/Playing/Progress`, {
+      await fetch(`${$serverUrl}/Sessions/Playing/Progress`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -1087,7 +1085,7 @@
   async function reportPlaybackStopped() {
     if (!videoElement) return;
     try {
-      await fetch(`${serverUrl}/Sessions/Playing/Stopped`, {
+      await fetch(`${$serverUrl}/Sessions/Playing/Stopped`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -1177,7 +1175,7 @@
     isFavorite = !isFavorite;
     resetControlsTimeout();
     try {
-      await fetch(`${serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${item.Id}`, {
+      await fetch(`${$serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${item.Id}`, {
         method: isFavorite ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
@@ -1857,7 +1855,7 @@
 </div>
 
 <!-- Zur Sammlung / Wiedergabeliste hinzufügen (gemeinsame Komponente) -->
-<AddToPicker mode={pickerMode} {item} {serverUrl} {selectedUser} {getAuthHeaders}
+<AddToPicker mode={pickerMode} {item} {selectedUser} {getAuthHeaders}
   on:created={() => dispatch('libchanged')}
   on:close={async () => { pickerMode = null; if (wasPlayingBeforePicker) videoElement?.play().catch(() => {}); wasPlayingBeforePicker = false; await tick(); if (controlOpener && document.contains(controlOpener)) controlOpener.focus(); else playerContainer?.focus(); controlOpener = null; }} />
 

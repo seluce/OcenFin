@@ -1,11 +1,9 @@
 <script>
   import { t } from '../i18n.js';
-  import { isBackKey, focusOnMount } from '../utils.js';
+  import { isBackKey, focusOnMount, serverUrl, activeToken } from '../utils.js';
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
 
   export let item;
-  export let serverUrl;
-  export let activeToken;
   export let userId;
 
   const dispatch = createEventDispatcher();
@@ -35,12 +33,12 @@
   });
 
   function headers() {
-    return { "Authorization": `MediaBrowser Token="${activeToken}"`, "Content-Type": "application/json" };
+    return { "Authorization": `MediaBrowser Token="${$activeToken}"`, "Content-Type": "application/json" };
   }
   async function call(method, path) {
     busy = true;
     try {
-      await fetch(`${serverUrl}${path}`, { method, headers: headers() });
+      await fetch(`${$serverUrl}${path}`, { method, headers: headers() });
     } catch (e) {
       console.error('context action failed', e);
     }

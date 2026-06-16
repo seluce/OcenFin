@@ -1,11 +1,9 @@
 <script>
   import { t } from '../i18n.js';
-  import { itemProgress, connectionLost, longPress, authHeaders, blurUp, itemBlurHash, uiFade } from '../utils.js';
+  import { itemProgress, connectionLost, longPress, authHeaders, blurUp, itemBlurHash, uiFade, serverUrl, activeToken } from '../utils.js';
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
 
-  export let serverUrl;
   export let selectedUser;
-  export let activeToken;
   export let apiCache;
   export let reduceAnimations = false;   // steuert Hero-Auto-Rotation
   export let showHero         = true;    // Hero-Banner anzeigen (Einstellung)
@@ -86,7 +84,7 @@
     }
   }
 
-  const getAuthHeaders = () => authHeaders(activeToken);
+  const getAuthHeaders = () => authHeaders($activeToken);
 
   // Empfehlungen: Seeds aus zuletzt gesehenen Items, dann /Items/{id}/Similar.
   // Best Practice (Netflix/Plex): direkt im Dashboard, kein eigener Tab.
@@ -94,7 +92,7 @@
     try {
       // Zuletzt gespielte Filme/Serien als Aufhänger holen
       const res = await fetch(
-        `${serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
+        `${$serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
         `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=4&Fields=${fields}`, opts
       );
       const seeds = (await res.json()).Items || [];
@@ -103,7 +101,7 @@
       // Einstellung 1 oder 2 — so wirkt das Umschalten ohne Neuladen sofort.
       const rows = [];
       for (const seed of seeds.slice(0, 2)) {
-        const sim = await fetch(`${serverUrl}/Items/${seed.Id}/Similar?userId=${uId}&limit=12&Fields=${fields}`, opts);
+        const sim = await fetch(`${$serverUrl}/Items/${seed.Id}/Similar?userId=${uId}&limit=12&Fields=${fields}`, opts);
         const items = (await sim.json()).Items || [];
         if (items.length >= 4) rows.push({ seedTitle: seed.Name, items });
       }
@@ -130,16 +128,16 @@
       const fields = "PrimaryImageAspectRatio,Overview,BackdropImageTags";
 
       // Alle 5 Fetches gleichzeitig starten — kein sequentielles Warten
-      const pViews        = fetch(`${serverUrl}/Users/${uId}/Views`, opts);
-      const pResume       = fetch(`${serverUrl}/Users/${uId}/Items/Resume?Limit=12&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
-      const pNextUp       = fetch(`${serverUrl}/Shows/NextUp?UserId=${uId}&Limit=6&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
-      const pLatestMovies = fetch(`${serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Movie&Limit=6&Fields=${fields}`, opts);
-      const pLatestSeries = fetch(`${serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Series&Limit=6&Fields=${fields}`, opts);
+      const pViews        = fetch(`${$serverUrl}/Users/${uId}/Views`, opts);
+      const pResume       = fetch(`${$serverUrl}/Users/${uId}/Items/Resume?Limit=12&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
+      const pNextUp       = fetch(`${$serverUrl}/Shows/NextUp?UserId=${uId}&Limit=6&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
+      const pLatestMovies = fetch(`${$serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Movie&Limit=6&Fields=${fields}`, opts);
+      const pLatestSeries = fetch(`${$serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Series&Limit=6&Fields=${fields}`, opts);
       // Verlauf: zuletzt gesehene Filme/Folgen. Mehr holen (40), da Serien danach
       // zu je einem Eintrag zusammengefasst werden (Puffer für eine gute Mischung).
-      const pHistory      = fetch(`${serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}`, opts);
+      const pHistory      = fetch(`${$serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}`, opts);
       // Sammlungen (BoxSets)
-      const pCollections  = fetch(`${serverUrl}/Users/${uId}/Items?IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=50`, opts);
+      const pCollections  = fetch(`${$serverUrl}/Users/${uId}/Items?IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=50`, opts);
 
       // Priorität: Views + Resume → UI sofort freigeben
       const [resViews, resResume] = await Promise.all([pViews, pResume]);
@@ -226,9 +224,9 @@
   // Verlauf-Karten einheitlich Hochkant: Folgen nutzen das Serien-Poster
   function getHistoryImageUrl(item) {
     if (item.Type === 'Episode' && item.SeriesId && item.SeriesPrimaryImageTag)
-      return `${serverUrl}/Items/${item.SeriesId}/Images/Primary?tag=${item.SeriesPrimaryImageTag}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
+      return `${$serverUrl}/Items/${item.SeriesId}/Images/Primary?tag=${item.SeriesPrimaryImageTag}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
     if (item.ImageTags?.Primary)
-      return `${serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
+      return `${$serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
     return null;
   }
 
@@ -237,20 +235,20 @@
       // Wie Jellyfin (preferThumb): Querformat-Artwork bevorzugen — eigenes Thumb, sonst
       // Serien-/Eltern-Thumb, dann Backdrop (Folge → Serie), zuletzt der Folgen-Still.
       if (item.ImageTags?.Thumb)
-        return `${serverUrl}/Items/${item.Id}/Images/Thumb?tag=${item.ImageTags.Thumb}&maxWidth=600&quality=80&format=webp`;
+        return `${$serverUrl}/Items/${item.Id}/Images/Thumb?tag=${item.ImageTags.Thumb}&maxWidth=600&quality=80&format=webp`;
       if (item.ParentThumbItemId && item.ParentThumbImageTag)
-        return `${serverUrl}/Items/${item.ParentThumbItemId}/Images/Thumb?tag=${item.ParentThumbImageTag}&maxWidth=600&quality=80&format=webp`;
+        return `${$serverUrl}/Items/${item.ParentThumbItemId}/Images/Thumb?tag=${item.ParentThumbImageTag}&maxWidth=600&quality=80&format=webp`;
       if (item.SeriesId && item.SeriesThumbImageTag)
-        return `${serverUrl}/Items/${item.SeriesId}/Images/Thumb?tag=${item.SeriesThumbImageTag}&maxWidth=600&quality=80&format=webp`;
+        return `${$serverUrl}/Items/${item.SeriesId}/Images/Thumb?tag=${item.SeriesThumbImageTag}&maxWidth=600&quality=80&format=webp`;
       if (item.BackdropImageTags?.length > 0)
-        return `${serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+        return `${$serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
       if (item.ParentBackdropItemId && item.ParentBackdropImageTags?.length > 0)
-        return `${serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${item.ParentBackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+        return `${$serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${item.ParentBackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
       if (item.ImageTags?.Primary)
-        return `${serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
+        return `${$serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
     } else {
       if (item.ImageTags?.Primary)
-        return `${serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
+        return `${$serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
     }
     return null;
   }
@@ -279,7 +277,7 @@
   // Hero-Backdrop in hoher Auflösung
   function getHeroBackdrop(item) {
     if (item?.BackdropImageTags?.length > 0)
-      return `${serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=1920&quality=85&format=webp`;
+      return `${$serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=1920&quality=85&format=webp`;
     return null;
   }
 
@@ -287,7 +285,7 @@
   // Wirkt hochwertiger; ein zusätzliches Bild, kein Mehraufwand bei den Daten.
   function getHeroLogo(item) {
     if (item.ImageTags?.Logo)
-      return `${serverUrl}/Items/${item.Id}/Images/Logo?tag=${item.ImageTags.Logo}&maxHeight=130&quality=90&format=webp`;
+      return `${$serverUrl}/Items/${item.Id}/Images/Logo?tag=${item.ImageTags.Logo}&maxHeight=130&quality=90&format=webp`;
     return null;
   }</script>
 

@@ -1,12 +1,10 @@
 <script>
   import { t, LANGUAGES } from '../i18n.js';
-  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro } from '../utils.js';
+  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, serverUrl, activeToken } from '../utils.js';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
 
   export let item;
-  export let serverUrl;
-  export let activeToken;
   export let selectedUser;
   export let reduceAnimations = false;   // Backdrop bei aktivem Sparmodus weglassen
   export let playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default' };
@@ -223,7 +221,7 @@
     trailerEmbedUrl = null;
   }
 
-  const getAuthHeaders = () => authHeaders(activeToken);
+  const getAuthHeaders = () => authHeaders($activeToken);
 
   // Reaktiv: lädt neu, sobald 'item' prop sich ändert
   $: if (item) loadFullDetails(item.Id);
@@ -239,7 +237,7 @@
 
     try {
       const res = await fetch(
-        `${serverUrl}/Users/${selectedUser.Id}/Items/${itemId}?Fields=MediaSources,Overview,Path,ProviderIds,People,RemoteTrailers`,
+        `${$serverUrl}/Users/${selectedUser.Id}/Items/${itemId}?Fields=MediaSources,Overview,Path,ProviderIds,People,RemoteTrailers`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
@@ -271,7 +269,7 @@
   async function loadSimilarItems(itemId) {
     try {
       const res = await fetch(
-        `${serverUrl}/Items/${itemId}/Similar?Limit=10&Fields=PrimaryImageAspectRatio`,
+        `${$serverUrl}/Items/${itemId}/Similar?Limit=10&Fields=PrimaryImageAspectRatio`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) { const d = await res.json(); similarItems = d.Items || []; }
@@ -281,7 +279,7 @@
   async function loadRelatedItems(parentId) {
     try {
       const res = await fetch(
-        `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${parentId}&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName`,
+        `${$serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${parentId}&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) { const d = await res.json(); relatedItems = d.Items || []; }
@@ -291,8 +289,8 @@
   async function handlePlay() {
     if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
       const url = fullItem.Type === 'Series'
-        ? `${serverUrl}/Shows/NextUp?SeriesId=${fullItem.Id}&UserId=${selectedUser.Id}&Limit=1`
-        : `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Filters=IsNotPlayed&Limit=1&SortBy=SortName`;
+        ? `${$serverUrl}/Shows/NextUp?SeriesId=${fullItem.Id}&UserId=${selectedUser.Id}&Limit=1`
+        : `${$serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Filters=IsNotPlayed&Limit=1&SortBy=SortName`;
       try {
         const res  = await fetch(url, { headers: getAuthHeaders() });
         const data = await res.json();
@@ -301,7 +299,7 @@
         } else {
           // Fallback: erste Folge
           const fb = await fetch(
-            `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=SortName`,
+            `${$serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=SortName`,
             { headers: getAuthHeaders() }
           );
           const fd = await fb.json();
@@ -325,7 +323,7 @@
     fullItem.UserData = { ...fullItem.UserData, Played: willBePlayed };
     fullItem = fullItem;   // Svelte-Reaktivität auslösen
     try {
-      await fetch(`${serverUrl}/Users/${selectedUser.Id}/PlayedItems/${fullItem.Id}`, {
+      await fetch(`${$serverUrl}/Users/${selectedUser.Id}/PlayedItems/${fullItem.Id}`, {
         method: willBePlayed ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
@@ -342,7 +340,7 @@
     fullItem.UserData = { ...fullItem.UserData, IsFavorite: willBeFav };
     fullItem = fullItem;
     try {
-      await fetch(`${serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${fullItem.Id}`, {
+      await fetch(`${$serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${fullItem.Id}`, {
         method: willBeFav ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
@@ -364,22 +362,22 @@
   function getItemImageUrl(targetItem, format = "portrait") {
     if (format === 'landscape') {
       if (targetItem.Type === 'Episode' && targetItem.ImageTags?.Primary)
-        return `${serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
+        return `${$serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
       if (targetItem.BackdropImageTags?.length > 0)
-        return `${serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+        return `${$serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
     }
     if (targetItem.ImageTags?.Primary)
-      return `${serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&fillHeight=400&quality=80&format=webp`;
+      return `${$serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&fillHeight=400&quality=80&format=webp`;
     if (targetItem.SeriesPrimaryImageTag)
-      return `${serverUrl}/Items/${targetItem.SeriesId}/Images/Primary?tag=${targetItem.SeriesPrimaryImageTag}&fillHeight=400&quality=80&format=webp`;
+      return `${$serverUrl}/Items/${targetItem.SeriesId}/Images/Primary?tag=${targetItem.SeriesPrimaryImageTag}&fillHeight=400&quality=80&format=webp`;
     return null;
   }
 
   function getItemBackdropUrl(targetItem) {
     if (targetItem.BackdropImageTags?.length > 0)
-      return `${serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
+      return `${$serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
     if (targetItem.ParentBackdropImageTags?.length > 0)
-      return `${serverUrl}/Items/${targetItem.ParentBackdropItemId}/Images/Backdrop?tag=${targetItem.ParentBackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
+      return `${$serverUrl}/Items/${targetItem.ParentBackdropItemId}/Images/Backdrop?tag=${targetItem.ParentBackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
     return null;
   }
 
@@ -731,8 +729,8 @@
             {#each castMembers as person}
               <button on:click={() => dispatch('openPerson', person)} class="shrink-0 w-36 group focus:outline-none text-center">
                 <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto">
-                  {#if personImageUrl(serverUrl, person)}
-                    <img src={personImageUrl(serverUrl, person)} use:blurUp={itemBlurHash(person)} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
+                  {#if personImageUrl($serverUrl, person)}
+                    <img src={personImageUrl($serverUrl, person)} use:blurUp={itemBlurHash(person)} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}
                     <div class="w-full h-full flex items-center justify-center text-gray-600">
                       <svg class="w-14 h-14" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
@@ -891,7 +889,7 @@
 {/if}
 
 <!-- Zur Sammlung / Wiedergabeliste hinzufügen (gemeinsame Komponente) -->
-<AddToPicker mode={pickerMode} item={fullItem} {serverUrl} {selectedUser} {getAuthHeaders}
+<AddToPicker mode={pickerMode} item={fullItem} {selectedUser} {getAuthHeaders}
   on:created={() => dispatch('libchanged')} on:close={() => pickerMode = null} />
 
 <style>
