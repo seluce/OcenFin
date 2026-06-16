@@ -1,12 +1,10 @@
 <script>
   import { t, LANGUAGES } from '../i18n.js';
-  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash } from '../utils.js';
+  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, serverUrl, activeToken } from '../utils.js';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
 
   export let item;
-  export let serverUrl;
-  export let activeToken;
   export let selectedUser;
   export let reduceAnimations = false;   // Backdrop bei aktivem Sparmodus weglassen
   export let playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default' };
@@ -109,6 +107,32 @@
   let showMediaInfo   = false;   // Medieninformationen-Modal
   let mediaInfoScroll;           // Scroll-Container des Modals (für D-Pad-Scrollen)
 
+  // Teilen: QR-Code mit öffentlichem Titel-Link (IMDb/TMDb) — jeder kann ihn scannen, kein Serverzugang nötig.
+  let showShare = false;
+  let kebabBtnEl;                 // Drei-Punkte-Button (immer im DOM)
+  const shareFocus = makeFocusReturn();   // Fokus-Rückgabe nach Schließen des Teilen-Modals
+  // Nach dem Schließen des Teilen-Modals den Fokus zurück auf die drei Punkte legen.
+  $: if (!showShare && shareFocus.pending) shareFocus.restore();
+  let shareQrUrl = null;
+  function buildShareTarget(item) {
+    const p = item?.ProviderIds || {};
+    if (p.Imdb) return `https://www.imdb.com/title/${p.Imdb}/`;
+    if (p.Tmdb && (item.Type === 'Movie' || item.Type === 'Series'))
+      return `https://www.themoviedb.org/${item.Type === 'Series' ? 'tv' : 'movie'}/${p.Tmdb}`;
+    // Kein öffentlicher Link → Titel als Text (Scan zeigt den Titel zum Nachschlagen, nie ein toter Link).
+    return item?.ProductionYear ? `${item.Name} (${item.ProductionYear})` : (item?.Name || '');
+  }
+  async function openShare() {
+    shareFocus.capture(kebabBtnEl);
+    showShare = true;
+    shareQrUrl = null;
+    try {
+      const mod = await import('qrcode');   // bereits vorhandene Abhängigkeit, dynamisch geladen
+      const toDataURL = (mod.default && mod.default.toDataURL) ? mod.default.toDataURL : mod.toDataURL;
+      shareQrUrl = await toDataURL(buildShareTarget(fullItem) || ' ', { margin: 1, width: 360, errorCorrectionLevel: 'M' });
+    } catch (e) { console.warn('[OcenFin] share QR failed', e); }
+  }
+
   function formatBytes(bytes) {
     if (!bytes) return null;
     const gb = bytes / 1073741824;
@@ -197,7 +221,7 @@
     trailerEmbedUrl = null;
   }
 
-  const getAuthHeaders = () => authHeaders(activeToken);
+  const getAuthHeaders = () => authHeaders($activeToken);
 
   // Reaktiv: lädt neu, sobald 'item' prop sich ändert
   $: if (item) loadFullDetails(item.Id);
@@ -213,7 +237,7 @@
 
     try {
       const res = await fetch(
-        `${serverUrl}/Users/${selectedUser.Id}/Items/${itemId}?Fields=MediaSources,Overview,Path,ProviderIds,People,RemoteTrailers`,
+        `${$serverUrl}/Users/${selectedUser.Id}/Items/${itemId}?Fields=MediaSources,Overview,Path,ProviderIds,People,RemoteTrailers`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
@@ -245,7 +269,7 @@
   async function loadSimilarItems(itemId) {
     try {
       const res = await fetch(
-        `${serverUrl}/Items/${itemId}/Similar?Limit=10&Fields=PrimaryImageAspectRatio`,
+        `${$serverUrl}/Items/${itemId}/Similar?Limit=10&Fields=PrimaryImageAspectRatio`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) { const d = await res.json(); similarItems = d.Items || []; }
@@ -255,7 +279,7 @@
   async function loadRelatedItems(parentId) {
     try {
       const res = await fetch(
-        `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${parentId}&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName`,
+        `${$serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${parentId}&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) { const d = await res.json(); relatedItems = d.Items || []; }
@@ -265,8 +289,8 @@
   async function handlePlay() {
     if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
       const url = fullItem.Type === 'Series'
-        ? `${serverUrl}/Shows/NextUp?SeriesId=${fullItem.Id}&UserId=${selectedUser.Id}&Limit=1`
-        : `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Filters=IsNotPlayed&Limit=1&SortBy=SortName`;
+        ? `${$serverUrl}/Shows/NextUp?SeriesId=${fullItem.Id}&UserId=${selectedUser.Id}&Limit=1`
+        : `${$serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Filters=IsNotPlayed&Limit=1&SortBy=SortName`;
       try {
         const res  = await fetch(url, { headers: getAuthHeaders() });
         const data = await res.json();
@@ -275,7 +299,7 @@
         } else {
           // Fallback: erste Folge
           const fb = await fetch(
-            `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=SortName`,
+            `${$serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=SortName`,
             { headers: getAuthHeaders() }
           );
           const fd = await fb.json();
@@ -299,12 +323,13 @@
     fullItem.UserData = { ...fullItem.UserData, Played: willBePlayed };
     fullItem = fullItem;   // Svelte-Reaktivität auslösen
     try {
-      await fetch(`${serverUrl}/Users/${selectedUser.Id}/PlayedItems/${fullItem.Id}`, {
+      await fetch(`${$serverUrl}/Users/${selectedUser.Id}/PlayedItems/${fullItem.Id}`, {
         method: willBePlayed ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
-    } catch {
+    } catch (e) {
       // Bei Fehler zurückrollen
+      console.warn('[OcenFin] played-status toggle failed, rolled back:', e);
       fullItem.UserData = { ...fullItem.UserData, Played: !willBePlayed };
       fullItem = fullItem;
     }
@@ -315,11 +340,12 @@
     fullItem.UserData = { ...fullItem.UserData, IsFavorite: willBeFav };
     fullItem = fullItem;
     try {
-      await fetch(`${serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${fullItem.Id}`, {
+      await fetch(`${$serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${fullItem.Id}`, {
         method: willBeFav ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
-    } catch {
+    } catch (e) {
+      console.warn('[OcenFin] favorite toggle failed, rolled back:', e);
       fullItem.UserData = { ...fullItem.UserData, IsFavorite: !willBeFav };
       fullItem = fullItem;
     }
@@ -336,22 +362,22 @@
   function getItemImageUrl(targetItem, format = "portrait") {
     if (format === 'landscape') {
       if (targetItem.Type === 'Episode' && targetItem.ImageTags?.Primary)
-        return `${serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
+        return `${$serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
       if (targetItem.BackdropImageTags?.length > 0)
-        return `${serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+        return `${$serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
     }
     if (targetItem.ImageTags?.Primary)
-      return `${serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&fillHeight=400&quality=80&format=webp`;
+      return `${$serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&fillHeight=400&quality=80&format=webp`;
     if (targetItem.SeriesPrimaryImageTag)
-      return `${serverUrl}/Items/${targetItem.SeriesId}/Images/Primary?tag=${targetItem.SeriesPrimaryImageTag}&fillHeight=400&quality=80&format=webp`;
+      return `${$serverUrl}/Items/${targetItem.SeriesId}/Images/Primary?tag=${targetItem.SeriesPrimaryImageTag}&fillHeight=400&quality=80&format=webp`;
     return null;
   }
 
   function getItemBackdropUrl(targetItem) {
     if (targetItem.BackdropImageTags?.length > 0)
-      return `${serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
+      return `${$serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
     if (targetItem.ParentBackdropImageTags?.length > 0)
-      return `${serverUrl}/Items/${targetItem.ParentBackdropItemId}/Images/Backdrop?tag=${targetItem.ParentBackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
+      return `${$serverUrl}/Items/${targetItem.ParentBackdropItemId}/Images/Backdrop?tag=${targetItem.ParentBackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
     return null;
   }
 
@@ -508,7 +534,7 @@
 
             {#if fullItem.MediaSources?.length > 0}
               <div class="relative" data-dropdown data-focus-trap={openDropdown === 'kebab' || undefined}>
-                <button on:click={(e) => toggleDropdown('kebab', e)} aria-label={$t.more} title={$t.more}
+                <button bind:this={kebabBtnEl} on:click={(e) => toggleDropdown('kebab', e)} aria-label={$t.more} title={$t.more}
                   class="p-4 rounded-xl bg-gray-800 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg">
                   <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
                 </button>
@@ -528,6 +554,11 @@
                       class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
                       {$t.addToCollection}
+                    </button>
+                    <button on:click={() => { closeDropdown(false); openShare(); }}
+                      class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
+                      <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+                      {$t.share}
                     </button>
                   </div>
                 {/if}
@@ -698,8 +729,8 @@
             {#each castMembers as person}
               <button on:click={() => dispatch('openPerson', person)} class="shrink-0 w-36 group focus:outline-none text-center">
                 <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto">
-                  {#if personImageUrl(serverUrl, person)}
-                    <img src={personImageUrl(serverUrl, person)} use:blurUp={itemBlurHash(person)} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
+                  {#if personImageUrl($serverUrl, person)}
+                    <img src={personImageUrl($serverUrl, person)} use:blurUp={itemBlurHash(person)} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}
                     <div class="w-full h-full flex items-center justify-center text-gray-600">
                       <svg class="w-14 h-14" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
@@ -781,7 +812,7 @@
 
 <!-- MEDIENINFORMATIONEN-MODAL (Codec, Bitrate, Sprachen, …) -->
 {#if showMediaInfo && fullItem?.MediaSources?.length}
-  <div data-focus-trap class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8 animate-fade-in"
+  <div data-focus-trap transition:uiFade on:outrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8"
     on:keydown={(e) => {
       if (isBackKey(e)) { e.stopPropagation(); showMediaInfo = false; return; }
       if (e.key === 'ArrowDown')    { e.preventDefault(); e.stopPropagation(); mediaInfoScroll?.scrollBy({ top: 160, behavior: 'smooth' }); }
@@ -834,8 +865,31 @@
   </div>
 {/if}
 
+<!-- Teilen: QR-Code mit Titel-Link (IMDb/TMDb) zum Scannen -->
+{#if showShare}
+  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
+    transition:uiFade on:outrostart={dropTrapOnOutro}
+    on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showShare = false; } }}>
+    <div data-modal data-focus-trap
+      class="bg-gray-800 border border-gray-700 rounded-2xl p-8 w-full max-w-lg flex flex-col items-center gap-5 shadow-2xl">
+      <div class="flex items-center justify-between gap-4 w-full">
+        <h2 class="text-3xl text-white font-bold">{$t.share}</h2>
+        <button on:click={() => showShare = false} use:focusOnMount
+          class="px-5 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
+                 focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.close}</button>
+      </div>
+      {#if shareQrUrl}
+        <img src={shareQrUrl} alt="QR" class="rounded-xl bg-white p-3"
+             style="width:320px;height:320px;max-width:40vh;max-height:40vh;" />
+      {/if}
+      <p class="text-white font-bold text-center break-words">{fullItem?.Name}</p>
+      <p class="text-gray-400 text-base text-center max-w-md">{$t.shareHint}</p>
+    </div>
+  </div>
+{/if}
+
 <!-- Zur Sammlung / Wiedergabeliste hinzufügen (gemeinsame Komponente) -->
-<AddToPicker mode={pickerMode} item={fullItem} {serverUrl} {selectedUser} {getAuthHeaders}
+<AddToPicker mode={pickerMode} item={fullItem} {selectedUser} {getAuthHeaders}
   on:created={() => dispatch('libchanged')} on:close={() => pickerMode = null} />
 
 <style>

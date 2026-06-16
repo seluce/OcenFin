@@ -1,10 +1,51 @@
 // Gemeinsame Hilfsfunktionen (geteilt zwischen App und Komponenten)
 import { writable } from 'svelte/store';
+import { tick } from 'svelte';
+import { fade } from 'svelte/transition';
 import { dependencies as deps } from '../package.json';   // für Versions-Anzeige auf der Status-Seite
+
+// Ein-/Ausblenden für Overlays, das den "Animationen reduzieren"-Schalter respektiert (App pflegt
+// body.dataset.reduceMotion). Bei reduzierter Bewegung: Dauer 0 → sofort sichtbar/weg, keine Animation.
+export function uiFade(node, params = {}) {
+  const reduced = document.body.dataset.reduceMotion === '1';
+  return fade(node, { ...params, duration: reduced ? 0 : (params.duration ?? 150) });
+}
+
+// Beim Outro-Start die Fokus-Trap im Teilbaum entfernen. Während ein Modal ~150 ms ausblendet, bleibt
+// es im DOM; ohne dies würde der via makeFocusReturn zurückkehrende Fokus von onFocusIn wieder ins
+// ausblendende Modal gezogen. Nach dem Entfernen ist die Trap sofort inaktiv, das Modal blendet aus.
+export function dropTrapOnOutro(e) {
+  const root = e?.currentTarget;
+  if (!root) return;
+  if (root.hasAttribute?.('data-focus-trap')) root.removeAttribute('data-focus-trap');
+  root.querySelectorAll?.('[data-focus-trap]').forEach((el) => el.removeAttribute('data-focus-trap'));
+}
 
 // Verbindungsstatus: true, wenn ein API-Aufruf wegen Netzwerk-/Serverfehler scheitert.
 // App zeigt dann ein Hinweis-Banner. Wird bei Erfolg wieder zurückgesetzt.
 export const connectionLost = writable(false);
+
+// App-weite Quelle der Wahrheit für Server-URL und Zugangstoken. Ersetzt schrittweise das
+// Prop-Drilling durch ~9 Komponenten: App speist diese Stores, Komponenten lesen $serverUrl /
+// $activeToken direkt. Token ändert sich bei Login/Logout/Relaunch → Store propagiert automatisch.
+export const serverUrl = writable('');
+export const activeToken = writable('');
+
+// Fokus-Rückgabe nach dem Schließen eines Modals/Overlays: beim Öffnen den Auslöser merken,
+// beim Schließen dorthin zurückspringen. capture()/restore() (inkl. tick-Timing) sind hier
+// vereinheitlicht; WANN restore() läuft, entscheidet jede Komponente über ihre eigene Reactive,
+// weil sich die Schließ-Bedingung unterscheidet (ein Bool vs. mehrere Menüs).
+export function makeFocusReturn() {
+  let saved = null;
+  return {
+    capture(el) { saved = el || document.activeElement; },
+    restore() {
+      const el = saved; saved = null;
+      if (el && typeof el.focus === 'function') tick().then(() => el.focus());
+    },
+    get pending() { return !!saved; },
+  };
+}
 
 // Erkennt die "Zurück"-Aktion: Escape, Backspace ODER die webOS-Fernbedienung
 // (Magic Remote "Zurück" sendet keyCode 461). Backspace in einem Texteingabefeld
@@ -343,7 +384,47 @@ export function authHeaders(token) {
 // Modul-State wird von allen Importeuren geteilt → ein setDebug() wirkt sofort überall.
 let _debug = false;
 export function setDebug(on) { _debug = !!on; }
-export function dlog(...args) { if (_debug) console.log(...args); }
+
+// --- In-App-Log-Puffer ----------------------------------------------------------------------
+// Ring-Puffer, damit Nutzer Logs ohne 'ares inspect' sehen/teilen können. console.error/warn
+// werden IMMER erfasst (auch ohne Debug-Modus → nach einem Fehler ist der Log schon da);
+// dlog-Zeilen nur bei aktivem Debug. Das Original-Konsolenverhalten bleibt unverändert.
+const LOG_BUFFER_MAX = 300;
+let _logBuffer = [];
+function _stringify(args) {
+  return args.map(a => {
+    if (typeof a === 'string') return a;
+    if (a instanceof Error) return a.message || String(a);
+    try { return JSON.stringify(a); } catch { return String(a); }
+  }).join(' ');
+}
+function _pushLog(level, args) {
+  try {
+    _logBuffer.push({ t: Date.now(), level, msg: _stringify(args) });
+    if (_logBuffer.length > LOG_BUFFER_MAX) _logBuffer.shift();
+  } catch {}
+}
+export function dlog(...args) { if (_debug) { _pushLog('log', args); console.log(...args); } }
+export function clearLogBuffer() { _logBuffer = []; }
+export function formatLog(maxChars = 0) {
+  const pad = (n) => String(n).padStart(2, '0');
+  let lines = _logBuffer.map(e => {
+    const d = new Date(e.t);
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${e.level.toUpperCase().padEnd(5)} ${e.msg}`;
+  });
+  let text = lines.join('\n');
+  // Für den QR-Code: nur das Ende (jüngste Zeilen) bis maxChars zurückgeben.
+  if (maxChars > 0 && text.length > maxChars) text = '…\n' + text.slice(text.length - maxChars);
+  return text;
+}
+// console.error/warn zusätzlich in den Puffer spiegeln (einmalig, Original bleibt aktiv).
+if (typeof console !== 'undefined' && !console.__ocenfinLogHook) {
+  const _origErr = console.error.bind(console);
+  const _origWarn = console.warn.bind(console);
+  console.error = (...a) => { _pushLog('error', a); _origErr(...a); };
+  console.warn  = (...a) => { _pushLog('warn', a); _origWarn(...a); };
+  console.__ocenfinLogHook = true;
+}
 
 // --- Versionen für die Status-/Diagnose-Seite --------------------------------------------------
 // Chromium/WebView aus dem User-Agent; Abhängigkeits-Versionen direkt aus package.json (zieht bei
@@ -353,6 +434,67 @@ export function runtimeVersions() {
   const m = ua.match(/Chrom(?:e|ium)\/(\d+(?:\.\d+)*)/);
   const dep = (name) => (deps?.[name] || '').replace(/^[\^~]/, '');
   return { chromium: m ? m[1] : '', hls: dep('hls.js'), libbitsub: dep('libbitsub'), jassub: dep('jassub') };
+}
+
+// --- TV-Fähigkeiten ----------------------------------------------------------------------------
+// Panel-Wahrheit über webOSTV.js (webOS.deviceInfo). Liefert harte Flags (HDR10/Dolby Vision/
+// Atmos/UHD/OLED) direkt vom Fernseher. Capability-Flags können je nach Firmware fehlen → wir
+// geben sie roh weiter (true/false/undefined), damit die UI "✓ / ✗ / unbekannt" unterscheiden kann.
+// Im Browser-Dev (kein window.webOS) → { available:false }.
+export function getTvDeviceInfo() {
+  return new Promise((resolve) => {
+    try {
+      const w = typeof window !== 'undefined' ? window : null;
+      if (!w || !w.webOS || typeof w.webOS.deviceInfo !== 'function') {
+        dlog('[DeviceInfo] webOS.deviceInfo unavailable (browser / no webOS)');
+        resolve({ available: false }); return;
+      }
+      let done = false;
+      const finish = (info) => { if (!done) { done = true; resolve(info); } };
+      w.webOS.deviceInfo((d) => {
+        dlog('[DeviceInfo] detected:', { modelName: d?.modelName, webos: d?.versionMajor, uhd: d?.uhd, oled: d?.oled, hdr10: d?.hdr10, dolbyVision: d?.dolbyVision, dolbyAtmos: d?.dolbyAtmos });
+        finish({
+          available: true,
+          modelName:   d?.modelName || null,
+          webosMajor:  (typeof d?.versionMajor === 'number') ? d.versionMajor : null,
+          screenWidth: d?.screenWidth || null,
+          screenHeight:d?.screenHeight || null,
+          uhd:         d?.uhd,
+          uhd8K:       d?.uhd8K,
+          oled:        d?.oled,
+          hdr10:       d?.hdr10,
+          dolbyVision: d?.dolbyVision,
+          dolbyAtmos:  d?.dolbyAtmos,
+        });
+      });
+      // Manche Firmware ruft den Callback nicht → nach 2 s aufgeben.
+      setTimeout(() => {
+        if (!done) console.warn('[DeviceInfo] no response from webOS.deviceInfo after 2 s — panel detection degraded');
+        finish({ available: false });
+      }, 2000);
+    } catch (e) { console.warn('[DeviceInfo] error:', e); resolve({ available: false }); }
+  });
+}
+
+// Codec-Probe über die Browser-Pipeline (canPlayType / MediaSource). ACHTUNG: spiegelt den
+// Browser-Decoder, NICHT zwingend die TV-Hardware (auf altem webOS unterschätzt das HEVC). Daher
+// in der UI als "Browser-Decoder" gekennzeichnet. true = abspielbar laut Browser.
+export function probeBrowserCodecs() {
+  if (typeof document === 'undefined') return {};
+  const v = document.createElement('video');
+  const ok = (mime) => {
+    try {
+      const c = v.canPlayType(mime);
+      const m = (typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported) ? MediaSource.isTypeSupported(mime) : false;
+      return c === 'probably' || c === 'maybe' || m;
+    } catch { return false; }
+  };
+  return {
+    h264: ok('video/mp4; codecs="avc1.640028"'),
+    hevc: ok('video/mp4; codecs="hev1.1.6.L153.B0"') || ok('video/mp4; codecs="hvc1.1.6.L153.B0"'),
+    vp9:  ok('video/mp4; codecs="vp09.00.10.08"')    || ok('video/webm; codecs="vp9"'),
+    av1:  ok('video/mp4; codecs="av01.0.08M.08"')    || ok('video/webm; codecs="av01.0.08M.08"'),
+  };
 }
 
 // --- BlurHash: moderne „Blur-up"-Platzhalter für Bilder ----------------------------------------

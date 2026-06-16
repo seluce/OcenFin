@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, itemProgress, connectionLost, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash } from './utils.js';
+  import { isBackKey, focusOnMount, itemProgress, connectionLost, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, serverUrl as serverUrlStore, activeToken as activeTokenStore } from './utils.js';
   import { createFocusManager } from './spatialnav.js';
   import { currentLang, t, detectUiLang } from './i18n.js';
   import Clock       from './components/Clock.svelte';
@@ -11,6 +11,7 @@
   import Details     from './components/Details.svelte';
   import Player      from './components/Player.svelte';
   import ContextMenu from './components/ContextMenu.svelte';
+  import AddToPicker from './components/AddToPicker.svelte';
   import Search      from './components/Search.svelte';
   import Settings    from './components/Settings.svelte';
   import SyncPlayModal from './components/SyncPlay.svelte';
@@ -93,6 +94,9 @@
 
   // Hilfreich: auf welchen User der aktuelle Server-Token zeigt
   $: serverUrl = selectedServer?.url ?? '';
+  // App-weite Stores speisen (parallel zu den bestehenden Props; Komponenten werden schrittweise umgestellt).
+  $: serverUrlStore.set(serverUrl);
+  $: activeTokenStore.set(activeToken);
   $: isCurrentUserSaved = !!(
     selectedUser && selectedServer &&
     savedTokens[selectedServer.id]?.[selectedUser.Id]
@@ -107,7 +111,7 @@
   let displaySettings = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} };
 
   // Standard-Audio-/Untertitelsprache
-  let playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false };
+  let playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true };
 
   // ── Profil-bezogene Einstellungen ───────────────────────────
   // Sprache + Anzeige + Wiedergabe + Animationen werden PRO BENUTZER gespeichert.
@@ -164,7 +168,7 @@
       localStorage.setItem('app_language', p.language);   // "zuletzt genutzt" aktualisieren
     }
     displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
-    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, ...(p.playbackPrefs || {}) };
+    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true, ...(p.playbackPrefs || {}) };
     reduceAnimations = p.reduceAnimations ?? false;
     librarySorts     = p.librarySorts || {};   // gemerkte Sortierung pro Bibliothek
     sharedProfile    = p.sharedProfile && Array.isArray(p.sharedProfile.members)
@@ -406,6 +410,38 @@
     showSyncPlay = false;
     if (syncPollTimer) { clearInterval(syncPollTimer); syncPollTimer = null; }
   }
+
+  // ── Auto-Reconnect: solange der Server nicht erreichbar ist, regelmäßig leicht anpingen.
+  // /System/Info/Public ist unauthentifiziert → unabhängig vom Token-Zustand. Kommt der Server
+  // zurück, schließt sich der Banner von selbst (soft-clear, kein Reload → Platz bleibt erhalten).
+  let reconnectTimer = null;
+  function manageReconnect(lost) {
+    if (lost && serverUrl) {
+      if (reconnectTimer) return;
+      reconnectTimer = setInterval(async () => {
+        try {
+          const r = await fetch(`${serverUrl}/System/Info/Public`, { cache: 'no-store' });
+          if (r.ok) connectionLost.set(false);
+        } catch { /* weiter versuchen */ }
+      }, 5000);
+    } else if (reconnectTimer) {
+      clearInterval(reconnectTimer); reconnectTimer = null;
+    }
+  }
+  $: manageReconnect($connectionLost);
+
+  // Banner-Buttons. "Erneut versuchen" prüft SOFORT, ohne Reload → dein Platz bleibt erhalten:
+  // ist der Server zurück, schließt der Banner; sonst bleibt er (Auto-Reconnect läuft weiter).
+  let retryBtnEl;
+  async function retryNow() {
+    try {
+      const r = await fetch(`${serverUrl}/System/Info/Public`, { cache: 'no-store' });
+      if (r.ok) connectionLost.set(false);
+    } catch { /* weiterhin weg → Banner bleibt */ }
+  }
+  // Fokus zuverlässig auf den Button legen, wenn der Banner erscheint (er mountet durch ein
+  // Hintergrund-Ereignis; use:focusOnMount griff dort nicht — tick() nach dem Flush gewinnt).
+  $: if ($connectionLost) tick().then(() => retryBtnEl?.focus());
   async function syncCreate() { await createSyncGroup(serverUrl, activeToken, selectedUser?.Name || 'OcenFin'); syncJoined = true; await setSyncIgnoreWait(serverUrl, activeToken, false); await syncRefresh(); }
   async function syncJoin(groupId) { await joinSyncGroup(serverUrl, activeToken, groupId); syncJoined = true; syncMyGroupId = groupId; await setSyncIgnoreWait(serverUrl, activeToken, false); await syncRefresh(); }
   async function syncLeave() { await leaveSyncGroup(serverUrl, activeToken); syncJoined = false; syncMyGroupId = null; syncQueue = null; _lastSyncQueueItem = null; await syncRefresh(); }
@@ -425,7 +461,7 @@
         activeSubtitleIndex = -1;
         activeMediaSourceId = null;
         viewState = 'player';
-        dlog('[SyncPlay] Auto-Laden →', currentDetailItem?.Name);
+        dlog('[SyncPlay] auto-load →', currentDetailItem?.Name);
       }
     } catch {}
     _syncOpeningId = null;
@@ -445,10 +481,10 @@
     if (syncSocket && (syncSocket.readyState === WebSocket.OPEN || syncSocket.readyState === WebSocket.CONNECTING)) return;
     let ws;
     try { ws = new WebSocket(syncSocketUrl(serverUrl, activeToken, deviceIdFor(selectedUser?.Name))); }
-    catch (e) { console.warn('[SyncPlay] Socket konnte nicht geöffnet werden', e); return; }
+    catch (e) { console.warn('[SyncPlay] socket could not be opened', e); return; }
     syncSocket = ws;
     ws.onopen = () => {
-      dlog('[SyncPlay] Socket verbunden');
+      dlog('[SyncPlay] socket connected');
       if (syncKeepAlive) clearInterval(syncKeepAlive);
       syncKeepAlive = setInterval(() => { try { ws.send(JSON.stringify({ MessageType: 'KeepAlive' })); } catch {} }, 30000);
     };
@@ -458,7 +494,7 @@
     };
     ws.onclose = () => {
       if (syncKeepAlive) { clearInterval(syncKeepAlive); syncKeepAlive = null; }
-      dlog('[SyncPlay] Socket getrennt');
+      dlog('[SyncPlay] socket disconnected');
       if (syncSocketWanted) { clearTimeout(syncReconnect); syncReconnect = setTimeout(connectSyncSocket, 5000); }
     };
     ws.onerror = () => { /* onclose folgt automatisch → Reconnect dort */ };
@@ -495,7 +531,7 @@
     } else if (msg.MessageType === 'SyncPlayCommand') {
       // Wiedergabe-Kommando (Play/Pause/Seek) → an den Player; _seq dient dem Player als Dedupe-Marke.
       syncCommand = { ...msg.Data, _seq: ++syncCmdSeq };
-      dlog('[SyncPlay] Kommando empfangen', syncCommand.Command, syncCommand.PositionTicks);
+      dlog('[SyncPlay] command received', syncCommand.Command, syncCommand.PositionTicks);
     } else if (msg.MessageType === 'Playstate') {
       // Admin-Fernsteuerung (Dashboard): Pause/Unpause/Stop/Seek/PlayPause/NextTrack → an den Player.
       const cmd = msg.Data?.Command;
@@ -523,6 +559,10 @@
 
   // Sortierung
   let showSortMenu = false;
+  const sortFilterFocus = makeFocusReturn();   // Auslöser-Button für Fokus-Rückgabe nach Schließen
+  // Fokus nach dem Schließen von Sortieren/Filtern zurück auf den auslösenden Button.
+  $: if (!showSortMenu && !showFilterMenu && sortFilterFocus.pending) sortFilterFocus.restore();
+
   let showExitConfirm = false;   // Bestätigungsdialog "App verlassen?" (Zurück am Dashboard)
   let currentSort  = { by: 'SortName', order: 'Ascending' };
   let librarySorts = {};   // pro Bibliothek gemerkte Sortierung (im Profil gespeichert)
@@ -535,7 +575,7 @@
   ];
   // Cache nur für die Standardansicht (Name aufsteigend) — andere Sortierungen
   // bypassen den Cache wie Filter. A-Z-Leiste ergibt nur bei Namenssortierung Sinn.
-  $: isDefaultSort = currentSort.by === 'SortName' && currentSort.order === 'Ascending';
+  $: showLetterBar = currentSort.by === 'SortName';   // A-Z-Leiste: bei Namenssortierung in beiden Richtungen sinnvoll
 
   // Synchrone Variante für loadLibraryItems: die reaktive `hasFilters` wird erst
   // im nächsten Tick aktualisiert — beim sofortigen Aufruf nach toggleFilter wäre
@@ -687,15 +727,52 @@
     window.addEventListener('offline', () => connectionLost.set(true));
     window.addEventListener('online',  () => connectionLost.set(false));
 
+    // webOS-Lifecycle: Kehrt man über Home zur (suspendierten) App zurück, feuert webOSRelaunch.
+    // Auf manchen Builds/appinfo-Konfigurationen (handlesRelaunch:true) bleibt die App dann im
+    // Hintergrund hängen und startet scheinbar nicht — wir holen sie deshalb explizit in den
+    // Vordergrund. Harmlos, falls webOS das ohnehin selbst übernimmt.
+    const toForeground = () => {
+      dlog('[Lifecycle] webOSRelaunch → activate');
+      try { window.PalmSystem?.activate?.(); } catch (e) { console.warn('[Lifecycle] activate failed:', e); }
+      try { window.webOSSystem?.activate?.(); } catch { /* nicht vorhanden */ }
+    };
+    document.addEventListener('webOSRelaunch', toForeground, true);
+
+    // webOS-System-Screensaver aktiv ablehnen, solange OcenFins eigener Screensaver aktiv ist —
+    // sonst lägen zwei Screensaver übereinander und man müsste zweimal drücken. webOS fragt über
+    // die Luna-API vor dem Anzeigen nach; wir antworten mit ack:false (= bitte nicht zeigen, wir
+    // schützen das OLED selbst). Ist OcenFins Screensaver aus, lassen wir webOS zu (ack:true).
+    if (window.webOS?.service?.request) {
+      window.webOS.service.request('luna://com.webos.service.tvpower', {
+        method: 'power/registerScreenSaverRequest',
+        parameters: { subscribe: true, clientName: 'ocenfin' },
+        subscribe: true,
+        onSuccess: (res) => {
+          // Erste Antwort bestätigt nur die Registrierung (ohne state); danach kommt state je Anfrage.
+          if (res?.state !== 'Active') { dlog('[Screensaver] Luna registered, returnValue=', res?.returnValue); return; }
+          const decline = screensaverSettings.enabled;   // OcenFin-Screensaver an → webOS ablehnen
+          dlog('[Screensaver] webOS request →', decline ? 'declined (ack:false)' : 'allowed (ack:true)');
+          window.webOS.service.request('luna://com.webos.service.tvpower', {
+            method: 'power/responseScreenSaverRequest',
+            parameters: { clientName: 'ocenfin', ack: !decline, timestamp: res.timestamp },
+            onFailure: (e) => console.warn('[Screensaver] response error:', e?.errorText || e?.errorCode || e),
+          });
+        },
+        onFailure: (err) => console.warn('[Screensaver] Luna registration failed:', err?.errorText || err?.errorCode || err),
+      });
+    } else {
+      dlog('[Screensaver] webOS service unavailable (no webOS / browser)');
+    }
+
     try {
       // Auto-Login via gespeicherter Session
       const sessionStr = localStorage.getItem('current_session');
-      dlog('[restore] current_session vorhanden:', !!sessionStr);
+      dlog('[restore] current_session present:', !!sessionStr);
       if (sessionStr) {
         try {
           const session = JSON.parse(sessionStr);
           const server  = savedServers.find(s => s.id === session.serverId);
-          dlog('[restore] Server gefunden:', !!server, '| Token:', !!session.token, '| userId:', !!session.userId);
+          dlog('[restore] server found:', !!server, '| token:', !!session.token, '| userId:', !!session.userId);
           if (server && session.token && session.userId) {
             selectedServer = server;
             activeToken    = session.token;
@@ -712,21 +789,21 @@
                 applyUserPrefs(selectedUser.Id);   // Profil-Einstellungen laden
                 fetchUsers(); // Im Hintergrund für Benutzerwechsel
                 scheduleScreensaver();
-                dlog('[restore] Auto-Login erfolgreich:', selectedUser.Name);
+                dlog('[restore] auto-login successful:', selectedUser.Name);
                 return;
               }
             }
             // Token abgelaufen → User-Screen für diesen Server
-            dlog('[restore] Token ungültig → zurück zum Benutzer-Screen');
+            dlog('[restore] token invalid → back to user screen');
             clearCurrentSession();
             await connectToServer(server);
             return;
           }
-        } catch (e) { dlog('[restore] Fehler beim Wiederherstellen:', e?.message || e); clearCurrentSession(); }
+        } catch (e) { dlog('[restore] restore failed:', e?.message || e); clearCurrentSession(); }
       }
 
       // Kein Auto-Login → Server-Auswahl anzeigen
-      dlog('[restore] kein Auto-Login → Server-Auswahl');
+      dlog('[restore] no auto-login → server selection');
       appPhase = 'servers';
     } finally {
       initializing = false;   // Splashscreen ausblenden (egal welcher Pfad)
@@ -830,7 +907,8 @@
       } else {
         serverConnectError = $t.errInvalid;
       }
-    } catch {
+    } catch (e) {
+      console.warn('[Server] connection failed:', e);
       serverConnectError = $t.errOffline;
     } finally {
       isConnecting = false;
@@ -864,7 +942,8 @@
       } else {
         serverConnectError = $t.errInvalid;
       }
-    } catch {
+    } catch (e) {
+      console.warn('[Server] connection failed:', e);
       serverConnectError = $t.errOffline;
     } finally {
       isConnecting = false;
@@ -892,7 +971,8 @@
     try {
       const res = await fetch(`${serverUrl}/Users/Public`);
       if (res.ok) users = await res.json();
-    } catch { }
+      else console.warn('[Server] user list HTTP', res.status);
+    } catch (e) { console.warn('[Server] could not load user list:', e); }
   }
 
   // ── Gemeinsames Schauen: Mitglieder & Datenbasis ───────────────────────────
@@ -965,7 +1045,7 @@
     for (const m of sharedProfile.members) {
       if (!m || !m.id) continue;
       const token = memberToken(m);
-      if (!token) { console.warn('[Gemeinsam] Kein gültiger Token für', m.name, '– Profil neu hinterlegen.'); continue; }
+      if (!token) { console.warn('[Shared] no valid token for', m.name, '– please re-add profile.'); continue; }
       try {
         const res = await fetch(
           `${serverUrl}/Users/${m.id}/Items?ParentId=${libraryId}&Recursive=true` +
@@ -973,11 +1053,12 @@
           `&Limit=100000&EnableTotalRecordCount=false`,
           { headers: { 'Authorization': `MediaBrowser Token="${token}"`, 'Content-Type': 'application/json' } }
         );
-        if (!res.ok) { console.warn('[Gemeinsam] Abfrage fehlgeschlagen für', m.name, '· HTTP', res.status); continue; }
+        if (!res.ok) { console.warn('[Shared] query failed for', m.name, '· HTTP', res.status); continue; }
         let n = 0;
+        // Clientseitig auf UserData.Played prüfen — zuverlässiger als Filters=IsPlayed (greift bei Serien nicht immer).
         (await res.json()).Items?.forEach(i => { if (i.UserData?.Played) { ids.add(i.Id); n++; } });
-        dlog('[Gemeinsam]', m.name, '→', n, 'komplett gesehene Titel');
-      } catch (e) { console.warn('[Gemeinsam] Fehler für', m.name, e); }
+        dlog('[Shared]', m.name, '→', n, 'fully-watched titles');
+      } catch (e) { console.warn('[Shared] error for', m.name, e); }
     }
     partnersPlayedIds = ids;
   }
@@ -1010,6 +1091,8 @@
         const genreCount = {}; const watched = new Set();
         for (const it of items) {
           if (it.UserData?.Played) {
+            // Nur vollständig Gesehenes ausschließen + Genre-Vorlieben daraus ableiten.
+            // Angefangene Serien/Filme bleiben bewusst als Vorschlag erhalten (kein Extra-Traffic).
             watched.add(it.Id);
             for (const g of it.Genres || []) genreCount[g] = (genreCount[g] || 0) + 1;
           }
@@ -1045,7 +1128,7 @@
       .sort((a, b) => b.score - a.score || (b.it.CommunityRating || 0) - (a.it.CommunityRating || 0))
       .slice(0, 20)
       .map(x => ({ ...x.it, UserData: {} }));   // UserData leeren → kein Fortschrittsbalken eines Mitglieds
-    dlog('[Gemeinsam] Vorschläge:', sharedSuggestions.length);
+    dlog('[Shared] suggestions:', sharedSuggestions.length);
   }
 
   // baseUrl explizit übergebbar: beim Auto-Login ist der reaktive serverUrl ($:) noch nicht
@@ -1056,9 +1139,9 @@
       const res = await fetch(`${baseUrl}/Users/Me`, {
         headers: { "Authorization": `MediaBrowser Token="${token}"` }
       });
-      if (!res.ok) dlog('[auth] Token-Validierung fehlgeschlagen — HTTP', res.status);
+      if (!res.ok) dlog('[auth] token validation failed — HTTP', res.status);
       return res.ok;
-    } catch (e) { dlog('[auth] Token-Validierung — Netzwerkfehler:', e?.message || e); return false; }
+    } catch (e) { dlog('[auth] token validation — network error:', e?.message || e); return false; }
   }
 
   /** Profil angeklickt — ggf. Schnellanmeldung per gespeichertem Token */
@@ -1084,7 +1167,7 @@
         // authenticateUser überschreibt ihn nach erfolgreicher Passwort-Anmeldung mit dem frischen
         // Token. (Früher wurde hier gelöscht, wodurch sich der Schnellwechsel nach einem einzigen
         // Token-Ablauf still selbst abschaltete.)
-        dlog('[auth] gespeicherter Token abgelehnt für', user.Name, '— Speicher-Wunsch bleibt, wird nach Passwort-Login erneuert');
+        dlog('[auth] stored token rejected for', user.Name, '— save preference kept, refreshed after password login');
       }
     }
 
@@ -1157,7 +1240,7 @@
         serverVobSub = serverSupportsVobSub(info?.Version);
       }
     } catch {}
-    dlog('[OcenFin] Server-Capabilities:', { version: serverVersion || '(unbekannt)', vobSub: serverVobSub });
+    dlog('[OcenFin] server capabilities:', { version: serverVersion || '(unknown)', vobSub: serverVobSub });
   }
 
   // Quick Connect — Login-Flow (Code auf TV, Handy scannt)
@@ -1375,6 +1458,16 @@
     loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, currentLetter || null);
   }
 
+  // Buchstabensprung als Server-Filter. Aufsteigend: ab Buchstabe aufwärts. Absteigend: ab
+  // Buchstabe abwärts → Namen unterhalb des nächsten Buchstabens (G→"H"), sodass alle G-Titel
+  // enthalten sind und die Liste absteigend bei G beginnt. (Vergleich ist case-insensitiv.)
+  function letterFilter() {
+    if (!currentLetter) return '';
+    if (currentSort.order === 'Ascending') return `&NameStartsWithOrGreater=${currentLetter}`;
+    const next = String.fromCharCode(currentLetter.charCodeAt(0) + 1);   // 'A'→'B' … 'Z'→'['
+    return `&NameLessThan=${encodeURIComponent(next)}`;
+  }
+
   async function loadLibraryItems(library, letter = null) {
     if (currentLibraryId !== library.Id) {
       activeFilters  = { isFavorite: false, isPlayed: false, isNotPlayed: false };
@@ -1410,7 +1503,7 @@
     currentItems = [];
 
     let url = `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${library.Id}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=0`;
-    if (currentLetter) url += `&NameStartsWithOrGreater=${currentLetter}`;
+    url += letterFilter();
     url += getFilterQuery();
 
     try {
@@ -1507,8 +1600,8 @@
     try {
       const res = await fetch(`${serverUrl}/Playlists/${currentCollection.Id}/Items/${item.PlaylistItemId}/Move/${toIndex}`,
         { method: 'POST', headers: getAuthHeaders() });
-      if (!res.ok) console.warn('[OcenFin] Verschieben fehlgeschlagen', res.status);
-    } catch (e) { console.warn('[OcenFin] Verschieben-Fehler', e); }
+      if (!res.ok) console.warn('[OcenFin] move failed', res.status);
+    } catch (e) { console.warn('[OcenFin] move error', e); }
   }
   async function removePlaylistItem(item) {
     if (!currentCollection || !item?.PlaylistItemId) return;
@@ -1519,8 +1612,8 @@
     try {
       const res = await fetch(`${serverUrl}/Playlists/${currentCollection.Id}/Items?EntryIds=${item.PlaylistItemId}`,
         { method: 'DELETE', headers: getAuthHeaders() });
-      if (!res.ok) console.warn('[OcenFin] Entfernen fehlgeschlagen', res.status);
-    } catch (e) { console.warn('[OcenFin] Entfernen-Fehler', e); }
+      if (!res.ok) console.warn('[OcenFin] remove failed', res.status);
+    } catch (e) { console.warn('[OcenFin] remove error', e); }
   }
   // Ganze Wiedergabeliste löschen (Inline-Sicherheitsabfrage im Bearbeiten-Modus).
   let confirmDeletePlaylist = false;
@@ -1529,8 +1622,8 @@
     const id = currentCollection.Id;
     try {
       const res = await fetch(`${serverUrl}/Items/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
-      if (!res.ok) { console.warn('[OcenFin] Playlist löschen fehlgeschlagen', res.status); return; }
-    } catch (e) { console.warn('[OcenFin] Playlist-Löschen-Fehler', e); return; }
+      if (!res.ok) { console.warn('[OcenFin] playlist delete failed', res.status); return; }
+    } catch (e) { console.warn('[OcenFin] playlist delete error', e); return; }
     currentItems          = currentItems.filter(i => i.Id !== id);   // sofort aus dem Grid
     confirmDeletePlaylist = false;
     playlistEditMode      = false;
@@ -1570,8 +1663,8 @@
       const res = await fetch(`${serverUrl}/Playlists/${id}`, {
         method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ Name: name })
       });
-      if (!res.ok) { console.warn('[OcenFin] Umbenennen fehlgeschlagen', res.status); renameError = true; return; }
-    } catch (e) { console.warn('[OcenFin] Umbenennen-Fehler', e); renameError = true; return; }
+      if (!res.ok) { console.warn('[OcenFin] rename failed', res.status); renameError = true; return; }
+    } catch (e) { console.warn('[OcenFin] rename error', e); renameError = true; return; }
     // Lokal sofort spiegeln (Titel, Übersichts-Kachel, Sidebar)
     currentCollectionName = name;
     currentCollection     = { ...currentCollection, Name: name };
@@ -1616,9 +1709,9 @@
       ]);
       const content = contentRes.ok ? ((await contentRes.json()).Items || []) : [];
       const persons = personRes.ok  ? ((await personRes.json()).Items  || []).map(p => ({ ...p, Type: 'Person' })) : [];
-      dlog('[OcenFin] Favoriten:', content.length, 'Titel,', persons.length, 'Personen');
+      dlog('[OcenFin] favorites:', content.length, 'titles,', persons.length, 'persons');
       favoriteItems = [...content, ...persons];
-    } catch (e) { dlog('[OcenFin] Favoriten-Fehler:', e?.message); }
+    } catch (e) { dlog('[OcenFin] favorites error:', e?.message); }
     finally { isLoadingFavorites = false; }
     await tick();
     const card = favoritesGrid?.querySelector('button');
@@ -1659,7 +1752,7 @@
     try {
       await fetch(`${serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${currentPerson.Id}`,
         { method: next ? 'POST' : 'DELETE', headers: getAuthHeaders() });
-    } catch { currentPersonFav = !next; }
+    } catch (e) { console.warn('[OcenFin] person favorite failed, rolled back:', e); currentPersonFav = !next; }
   }
 
   // Filmografie nach Typ gruppieren (nur Filme / Serien). Folgen werden bewusst weggelassen –
@@ -1673,7 +1766,7 @@
     if (isFetchingMore || currentItems.length >= totalLibraryItems || !currentLibraryId) return;
     isFetchingMore = true;
     let url = `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${currentItems.length}`;
-    if (currentLetter) url += `&NameStartsWithOrGreater=${currentLetter}`;
+    url += letterFilter();
     url += getFilterQuery();
     try {
       const res = await fetch(url, { headers: getAuthHeaders() });
@@ -1735,7 +1828,33 @@
   // KONTEXTMENÜ (langes Drücken auf eine Karte)
   // ============================================================
   let contextItem = null;
-  function openContextMenu(item) { contextItem = item; }
+  let contextReturnId = null;     // Item-Id der auslösenden Card (Fokus-Rückgabe, überlebt Reload)
+  let contextReturnEl = null;     // Fallback: Element-Referenz, falls keine data-item-id vorhanden
+  let contextPickerMode = null;   // null | 'playlist' — AddToPicker aus dem Kontextmenü
+  let contextPickerItem = null;
+  function openContextMenu(item) {
+    contextReturnId = item?.Id ?? null;
+    contextReturnEl = document.activeElement;
+    contextItem = item;
+  }
+  // Nach dem Schließen von Kontextmenü UND Picker den Fokus zurück auf die Card legen.
+  // Erst per data-item-id suchen (überlebt einen Hintergrund-Reload), sonst die Element-Referenz.
+  // Das Dashboard lädt async neu (Remount via {#key}), daher kurz pollen, bis die Card wieder da ist.
+  function restoreContextFocus() {
+    const id = contextReturnId, el = contextReturnEl;
+    contextReturnId = null; contextReturnEl = null;
+    let tries = 0;
+    const attempt = () => {
+      let target = id ? document.querySelector(`[data-item-id="${id}"]`) : null;
+      if (!target && el && document.contains(el) && typeof el.focus === 'function') target = el;
+      if (target) { target.focus(); return; }
+      if (++tries < 12) { setTimeout(attempt, 50); return; }   // bis ~600 ms auf den neu geladenen Eintrag warten
+      // Eintrag ist weg (z.B. durchgemischte Empfehlung) → ersten sichtbaren Eintrag fokussieren, statt den Fokus zu verlieren.
+      document.querySelector('[data-item-id]')?.focus();
+    };
+    tick().then(attempt);
+  }
+  $: if (!contextItem && !contextPickerMode && (contextReturnId || contextReturnEl)) restoreContextFocus();
 
   // Nach einer Aktion (gesehen/Favorit/zurückgesetzt) die aktuelle Ansicht auffrischen,
   // damit Badges/Fortschritt/"Weiterschauen" den neuen Stand zeigen.
@@ -1750,9 +1869,13 @@
     }
   }
   function contextOpenDetails(e) {
+    contextReturnId = null; contextReturnEl = null;   // Details übernimmt den Fokus
     contextItem = null;
     showItemDetails(e.detail);
   }
+  // "Zur Wiedergabeliste hinzufügen" aus dem Kontextmenü → AddToPicker öffnen (Fokus-Rückgabe-Id bleibt
+  // erhalten und greift erst, wenn auch der Picker geschlossen ist).
+  function contextAddToList(e) { contextPickerItem = e.detail; contextPickerMode = 'playlist'; }
 
   // Zurück aus Details/Player → an die Herkunft, Bibliotheksposition wiederherstellen
   async function returnFromDetails() {
@@ -1765,6 +1888,10 @@
         const btn = libraryGrid.querySelector(`[data-item-id="${lastFocusedItemId}"]`);
         if (btn) btn.focus();
       }
+    } else if (detailsOrigin === 'favorites') {
+      // Favoriten neu laden — z.B. wenn in den Details ein Favorit entfernt wurde, war er sonst
+      // noch in der Übersicht gelistet, bis man die Ansicht wechselte.
+      loadFavorites();
     }
   }
 
@@ -1941,19 +2068,25 @@
   {/if}
 
   {#if $connectionLost && !initializing}
-    <div class="fixed top-0 left-0 right-0 z-[500] bg-red-600/95 text-white px-6 py-3 flex items-center justify-center gap-4 shadow-lg" transition:fade={{ duration: 200 }}>
-      <svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 010 12.728m-3.536-3.536a4 4 0 010-5.656M12 12h.01M5.636 5.636a9 9 0 000 12.728"/></svg>
-      <span class="font-bold">{$t.connectionLostMsg}</span>
-      <button on:click={() => location.reload()}
-        class="bg-white text-red-700 font-bold px-4 py-1.5 rounded-lg focus:outline-none focus:ring-4 focus:ring-white/60 hover:bg-gray-100">
-        {$t.retry}
-      </button>
+    <div class="fixed inset-0 z-[500] bg-black/60 flex flex-col items-stretch" data-focus-trap transition:uiFade={{ duration: 200 }} on:outrostart={dropTrapOnOutro}>
+      <div class="bg-red-600/95 text-white px-6 py-4 flex flex-wrap items-center justify-center gap-4 shadow-lg">
+        <svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 010 12.728m-3.536-3.536a4 4 0 010-5.656M12 12h.01M5.636 5.636a9 9 0 000 12.728"/></svg>
+        <span class="font-bold text-lg">{$t.connectionLostMsg}</span>
+        <button on:click={retryNow} bind:this={retryBtnEl}
+          class="bg-white text-red-700 font-bold px-5 py-2 rounded-lg focus:outline-none focus:ring-4 focus:ring-white/70 hover:bg-gray-100 transition-colors">
+          {$t.retry}
+        </button>
+        <button on:click={() => { connectionLost.set(false); handleLogout(); }}
+          class="bg-red-800 text-white font-bold px-5 py-2 rounded-lg focus:outline-none focus:ring-4 focus:ring-white/70 hover:bg-red-900 transition-colors">
+          {$t.switchServer}
+        </button>
+      </div>
     </div>
   {/if}
 
   <!-- App-verlassen-Bestätigung (Zurück am Dashboard) -->
   {#if showExitConfirm}
-    <div class="fixed inset-0 z-[600] flex items-center justify-center bg-black/70 backdrop-blur-sm" data-focus-trap transition:fade={{ duration: 150 }}>
+    <div class="fixed inset-0 z-[600] flex items-center justify-center bg-black/70 backdrop-blur-sm" data-focus-trap transition:uiFade={{ duration: 150 }} on:outrostart={dropTrapOnOutro}>
       <div class="bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl p-8 w-full max-w-md mx-6 flex flex-col gap-6">
         <div>
           <h2 class="text-2xl font-bold text-white">{$t.exitTitle}</h2>
@@ -2245,8 +2378,8 @@
           <!-- Profile -->
           {#if users.length > 0}
             <div class="flex flex-wrap justify-center gap-10">
-              {#each users as user}
-                <button on:click={() => handleUserClick(user)} class="flex flex-col items-center group focus:outline-none">
+              {#each users as user, i}
+                <button on:click={() => handleUserClick(user)} use:focusOnMount={i === 0} class="flex flex-col items-center group focus:outline-none">
                   <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl transition-all">
                     {#if user.PrimaryImageTag}
                       <img src="{serverUrl}/Users/{user.Id}/Images/Primary?tag={user.PrimaryImageTag}" alt={user.Name} class="w-full h-full object-cover"/>
@@ -2318,7 +2451,6 @@
 
       <Sidebar
         {selectedUser}
-        {serverUrl}
         {viewState}
         showLogo={displaySettings.showLogo}
         libraries={navLibraries}
@@ -2337,7 +2469,7 @@
         {#if viewState === 'dashboard'}
           {#key dashboardReloadKey}
           <Dashboard
-            {serverUrl} {selectedUser} {activeToken} {apiCache} {reduceAnimations}
+            {selectedUser} {apiCache} {reduceAnimations}
             showHero={displaySettings.hero}
             showLibraries={displaySettings.libraries}
             showHistory={displaySettings.history}
@@ -2399,7 +2531,7 @@
                     {$t.shuffle}
                   </button>
                   <!-- Sortierung -->
-                  <button on:click={() => showSortMenu = true}
+                  <button on:click={(e) => { sortFilterFocus.capture(e.currentTarget); showSortMenu = true; }}
                     class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
                            focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105"
                     title={$t.sortBy}>
@@ -2409,7 +2541,7 @@
                     {$t.sortBy}
                   </button>
                   <!-- Filter -->
-                  <button on:click={() => showFilterMenu = true}
+                  <button on:click={(e) => { sortFilterFocus.capture(e.currentTarget); showFilterMenu = true; }}
                     class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
                            focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -2519,12 +2651,13 @@
             </div>
 
             <!-- A-Z (nur bei Namenssortierung sinnvoll) -->
-            {#if isDefaultSort}
-            <div class="w-16 shrink-0 bg-gradient-to-l from-gray-950/85 via-gray-950/55 to-transparent backdrop-blur-sm flex flex-col items-center justify-between py-6 overflow-y-auto hide-scrollbar z-10">
+            {#if showLetterBar}
+            <div data-hbar class="w-16 shrink-0 bg-gradient-to-l from-gray-950/85 via-gray-950/55 to-transparent backdrop-blur-sm flex flex-col items-center justify-between py-6 overflow-y-auto hide-scrollbar z-10">
               {#each alphabet as letter}
                 <button
                   on:click={() => { showJumpLetter(letter); loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, letter); }}
                   on:focus={() => showJumpLetter(letter)}
+                  data-hbar-current={activeLetter === letter ? '' : null}
                   class="w-10 h-10 flex items-center justify-center rounded-full text-sm font-bold drop-shadow
                          focus:outline-none focus:ring-4 focus:ring-white transition-all transform focus:scale-125
                          {activeLetter === letter ? 'text-white bg-blue-600 shadow-lg scale-110' : 'text-gray-300/80 hover:text-white hover:bg-white/10'}"
@@ -2535,13 +2668,13 @@
           </div>
 
         {:else if viewState === 'search'}
-          <Search {serverUrl} {activeToken} {selectedUser}
+          <Search {selectedUser}
             on:openDetails={(e) => showItemDetails(e.detail)}
             on:openPerson={(e) => openPerson(e.detail)} />
 
         {:else if viewState === 'settings'}
           <Settings
-            {serverUrl} {activeToken} {selectedUser} {selectedServer} {savedTokens}
+            {selectedUser} {selectedServer} {savedTokens}
             {screensaverSettings} {reduceAnimations} {displaySettings} {playbackPrefs}
             {serverVersion} {serverVobSub}
             libraries={navLibraries}
@@ -2564,7 +2697,7 @@
         {:else if viewState === 'details' && currentDetailItem}
           <Details
             item={currentDetailItem}
-            {serverUrl} {activeToken} {selectedUser} {reduceAnimations} {playbackPrefs} {use24h} {serverVobSub}
+            {selectedUser} {reduceAnimations} {playbackPrefs} {use24h} {serverVobSub}
             spoilerProtection={displaySettings.spoilerProtection}
             on:close={returnFromDetails}
             on:openItemById={(e) => loadItemById(e.detail)}
@@ -2887,7 +3020,7 @@
       {#key currentDetailItem.Id}
         <Player
           item={currentDetailItem}
-          {serverUrl} {activeToken} {selectedUser} {playbackPrefs} {use24h} {serverVobSub}
+          {selectedUser} {playbackPrefs} {use24h} {serverVobSub}
           showClock={displaySettings.clock}
           showChapters={displaySettings.showChapters}
           seekStep={displaySettings.seekStep}
@@ -2928,13 +3061,17 @@
   {#if contextItem}
     <ContextMenu
       item={contextItem}
-      {serverUrl} {activeToken}
       userId={activeUserId}
       on:close={() => contextItem = null}
       on:changed={onContextChanged}
       on:openDetails={contextOpenDetails}
+      on:addToList={contextAddToList}
     />
   {/if}
+
+  <!-- AddToPicker fürs Kontextmenü (Fokus kehrt nach dem Schließen zur Card zurück) -->
+  <AddToPicker mode={contextPickerMode} item={contextPickerItem} {selectedUser} {getAuthHeaders}
+    on:created={refreshLibraries} on:close={() => contextPickerMode = null} />
 
   <!-- UHRZEIT — oben rechts, sichtbar im App-Betrieb außer im Player -->
   {#if appPhase === 'app' && viewState !== 'player' && displaySettings.clock}
@@ -2962,7 +3099,7 @@
        SCREENSAVER — oberste Ebene
   ============================================================ -->
   {#if showScreensaver}
-    <Screensaver {use24h} {serverUrl} token={activeToken} userId={activeUserId}
+    <Screensaver {use24h} userId={activeUserId}
       mode={screensaverSettings.mode} artSource={screensaverSettings.artSource} brightness={screensaverSettings.brightness}
       on:dismiss={resetActivity} />
   {/if}
@@ -2973,12 +3110,12 @@
      FILTER-MENÜ
 ============================================================ -->
 {#if showSortMenu}
-  <div data-focus-trap class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8 animate-fade-in"
+  <div data-focus-trap transition:uiFade on:outrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
     on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showSortMenu = false; } }}>
     <div class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full max-w-xl flex flex-col gap-4 shadow-2xl">
       <div class="flex justify-between items-center mb-2">
         <h2 class="text-4xl text-white font-bold">{$t.sortBy}</h2>
-        <button on:click={() => showSortMenu = false}
+        <button on:click={() => showSortMenu = false} use:focusOnMount
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
@@ -3015,13 +3152,13 @@
 {/if}
 
 {#if showFilterMenu}
-  <div data-focus-trap class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8 animate-fade-in">
+  <div data-focus-trap transition:uiFade on:outrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8">
     <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
 
       <!-- Kopf (fix) -->
       <div class="flex justify-between items-center p-8 pb-4 shrink-0">
         <h2 class="text-4xl text-white font-bold">{$t.filter}</h2>
-        <button on:click={() => showFilterMenu = false}
+        <button on:click={() => showFilterMenu = false} use:focusOnMount
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>

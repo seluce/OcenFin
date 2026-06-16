@@ -50,12 +50,21 @@ function cy(r) { return r.top + r.height / 2; }
 //  3) Rückfall: irgendetwas in der Halbebene (stark nach Querversatz bestraft).
 function pickGeometric(dir, from, candidates, exclude, strictRow = false) {
   const fX = cx(from), fY = cy(from);
+  // Horizontale Sprungleiste (z.B. A-Z) ist nur per Links/Rechts erreichbar. Steht der Fokus
+  // außerhalb, werden ihre Buttons bei Hoch/Runter ignoriert — so springt es nicht seitlich
+  // zur A-Z-Leiste, wenn die nächste Grid-Reihe noch lädt. Innerhalb der Leiste bleibt Hoch/
+  // Runter normal (Buchstabennavigation).
+  const fromHbar = exclude ? exclude.closest('[data-hbar]') : null;
   let overlap = null, oS = Infinity;
   let cone = null, cS = Infinity;
   let fall = null, fS = Infinity;
 
   for (const el of candidates) {
     if (el === exclude) continue;
+    if (dir === 'ArrowUp' || dir === 'ArrowDown') {
+      const elHbar = el.closest('[data-hbar]');
+      if (elHbar && elHbar !== fromHbar) continue;
+    }
     const r = rectOf(el);
     const mX = cx(r), mY = cy(r);
     let along, perp, valid, ov, align;
@@ -116,6 +125,10 @@ function focusEl(el) {
 // Eintrittspunkt einer Gruppe beim Übergang: zuletzt fokussiert (falls noch sichtbar),
 // sonst geometrisch nächstes in Richtung, sonst überhaupt nächstes.
 function entryOf(group, dir, from) {
+  // Als aktiv markiertes Element bevorzugen (z.B. der aktuelle Sidebar-Eintrag): Beim Wechsel in
+  // die Gruppe landet der Fokus so immer auf dem aktiven Element, nicht auf dem zuletzt fokussierten.
+  const current = group.querySelector('[data-group-current]');
+  if (current && isVisible(current)) return current;
   const remembered = lastFocus.get(group);
   if (remembered && group.contains(remembered) && isVisible(remembered)) return remembered;
   const cands = focusablesIn(group);
@@ -141,6 +154,14 @@ function nearestGroup(dir, from, currentGroup) {
 // abzuschalten. Gibt eine Aufräumfunktion zurück.
 export function createFocusManager(isEnabled) {
   function onFocusIn(e) {
+    // Ist ein Modal/Banner als Trap offen, darf der Fokus es nicht verlassen — auch nicht durch
+    // einen programmatischen focus() einer parallel mountenden Ansicht (z. B. Filme-Autofokus,
+    // während der "Server nicht erreichbar"-Banner erscheint). Dann Fokus zurück ins Modal holen.
+    const trap = activeTrap();
+    if (trap && !trap.contains(e.target)) {
+      const back = focusablesIn(trap)[0];
+      if (back && back !== e.target) { back.focus(); return; }
+    }
     const g = groupOf(e.target);
     if (g) lastFocus.set(g, e.target);
   }
@@ -178,7 +199,24 @@ export function createFocusManager(isEnabled) {
 
     // 1) Innerhalb der aktuellen Gruppe / des Modals
     if (scope) {
-      const within = pickGeometric(e.key, from, focusablesIn(scope), active, true);
+      let within = pickGeometric(e.key, from, focusablesIn(scope), active, true);
+      // Eintritt von außen IN eine Sprungleiste (per Links/Rechts): direkt auf das aktuell
+      // markierte Element (data-hbar-current, z.B. der ausgewählte Buchstabe) springen statt
+      // auf das geometrisch nächste. Innerhalb der Leiste bleibt die Navigation normal.
+      if (within && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        const bar = within.closest('[data-hbar]');
+        if (bar && !bar.contains(active)) {
+          const cur = bar.querySelector('[data-hbar-current]');
+          if (cur && isVisible(cur)) within = cur;
+        }
+        // Betritt man einen "oben-anfangen"-Bereich (z.B. den Einstellungs-Detailbereich) von
+        // außen, immer auf dessen oberstes fokussierbares Element statt geometrisch in die Mitte.
+        const top = within.closest('[data-enter-top]');
+        if (top && !top.contains(active)) {
+          const first = focusablesIn(top)[0];
+          if (first) within = first;
+        }
+      }
       if (within) { e.preventDefault(); focusEl(within); return; }
       if (trap) { e.preventDefault(); return; }   // Modal nicht verlassen
     }

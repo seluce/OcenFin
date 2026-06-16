@@ -341,6 +341,56 @@ export default {
     infoBuffer: "Bufor",
     infoDropped: "Utracone klatki",
 
+    trickplay: "Miniatury podglądu podczas przewijania",
+    trickplayDesc: "Pokazuje miniaturę danego momentu podczas przewijania (jeśli serwer je wygenerował). Wył.: tylko nazwa rozdziału i czas.",
+
+    statusTv: "Telewizor",
+    statusResolution: "Rozdzielczość",
+    statusUnknown: "Nieznane",
+    statusCodecsBrowser: "Kodeki (dekoder przeglądarki)",
+    statusOnlyOnTv: "Dostępne tylko na telewizorze",
+
+    statusGroupApp: "Aplikacja i serwer",
+    statusGroupComponents: "Komponenty",
+
+    statusAtmosHint: "Przy soundbarze przez (e)ARC może tu być Nie, mimo że Atmos działa — telewizor przekazuje dźwięk do soundbara.",
+
+    // In-App-Log-Viewer
+    clear: "Wyczyść",
+    logShow: "Pokaż dziennik",
+    logShowDesc: "Wyświetl, skopiuj lub udostępnij bieżące logi jako kod QR.",
+    logTitle: "Dziennik",
+    logEmpty: "Brak wpisów.",
+    logQrButton: "Kod QR",
+    logQrHint: "Zeskanuj telefonem, aby przenieść ostatnie wiersze (np. e-mailem).",
+    logBackToText: "Powrót do tekstu",
+
+    // Untertitel-Styling (nur Text)
+    subtitleColor: "Kolor",
+    subtitleEdge: "Krawędź",
+    subtitleBackground: "Tło",
+    subtitleStyleHint: "Dotyczy tylko napisów tekstowych (np. SRT/VTT). Napisy obrazkowe jak PGS można jedynie skalować.",
+    colorWhite: "Biały",
+    colorYellow: "Żółty",
+    colorGreen: "Zielony",
+    colorCyan: "Cyjan",
+    edgeShadow: "Cień",
+    edgeOutline: "Kontur",
+    styleNone: "Brak",
+    bgSemi: "Półprzezr.",
+    bgSolid: "Pełne",
+
+    // Teilen
+    share: "Udostępnij",
+    shareHint: "Zeskanuj telefonem, aby wyszukać lub udostępnić tytuł.",
+
+    // Untertitel-Versatz
+    subtitleOffset: "Przesunięcie",
+
+    // Kennwort anzeigen/verbergen
+    showPassword: "Pokaż hasło",
+    hidePassword: "Ukryj hasło",
+
     // Version
     version: "Wersja",
 };

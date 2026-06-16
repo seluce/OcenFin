@@ -341,6 +341,56 @@ export default {
     infoBuffer: "Buffer",
     infoDropped: "Verloren beelden",
 
+    trickplay: "Voorbeeldminiaturen bij spoelen",
+    trickplayDesc: "Toont tijdens het spoelen een miniatuur van het moment (als de server ze heeft gegenereerd). Uit: alleen hoofdstuknaam en tijd.",
+
+    statusTv: "Tv",
+    statusResolution: "Resolutie",
+    statusUnknown: "Onbekend",
+    statusCodecsBrowser: "Codecs (browserdecoder)",
+    statusOnlyOnTv: "Alleen beschikbaar op de tv",
+
+    statusGroupApp: "App en server",
+    statusGroupComponents: "Componenten",
+
+    statusAtmosHint: "Met een soundbar via (e)ARC kan hier Nee staan terwijl Atmos toch werkt — de tv geeft het geluid door aan de soundbar.",
+
+    // In-App-Log-Viewer
+    clear: "Wissen",
+    logShow: "Logboek tonen",
+    logShowDesc: "Huidige logs bekijken, kopiëren of delen als QR-code.",
+    logTitle: "Logboek",
+    logEmpty: "Nog geen vermeldingen.",
+    logQrButton: "QR-code",
+    logQrHint: "Scan met je telefoon om de laatste regels over te zetten (bijv. per e-mail).",
+    logBackToText: "Terug naar tekst",
+
+    // Untertitel-Styling (nur Text)
+    subtitleColor: "Kleur",
+    subtitleEdge: "Rand",
+    subtitleBackground: "Achtergrond",
+    subtitleStyleHint: "Geldt alleen voor tekstondertitels (bijv. SRT/VTT). Beeldondertitels zoals PGS kunnen alleen worden geschaald.",
+    colorWhite: "Wit",
+    colorYellow: "Geel",
+    colorGreen: "Groen",
+    colorCyan: "Cyaan",
+    edgeShadow: "Schaduw",
+    edgeOutline: "Contour",
+    styleNone: "Geen",
+    bgSemi: "Semi",
+    bgSolid: "Vol",
+
+    // Teilen
+    share: "Delen",
+    shareHint: "Scan met je telefoon om de titel op te zoeken of te delen.",
+
+    // Untertitel-Versatz
+    subtitleOffset: "Verschuiving",
+
+    // Kennwort anzeigen/verbergen
+    showPassword: "Wachtwoord tonen",
+    hidePassword: "Wachtwoord verbergen",
+
     // Version
     version: "Versie",
 };

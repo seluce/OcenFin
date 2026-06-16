@@ -36,14 +36,15 @@ export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false
   const pgsSub = clientGraphicSubs ? 'External' : 'Encode';
   const vobSub = (clientGraphicSubs && serverVobSub) ? 'External' : 'Encode';
 
-  // Läuft die App auf dem echten TV (webOS)? Dort dekodiert die Media-Pipeline auch DTS und
-  // Dolby TrueHD/Atmos → in Direct Play erlauben, damit der Server NICHT unnötig transkodiert.
-  // Im Browser-Dev (Firefox/Linux) bleibt es bei sicher dekodierbaren Codecs (sonst Bild ohne Ton).
+  // Läuft die App auf dem echten TV (webOS)? Dort dekodiert die Media-Pipeline auch DTS, Dolby
+  // TrueHD/Atmos und MP2 (europäische DVB-/TS-Inhalte) → in Direct Play erlauben, damit der Server
+  // NICHT unnötig transkodiert. Im Browser-Dev (Firefox/Linux) bleibt es bei sicher dekodierbaren
+  // Codecs (sonst Bild ohne Ton). Alle Zusätze sind rein additiv → können Direct Play nur erweitern.
   const isWebOS = (typeof window !== 'undefined' && !!window.webOSSystem)
                || (typeof navigator !== 'undefined' && /web0s|webos/i.test(navigator.userAgent || ''));
-  const tvAudio  = isWebOS ? ',dts,truehd' : '';
+  const tvAudio  = isWebOS ? ',dts,truehd,mp2' : '';
   const baseAudio = `aac,mp3,ac3,eac3,flac,alac,opus,vorbis,pcm${tvAudio}`;
-  const tsAudio   = `aac,mp3,ac3,eac3${isWebOS ? ',dts' : ''}`;
+  const tsAudio   = `aac,mp3,ac3,eac3${isWebOS ? ',dts,truehd,mp2' : ''}`;
 
   return {
     MaxStreamingBitrate: maxBitrate,
@@ -147,7 +148,7 @@ export async function getPlaybackInfo({
   if (audioStreamIndex !== null && audioStreamIndex !== -1)       body.AudioStreamIndex = audioStreamIndex;
   if (subtitleStreamIndex !== null && subtitleStreamIndex !== -1) body.SubtitleStreamIndex = subtitleStreamIndex;
   if (mediaSourceId) body.MediaSourceId = mediaSourceId;
-  dlog('[OcenFin] PlaybackInfo-Anfrage:', { audioStreamIndex, subtitleStreamIndex, enableDirectPlay, enableDirectStream, allowAudioStreamCopy });
+  dlog('[OcenFin] PlaybackInfo request:', { audioStreamIndex, subtitleStreamIndex, enableDirectPlay, enableDirectStream, allowAudioStreamCopy });
 
   const res = await fetch(`${serverUrl}/Items/${itemId}/PlaybackInfo?${qs.toString()}`, {
     method: 'POST',
@@ -181,7 +182,7 @@ export async function getPlaybackInfo({
     subtitleStreams: (ms?.MediaStreams || []).filter(s => s.Type === 'Subtitle').map(s => `#${s.Index} ${s.Language || '?'} ${s.Codec} (${s.DeliveryMethod || '-'})`),
   });
   // Flach geloggt (ohne Aufklappen sichtbar): welche Spur der Server WIRKLICH nimmt + volle URL.
-  dlog(`[OcenFin] → Server wählte AudioStreamIndex=${urlAudioIdx} SubtitleStreamIndex=${urlSubIdx} | angefragt Audio=${audioStreamIndex}`);
+  dlog(`[OcenFin] → server chose AudioStreamIndex=${urlAudioIdx} SubtitleStreamIndex=${urlSubIdx} | requested Audio=${audioStreamIndex}`);
   if (ms?.TranscodingUrl) dlog('[OcenFin] TranscodingUrl:', ms.TranscodingUrl);
   return { mediaSource: ms, playSessionId: data.PlaySessionId || null };
 }
@@ -211,7 +212,7 @@ export async function getPlaybackInfoFast(params) {
   if (entry && entry.key === _pfKey(params) && Date.now() - entry.ts < _PF_TTL) {
     _pfCache.delete(params.itemId);
     const info = await entry.promise;
-    if (info) { dlog('[OcenFin] PlaybackInfo aus Prefetch übernommen'); return info; }
+    if (info) { dlog('[OcenFin] PlaybackInfo taken from prefetch'); return info; }
   }
   return getPlaybackInfo(params);
 }
@@ -242,7 +243,7 @@ export function resolveStream({ serverUrl, token, itemId, mediaSource, audioStre
     url = setParam(url, 'SubtitleStreamIndex', subtitleStreamIndex === null ? -1 : subtitleStreamIndex);
 
     const isHls = (mediaSource.TranscodingSubProtocol || '').toLowerCase() === 'hls' || url.includes('.m3u8');
-    dlog('[OcenFin] TranscodingUrl gepatcht →', { audioStreamIndex, subtitleStreamIndex });
+    dlog('[OcenFin] TranscodingUrl patched →', { audioStreamIndex, subtitleStreamIndex });
     return { url, isHls, method: 'Transcode', mediaSource };
   }
   // Direct Play / Direct Stream: vollständige, byte-seekbare Datei (Container unverändert;

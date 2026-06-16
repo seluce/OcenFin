@@ -1,6 +1,6 @@
 <script>
   import { t, currentLang } from '../i18n.js';
-  import { isBackKey, focusOnMount, authHeaders, dlog } from '../utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro, serverUrl, activeToken } from '../utils.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady } from '../syncplay.js';
   import { PgsRenderer, VobSubRenderer } from 'libbitsub';
@@ -14,8 +14,6 @@
   import AddToPicker from './AddToPicker.svelte';
 
   export let item;
-  export let serverUrl;
-  export let activeToken;
   export let selectedAudioIndex;
   export let selectedSubtitleIndex;
   export let mediaSourceId = null;   // gewählte Version (FullHD/4K); null = Server-Standard
@@ -103,14 +101,24 @@
   }
   function clearBufferWatchdog() { clearTimeout(bufferWatchdog); bufferWatchdog = null; }
 
+  // Mini-Aussetzer (< ~300 ms) sollen den Spinner nicht aufblitzen lassen → verzögert einblenden.
+  let spinnerTimer = null;
+  function clearSpinner() { if (spinnerTimer) { clearTimeout(spinnerTimer); spinnerTimer = null; } }
+
   function onPlayable() {            // canplay / playing
+    clearSpinner();
     isBuffering = false;
     playbackError = false;
     clearBufferWatchdog();
   }
   function onWaiting() {             // waiting / stalled
-    isBuffering = true;
+    if (videoElement?.paused) return;   // pausiert ist KEIN Puffern → kein Spinner
     armBufferWatchdog();
+    if (isBuffering || spinnerTimer) return;
+    spinnerTimer = setTimeout(() => {
+      spinnerTimer = null;
+      if (!videoElement?.paused) isBuffering = true;
+    }, 300);
   }
   // Diagnose-Logger für <video>-Lebenszyklus-Events
   function vlog(ev, extra) {
@@ -118,19 +126,20 @@
   }
   // Läuft die Zeit, läuft die Wiedergabe → Pufferzustand sicher aufheben.
   function onProgressTick() {
+    clearSpinner();
     if (isBuffering) { isBuffering = false; clearBufferWatchdog(); }
   }
   function onVideoError() {
     // MediaError-Code hilft bei der Diagnose: 3 = DECODE (Codec/Decoder),
     // 4 = SRC_NOT_SUPPORTED (Format/Container), 2 = NETWORK.
     const err = videoElement?.error;
-    console.error('[OcenFin] <video> Fehler:', { code: err?.code, message: err?.message, playMethod });
+    console.error('[OcenFin] <video> error:', { code: err?.code, message: err?.message, playMethod });
     // Direct Play am Gerät gescheitert (z.B. MKV-Demux/Audio nicht abspielbar) →
     // EINMALIG auf Transcode zurückfallen, statt sofort die Fehlerseite zu zeigen.
     // Genau dieses "erst Direct Play versuchen, dann transkodieren" machen LiteFin/Breezefin.
     if (playMethod !== 'Transcode' && !triedTranscodeFallback) {
       triedTranscodeFallback = true;
-      console.warn('[OcenFin] Direct Play fehlgeschlagen → erzwinge Transcode-Fallback');
+      console.warn('[OcenFin] Direct Play failed → forcing transcode fallback');
       clearBufferWatchdog();
       isBuffering = true; playbackError = false;
       setupPlayback(selectedAudioIndex, selectedSubtitleIndex, true);
@@ -172,9 +181,15 @@
       if (inSyncGroup) return;
       wasPlayingBeforeSync = isPlaying;
       videoElement?.pause();
-    } else if (wasPlayingBeforeSync) {
-      videoElement?.play().catch(() => {});
-      wasPlayingBeforeSync = false;
+    } else {
+      if (wasPlayingBeforeSync) {
+        videoElement?.play().catch(() => {});
+        wasPlayingBeforeSync = false;
+      }
+      // Fokus zurück in den Player + HUD zeigen. Ohne das bleibt der Fokus am
+      // geschlossenen SyncPlay-Dialog hängen und der Player nimmt keine Eingaben mehr an.
+      resetControlsTimeout();
+      tick().then(() => playerContainer?.focus());
     }
   }
 
@@ -193,7 +208,7 @@
     if (!inSyncGroup || !syncReady) return;
     if (Date.now() < syncSuppressUntil) return;
     dlog('[SyncPlay] →', action, posTicks());
-    sendSyncCommand(serverUrl, activeToken, action, posTicks());
+    sendSyncCommand($serverUrl, $activeToken, action, posTicks());
   }
   // Erster Start in einer Gruppe legt die Queue fest (Server spielt für alle los); spätere Plays = Unpause.
   async function onLocalPlay() {
@@ -201,7 +216,7 @@
     // Transcode-Streams starten nach (Neu-)Laden ungewollt automatisch. Wenn die Gruppe pausiert ist
     // und kein echter Nutzer-Play vorliegt → wieder anhalten, nicht an die Gruppe melden.
     if (_groupWantsPaused && (Date.now() - _userPlayIntent) > 1500) {
-      dlog('[SyncPlay] Auto-Play unterdrückt (Gruppe pausiert)');
+      dlog('[SyncPlay] auto-play suppressed (group paused)');
       syncSuppressUntil = Date.now() + 600;
       videoElement?.pause();
       return;
@@ -211,7 +226,7 @@
     syncQueueSet = true;
     if (syncQueue && syncQueue.itemId === item.Id) { syncReady = true; return; }  // Gruppe spielt dieses Item bereits
     dlog('[SyncPlay] → SetNewQueue', item.Id, posTicks());
-    await setSyncQueue(serverUrl, activeToken, item.Id, posTicks());
+    await setSyncQueue($serverUrl, $activeToken, item.Id, posTicks());
     syncReady = true;
   }
   function onLocalPause() { syncEmit('Pause'); }
@@ -227,14 +242,14 @@
     if (!inSyncGroup || !syncQueue?.playlistItemId || _syncBuffering) return;
     _syncBuffering = true;
     dlog('[SyncPlay] → Buffering', posTicks());
-    sendSyncBuffering(serverUrl, activeToken, posTicks(), true, syncQueue.playlistItemId);
+    sendSyncBuffering($serverUrl, $activeToken, posTicks(), true, syncQueue.playlistItemId);
   }
   function syncReportReady() {
     if (!inSyncGroup || !syncQueue?.playlistItemId) return;
     if (!_syncBuffering && _syncReadySent) return;   // nichts Neues seit dem letzten Ready
     _syncBuffering = false; _syncReadySent = true;
     dlog('[SyncPlay] → Ready', posTicks());
-    sendSyncReady(serverUrl, activeToken, posTicks(), true, syncQueue.playlistItemId);
+    sendSyncReady($serverUrl, $activeToken, posTicks(), true, syncQueue.playlistItemId);
   }
 
   // Empfangenes Gruppen-Kommando anwenden (mit grobem Zeitbezug über "When"; Feinabgleich = Phase 2b).
@@ -246,7 +261,7 @@
     const when  = cmd.When ? new Date(cmd.When).getTime() : Date.now();
     const delay = Math.max(0, when - Date.now());
     syncSuppressUntil = Date.now() + delay + 600;   // Backstop für Play/Pause-Folge-Events
-    dlog('[SyncPlay] ← anwenden', command, 'pos', Math.round(pos), 'in', delay, 'ms');
+    dlog('[SyncPlay] ← apply', command, 'pos', Math.round(pos), 'in', delay, 'ms');
     if (command === 'Seek') {
       _expectSeekEcho = true; videoElement.currentTime = pos; currentTime = pos;
     } else if (command === 'Pause') {
@@ -272,7 +287,7 @@
     if (!c || c._seq === _appliedRemoteSeq) return;
     _appliedRemoteSeq = c._seq;
     const cmd = (c.command || '').toString().toLowerCase();
-    dlog('[OcenFin] Admin-Fernsteuerung:', cmd);
+    dlog('[OcenFin] admin remote:', cmd);
     if (cmd === 'pause') videoElement?.pause();
     else if (cmd === 'unpause') videoElement?.play().catch(() => {});
     else if (cmd === 'playpause') togglePlay();
@@ -351,6 +366,42 @@
     else if (infoInterval) { clearInterval(infoInterval); infoInterval = null; }
   }
 
+  // --- Trickplay: Vorschaubilder beim Spulen (Jellyfin 10.9+) -------------------------------
+  // Jellyfin liefert Kachel-Sheets (z. B. 10×10 Thumbnails/Bild). Wir berechnen pro Zeit das
+  // richtige Sheet + die Position darin und schneiden es per background-position aus. Sheets
+  // bleiben im Browser-Cache → flüssiges Scrubben, nur an Sheet-Grenzen wird neu geladen.
+  let trickplayInfo = null;   // { width, Width, Height, TileWidth, TileHeight, ThumbnailCount, Interval }
+  let trickplayMsId = null;
+  function parseTrickplay(data) {
+    trickplayInfo = null; trickplayMsId = null;
+    const tp = data?.Trickplay;
+    if (!tp) return;
+    // mediaSourceId-Schlüssel: bevorzugt die laufende Quelle, sonst der erste Eintrag.
+    const srcId = data.MediaSources?.[0]?.Id;
+    const msId  = (srcId && tp[srcId]) ? srcId : Object.keys(tp)[0];
+    const byWidth = msId && tp[msId];
+    if (!byWidth) return;
+    const w = Object.keys(byWidth).map(Number).filter(n => !isNaN(n)).sort((a, b) => b - a)[0]; // größte Breite
+    if (!w || !byWidth[String(w)]) return;
+    trickplayInfo = { width: w, ...byWidth[String(w)] };
+    trickplayMsId = msId;
+  }
+  $: trickplayTile = (isSeeking && playbackPrefs.trickplay !== false && trickplayInfo && duration > 0) ? computeTrickplayTile(seekTime) : null;
+  function computeTrickplayTile(t) {
+    const { Interval, TileWidth, TileHeight, Width, Height, width, ThumbnailCount } = trickplayInfo;
+    if (!Interval || !TileWidth || !TileHeight || !Width || !Height) return null;
+    const idx     = Math.min(Math.max(0, Math.floor((t * 1000) / Interval)), (ThumbnailCount || 1) - 1);
+    const perTile = TileWidth * TileHeight;
+    const sheet   = Math.floor(idx / perTile);
+    const local   = idx % perTile;
+    return {
+      url: `${$serverUrl}/Videos/${item.Id}/Trickplay/${width}/${sheet}.jpg?ApiKey=${$activeToken}&MediaSourceId=${trickplayMsId}`,
+      x: (local % TileWidth) * Width,
+      y: Math.floor(local / TileWidth) * Height,
+      w: Width, h: Height,
+    };
+  }
+
   // ============================================================
   // WIEDERGABE-AUFBAU — PlaybackInfo entscheidet Direct Play vs. Transcode
   // ============================================================
@@ -368,7 +419,7 @@
       let titleStreams = (item?.MediaStreams?.length ? item.MediaStreams : mediaStreams) || [];
       if (!titleStreams.length && item?.Id) {
         try {
-          const r = await fetch(`${serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaStreams`, { headers: getAuthHeaders() });
+          const r = await fetch(`${$serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaStreams`, { headers: getAuthHeaders() });
           if (r.ok) { const full = await r.json(); if (full?.MediaStreams?.length) titleStreams = full.MediaStreams; }
         } catch {}
       }
@@ -403,7 +454,7 @@
       // Direct Play: volle Bitrate; Transcode: deckeln, damit der Server in Echtzeit mitkommt.
       const requestBitrate = enableDirectPlay ? maxBitrate : Math.min(maxBitrate, TRANSCODE_MAX_BITRATE);
       const info = await getPlaybackInfoFast({
-        serverUrl, userId: selectedUser.Id, token: activeToken, itemId: item.Id,
+        serverUrl: $serverUrl, userId: selectedUser.Id, token: $activeToken, itemId: item.Id,
         audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex,
         maxBitrate: requestBitrate, startTicks: 0,   // Resume passiert client-seitig (seekToResume)
         enableDirectPlay, enableDirectStream, allowAudioStreamCopy,
@@ -414,15 +465,22 @@
       if (info.playSessionId) playSessionId = info.playSessionId;
       const ms = info.mediaSource;
       currentMediaSource = ms;   // für den fliegenden Untertitel-Wechsel merken
-      const resolved = resolveStream({ serverUrl, token: activeToken, itemId: item.Id, mediaSource: ms, audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex });
+      const resolved = resolveStream({ serverUrl: $serverUrl, token: $activeToken, itemId: item.Id, mediaSource: ms, audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex });
       playMethod = resolved.method;
       dlog('[OcenFin] resolveStream →', { method: resolved.method, isHls: resolved.isHls, url: resolved.url });
+      // Warum transkodiert der Server? TranscodeReasons nennt es direkt (VideoCodecNotSupported,
+      // AudioCodecNotSupported, ContainerBitrateExceedsLimit, SubtitleCodecNotSupported …).
+      // Als warn → landet immer im Log-Puffer, auch ohne Debug-Modus.
+      if (resolved.method === 'Transcode') {
+        const reasons = ms?.TranscodeReasons;
+        console.warn('[OcenFin] Transcode —', (Array.isArray(reasons) && reasons.length) ? reasons.join(', ') : 'reason not reported');
+      }
       await attachSource(resolved.url, resolved.isHls);
       applySubtitleOverlay(subtitleIndex, ms);
     } catch (e) {
-      console.error('PlaybackInfo fehlgeschlagen, Fallback auf Direct Play:', e);
+      console.error('PlaybackInfo failed, falling back to Direct Play:', e);
       playMethod = 'DirectPlay';
-      const url = `${serverUrl}/Videos/${item.Id}/stream?static=true&ApiKey=${activeToken}` +
+      const url = `${$serverUrl}/Videos/${item.Id}/stream?static=true&ApiKey=${$activeToken}` +
                   (audioIndex !== -1 ? `&AudioStreamIndex=${audioIndex}` : '');
       await attachSource(url, false);
     }
@@ -439,12 +497,14 @@
       try {
         const Hls = (await import('hls.js')).default;
         if (Hls.isSupported()) {
-          hls = new Hls({ maxBufferLength: 30, enableWorker: true, backBufferLength: 30 });
+          // Mehr Vorauspuffer (60 s, bis 120 s bei freiem Netz) → robuster gegen Aussetzer auf
+          // langsamem Netz/Server. backBufferLength klein halten (Speicher am TV schonen).
+          hls = new Hls({ maxBufferLength: 60, maxMaxBufferLength: 120, enableWorker: true, backBufferLength: 30 });
           hls.loadSource(url);
           hls.attachMedia(videoElement);
           hls.on(Hls.Events.ERROR, (_e, data) => {
             // Ausführliche Diagnose: Typ, Detail, Codec-Hinweis, HTTP-Status
-            console.error('[OcenFin] hls.js Fehler:', {
+            console.error('[OcenFin] hls.js error:', {
               type: data?.type, details: data?.details, fatal: data?.fatal,
               reason: data?.reason || data?.err?.message,
               httpStatus: data?.response?.code, url: data?.url,
@@ -455,7 +515,7 @@
           videoElement.src = url;   // letzter Versuch nativ
         }
       } catch (err) {
-        console.error('hls.js konnte nicht geladen werden:', err);
+        console.error('hls.js could not be loaded:', err);
         videoElement.src = url;
       }
     } else {
@@ -472,6 +532,15 @@
   // und webOS rendert native Cues ohnehin unzuverlässig. So haben wir volle Kontrolle.
   let currentSubtitleText = '';
   let subtitleCues = [];           // [{ start, end, text }] in Sekunden
+  // Untertitel-Versatz (nur Text-Overlay = VTT/SRT/ASS-zu-VTT). + = Untertitel später (verzögert),
+  // − = früher. Pro Spur/Titel zurückgesetzt; bewusst NICHT gespeichert (ist inhaltsspezifisch).
+  let subtitleOffset = 0;
+  function adjustSubtitleOffset(delta) {
+    subtitleOffset = Math.round(Math.max(-10, Math.min(10, subtitleOffset + delta)) * 10) / 10;
+  }
+  function formatOffset(s) {
+    return (s > 0 ? '+' : '') + s.toFixed(1).replace('.', ',') + ' s';
+  }
   let subtitleFetchToken = 0;      // ignoriert Antworten eines überholten Wechsels
   let graphicRenderer = null;      // libbitsub-Instanz für das AKTUELL sichtbare Bild-Untertitel-Overlay
   let pendingRenderer = null;      // beim Sprachwechsel: neuer Renderer, der noch lädt (Altbild bleibt)
@@ -480,6 +549,21 @@
   // ASS/SSA mit Original-Layout rendern (JASSUB)? Aus → schlichtes Text-Overlay, beides Direct Play.
   let assRenderer = null;
   $: clientAssRender = playbackPrefs.assRendering && !playbackPrefs.burnSubtitles;
+
+  // Textuntertitel-Styling (NUR fürs .subtitle-box-Overlay = WebVTT/SRT). PGS/VobSub sind Bitmaps
+  // (nur skalierbar), ASS bringt sein eigenes Styling mit. Defaults = bisheriges Verhalten.
+  $: subColor = ({ white:'#ffffff', yellow:'#ffe14d', green:'#6dff6d', cyan:'#66e0ff' })[playbackPrefs.subtitleColor || 'white'] || '#ffffff';
+  $: subEdgeCss = (playbackPrefs.subtitleEdge === 'outline')
+        ? '-webkit-text-stroke:0.35vh #000;paint-order:stroke fill;text-shadow:0 0 3px rgba(0,0,0,.55);'
+        : (playbackPrefs.subtitleEdge === 'none')
+        ? '-webkit-text-stroke:0;text-shadow:none;'
+        : '-webkit-text-stroke:0;text-shadow:0 1px 2px #000,0 2px 8px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.9);';
+  $: subBgCss = (playbackPrefs.subtitleBackground === 'solid')
+        ? 'background:#000;padding:0.05em 0.5em;border-radius:0.5vh;'
+        : (playbackPrefs.subtitleBackground === 'semi')
+        ? 'background:rgba(0,0,0,.6);padding:0.05em 0.5em;border-radius:0.5vh;'
+        : 'background:transparent;';
+  $: subStyle = `color:${subColor};${subEdgeCss}${subBgCss}`;
 
   // Untertitelgröße → libbitsub-Skalierung (Variante B: gilt für PGS UND VobSub, nicht nur VTT).
   function graphicSubScale() {
@@ -497,6 +581,7 @@
   // Untertitel anwenden – routet je nach Codec: PGS/VobSub → libbitsub-Overlay, Text → VTT-Overlay.
   function applySubtitleOverlay(index, ms) {
     subtitleFetchToken++;   // laufende VTT-Fetches invalidieren (sonst Text-Overlay neben Grafik/ASS)
+    subtitleOffset = 0;     // neuer Spurwechsel → Versatz zurücksetzen (inhaltsspezifisch)
     if (index === -1 || !ms) { disposeGraphic(); disposeAss(); subtitleCues = []; return; }
     const stream = (ms.MediaStreams || []).find(s => s.Index === index && s.Type === 'Subtitle');
     const codec  = (stream?.Codec || '').toLowerCase();
@@ -522,11 +607,11 @@
   // Spurwechsel via setTrackByUrl ohne Renderer-Neuaufbau.
   function applyAssSubtitle(stream, ms) {
     if (!videoElement) return;
-    const url = assSubtitleUrl({ serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: activeToken });
+    const url = assSubtitleUrl({ serverUrl: $serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: $activeToken });
     try {
       if (assRenderer) {                       // weicher Spurwechsel (z.B. eng → deu)
         assRenderer.setTrackByUrl(url);
-        dlog('[OcenFin] ASS-Spurwechsel via JASSUB:', stream.Index);
+        dlog('[OcenFin] ASS track switch via JASSUB:', stream.Index);
         return;
       }
       assRenderer = new JASSUB({
@@ -536,8 +621,8 @@
         wasmUrl: jassubWasmUrl,
         fonts: attachmentFontUrls(ms),         // eingebettete MKV-Schriften → Layout originalgetreu
       });
-      dlog('[OcenFin] ASS-Untertitel via JASSUB:', stream.Index, stream.Codec);
-    } catch (e) { dlog('[OcenFin] JASSUB-Fehler:', e?.message); disposeAss(); }
+      dlog('[OcenFin] ASS subtitle via JASSUB:', stream.Index, stream.Codec);
+    } catch (e) { dlog('[OcenFin] JASSUB error:', e?.message); disposeAss(); }
   }
   // Eingebettete Schriften (MKV-Attachments) als URLs fürs JASSUB-fonts-Array.
   function attachmentFontUrls(ms) {
@@ -546,7 +631,7 @@
       .map(a => {
         const u = a.DeliveryUrl; if (!u) return null;
         if (/^https?:/i.test(u)) return u;
-        return `${serverUrl}${u}${(u.includes('api_key') || u.includes('ApiKey')) ? '' : (u.includes('?') ? '&' : '?') + 'ApiKey=' + activeToken}`;
+        return `${$serverUrl}${u}${(u.includes('api_key') || u.includes('ApiKey')) ? '' : (u.includes('?') ? '&' : '?') + 'ApiKey=' + $activeToken}`;
       })
       .filter(Boolean);
   }
@@ -557,8 +642,8 @@
   }
   function applyGraphicSubtitle(stream, ms) {
     if (!videoElement) return;
-    const url = graphicSubtitleUrl({ serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: activeToken });
-    if (!url) { disposeGraphic(); dlog('[OcenFin] Bild-Untertitel nicht abrufbar (Server liefert ihn nicht extern):', stream.Index); return; }
+    const url = graphicSubtitleUrl({ serverUrl: $serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: $activeToken });
+    if (!url) { disposeGraphic(); dlog('[OcenFin] image subtitle not available (server does not provide it externally):', stream.Index); return; }
     // Wechsel ohne Lücke: den NEUEN Renderer aufbauen, aber den alten erst entsorgen, wenn der
     // neue fertig geparst ist ('loaded'). So bleibt der bisherige Untertitel sichtbar, bis der
     // nächste bereit ist – kein Leer-Loch während der ~1–2 s Parsezeit. Noch nicht fertige
@@ -577,14 +662,14 @@
       displaySettings: { scale: graphicSubScale(), aspectMode: 'contain' },
       // libbitsub-Warnungen (z. B. WORKER_FALLBACK: Worker kann das WASM im Inline-Setup nicht laden,
       // Parsing läuft im Haupt-Thread) über unser gated dlog leiten → standardmäßig still im Log.
-      onWarning: (w) => dlog('[OcenFin] libbitsub-Hinweis:', w?.code || w?.message || w),
+      onWarning: (w) => dlog('[OcenFin] libbitsub notice:', w?.code || w?.message || w),
       onError: (e) => {
-        dlog('[OcenFin] libbitsub-Fehler:', e?.code || '', e?.message || e);
+        dlog('[OcenFin] libbitsub error:', e?.code || '', e?.message || e);
         if (created && created === pendingRenderer) { try { created.dispose(); } catch {} pendingRenderer = null; }
       },
       onEvent: (ev) => {
-        if (ev?.type === 'renderer-change') dlog('[OcenFin] libbitsub Backend:', ev.renderer);
-        else if (ev?.type === 'loaded') { dlog('[OcenFin] libbitsub geladen:', ev.format, 'cues=' + (ev.metadata?.cueCount ?? '?')); swapIn(); }
+        if (ev?.type === 'renderer-change') dlog('[OcenFin] libbitsub backend:', ev.renderer);
+        else if (ev?.type === 'loaded') { dlog('[OcenFin] libbitsub loaded:', ev.format, 'cues=' + (ev.metadata?.cueCount ?? '?')); swapIn(); }
       },
     };
     try {
@@ -595,8 +680,8 @@
       pendingRenderer = created;
       // Gibt es kein Altbild, wird das neue Overlay schlicht sichtbar, sobald es geladen ist.
       if (!graphicRenderer) { graphicRenderer = created; pendingRenderer = null; }
-      dlog('[OcenFin] Bild-Untertitel via libbitsub:', stream.Index, stream.Codec);
-    } catch (e) { dlog('[OcenFin] libbitsub-Renderer-Fehler:', e?.message); pendingRenderer = null; }
+      dlog('[OcenFin] image subtitle via libbitsub:', stream.Index, stream.Codec);
+    } catch (e) { dlog('[OcenFin] libbitsub renderer error:', e?.message); pendingRenderer = null; }
   }
   function disposeGraphic() {
     if (pendingRenderer) { try { pendingRenderer.dispose(); } catch {} pendingRenderer = null; }
@@ -633,7 +718,7 @@
 
   // Aktiven Cue aus der aktuellen Zeit ableiten (reaktiv, folgt currentTime)
   $: currentSubtitleText = subtitleCues.length
-    ? (subtitleCues.find(c => currentTime >= c.start && currentTime <= c.end)?.text ?? '')
+    ? (subtitleCues.find(c => (currentTime - subtitleOffset) >= c.start && (currentTime - subtitleOffset) <= c.end)?.text ?? '')
     : '';
 
   async function applyExternalSubtitleIfNeeded(index, ms) {
@@ -647,15 +732,15 @@
     const graphic = ['pgssub', 'dvdsub', 'pgs', 'dvbsub', 'vobsub', 'sub'].includes((stream.Codec || '').toLowerCase());
     if (method === 'encode' || graphic) return;   // gebrannt oder Grafik-Untertitel → kein VTT-Overlay
 
-    const url = externalSubtitleUrl({ serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: activeToken });
+    const url = externalSubtitleUrl({ serverUrl: $serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: $activeToken });
     try {
       const res = await fetch(url);
       if (!res.ok || myToken !== subtitleFetchToken) return;   // überholt oder Fehler
       const text = await res.text();
       if (myToken !== subtitleFetchToken) return;
       subtitleCues = parseVtt(text);
-      dlog('[OcenFin] Untertitel geladen:', subtitleCues.length, 'Cues');
-    } catch (e) { dlog('[OcenFin] Untertitel-Fetch-Fehler:', e?.message); }
+      dlog('[OcenFin] subtitles loaded:', subtitleCues.length, 'cues');
+    } catch (e) { dlog('[OcenFin] subtitle fetch error:', e?.message); }
   }
 
   // Intro Skipper / Media Segments
@@ -709,7 +794,7 @@
     // damit der Wechsel den Roundtrip spart. Greift nur, wenn die Parameter beim Wechsel passen.
     if (nextEpisode?.Id) {
       prefetchPlaybackInfo({
-        serverUrl, userId: selectedUser.Id, token: activeToken, itemId: nextEpisode.Id,
+        serverUrl: $serverUrl, userId: selectedUser.Id, token: $activeToken, itemId: nextEpisode.Id,
         audioStreamIndex: selectedAudioIndex, subtitleStreamIndex: selectedSubtitleIndex,
         maxBitrate, burnSubtitles: playbackPrefs.burnSubtitles, mediaSourceId: null,
         clientGraphicSubs: clientGraphicRender, serverVobSub,
@@ -863,12 +948,12 @@
   // API
   // ============================================================
 
-  const getAuthHeaders = () => authHeaders(activeToken);
+  const getAuthHeaders = () => authHeaders($activeToken);
 
   async function fetchMediaSources() {
     try {
       const res = await fetch(
-        `${serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaSources,Chapters`,
+        `${$serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaSources,Chapters,Trickplay`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
@@ -877,6 +962,7 @@
         // Spurenliste nur für die Auswahl-UI (Audio/Untertitel). Die tatsächliche
         // Lieferung (Spur vs. eingebrannt) entscheidet PlaybackInfo in setupPlayback.
         if (data.MediaSources?.[0]?.MediaStreams) mediaStreams = data.MediaSources[0].MediaStreams;
+        parseTrickplay(data);
       }
     } catch (e) { console.error('fetchMediaSources:', e); }
   }
@@ -886,23 +972,23 @@
     // 1) Moderne Media-Segments-API (Intro Skipper ab Jellyfin 10.9 liefert hierüber).
     //    Ohne Typ-Filter abfragen und selbst filtern — robuster gegen Server-/Versionsunterschiede.
     try {
-      const res = await fetch(`${serverUrl}/MediaSegments/${item.Id}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${$serverUrl}/MediaSegments/${item.Id}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const segs = (await res.json()).Items || [];
-        dlog('[OcenFin] Media-Segments:', segs.map(s => s.Type));
+        dlog('[OcenFin] media segments:', segs.map(s => s.Type));
         const d = segs.length ? segmentsToIntroData(segs) : null;
         if (d) {
-          dlog('[OcenFin] Media-Segments → Intro', d.Introduction.Valid, '| Outro', d.Credits.Valid);
+          dlog('[OcenFin] media segments → intro', d.Introduction.Valid, '| outro', d.Credits.Valid);
           introData = d; return;
         }
       } else {
-        dlog('[OcenFin] Media-Segments HTTP', res.status);   // z. B. 404 = Endpunkt fehlt, 401 = Auth
+        dlog('[OcenFin] media segments HTTP', res.status);   // z. B. 404 = Endpunkt fehlt, 401 = Auth
       }
-    } catch (e) { dlog('[OcenFin] Media-Segments Fehler:', e?.message); }
+    } catch (e) { dlog('[OcenFin] media segments error:', e?.message); }
     // 2) Ältere ConfusedPolarBear-Plugin-API. Manche Versionen liefern das Intro flach
     //    ({ Valid, IntroStart, … }), andere als { Introduction, Credits } → beide Formen abfangen.
     try {
-      const res = await fetch(`${serverUrl}/Episode/${item.Id}/IntroTimestamps/v1`, { headers: getAuthHeaders() });
+      const res = await fetch(`${$serverUrl}/Episode/${item.Id}/IntroTimestamps/v1`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         dlog('[OcenFin] IntroTimestamps/v1:', JSON.stringify(data));
@@ -911,9 +997,9 @@
       } else {
         dlog('[OcenFin] IntroTimestamps/v1 HTTP', res.status);
       }
-    } catch (e) { dlog('[OcenFin] IntroTimestamps/v1 Fehler:', e?.message); }
+    } catch (e) { dlog('[OcenFin] IntroTimestamps/v1 error:', e?.message); }
     // 3) Kein Plugin-Treffer → Kapitel-Fallback (greift reaktiv, sobald Kapitel geladen sind)
-    dlog('[OcenFin] Keine Media-Segments/Plugin-Daten → Kapitel-Fallback');
+    dlog('[OcenFin] no media segments / plugin data → chapter fallback');
     segmentsChecked = true;
   }
 
@@ -955,7 +1041,7 @@
     if (item.Type !== 'Episode' || !item.SeriesId) return;
     try {
       const res = await fetch(
-        `${serverUrl}/Shows/${item.SeriesId}/Episodes?UserId=${selectedUser.Id}`,
+        `${$serverUrl}/Shows/${item.SeriesId}/Episodes?UserId=${selectedUser.Id}`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
@@ -968,7 +1054,7 @@
 
   async function reportPlaybackStart() {
     try {
-      await fetch(`${serverUrl}/Sessions/Playing`, {
+      await fetch(`${$serverUrl}/Sessions/Playing`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -983,7 +1069,7 @@
   async function reportPlaybackProgress() {
     if (!isPlaying || !videoElement) return;
     try {
-      await fetch(`${serverUrl}/Sessions/Playing/Progress`, {
+      await fetch(`${$serverUrl}/Sessions/Playing/Progress`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -999,7 +1085,7 @@
   async function reportPlaybackStopped() {
     if (!videoElement) return;
     try {
-      await fetch(`${serverUrl}/Sessions/Playing/Stopped`, {
+      await fetch(`${$serverUrl}/Sessions/Playing/Stopped`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -1089,7 +1175,7 @@
     isFavorite = !isFavorite;
     resetControlsTimeout();
     try {
-      await fetch(`${serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${item.Id}`, {
+      await fetch(`${$serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${item.Id}`, {
         method: isFavorite ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
@@ -1297,10 +1383,11 @@
 
   <video
     bind:this={videoElement}
+    preload="auto"
     class="w-full h-full object-contain"
     on:play={() => { vlog('play'); isPlaying = true; onPlayable(); onLocalPlay(); }}
     on:playing={() => { vlog('playing'); onPlayable(); syncReportReady(); }}
-    on:pause={() => { isPlaying = false; isBuffering = false; clearBufferWatchdog(); onLocalPause(); }}
+    on:pause={() => { isPlaying = false; clearSpinner(); isBuffering = false; clearBufferWatchdog(); onLocalPause(); }}
     on:seeked={onLocalSeeked}
     on:seeking={syncReportBuffering}
     on:waiting={() => { vlog('waiting'); onWaiting(); syncReportBuffering(); }}
@@ -1353,9 +1440,9 @@
 
   <!-- WIEDERGABEINFO-OVERLAY (opt-in, vom Info-Button getoggelt) -->
   {#if showInfoOverlay}
-    <div class="absolute top-8 left-8 z-[55] bg-black/75 backdrop-blur-md border border-gray-700 rounded-xl px-5 py-4 text-sm shadow-2xl pointer-events-none max-w-sm animate-fade-in">
-      <div class="text-gray-400 uppercase tracking-wider text-xs font-bold mb-3">{$t.playbackInfo}</div>
-      <div class="flex flex-col gap-1.5">
+    <div transition:uiFade class="absolute top-8 left-8 z-[55] bg-black/75 backdrop-blur-md border border-gray-700 rounded-xl px-6 py-5 text-lg shadow-2xl pointer-events-none max-w-md">
+      <div class="text-gray-400 uppercase tracking-wider text-sm font-bold mb-3">{$t.playbackInfo}</div>
+      <div class="flex flex-col gap-2">
         <div class="flex justify-between gap-8">
           <span class="text-gray-500">{$t.infoMethod}</span>
           <span class="font-bold {playMethodColor}">{playMethodLabel}</span>
@@ -1431,7 +1518,7 @@
 
       <!-- PROGRESS BAR — sauberes Scrubbing, Kapitelmarken nur wenn aktiviert -->
       <div class="flex items-center gap-4 w-full">
-        <span class="text-sm font-mono w-16 tabular-nums">{formatTime(displayTime)}</span>
+        <span class="text-xl font-mono w-24 tabular-nums">{formatTime(displayTime)}</span>
         <div class="relative flex-1 flex items-center">
           <input
             type="range"
@@ -1450,6 +1537,14 @@
             <!-- Vorschau folgt dem Scrubber; Kapitelname (falls vorhanden) darüber gestapelt → keine Überlappung -->
             <div class="absolute bottom-full mb-4 -translate-x-1/2 pointer-events-none whitespace-nowrap flex flex-col items-center gap-0.5"
                  style="left: {Math.min(96, Math.max(4, seekPct))}%;">
+              {#if trickplayTile}
+                <!-- Trickplay-Vorschaubild: aus dem Kachel-Sheet ausgeschnitten -->
+                <div class="rounded-lg overflow-hidden shadow-2xl ring-1 ring-white/25 mb-1.5"
+                     style="width:{trickplayTile.w}px; height:{trickplayTile.h}px;
+                            background-image:url('{trickplayTile.url}');
+                            background-position:-{trickplayTile.x}px -{trickplayTile.y}px;
+                            background-repeat:no-repeat;"></div>
+              {/if}
               {#if showChapters && currentChapterName}
                 <span class="text-sm font-semibold text-white/80 drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">{currentChapterName}</span>
               {/if}
@@ -1465,10 +1560,10 @@
         </div>
         <div class="relative shrink-0">
           {#if timeMode === 'end'}
-            <span class="absolute bottom-full right-2 mb-0.5 text-[11px] font-medium text-gray-400 whitespace-nowrap pointer-events-none">{$t.endsAt}</span>
+            <span class="absolute bottom-full right-2 mb-1 text-sm font-medium text-gray-400 whitespace-nowrap pointer-events-none">{$t.endsAt}</span>
           {/if}
           <button on:click|stopPropagation={cycleTimeMode}
-            class="text-sm font-mono text-right tabular-nums cursor-pointer rounded-md px-2 py-1
+            class="text-xl font-mono text-right tabular-nums cursor-pointer rounded-md px-2 py-1
                    transition-colors hover:text-blue-300
                    focus:text-white focus:bg-blue-600 focus:ring-2 focus:ring-white focus:outline-none">
             {rightTimeLabel}
@@ -1605,8 +1700,8 @@
 
     <!-- EINSTELLUNGS-PANEL — bind:this für WebOS D-Pad Fokus -->
     {#if showSettings}
-      <div bind:this={settingsPanel} data-focus-trap
-        class="absolute bottom-32 right-12 bg-gray-900/95 backdrop-blur-md border border-gray-700 rounded-2xl shadow-2xl z-[60] p-6 flex flex-col gap-6 w-96 max-h-[60vh] animate-fade-in">
+      <div bind:this={settingsPanel} data-focus-trap transition:uiFade on:outrostart={dropTrapOnOutro}
+        class="absolute bottom-32 right-12 bg-gray-900/95 backdrop-blur-md border border-gray-700 rounded-2xl shadow-2xl z-[60] p-6 flex flex-col gap-6 w-96 max-h-[60vh]">
 
         <div class="flex justify-between items-center">
           <h2 class="text-2xl font-bold text-white">{settingsTab === 'audio' ? $t.audio : $t.subtitles}</h2>
@@ -1644,6 +1739,19 @@
             {/each}
           {/if}
 
+          {#if subtitleCues.length > 0}
+            <div class="mt-3 pt-3 border-t border-gray-700/60 flex items-center justify-between gap-3 px-1">
+              <span class="text-sm text-gray-300 font-medium">{$t.subtitleOffset}</span>
+              <div class="flex items-center gap-2">
+                <button on:click={() => adjustSubtitleOffset(-0.5)} aria-label="-0,5 s"
+                  class="w-9 h-9 rounded-lg bg-gray-800 text-white text-xl font-bold leading-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white hover:bg-gray-700 focus:bg-gray-700 transition-colors">−</button>
+                <span class="text-sm font-mono text-white w-16 text-center tabular-nums">{formatOffset(subtitleOffset)}</span>
+                <button on:click={() => adjustSubtitleOffset(0.5)} aria-label="+0,5 s"
+                  class="w-9 h-9 rounded-lg bg-gray-800 text-white text-xl font-bold leading-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white hover:bg-gray-700 focus:bg-gray-700 transition-colors">+</button>
+              </div>
+            </div>
+          {/if}
+
         </div>
       </div>
     {/if}
@@ -1657,14 +1765,14 @@
   {#if currentSubtitleText}
     <div class="absolute inset-x-0 z-[65] flex justify-center px-[8%] pointer-events-none transition-all duration-200
                 {showControls ? 'bottom-44' : 'bottom-[7%]'}">
-      <span class="subtitle-box sub-{playbackPrefs.subtitleSize || 'normal'}">{currentSubtitleText}</span>
+      <span class="subtitle-box sub-{playbackPrefs.subtitleSize || 'normal'}" style={subStyle}>{currentSubtitleText}</span>
     </div>
   {/if}
 
 
   <!-- INTRO ÜBERSPRINGEN — unten links -->
   {#if showSkipIntro}
-    <div class="absolute bottom-36 left-12 z-[70] animate-fade-in">
+    <div transition:uiFade class="absolute bottom-36 left-12 z-[70]">
       <button on:click={skipIntro} use:focusOnMount
         class="bg-white/10 backdrop-blur-md border-2 border-white text-white font-bold text-xl
                px-8 py-4 rounded-xl flex items-center gap-3 shadow-2xl
@@ -1683,7 +1791,7 @@
   <!-- NÄCHSTE FOLGE — unten rechts -->
   <!-- AUTO-PLAY COUNTDOWN — Netflix-Stil, mit "Jetzt abspielen" / "Abbrechen" -->
   {#if nextCountdown !== null && nextEpisode}
-    <div class="absolute bottom-36 right-12 z-[70] animate-fade-in">
+    <div transition:uiFade class="absolute bottom-36 right-12 z-[70]">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-5 w-80 flex flex-col gap-3">
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{$t.nextEpisodeIn} {nextCountdown} {nextCountdown === 1 ? $t.secondOne : $t.secondsMany}</span>
         <span class="text-lg font-bold text-white truncate">{nextEpisode.Name}</span>
@@ -1710,7 +1818,7 @@
 
   <!-- Manueller "Nächste Folge"-Hinweis (kein Countdown; auch Fallback ohne Kapitel via OUTRO_FALLBACK) -->
   {#if outroPromptActive && nextEpisode && nextCountdown === null}
-    <div class="absolute bottom-36 right-12 z-[70] animate-fade-in">
+    <div transition:uiFade class="absolute bottom-36 right-12 z-[70]">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-5 w-80 flex flex-col gap-3">
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{$t.nextEpisode}</span>
         <span class="text-lg font-bold text-white truncate">{nextEpisode.Name}</span>
@@ -1727,7 +1835,7 @@
 
   <!-- "Schaust du noch?" – nach Inaktivität pausiert -->
   {#if showStillWatching}
-    <div class="absolute inset-0 z-[120] bg-black/85 flex items-center justify-center animate-fade-in">
+    <div transition:uiFade on:outrostart={dropTrapOnOutro} class="absolute inset-0 z-[120] bg-black/85 flex items-center justify-center">
       <div class="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl p-12 flex flex-col items-center gap-7 max-w-md text-center">
         <svg class="w-16 h-16 text-gray-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1 1 0 010-.644C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178a1 1 0 010 .644C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178z"/>
@@ -1747,7 +1855,7 @@
 </div>
 
 <!-- Zur Sammlung / Wiedergabeliste hinzufügen (gemeinsame Komponente) -->
-<AddToPicker mode={pickerMode} {item} {serverUrl} {selectedUser} {getAuthHeaders}
+<AddToPicker mode={pickerMode} {item} {selectedUser} {getAuthHeaders}
   on:created={() => dispatch('libchanged')}
   on:close={async () => { pickerMode = null; if (wasPlayingBeforePicker) videoElement?.play().catch(() => {}); wasPlayingBeforePicker = false; await tick(); if (controlOpener && document.contains(controlOpener)) controlOpener.focus(); else playerContainer?.focus(); controlOpener = null; }} />
 

@@ -1,11 +1,9 @@
 <script>
   import { currentLang, t, LANGUAGES } from '../i18n.js';
-  import { isBackKey, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions } from '../utils.js';
-  import { createEventDispatcher, tick, onDestroy } from 'svelte';
+  import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn, uiFade, dropTrapOnOutro, serverUrl, activeToken } from '../utils.js';
+  import { createEventDispatcher, tick, onDestroy, onMount } from 'svelte';
 
-  export let serverUrl;
-  export let activeToken;
   export let selectedUser;
   export let selectedServer;
   export let savedTokens        = {};
@@ -58,6 +56,11 @@
     playbackPrefs = { ...playbackPrefs, subtitleSize: size };
     dispatch('playbackPrefsChange', playbackPrefs);
   }
+  // Generisch für die Text-Styling-Selektoren (Farbe/Rand/Hintergrund).
+  function setSubtitlePref(key, val) {
+    playbackPrefs = { ...playbackPrefs, [key]: val };
+    dispatch('playbackPrefsChange', playbackPrefs);
+  }
 
   function setStillWatchingEpisodes(n) {
     playbackPrefs = { ...playbackPrefs, stillWatchingEpisodes: n };
@@ -65,7 +68,7 @@
   }
 
   // Version: YYYYMMDD — bei Updates hier anpassen
-  const APP_VERSION = '20260613';
+  const APP_VERSION = '20260616';
 
   const dispatch = createEventDispatcher();
 
@@ -75,8 +78,11 @@
   );
 
   let activeModal  = null;
+  const modalFocus = makeFocusReturn();   // Auslöser-Button, auf den der Fokus nach dem Schließen zurückkehrt
   let currentPw    = '';
+  let showCurrentPw = false;  // Augen-Umschalter fürs aktuelle Kennwort
   let newPw        = '';
+  let showNewPw    = false;   // Augen-Umschalter: neues Kennwort kurz einblenden zum Prüfen
   let pwMessage    = '';
   let qcCode       = '';
   let qcMessage    = '';
@@ -99,11 +105,12 @@
 
   onDestroy(() => { if (modalTimeout) clearTimeout(modalTimeout); });
 
-  const getAuthHeaders = () => authHeaders(activeToken);
+  const getAuthHeaders = () => authHeaders($activeToken);
 
   async function openModal(name) {
+    modalFocus.capture();
     pwMessage = ''; qcMessage = '';
-    currentPw = ''; newPw = ''; qcCode = '';
+    currentPw = ''; newPw = ''; qcCode = ''; showNewPw = false; showCurrentPw = false;
     if (modalTimeout) clearTimeout(modalTimeout);
     activeModal = name;
     await tick();
@@ -138,11 +145,22 @@
   }
   async function commitSharedUser(user, pw) {
     sharedBusy = true;
-    const r = await onSharedSetMember(sharedPickerSlot, user, pw);
+    const slot = sharedPickerSlot;
+    const r = await onSharedSetMember(slot, user, pw);
     sharedBusy = false;
-    if (r === 'ok')                 closeModal();
+    if (r === 'ok') {
+      closeModal();
+      await tick();   // Slot zeigt jetzt den Entfernen-Button → Fokus dorthin (statt verloren an die Sidebar)
+      document.querySelector(`[data-slot-btn="${slot}"]`)?.focus();
+    }
     else if (r === 'needPassword')  { sharedPickerUser = user; await openModal('sharedPassword'); }
     else                            sharedError = $t.errLogin;
+  }
+  // Mitglied entfernen + Fokus auf den dann erscheinenden „Profil wählen"-Button desselben Slots.
+  async function removeMember(slot) {
+    await onSharedRemoveMember(slot);
+    await tick();
+    document.querySelector(`[data-slot-btn="${slot}"]`)?.focus();
   }
 
   function setLanguage(lang) {
@@ -155,7 +173,7 @@
   async function changePassword() {
     pwMessage = '';
     try {
-      const res = await fetch(`${serverUrl}/Users/${selectedUser.Id}/Password`, {
+      const res = await fetch(`${$serverUrl}/Users/${selectedUser.Id}/Password`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ Id: selectedUser.Id, CurrentPw: currentPw, NewPw: newPw })
@@ -171,7 +189,7 @@
   async function authorizeQuickConnect() {
     qcMessage = '';
     try {
-      const res = await fetch(`${serverUrl}/QuickConnect/Authorize`, {
+      const res = await fetch(`${$serverUrl}/QuickConnect/Authorize`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ Code: qcCode })
@@ -194,8 +212,53 @@
     localStorage.setItem('ocenfin_debug', debugLogging ? '1' : '0');
     setDebug(debugLogging);
   }
+
+  // In-App-Log-Viewer: Puffer anzeigen, leeren, als QR (letzte Zeilen) teilen.
+  // Kein "Kopieren": Auf dem TV gibt es kein Ziel zum Einfügen — QR (aufs Handy) und
+  // Abfotografieren sind die sinnvollen Wege.
+  let showLog = false;
+  let logText = '';
+  let qrDataUrl = null;
+  let qrBtnEl;   // für Fokus-Rückgabe beim Verlassen der QR-Ansicht
+  function openLog()  { modalFocus.capture(); logText = formatLog(); qrDataUrl = null; showLog = true; }
+  function clearLog() { clearLogBuffer(); logText = formatLog(); qrDataUrl = null; }
+  function hideQr()   { qrDataUrl = null; tick().then(() => qrBtnEl?.focus()); }
+  async function showLogQr() {
+    try {
+      const mod = await import('qrcode');   // dynamisch → nicht im Start-Bundle
+      const toDataURL = (mod.default && mod.default.toDataURL) ? mod.default.toDataURL : mod.toDataURL;
+      const tail = formatLog(1200);         // nur die jüngsten ~1200 Zeichen (QR-Kapazität)
+      qrDataUrl = await toDataURL(tail || ' ', { margin: 1, width: 360, errorCorrectionLevel: 'L' });
+    } catch (e) { console.warn('[OcenFin] QR generation failed', e); }
+  }
+
   // Versionen für die Status-Seite (Chromium aus UA, hls.js/libbitsub aus package.json) — statisch.
   const envVersions = runtimeVersions();
+
+  // Fernseher-Fähigkeiten für die Status-Seite: Panel-Flags (deviceInfo) + Codec-Probe (Browser).
+  let tvInfo = null;        // { available, modelName, uhd, uhd8K, oled, hdr10, dolbyVision, dolbyAtmos, ... }
+  let codecs = {};          // { h264, hevc, vp9, av1 } – laut Browser-Decoder
+  onMount(async () => {
+    codecs = probeBrowserCodecs();
+    tvInfo = await getTvDeviceInfo();
+  });
+  $: tvResolution = !tvInfo?.available ? null
+       : tvInfo.uhd8K === true ? '8K'
+       : tvInfo.uhd === true ? '4K (UHD)'
+       : (tvInfo.screenWidth ? `${tvInfo.screenWidth}×${tvInfo.screenHeight}` : null);
+  // Tri-State: true → Ja (grün), false → Nein (grau), undefined → Unbekannt (gedämpft)
+  const capText  = (v) => v === true ? $t.statusYes : v === false ? $t.statusNo : $t.statusUnknown;
+  const capClass = (v) => v === true ? 'text-green-400' : v === false ? 'text-gray-400' : 'text-gray-600';
+  // Einklappbare Status-Gruppen (fokussierbare Kopfzeilen → D-Pad kann nach unten wandern/scrollen).
+  // Fernseher standardmäßig zugeklappt, da nicht für jeden sofort relevant.
+  let openStatus = { tv: false, runtime: true, components: true };
+  const toggleStatus = (k) => { openStatus = { ...openStatus, [k]: !openStatus[k] }; };
+  // Beim Fokussieren einer Kopfzeile die ganze Karte (inkl. Inhalt) sichtbar scrollen — sonst
+  // bliebe der Inhalt der untersten offenen Gruppe verdeckt (kein fokussierbares Element darunter).
+  const scrollGroupIntoView = (e) => {
+    const card = e.currentTarget?.parentElement;
+    if (card?.scrollIntoView) card.scrollIntoView({ block: 'nearest' });
+  };
 
   function toggleReduceAnimations() {
     reduceAnimations = !reduceAnimations;
@@ -305,12 +368,18 @@
   }
   $: if (activeCategory !== 'security' && avatarModalOpen) avatarModalOpen = false;
 
+  // Nach dem Schließen eines Modals (egal welches/wie) den Fokus auf den auslösenden Button zurücklegen.
+  $: {
+    const anyModalOpen = !!activeModal || avatarModalOpen || showLog;
+    if (!anyModalOpen && modalFocus.pending) modalFocus.restore();
+  }
+
   // Zuletzt gesehene Filme/Serien als Avatar-Vorschläge holen: neueste zuerst, Episoden → Serie,
   // dedupliziert, max. so viele wie es Symbole gibt. Bei jedem Öffnen frisch (aktuelle Reihenfolge).
   async function loadRecentTitles() {
     recentLoading = true;
     try {
-      const base = `${serverUrl}/Users/${selectedUser.Id}/Items?Recursive=true&IncludeItemTypes=Movie,Episode`
+      const base = `${$serverUrl}/Users/${selectedUser.Id}/Items?Recursive=true&IncludeItemTypes=Movie,Episode`
         + `&Fields=SeriesId,SeriesPrimaryImageTag,UserData&EnableImageTypes=Primary&ImageTypeLimit=1`
         + `&SortBy=DatePlayed&SortOrder=Descending&EnableTotalRecordCount=false&Limit=72`;
       const [played, resume] = await Promise.all([
@@ -329,7 +398,7 @@
         list.push({
           id,
           name: isEp ? (it.SeriesName || it.Name) : it.Name,
-          imageUrl: `${serverUrl}/Items/${id}/Images/Primary?tag=${tag}&fillHeight=300&quality=90&ApiKey=${activeToken}`,
+          imageUrl: `${$serverUrl}/Items/${id}/Images/Primary?tag=${tag}&fillHeight=300&quality=90&ApiKey=${$activeToken}`,
         });
         if (list.length >= AVATAR_ICON_KEYS.length) break;
       }
@@ -340,7 +409,7 @@
       avatarTab = recentTitles.length ? 'recent' : 'symbols';   // Neu-Nutzer ohne Historie → Symbole
     }
   }
-  function openAvatarModal() { avatarModalOpen = true; loadRecentTitles(); }
+  function openAvatarModal() { modalFocus.capture(); avatarModalOpen = true; loadRecentTitles(); }
 
   async function saveProfileImage() {
     if (avatarSaving) return;
@@ -349,9 +418,9 @@
       const base64 = (avatarTab === 'recent' && avatarPoster)
         ? await renderImageAvatarPng(avatarPoster.imageUrl)
         : await renderAvatarPng(effectiveIcon, effectiveColor);
-      const res = await fetch(`${serverUrl}/Users/${selectedUser.Id}/Images/Primary`, {
+      const res = await fetch(`${$serverUrl}/Users/${selectedUser.Id}/Images/Primary`, {
         method: 'POST',
-        headers: { 'Authorization': `MediaBrowser Token="${activeToken}"`, 'Content-Type': 'image/png' },
+        headers: { 'Authorization': `MediaBrowser Token="${$activeToken}"`, 'Content-Type': 'image/png' },
         body: base64,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -359,7 +428,7 @@
       dispatch('profileImageChanged');     // App lädt selectedUser neu → Sidebar zeigt es sofort
       setTimeout(() => avatarSaved = false, 2500);
     } catch (e) {
-      console.error('[OcenFin] Profilbild-Upload fehlgeschlagen:', e);
+      console.error('[OcenFin] avatar upload failed:', e);
     } finally {
       avatarSaving = false;
     }
@@ -426,11 +495,13 @@
 
 <div class="flex h-full">
 
-  <!-- LINKS: Kategorie-Navigation -->
-  <nav class="w-72 shrink-0 bg-gray-900/60 border-r border-gray-800 p-6 pt-16 flex flex-col gap-2 overflow-y-auto hide-scrollbar">
+  <!-- LINKS: Kategorie-Navigation. data-hbar: per Links/Rechts betreten, Hoch/Runter bewegt sich
+       innerhalb; beim Eintritt von rechts landet der Fokus auf der aktiven Kategorie (data-hbar-current). -->
+  <nav data-hbar class="w-72 shrink-0 bg-gray-900/60 border-r border-gray-800 p-6 pt-16 flex flex-col gap-2 overflow-y-auto hide-scrollbar">
     <h1 class="text-3xl font-bold text-white mb-4 ml-2">{$t.settings}</h1>
     {#each categories as cat}
       <button on:click={() => activeCategory = cat.id}
+        data-hbar-current={activeCategory === cat.id ? '' : null}
         class="flex items-center gap-4 px-4 py-4 rounded-xl text-left font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                {activeCategory === cat.id ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800 focus:bg-gray-800'}">
         <svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -445,8 +516,9 @@
     </div>
   </nav>
 
-  <!-- RECHTS: Inhalt der aktiven Kategorie -->
-  <div class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16">
+  <!-- RECHTS: Inhalt der aktiven Kategorie. data-enter-top: beim Wechsel von links startet der
+       Fokus immer am obersten Element der jeweiligen Kategorie, nicht geometrisch in der Mitte. -->
+  <div data-enter-top class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16">
     <div class="max-w-4xl flex flex-col gap-10 pb-32">
     <!-- ══════════════════════════════════════════
          1. DARSTELLUNG
@@ -878,7 +950,7 @@
         <!-- Wiedergabeinfos – Info-Button im Player freischalten (Live-Details als Overlay) -->
         <button on:click={() => togglePlaybackPref('showPlaybackInfo')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.playbackInfo}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.playbackInfoDesc}</span>
@@ -890,10 +962,25 @@
           </div>
         </button>
 
+        <!-- Vorschaubilder beim Spulen (Trickplay) – opt-out, fällt auf Kapitel/Zeit zurück -->
+        <button on:click={() => togglePlaybackPref('trickplay')}
+          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{$t.trickplay}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{$t.trickplayDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.trickplay !== false ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.trickplay !== false ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
         <!-- Schaust du noch? – Wiedergabe nach Inaktivität pausieren -->
         <button on:click={() => togglePlaybackPref('stillWatching')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.stillWatching}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.stillWatchingDesc}</span>
@@ -906,7 +993,7 @@
         </button>
 
         {#if playbackPrefs.stillWatching}
-          <div class="p-6 border-t border-gray-700/50">
+          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
             <span class="text-2xl text-white font-medium block">{$t.stillWatchingAfter}</span>
             <div class="flex gap-3 mt-4">
               {#each [2, 3, 4] as n}
@@ -941,7 +1028,7 @@
              Text- und PGS-Untertitel werden ohnehin ohne Transcode automatisch gewählt. -->
         <button on:click={() => togglePlaybackPref('forcedGraphicSubs')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.forcedGraphicSubs}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.forcedGraphicSubsDesc}</span>
@@ -956,7 +1043,7 @@
         <!-- Untertitel einbrennen -->
         <button on:click={() => togglePlaybackPref('burnSubtitles')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.burnSubtitles}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.burnSubtitlesDesc}</span>
@@ -972,7 +1059,7 @@
         {#if !playbackPrefs.burnSubtitles}
           <button on:click={() => togglePlaybackPref('pgsRendering')}
             class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
             <div>
               <span class="text-2xl text-white font-medium block">{$t.pgsRendering}</span>
               <span class="text-gray-400 mt-1 block text-sm">{$t.pgsRenderingDesc}</span>
@@ -987,7 +1074,7 @@
           <!-- ASS/SSA mit Original-Layout (JASSUB) — aus: schlichtes Text-Overlay, beides Direct Play -->
           <button on:click={() => togglePlaybackPref('assRendering')}
             class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
             <div>
               <span class="text-2xl text-white font-medium block">{$t.assRendering}</span>
               <span class="text-gray-400 mt-1 block text-sm">{$t.assRenderingDesc}</span>
@@ -999,7 +1086,7 @@
             </div>
           </button>
 
-          <div class="p-6 border-t border-gray-700/50">
+          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
             <span class="text-2xl text-white font-medium block">{$t.subtitleSize}</span>
             <span class="text-gray-400 mt-1 mb-4 block text-sm">{$t.subtitleSizeDesc}</span>
             <div class="flex gap-3">
@@ -1007,6 +1094,47 @@
                 <button on:click={() => setSubtitleSize(val)}
                   class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                          {playbackPrefs.subtitleSize === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                  {label}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <!-- Textuntertitel-Styling (Farbe/Rand/Hintergrund) — nur WebVTT/SRT, nicht PGS/VobSub -->
+          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+            <span class="text-2xl text-white font-medium block">{$t.subtitleColor}</span>
+            <span class="text-gray-400 mt-1 mb-4 block text-sm">{$t.subtitleStyleHint}</span>
+            <div class="flex gap-3">
+              {#each [['white', $t.colorWhite], ['yellow', $t.colorYellow], ['green', $t.colorGreen], ['cyan', $t.colorCyan]] as [val, label]}
+                <button on:click={() => setSubtitlePref('subtitleColor', val)}
+                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {(playbackPrefs.subtitleColor || 'white') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                  {label}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+            <span class="text-2xl text-white font-medium block mb-4">{$t.subtitleEdge}</span>
+            <div class="flex gap-3">
+              {#each [['none', $t.styleNone], ['shadow', $t.edgeShadow], ['outline', $t.edgeOutline]] as [val, label]}
+                <button on:click={() => setSubtitlePref('subtitleEdge', val)}
+                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {(playbackPrefs.subtitleEdge || 'shadow') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                  {label}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+            <span class="text-2xl text-white font-medium block mb-4">{$t.subtitleBackground}</span>
+            <div class="flex gap-3">
+              {#each [['none', $t.styleNone], ['semi', $t.bgSemi], ['solid', $t.bgSolid]] as [val, label]}
+                <button on:click={() => setSubtitlePref('subtitleBackground', val)}
+                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {(playbackPrefs.subtitleBackground || 'none') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                   {label}
                 </button>
               {/each}
@@ -1029,7 +1157,7 @@
             {#if hasEditedAvatar && avatarPoster}
               <img src={avatarPoster.imageUrl} alt={avatarPoster.name} class="w-full h-full object-cover" />
             {:else if !hasEditedAvatar && selectedUser?.PrimaryImageTag}
-              <img src="{serverUrl}/Users/{selectedUser.Id}/Images/Primary?tag={selectedUser.PrimaryImageTag}" alt={$t.profilePicture} class="w-full h-full object-cover" />
+              <img src="{$serverUrl}/Users/{selectedUser.Id}/Images/Primary?tag={selectedUser.PrimaryImageTag}" alt={$t.profilePicture} class="w-full h-full object-cover" />
             {:else}
               <svg class="w-11 h-11 text-white" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[effectiveIcon]}/></svg>
             {/if}
@@ -1095,7 +1223,7 @@
                 </div>
               {:else if recentTitles.length}
                 <!-- Poster zuletzt gesehener Titel (neueste zuerst), mittig in den runden Avatar zugeschnitten -->
-                <div class="grid grid-cols-6 gap-3 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 content-start">
+                <div class="grid grid-cols-6 gap-3 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 scroll-py-3 content-start">
                   {#each recentTitles as t (t.id)}
                     <button on:click={() => { avatarPoster = t; hasEditedAvatar = true; }} title={t.name}
                       class="aspect-square rounded-xl overflow-hidden focus:outline-none focus:ring-4 focus:ring-white transition-all
@@ -1111,7 +1239,7 @@
               <!-- Icons links (volle 6er-Reihen) · Farben rechts als schmale 2er-Spalte → per D-Pad
                    mit einem Rechts-Druck erreichbar, ohne durch alle Icon-Reihen zu navigieren. -->
               <div class="flex gap-5 items-start">
-                <div class="grid grid-cols-6 gap-3 flex-1 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 content-start">
+                <div class="grid grid-cols-6 gap-3 flex-1 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 scroll-py-3 content-start">
                   {#each AVATAR_ICON_KEYS as key}
                     <button on:click={() => { avatarIcon = key; hasEditedAvatar = true; }}
                       class="aspect-square flex items-center justify-center rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-all
@@ -1190,7 +1318,7 @@
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
         <button on:click={onSharedToggle}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{$t.sharedWatching}</span>
             <span class="text-gray-400 mt-1 block text-sm">{$t.sharedWatchingDesc}</span>
@@ -1217,13 +1345,13 @@
                     {:else}
                       <span class="text-amber-400 text-xs font-bold">{$t.sharedNeedsLogin}</span>
                     {/if}
-                    <button on:click={() => onSharedRemoveMember(slot)}
+                    <button data-slot-btn={slot} on:click={() => removeMember(slot)}
                       class="mt-1 text-red-400 hover:text-red-300 focus:text-red-300 text-sm font-bold
                              focus:outline-none focus:ring-2 focus:ring-white rounded px-3 py-1.5">
                       {$t.remove}
                     </button>
                   {:else}
-                    <button on:click={() => openSharedPicker(slot)}
+                    <button data-slot-btn={slot} on:click={() => openSharedPicker(slot)}
                       class="flex flex-col items-center gap-2 text-gray-400 hover:text-white focus:text-white
                              focus:outline-none focus:ring-4 focus:ring-white rounded-lg px-4 py-3">
                       <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1326,50 +1454,133 @@
         </button>
       </div>
 
-      <!-- Status-Infos: nur Dinge, die man woanders nicht sieht und die das App-Verhalten erklären -->
-      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-6 flex flex-col gap-4">
-        <div class="flex justify-between items-baseline gap-4">
-          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusChromium}</span>
-          <span class="text-white font-mono text-sm">{envVersions.chromium || '—'}</span>
+      <!-- Protokoll anzeigen: In-App-Log-Viewer (kein ares inspect nötig) -->
+      <button on:click={openLog}
+        class="flex items-center justify-between w-full px-6 py-5 bg-gray-800/80 border border-gray-700 rounded-2xl
+               hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+        <div class="pr-4">
+          <span class="text-2xl text-white font-medium block">{$t.logShow}</span>
+          <span class="text-gray-400 mt-0.5 block text-sm">{$t.logShowDesc}</span>
         </div>
-        <div class="h-px bg-gray-700/70"></div>
-        <div class="flex justify-between items-baseline gap-4">
-          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusAppVersion}</span>
-          <span class="text-white font-mono text-sm">{APP_VERSION}</span>
-        </div>
-        <div class="h-px bg-gray-700/70"></div>
-        <div class="flex justify-between items-baseline gap-4">
-          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusServerVersion}</span>
-          <span class="text-white font-mono text-sm">{serverVersion || '—'}</span>
-        </div>
-        <div class="h-px bg-gray-700/70"></div>
-        <div class="flex justify-between items-start gap-4">
-          <div class="pr-2">
-            <span class="text-sm text-gray-300 font-bold block">{$t.statusClientGraphicSubs}</span>
-            <span class="text-xs text-gray-500 mt-0.5 block">{$t.statusClientGraphicSubsDesc}</span>
-          </div>
-          <span class="font-mono text-sm font-bold shrink-0 mt-0.5 {serverVobSub ? 'text-green-400' : 'text-gray-400'}">
-            {serverVobSub ? $t.statusYes : $t.statusNo}
+        <svg class="w-7 h-7 text-gray-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </button>
+
+      <!-- Status-Gruppen: einklappbar. Fokussierbare Kopfzeilen geben dem D-Pad Stufen nach unten
+           (behebt das Scrollen) und ein Rechts-Sprungziel aus dem Menü. -->
+
+      <!-- Fernseher (standardmäßig zugeklappt): Panel-Fähigkeiten (deviceInfo) + Codec-Probe -->
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+        <button on:click={() => toggleStatus('tv')} on:focus={scrollGroupIntoView}
+          class="flex items-center justify-between w-full p-6 rounded-t-2xl {openStatus.tv ? '' : 'rounded-b-2xl'} hover:bg-gray-700/50 focus:bg-gray-700/50 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-colors text-left gap-4">
+          <span class="text-sm text-gray-300 uppercase tracking-wider font-bold flex items-center gap-3">
+            <svg class="w-4 h-4 shrink-0 transition-transform {openStatus.tv ? 'rotate-90' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+            {$t.statusTv}
           </span>
-        </div>
+          <span class="font-mono text-xs text-gray-500 truncate">{tvInfo?.available ? `${tvInfo.modelName || ''}${tvInfo.oled === true ? ' · OLED' : ''}` : $t.statusOnlyOnTv}</span>
+        </button>
+        {#if openStatus.tv}
+          <div class="px-6 pb-6 flex flex-col gap-4">
+            {#if tvInfo?.available}
+              <div class="flex justify-between items-baseline gap-4">
+                <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusResolution}</span>
+                <span class="text-white font-mono text-sm">{tvResolution || '—'}</span>
+              </div>
+              <div class="h-px bg-gray-700/70"></div>
+              <div class="flex justify-between items-baseline gap-4">
+                <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">HDR10</span>
+                <span class="font-mono text-sm font-bold {capClass(tvInfo.hdr10)}">{capText(tvInfo.hdr10)}</span>
+              </div>
+              <div class="h-px bg-gray-700/70"></div>
+              <div class="flex justify-between items-baseline gap-4">
+                <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">Dolby Vision</span>
+                <span class="font-mono text-sm font-bold {capClass(tvInfo.dolbyVision)}">{capText(tvInfo.dolbyVision)}</span>
+              </div>
+              <div class="h-px bg-gray-700/70"></div>
+              <div class="flex justify-between items-baseline gap-4">
+                <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">Dolby Atmos</span>
+                <span class="font-mono text-sm font-bold {capClass(tvInfo.dolbyAtmos)}">{capText(tvInfo.dolbyAtmos)}</span>
+              </div>
+              {#if tvInfo.dolbyAtmos === false}
+                <p class="text-xs text-gray-500 leading-snug">{$t.statusAtmosHint}</p>
+              {/if}
+              <div class="h-px bg-gray-700/70"></div>
+            {/if}
+            <span class="text-xs text-gray-500 uppercase tracking-wider font-bold">{$t.statusCodecsBrowser}</span>
+            <div class="flex flex-wrap gap-x-6 gap-y-2">
+              {#each [{ l: 'H.264', k: 'h264' }, { l: 'HEVC', k: 'hevc' }, { l: 'VP9', k: 'vp9' }, { l: 'AV1', k: 'av1' }] as c}
+                <span class="font-mono text-sm font-bold {codecs[c.k] ? 'text-green-400' : 'text-gray-400'}">{c.l}: {codecs[c.k] ? $t.statusYes : $t.statusNo}</span>
+              {/each}
+            </div>
+          </div>
+        {/if}
       </div>
 
-      <!-- Umgebung / Bibliotheken — relevant beim Melden von Wiedergabe-/Untertitel-Problemen -->
-      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-6 flex flex-col gap-4">
-        <div class="flex justify-between items-baseline gap-4">
-          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusHls}</span>
-          <span class="text-white font-mono text-sm">{envVersions.hls || '—'}</span>
-        </div>
-        <div class="h-px bg-gray-700/70"></div>
-        <div class="flex justify-between items-baseline gap-4">
-          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusLibbitsub}</span>
-          <span class="text-white font-mono text-sm">{envVersions.libbitsub || '—'}</span>
-        </div>
-        <div class="h-px bg-gray-700/70"></div>
-        <div class="flex justify-between items-baseline gap-4">
-          <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusJassub}</span>
-          <span class="text-white font-mono text-sm">{envVersions.jassub || '—'}</span>
-        </div>
+      <!-- App & Server -->
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+        <button on:click={() => toggleStatus('runtime')} on:focus={scrollGroupIntoView}
+          class="flex items-center justify-between w-full p-6 rounded-t-2xl {openStatus.runtime ? '' : 'rounded-b-2xl'} hover:bg-gray-700/50 focus:bg-gray-700/50 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-colors text-left">
+          <span class="text-sm text-gray-300 uppercase tracking-wider font-bold flex items-center gap-3">
+            <svg class="w-4 h-4 shrink-0 transition-transform {openStatus.runtime ? 'rotate-90' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+            {$t.statusGroupApp}
+          </span>
+        </button>
+        {#if openStatus.runtime}
+          <div class="px-6 pb-6 flex flex-col gap-4">
+            <div class="flex justify-between items-baseline gap-4">
+              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusChromium}</span>
+              <span class="text-white font-mono text-sm">{envVersions.chromium || '—'}</span>
+            </div>
+            <div class="h-px bg-gray-700/70"></div>
+            <div class="flex justify-between items-baseline gap-4">
+              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusAppVersion}</span>
+              <span class="text-white font-mono text-sm">{APP_VERSION}</span>
+            </div>
+            <div class="h-px bg-gray-700/70"></div>
+            <div class="flex justify-between items-baseline gap-4">
+              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusServerVersion}</span>
+              <span class="text-white font-mono text-sm">{serverVersion || '—'}</span>
+            </div>
+            <div class="h-px bg-gray-700/70"></div>
+            <div class="flex justify-between items-start gap-4">
+              <div class="pr-2">
+                <span class="text-sm text-gray-300 font-bold block">{$t.statusClientGraphicSubs}</span>
+                <span class="text-xs text-gray-500 mt-0.5 block">{$t.statusClientGraphicSubsDesc}</span>
+              </div>
+              <span class="font-mono text-sm font-bold shrink-0 mt-0.5 {serverVobSub ? 'text-green-400' : 'text-gray-400'}">
+                {serverVobSub ? $t.statusYes : $t.statusNo}
+              </span>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Komponenten — relevant beim Melden von Wiedergabe-/Untertitel-Problemen -->
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+        <button on:click={() => toggleStatus('components')} on:focus={scrollGroupIntoView}
+          class="flex items-center justify-between w-full p-6 rounded-t-2xl {openStatus.components ? '' : 'rounded-b-2xl'} hover:bg-gray-700/50 focus:bg-gray-700/50 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-colors text-left">
+          <span class="text-sm text-gray-300 uppercase tracking-wider font-bold flex items-center gap-3">
+            <svg class="w-4 h-4 shrink-0 transition-transform {openStatus.components ? 'rotate-90' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+            {$t.statusGroupComponents}
+          </span>
+        </button>
+        {#if openStatus.components}
+          <div class="px-6 pb-6 flex flex-col gap-4">
+            <div class="flex justify-between items-baseline gap-4">
+              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusHls}</span>
+              <span class="text-white font-mono text-sm">{envVersions.hls || '—'}</span>
+            </div>
+            <div class="h-px bg-gray-700/70"></div>
+            <div class="flex justify-between items-baseline gap-4">
+              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusLibbitsub}</span>
+              <span class="text-white font-mono text-sm">{envVersions.libbitsub || '—'}</span>
+            </div>
+            <div class="h-px bg-gray-700/70"></div>
+            <div class="flex justify-between items-baseline gap-4">
+              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusJassub}</span>
+              <span class="text-white font-mono text-sm">{envVersions.jassub || '—'}</span>
+            </div>
+          </div>
+        {/if}
       </div>
     </section>
     {/if}
@@ -1379,10 +1590,56 @@
 </div>
 
 <!-- ══════════════════════════════════════════
+     PROTOKOLL-VIEWER (eigenes Modal, breiter als die Standard-Modals)
+══════════════════════════════════════════ -->
+{#if showLog}
+  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
+    transition:uiFade on:outrostart={dropTrapOnOutro}
+    on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); if (qrDataUrl) hideQr(); else showLog = false; } }}>
+
+    <div data-modal data-focus-trap
+      class="bg-gray-800 border border-gray-700 p-8 rounded-2xl w-full max-w-4xl max-h-[88vh] flex flex-col gap-5 shadow-2xl">
+
+      <div class="flex items-center justify-between gap-4 shrink-0">
+        <h2 class="text-4xl text-white font-bold">{$t.logTitle}</h2>
+        <div class="flex items-center gap-3">
+          <button bind:this={qrBtnEl} on:click={showLogQr}
+            class="px-5 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white
+                   focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.logQrButton}</button>
+          <button on:click={() => showLog = false} use:focusOnMount
+            class="px-5 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
+                   focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.close}</button>
+        </div>
+      </div>
+
+      {#if qrDataUrl}
+        <div class="flex flex-col items-center justify-center gap-5 flex-1 min-h-0">
+          <img src={qrDataUrl} alt="QR" class="rounded-xl bg-white p-3"
+               style="width:320px;height:320px;max-width:40vh;max-height:40vh;" />
+          <p class="text-gray-400 text-lg text-center max-w-md">{$t.logQrHint}</p>
+          <button on:click={hideQr} use:focusOnMount
+            class="px-6 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
+                   focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.logBackToText}</button>
+        </div>
+      {:else}
+        <pre class="flex-1 min-h-0 overflow-auto hide-scrollbar bg-black/50 rounded-xl p-5 text-sm text-gray-300
+                    font-mono whitespace-pre-wrap break-words leading-relaxed">{logText || $t.logEmpty}</pre>
+        <div class="flex justify-end shrink-0">
+          <button on:click={clearLog}
+            class="px-6 py-3 rounded-xl font-bold bg-gray-700 hover:bg-red-600 focus:bg-red-600 text-white
+                   focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.clear}</button>
+        </div>
+      {/if}
+    </div>
+  </div>
+{/if}
+
+<!-- ══════════════════════════════════════════
      MODAL (Sprache / Passwort / Quick Connect)
 ══════════════════════════════════════════ -->
 {#if activeModal}
-  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8 animate-fade-in"
+  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
+    transition:uiFade on:outrostart={dropTrapOnOutro}
     on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeModal(); } }}>
 
     <div data-modal data-focus-trap
@@ -1429,16 +1686,40 @@
 
       {:else if activeModal === 'password'}
         <h2 class="text-4xl text-white font-bold mb-2">{$t.changePassword}</h2>
-        <input type="password" bind:value={currentPw} placeholder={$t.currentPassword}
-          use:tvKeyboard
-          on:keydown={(e) => e.key === 'Enter' && changePassword()}
-          class="w-full bg-gray-900 text-white text-2xl p-6 rounded-xl border border-gray-600
-                 focus:outline-none focus:ring-4 focus:ring-blue-500" />
-        <input type="password" bind:value={newPw} placeholder={$t.newPassword}
-          use:tvKeyboard
-          on:keydown={(e) => e.key === 'Enter' && changePassword()}
-          class="w-full bg-gray-900 text-white text-2xl p-6 rounded-xl border border-gray-600
-                 focus:outline-none focus:ring-4 focus:ring-blue-500" />
+        <div class="relative">
+          <input type={showCurrentPw ? 'text' : 'password'} bind:value={currentPw} placeholder={$t.currentPassword}
+            use:tvKeyboard
+            on:keydown={(e) => e.key === 'Enter' && changePassword()}
+            class="w-full bg-gray-900 text-white text-2xl p-6 pr-20 rounded-xl border border-gray-600
+                   focus:outline-none focus:ring-4 focus:ring-blue-500" />
+          <button type="button" on:click={() => showCurrentPw = !showCurrentPw}
+            aria-label={showCurrentPw ? $t.hidePassword : $t.showPassword} title={showCurrentPw ? $t.hidePassword : $t.showPassword}
+            class="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-lg text-gray-400 hover:text-white focus:text-white
+                   focus:outline-none focus:ring-2 focus:ring-white transition-colors">
+            {#if showCurrentPw}
+              <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>
+            {:else}
+              <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+            {/if}
+          </button>
+        </div>
+        <div class="relative">
+          <input type={showNewPw ? 'text' : 'password'} bind:value={newPw} placeholder={$t.newPassword}
+            use:tvKeyboard
+            on:keydown={(e) => e.key === 'Enter' && changePassword()}
+            class="w-full bg-gray-900 text-white text-2xl p-6 pr-20 rounded-xl border border-gray-600
+                   focus:outline-none focus:ring-4 focus:ring-blue-500" />
+          <button type="button" on:click={() => showNewPw = !showNewPw}
+            aria-label={showNewPw ? $t.hidePassword : $t.showPassword} title={showNewPw ? $t.hidePassword : $t.showPassword}
+            class="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-lg text-gray-400 hover:text-white focus:text-white
+                   focus:outline-none focus:ring-2 focus:ring-white transition-colors">
+            {#if showNewPw}
+              <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/></svg>
+            {:else}
+              <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+            {/if}
+          </button>
+        </div>
         {#if pwMessage}<p class="text-blue-400 font-bold text-lg">{pwMessage}</p>{/if}
         <button on:click={changePassword}
           class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-2xl py-6 rounded-xl

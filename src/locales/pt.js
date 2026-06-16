@@ -341,6 +341,56 @@ export default {
     infoBuffer: "Buffer",
     infoDropped: "Fotogramas perdidos",
 
+    trickplay: "Miniaturas de pré-visualização ao avançar",
+    trickplayDesc: "Mostra uma miniatura do momento ao procurar (se o servidor as gerou). Desligado: apenas nome do capítulo e tempo.",
+
+    statusTv: "Televisor",
+    statusResolution: "Resolução",
+    statusUnknown: "Desconhecido",
+    statusCodecsBrowser: "Codecs (descodificador do navegador)",
+    statusOnlyOnTv: "Disponível apenas no televisor",
+
+    statusGroupApp: "App e servidor",
+    statusGroupComponents: "Componentes",
+
+    statusAtmosHint: "Com uma soundbar por (e)ARC pode aparecer Não mesmo que o Atmos funcione — o televisor encaminha o som para a soundbar.",
+
+    // In-App-Log-Viewer
+    clear: "Limpar",
+    logShow: "Mostrar registo",
+    logShowDesc: "Ver, copiar ou partilhar os registos atuais como código QR.",
+    logTitle: "Registo",
+    logEmpty: "Ainda sem entradas.",
+    logQrButton: "Código QR",
+    logQrHint: "Digitalize com o telemóvel para transferir as últimas linhas (p. ex. por e-mail).",
+    logBackToText: "Voltar ao texto",
+
+    // Untertitel-Styling (nur Text)
+    subtitleColor: "Cor",
+    subtitleEdge: "Borda",
+    subtitleBackground: "Fundo",
+    subtitleStyleHint: "Aplica-se apenas a legendas de texto (p. ex. SRT/VTT). Legendas de imagem como PGS só podem ser redimensionadas.",
+    colorWhite: "Branco",
+    colorYellow: "Amarelo",
+    colorGreen: "Verde",
+    colorCyan: "Ciano",
+    edgeShadow: "Sombra",
+    edgeOutline: "Contorno",
+    styleNone: "Nenhum",
+    bgSemi: "Semi",
+    bgSolid: "Sólido",
+
+    // Teilen
+    share: "Partilhar",
+    shareHint: "Digitalize com o telemóvel para consultar ou partilhar o título.",
+
+    // Untertitel-Versatz
+    subtitleOffset: "Desfasamento",
+
+    // Kennwort anzeigen/verbergen
+    showPassword: "Mostrar palavra-passe",
+    hidePassword: "Ocultar palavra-passe",
+
     // Version
     version: "Versão",
 };

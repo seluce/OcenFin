@@ -341,6 +341,56 @@ export default {
     infoBuffer: "Búfer",
     infoDropped: "Fotogramas perdidos",
 
+    trickplay: "Miniaturas de vista previa al avanzar",
+    trickplayDesc: "Muestra una miniatura del momento al buscar (si el servidor las generó). Desactivado: solo nombre del capítulo y tiempo.",
+
+    statusTv: "Televisor",
+    statusResolution: "Resolución",
+    statusUnknown: "Desconocido",
+    statusCodecsBrowser: "Códecs (decodificador del navegador)",
+    statusOnlyOnTv: "Solo disponible en el televisor",
+
+    statusGroupApp: "App y servidor",
+    statusGroupComponents: "Componentes",
+
+    statusAtmosHint: "Con una barra de sonido por (e)ARC puede aparecer No aunque Atmos funcione — el televisor transmite el audio a la barra de sonido.",
+
+    // In-App-Log-Viewer
+    clear: "Borrar",
+    logShow: "Mostrar registro",
+    logShowDesc: "Ver, copiar o compartir los registros actuales como código QR.",
+    logTitle: "Registro",
+    logEmpty: "Aún no hay entradas.",
+    logQrButton: "Código QR",
+    logQrHint: "Escanea con el móvil para transferir las últimas líneas (p. ej. por correo).",
+    logBackToText: "Volver al texto",
+
+    // Untertitel-Styling (nur Text)
+    subtitleColor: "Color",
+    subtitleEdge: "Borde",
+    subtitleBackground: "Fondo",
+    subtitleStyleHint: "Solo se aplica a subtítulos de texto (p. ej. SRT/VTT). Los subtítulos de imagen como PGS solo pueden escalarse.",
+    colorWhite: "Blanco",
+    colorYellow: "Amarillo",
+    colorGreen: "Verde",
+    colorCyan: "Cian",
+    edgeShadow: "Sombra",
+    edgeOutline: "Contorno",
+    styleNone: "Ninguno",
+    bgSemi: "Semi",
+    bgSolid: "Sólido",
+
+    // Teilen
+    share: "Compartir",
+    shareHint: "Escanea con el móvil para consultar o compartir el título.",
+
+    // Untertitel-Versatz
+    subtitleOffset: "Desfase",
+
+    // Kennwort anzeigen/verbergen
+    showPassword: "Mostrar contraseña",
+    hidePassword: "Ocultar contraseña",
+
     // Version
     version: "Versión",
 };

@@ -341,6 +341,56 @@ export default {
     infoBuffer: "Tampon",
     infoDropped: "Images perdues",
 
+    trickplay: "Vignettes d'aperçu au défilement",
+    trickplayDesc: "Affiche une vignette de l'instant pendant la recherche (si le serveur les a générées). Désactivé : nom du chapitre et heure uniquement.",
+
+    statusTv: "Téléviseur",
+    statusResolution: "Résolution",
+    statusUnknown: "Inconnu",
+    statusCodecsBrowser: "Codecs (décodeur du navigateur)",
+    statusOnlyOnTv: "Disponible uniquement sur le téléviseur",
+
+    statusGroupApp: "App et serveur",
+    statusGroupComponents: "Composants",
+
+    statusAtmosHint: "Avec une barre de son en (e)ARC, Non peut s'afficher même si l'Atmos fonctionne — le téléviseur transmet le son à la barre de son.",
+
+    // In-App-Log-Viewer
+    clear: "Effacer",
+    logShow: "Afficher le journal",
+    logShowDesc: "Consulter, copier ou partager les journaux actuels via un QR code.",
+    logTitle: "Journal",
+    logEmpty: "Aucune entrée pour le moment.",
+    logQrButton: "QR code",
+    logQrHint: "Scannez avec votre téléphone pour transférer les dernières lignes (par e-mail par ex.).",
+    logBackToText: "Retour au texte",
+
+    // Untertitel-Styling (nur Text)
+    subtitleColor: "Couleur",
+    subtitleEdge: "Bord",
+    subtitleBackground: "Fond",
+    subtitleStyleHint: "S'applique uniquement aux sous-titres texte (SRT/VTT). Les sous-titres image comme PGS ne peuvent qu'être redimensionnés.",
+    colorWhite: "Blanc",
+    colorYellow: "Jaune",
+    colorGreen: "Vert",
+    colorCyan: "Cyan",
+    edgeShadow: "Ombre",
+    edgeOutline: "Contour",
+    styleNone: "Aucun",
+    bgSemi: "Semi",
+    bgSolid: "Plein",
+
+    // Teilen
+    share: "Partager",
+    shareHint: "Scannez avec votre téléphone pour consulter ou partager le titre.",
+
+    // Untertitel-Versatz
+    subtitleOffset: "Décalage",
+
+    // Kennwort anzeigen/verbergen
+    showPassword: "Afficher le mot de passe",
+    hidePassword: "Masquer le mot de passe",
+
     // Version
     version: "Version",
 };

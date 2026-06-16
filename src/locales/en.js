@@ -341,6 +341,56 @@ export default {
     infoBuffer: "Buffer",
     infoDropped: "Dropped frames",
 
+    trickplay: "Scrubbing preview thumbnails",
+    trickplayDesc: "Shows a thumbnail of the moment while seeking (if the server generated them). Off: chapter name and time only.",
+
+    statusTv: "TV",
+    statusResolution: "Resolution",
+    statusUnknown: "Unknown",
+    statusCodecsBrowser: "Codecs (browser decoder)",
+    statusOnlyOnTv: "Only available on the TV",
+
+    statusGroupApp: "App & server",
+    statusGroupComponents: "Components",
+
+    statusAtmosHint: "With a soundbar over (e)ARC this can show No even though Atmos works — the TV passes the audio through to the soundbar.",
+
+    // In-App-Log-Viewer
+    clear: "Clear",
+    logShow: "Show log",
+    logShowDesc: "View, copy or share the current logs as a QR code.",
+    logTitle: "Log",
+    logEmpty: "No entries yet.",
+    logQrButton: "QR code",
+    logQrHint: "Scan with your phone to transfer the latest lines (e.g. by email).",
+    logBackToText: "Back to text",
+
+    // Untertitel-Styling (nur Text)
+    subtitleColor: "Color",
+    subtitleEdge: "Edge",
+    subtitleBackground: "Background",
+    subtitleStyleHint: "Applies to text subtitles only (e.g. SRT/VTT). Image subtitles like PGS can only be scaled.",
+    colorWhite: "White",
+    colorYellow: "Yellow",
+    colorGreen: "Green",
+    colorCyan: "Cyan",
+    edgeShadow: "Shadow",
+    edgeOutline: "Outline",
+    styleNone: "None",
+    bgSemi: "Semi",
+    bgSolid: "Solid",
+
+    // Teilen
+    share: "Share",
+    shareHint: "Scan with your phone to look up or share the title.",
+
+    // Untertitel-Versatz
+    subtitleOffset: "Offset",
+
+    // Kennwort anzeigen/verbergen
+    showPassword: "Show password",
+    hidePassword: "Hide password",
+
     // Version
     version: "Version",
 };

@@ -3,12 +3,11 @@
   // Wird von Details und Player verwendet. Steuerung über die Prop `mode`
   // (null = geschlossen). Schließen meldet sich per 'close'-Event beim Eltern.
   import { t } from '../i18n.js';
-  import { isBackKey, focusOnMount, dlog } from '../utils.js';
+  import { isBackKey, focusOnMount, dlog, uiFade, dropTrapOnOutro, serverUrl } from '../utils.js';
   import { createEventDispatcher } from 'svelte';
 
   export let mode = null;          // null | 'collection' | 'playlist'
   export let item = null;          // hinzuzufügender Titel
-  export let serverUrl;
   export let selectedUser;
   export let getAuthHeaders;       // Funktion, liefert die Auth-Header
 
@@ -31,7 +30,7 @@
     const type = m === 'collection' ? 'BoxSet' : 'Playlist';
     try {
       const res = await fetch(
-        `${serverUrl}/Users/${selectedUser.Id}/Items?Recursive=true&IncludeItemTypes=${type}&SortBy=SortName&SortOrder=Ascending`,
+        `${$serverUrl}/Users/${selectedUser.Id}/Items?Recursive=true&IncludeItemTypes=${type}&SortBy=SortName&SortOrder=Ascending`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) items = (await res.json()).Items || [];
@@ -40,8 +39,8 @@
     await Promise.all(items.map(async (target) => {
       try {
         const url = m === 'collection'
-          ? `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${target.Id}&Fields=&Limit=300`
-          : `${serverUrl}/Playlists/${target.Id}/Items?UserId=${selectedUser.Id}&Limit=300`;
+          ? `${$serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${target.Id}&Fields=&Limit=300`
+          : `${$serverUrl}/Playlists/${target.Id}/Items?UserId=${selectedUser.Id}&Limit=300`;
         const r = await fetch(url, { headers: getAuthHeaders() });
         if (r.ok) {
           const kids = (await r.json()).Items || [];
@@ -60,8 +59,8 @@
     if (!item || busy || alreadyIn.has(target.Id)) return;   // keine Duplikate
     busy = true;
     const url = mode === 'collection'
-      ? `${serverUrl}/Collections/${target.Id}/Items?Ids=${item.Id}`
-      : `${serverUrl}/Playlists/${target.Id}/Items?Ids=${item.Id}&UserId=${selectedUser.Id}`;
+      ? `${$serverUrl}/Collections/${target.Id}/Items?Ids=${item.Id}`
+      : `${$serverUrl}/Playlists/${target.Id}/Items?Ids=${item.Id}&UserId=${selectedUser.Id}`;
     try {
       const res = await fetch(url, { method: 'POST', headers: getAuthHeaders() });
       if (res.ok) {
@@ -70,10 +69,10 @@
         childrenOf[target.Id] = [...(childrenOf[target.Id] || []), { Id: item.Id, Name: item.Name }];
         childrenOf = childrenOf;
       } else {
-        console.warn('[OcenFin] Hinzufügen fehlgeschlagen', mode, res.status, await res.text().catch(() => ''));
+        console.warn('[OcenFin] add failed', mode, res.status, await res.text().catch(() => ''));
         msg = (mode === 'collection' && res.status === 403) ? $t.collectionPermissionDenied : $t.actionFailed; msgError = true;
       }
-    } catch (e) { console.warn('[OcenFin] Hinzufügen-Fehler', mode, e); msg = $t.actionFailed; msgError = true; }
+    } catch (e) { console.warn('[OcenFin] add error', mode, e); msg = $t.actionFailed; msgError = true; }
     busy = false;
   }
 
@@ -82,8 +81,8 @@
     if (!name || !item || busy) return;
     busy = true;
     const url = mode === 'collection'
-      ? `${serverUrl}/Collections?Name=${encodeURIComponent(name)}&Ids=${item.Id}`
-      : `${serverUrl}/Playlists?Name=${encodeURIComponent(name)}&Ids=${item.Id}&UserId=${selectedUser.Id}`;
+      ? `${$serverUrl}/Collections?Name=${encodeURIComponent(name)}&Ids=${item.Id}`
+      : `${$serverUrl}/Playlists?Name=${encodeURIComponent(name)}&Ids=${item.Id}&UserId=${selectedUser.Id}`;
     try {
       const res = await fetch(url, { method: 'POST', headers: getAuthHeaders() });
       if (res.ok) {
@@ -98,10 +97,10 @@
         newName = '';
         dispatch('created');   // Eltern können Mediatheken/Sidebar auffrischen
       } else {
-        console.warn('[OcenFin] Erstellen fehlgeschlagen', mode, res.status, await res.text().catch(() => ''));
+        console.warn('[OcenFin] create failed', mode, res.status, await res.text().catch(() => ''));
         msg = (mode === 'collection' && res.status === 403) ? $t.collectionPermissionDenied : $t.actionFailed; msgError = true;
       }
-    } catch (e) { console.warn('[OcenFin] Erstellen-Fehler', mode, e); msg = $t.actionFailed; msgError = true; }
+    } catch (e) { console.warn('[OcenFin] create error', mode, e); msg = $t.actionFailed; msgError = true; }
     busy = false;
   }
 
@@ -109,7 +108,7 @@
 </script>
 
 {#if mode}
-  <div data-focus-trap class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8 animate-fade-in"
+  <div data-focus-trap transition:uiFade on:outrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8"
     on:keydown={onKeydown}>
     <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl p-8 flex flex-col gap-5">
       <div class="flex justify-between items-center">

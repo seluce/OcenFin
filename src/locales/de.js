@@ -341,6 +341,56 @@ export default {
     infoBuffer: "Puffer",
     infoDropped: "Verworfene Bilder",
 
+    trickplay: "Vorschaubilder beim Spulen",
+    trickplayDesc: "Zeigt beim Spulen ein Vorschaubild der jeweiligen Szene (sofern vom Server erzeugt). Aus: nur Kapitelname und Zeit.",
+
+    statusTv: "Fernseher",
+    statusResolution: "Auflösung",
+    statusUnknown: "Unbekannt",
+    statusCodecsBrowser: "Codecs (Browser-Decoder)",
+    statusOnlyOnTv: "Nur am Fernseher verfügbar",
+
+    statusGroupApp: "App & Server",
+    statusGroupComponents: "Komponenten",
+
+    statusAtmosHint: "Bei einer Soundbar über (e)ARC kann hier Nein stehen, obwohl Atmos funktioniert — der Fernseher reicht den Ton an die Soundbar durch.",
+
+    // In-App-Log-Viewer
+    clear: "Leeren",
+    logShow: "Protokoll anzeigen",
+    logShowDesc: "Aktuelle Logs ansehen, kopieren oder als QR-Code teilen.",
+    logTitle: "Protokoll",
+    logEmpty: "Noch keine Einträge.",
+    logQrButton: "QR-Code",
+    logQrHint: "Mit dem Handy scannen, um die letzten Zeilen zu übertragen (z. B. per E-Mail).",
+    logBackToText: "Zurück zum Text",
+
+    // Untertitel-Styling (nur Text)
+    subtitleColor: "Farbe",
+    subtitleEdge: "Rand",
+    subtitleBackground: "Hintergrund",
+    subtitleStyleHint: "Gilt nur für Textuntertitel (z. B. SRT/VTT). Bild-Untertitel wie PGS lassen sich nur skalieren.",
+    colorWhite: "Weiß",
+    colorYellow: "Gelb",
+    colorGreen: "Grün",
+    colorCyan: "Cyan",
+    edgeShadow: "Schatten",
+    edgeOutline: "Kontur",
+    styleNone: "Ohne",
+    bgSemi: "Halbklar",
+    bgSolid: "Deckend",
+
+    // Teilen
+    share: "Teilen",
+    shareHint: "Mit dem Handy scannen, um den Titel nachzuschlagen oder zu teilen.",
+
+    // Untertitel-Versatz
+    subtitleOffset: "Versatz",
+
+    // Kennwort anzeigen/verbergen
+    showPassword: "Kennwort anzeigen",
+    hidePassword: "Kennwort verbergen",
+
     // Version
     version: "Version",
 };
