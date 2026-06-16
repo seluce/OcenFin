@@ -11,6 +11,7 @@
   import Details     from './components/Details.svelte';
   import Player      from './components/Player.svelte';
   import ContextMenu from './components/ContextMenu.svelte';
+  import AddToPicker from './components/AddToPicker.svelte';
   import Search      from './components/Search.svelte';
   import Settings    from './components/Settings.svelte';
   import SyncPlayModal from './components/SyncPlay.svelte';
@@ -1827,7 +1828,33 @@
   // KONTEXTMENÜ (langes Drücken auf eine Karte)
   // ============================================================
   let contextItem = null;
-  function openContextMenu(item) { contextItem = item; }
+  let contextReturnId = null;     // Item-Id der auslösenden Card (Fokus-Rückgabe, überlebt Reload)
+  let contextReturnEl = null;     // Fallback: Element-Referenz, falls keine data-item-id vorhanden
+  let contextPickerMode = null;   // null | 'playlist' — AddToPicker aus dem Kontextmenü
+  let contextPickerItem = null;
+  function openContextMenu(item) {
+    contextReturnId = item?.Id ?? null;
+    contextReturnEl = document.activeElement;
+    contextItem = item;
+  }
+  // Nach dem Schließen von Kontextmenü UND Picker den Fokus zurück auf die Card legen.
+  // Erst per data-item-id suchen (überlebt einen Hintergrund-Reload), sonst die Element-Referenz.
+  // Das Dashboard lädt async neu (Remount via {#key}), daher kurz pollen, bis die Card wieder da ist.
+  function restoreContextFocus() {
+    const id = contextReturnId, el = contextReturnEl;
+    contextReturnId = null; contextReturnEl = null;
+    let tries = 0;
+    const attempt = () => {
+      let target = id ? document.querySelector(`[data-item-id="${id}"]`) : null;
+      if (!target && el && document.contains(el) && typeof el.focus === 'function') target = el;
+      if (target) { target.focus(); return; }
+      if (++tries < 12) { setTimeout(attempt, 50); return; }   // bis ~600 ms auf den neu geladenen Eintrag warten
+      // Eintrag ist weg (z.B. durchgemischte Empfehlung) → ersten sichtbaren Eintrag fokussieren, statt den Fokus zu verlieren.
+      document.querySelector('[data-item-id]')?.focus();
+    };
+    tick().then(attempt);
+  }
+  $: if (!contextItem && !contextPickerMode && (contextReturnId || contextReturnEl)) restoreContextFocus();
 
   // Nach einer Aktion (gesehen/Favorit/zurückgesetzt) die aktuelle Ansicht auffrischen,
   // damit Badges/Fortschritt/"Weiterschauen" den neuen Stand zeigen.
@@ -1842,9 +1869,13 @@
     }
   }
   function contextOpenDetails(e) {
+    contextReturnId = null; contextReturnEl = null;   // Details übernimmt den Fokus
     contextItem = null;
     showItemDetails(e.detail);
   }
+  // "Zur Wiedergabeliste hinzufügen" aus dem Kontextmenü → AddToPicker öffnen (Fokus-Rückgabe-Id bleibt
+  // erhalten und greift erst, wenn auch der Picker geschlossen ist).
+  function contextAddToList(e) { contextPickerItem = e.detail; contextPickerMode = 'playlist'; }
 
   // Zurück aus Details/Player → an die Herkunft, Bibliotheksposition wiederherstellen
   async function returnFromDetails() {
@@ -1857,6 +1888,10 @@
         const btn = libraryGrid.querySelector(`[data-item-id="${lastFocusedItemId}"]`);
         if (btn) btn.focus();
       }
+    } else if (detailsOrigin === 'favorites') {
+      // Favoriten neu laden — z.B. wenn in den Details ein Favorit entfernt wurde, war er sonst
+      // noch in der Übersicht gelistet, bis man die Ansicht wechselte.
+      loadFavorites();
     }
   }
 
@@ -3030,8 +3065,13 @@
       on:close={() => contextItem = null}
       on:changed={onContextChanged}
       on:openDetails={contextOpenDetails}
+      on:addToList={contextAddToList}
     />
   {/if}
+
+  <!-- AddToPicker fürs Kontextmenü (Fokus kehrt nach dem Schließen zur Card zurück) -->
+  <AddToPicker mode={contextPickerMode} item={contextPickerItem} {selectedUser} {getAuthHeaders}
+    on:created={refreshLibraries} on:close={() => contextPickerMode = null} />
 
   <!-- UHRZEIT — oben rechts, sichtbar im App-Betrieb außer im Player -->
   {#if appPhase === 'app' && viewState !== 'player' && displaySettings.clock}

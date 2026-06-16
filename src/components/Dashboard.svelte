@@ -393,7 +393,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.continueWatchingRow}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each continueWatching as item}
-            <button on:click={() => dispatch('openDetails', item)} use:longPress on:longpress={() => dispatch('openContext', item)}
+            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
               class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
               <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
                           border-4 border-transparent group-focus:border-white group-focus:scale-105
@@ -431,7 +431,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.nextUp}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each nextUp as item}
-            <button on:click={() => dispatch('openDetails', item)} use:longPress on:longpress={() => dispatch('openContext', item)}
+            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
               class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
               <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
                           border-4 border-transparent group-focus:border-white group-focus:scale-105
@@ -459,7 +459,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.recentlyWatched}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each recentlyWatched as item}
-            <button on:click={() => dispatch('openDetails', item)} use:longPress on:longpress={() => dispatch('openContext', item)}
+            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
               <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                           border-4 border-transparent group-focus:border-white
@@ -492,7 +492,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.sharedSuggestions}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each sharedSuggestions as item}
-            <button on:click={() => dispatch('openDetails', item)} use:longPress on:longpress={() => dispatch('openContext', item)}
+            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
               <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                           border-4 border-transparent group-focus:border-white
@@ -520,7 +520,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each rec.items as item}
-            <button on:click={() => dispatch('openDetails', item)} use:longPress on:longpress={() => dispatch('openContext', item)}
+            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
               <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                           border-4 border-transparent group-focus:border-white
@@ -553,7 +553,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.latestMovies}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each latestMovies as item}
-            <button on:click={() => dispatch('openDetails', item)} use:longPress on:longpress={() => dispatch('openContext', item)}
+            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
               <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                           border-4 border-transparent group-focus:border-white
@@ -586,7 +586,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.latestSeries}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each latestSeries as item}
-            <button on:click={() => dispatch('openDetails', item)} use:longPress on:longpress={() => dispatch('openContext', item)}
+            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
               <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                           border-4 border-transparent group-focus:border-white

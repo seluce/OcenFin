@@ -70,6 +70,7 @@
     await call('DELETE', `/Users/${userId}/PlayedItems/${item.Id}`);
   }
   function openDetails() { if (!armed) return; dispatch('openDetails', item); dispatch('close'); }
+  function addToList()   { if (!armed) return; dispatch('addToList', item); dispatch('close'); }
 
   function handleKeyDown(e) {
     if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); dispatch('close'); }
@@ -122,6 +123,15 @@
           {$t.resetProgress}
         </button>
       {/if}
+
+      <button on:click={addToList}
+        class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
+               hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
+        <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h10.5M3.75 12h10.5M3.75 17.25h6M18 14.25v6M15 17.25h6"/>
+        </svg>
+        {$t.addToPlaylist}
+      </button>
 
       <button on:click={openDetails}
         class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
