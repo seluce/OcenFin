@@ -1,10 +1,27 @@
 // Gemeinsame Hilfsfunktionen (geteilt zwischen App und Komponenten)
 import { writable } from 'svelte/store';
+import { tick } from 'svelte';
 import { dependencies as deps } from '../package.json';   // für Versions-Anzeige auf der Status-Seite
 
 // Verbindungsstatus: true, wenn ein API-Aufruf wegen Netzwerk-/Serverfehler scheitert.
 // App zeigt dann ein Hinweis-Banner. Wird bei Erfolg wieder zurückgesetzt.
 export const connectionLost = writable(false);
+
+// Fokus-Rückgabe nach dem Schließen eines Modals/Overlays: beim Öffnen den Auslöser merken,
+// beim Schließen dorthin zurückspringen. capture()/restore() (inkl. tick-Timing) sind hier
+// vereinheitlicht; WANN restore() läuft, entscheidet jede Komponente über ihre eigene Reactive,
+// weil sich die Schließ-Bedingung unterscheidet (ein Bool vs. mehrere Menüs).
+export function makeFocusReturn() {
+  let saved = null;
+  return {
+    capture(el) { saved = el || document.activeElement; },
+    restore() {
+      const el = saved; saved = null;
+      if (el && typeof el.focus === 'function') tick().then(() => el.focus());
+    },
+    get pending() { return !!saved; },
+  };
+}
 
 // Erkennt die "Zurück"-Aktion: Escape, Backspace ODER die webOS-Fernbedienung
 // (Magic Remote "Zurück" sendet keyCode 461). Backspace in einem Texteingabefeld

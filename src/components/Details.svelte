@@ -1,6 +1,6 @@
 <script>
   import { t, LANGUAGES } from '../i18n.js';
-  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash } from '../utils.js';
+  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn } from '../utils.js';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
 
@@ -112,12 +112,9 @@
   // Teilen: QR-Code mit öffentlichem Titel-Link (IMDb/TMDb) — jeder kann ihn scannen, kein Serverzugang nötig.
   let showShare = false;
   let kebabBtnEl;                 // Drei-Punkte-Button (immer im DOM)
-  let shareReturnFocus = null;    // Fokus-Rückgabe nach Schließen des Teilen-Modals
+  const shareFocus = makeFocusReturn();   // Fokus-Rückgabe nach Schließen des Teilen-Modals
   // Nach dem Schließen des Teilen-Modals den Fokus zurück auf die drei Punkte legen.
-  $: if (!showShare && shareReturnFocus) {
-    const el = shareReturnFocus; shareReturnFocus = null;
-    tick().then(() => el?.focus());
-  }
+  $: if (!showShare && shareFocus.pending) shareFocus.restore();
   let shareQrUrl = null;
   function buildShareTarget(item) {
     const p = item?.ProviderIds || {};
@@ -128,7 +125,7 @@
     return item?.ProductionYear ? `${item.Name} (${item.ProductionYear})` : (item?.Name || '');
   }
   async function openShare() {
-    shareReturnFocus = kebabBtnEl;
+    shareFocus.capture(kebabBtnEl);
     showShare = true;
     shareQrUrl = null;
     try {

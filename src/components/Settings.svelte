@@ -1,7 +1,7 @@
 <script>
   import { currentLang, t, LANGUAGES } from '../i18n.js';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer } from '../utils.js';
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn } from '../utils.js';
   import { createEventDispatcher, tick, onDestroy, onMount } from 'svelte';
 
   export let serverUrl;
@@ -80,7 +80,7 @@
   );
 
   let activeModal  = null;
-  let modalReturnFocus = null;   // Auslöser-Button, auf den der Fokus nach dem Schließen zurückkehrt
+  const modalFocus = makeFocusReturn();   // Auslöser-Button, auf den der Fokus nach dem Schließen zurückkehrt
   let currentPw    = '';
   let showCurrentPw = false;  // Augen-Umschalter fürs aktuelle Kennwort
   let newPw        = '';
@@ -110,7 +110,7 @@
   const getAuthHeaders = () => authHeaders(activeToken);
 
   async function openModal(name) {
-    modalReturnFocus = document.activeElement;
+    modalFocus.capture();
     pwMessage = ''; qcMessage = '';
     currentPw = ''; newPw = ''; qcCode = ''; showNewPw = false; showCurrentPw = false;
     if (modalTimeout) clearTimeout(modalTimeout);
@@ -222,7 +222,7 @@
   let logText = '';
   let qrDataUrl = null;
   let qrBtnEl;   // für Fokus-Rückgabe beim Verlassen der QR-Ansicht
-  function openLog()  { modalReturnFocus = document.activeElement; logText = formatLog(); qrDataUrl = null; showLog = true; }
+  function openLog()  { modalFocus.capture(); logText = formatLog(); qrDataUrl = null; showLog = true; }
   function clearLog() { clearLogBuffer(); logText = formatLog(); qrDataUrl = null; }
   function hideQr()   { qrDataUrl = null; tick().then(() => qrBtnEl?.focus()); }
   async function showLogQr() {
@@ -373,10 +373,7 @@
   // Nach dem Schließen eines Modals (egal welches/wie) den Fokus auf den auslösenden Button zurücklegen.
   $: {
     const anyModalOpen = !!activeModal || avatarModalOpen || showLog;
-    if (!anyModalOpen && modalReturnFocus) {
-      const el = modalReturnFocus; modalReturnFocus = null;
-      tick().then(() => el?.focus());
-    }
+    if (!anyModalOpen && modalFocus.pending) modalFocus.restore();
   }
 
   // Zuletzt gesehene Filme/Serien als Avatar-Vorschläge holen: neueste zuerst, Episoden → Serie,
@@ -414,7 +411,7 @@
       avatarTab = recentTitles.length ? 'recent' : 'symbols';   // Neu-Nutzer ohne Historie → Symbole
     }
   }
-  function openAvatarModal() { modalReturnFocus = document.activeElement; avatarModalOpen = true; loadRecentTitles(); }
+  function openAvatarModal() { modalFocus.capture(); avatarModalOpen = true; loadRecentTitles(); }
 
   async function saveProfileImage() {
     if (avatarSaving) return;

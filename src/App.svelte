@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, itemProgress, connectionLost, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash } from './utils.js';
+  import { isBackKey, focusOnMount, itemProgress, connectionLost, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, makeFocusReturn } from './utils.js';
   import { createFocusManager } from './spatialnav.js';
   import { currentLang, t, detectUiLang } from './i18n.js';
   import Clock       from './components/Clock.svelte';
@@ -555,12 +555,9 @@
 
   // Sortierung
   let showSortMenu = false;
-  let sortFilterReturn = null;   // Auslöser-Button für Fokus-Rückgabe nach Schließen
+  const sortFilterFocus = makeFocusReturn();   // Auslöser-Button für Fokus-Rückgabe nach Schließen
   // Fokus nach dem Schließen von Sortieren/Filtern zurück auf den auslösenden Button.
-  $: if (!showSortMenu && !showFilterMenu && sortFilterReturn) {
-    const el = sortFilterReturn; sortFilterReturn = null;
-    tick().then(() => el?.focus());
-  }
+  $: if (!showSortMenu && !showFilterMenu && sortFilterFocus.pending) sortFilterFocus.restore();
 
   let showExitConfirm = false;   // Bestätigungsdialog "App verlassen?" (Zurück am Dashboard)
   let currentSort  = { by: 'SortName', order: 'Ascending' };
@@ -2497,7 +2494,7 @@
                     {$t.shuffle}
                   </button>
                   <!-- Sortierung -->
-                  <button on:click={(e) => { sortFilterReturn = e.currentTarget; showSortMenu = true; }}
+                  <button on:click={(e) => { sortFilterFocus.capture(e.currentTarget); showSortMenu = true; }}
                     class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
                            focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105"
                     title={$t.sortBy}>
@@ -2507,7 +2504,7 @@
                     {$t.sortBy}
                   </button>
                   <!-- Filter -->
-                  <button on:click={(e) => { sortFilterReturn = e.currentTarget; showFilterMenu = true; }}
+                  <button on:click={(e) => { sortFilterFocus.capture(e.currentTarget); showFilterMenu = true; }}
                     class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
                            focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">

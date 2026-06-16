@@ -1442,9 +1442,9 @@
 
   <!-- WIEDERGABEINFO-OVERLAY (opt-in, vom Info-Button getoggelt) -->
   {#if showInfoOverlay}
-    <div class="absolute top-8 left-8 z-[55] bg-black/75 backdrop-blur-md border border-gray-700 rounded-xl px-5 py-4 text-sm shadow-2xl pointer-events-none max-w-sm animate-fade-in">
-      <div class="text-gray-400 uppercase tracking-wider text-xs font-bold mb-3">{$t.playbackInfo}</div>
-      <div class="flex flex-col gap-1.5">
+    <div class="absolute top-8 left-8 z-[55] bg-black/75 backdrop-blur-md border border-gray-700 rounded-xl px-6 py-5 text-lg shadow-2xl pointer-events-none max-w-md animate-fade-in">
+      <div class="text-gray-400 uppercase tracking-wider text-sm font-bold mb-3">{$t.playbackInfo}</div>
+      <div class="flex flex-col gap-2">
         <div class="flex justify-between gap-8">
           <span class="text-gray-500">{$t.infoMethod}</span>
           <span class="font-bold {playMethodColor}">{playMethodLabel}</span>
