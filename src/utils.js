@@ -1,7 +1,25 @@
 // Gemeinsame Hilfsfunktionen (geteilt zwischen App und Komponenten)
 import { writable } from 'svelte/store';
 import { tick } from 'svelte';
+import { fade } from 'svelte/transition';
 import { dependencies as deps } from '../package.json';   // für Versions-Anzeige auf der Status-Seite
+
+// Ein-/Ausblenden für Overlays, das den "Animationen reduzieren"-Schalter respektiert (App pflegt
+// body.dataset.reduceMotion). Bei reduzierter Bewegung: Dauer 0 → sofort sichtbar/weg, keine Animation.
+export function uiFade(node, params = {}) {
+  const reduced = document.body.dataset.reduceMotion === '1';
+  return fade(node, { ...params, duration: reduced ? 0 : (params.duration ?? 150) });
+}
+
+// Beim Outro-Start die Fokus-Trap im Teilbaum entfernen. Während ein Modal ~150 ms ausblendet, bleibt
+// es im DOM; ohne dies würde der via makeFocusReturn zurückkehrende Fokus von onFocusIn wieder ins
+// ausblendende Modal gezogen. Nach dem Entfernen ist die Trap sofort inaktiv, das Modal blendet aus.
+export function dropTrapOnOutro(e) {
+  const root = e?.currentTarget;
+  if (!root) return;
+  if (root.hasAttribute?.('data-focus-trap')) root.removeAttribute('data-focus-trap');
+  root.querySelectorAll?.('[data-focus-trap]').forEach((el) => el.removeAttribute('data-focus-trap'));
+}
 
 // Verbindungsstatus: true, wenn ein API-Aufruf wegen Netzwerk-/Serverfehler scheitert.
 // App zeigt dann ein Hinweis-Banner. Wird bei Erfolg wieder zurückgesetzt.

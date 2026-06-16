@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, itemProgress, connectionLost, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, makeFocusReturn } from './utils.js';
+  import { isBackKey, focusOnMount, itemProgress, connectionLost, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro } from './utils.js';
   import { createFocusManager } from './spatialnav.js';
   import { currentLang, t, detectUiLang } from './i18n.js';
   import Clock       from './components/Clock.svelte';
@@ -2030,7 +2030,7 @@
   {/if}
 
   {#if $connectionLost && !initializing}
-    <div class="fixed inset-0 z-[500] bg-black/60 flex flex-col items-stretch" data-focus-trap transition:fade={{ duration: 200 }}>
+    <div class="fixed inset-0 z-[500] bg-black/60 flex flex-col items-stretch" data-focus-trap transition:uiFade={{ duration: 200 }} on:outrostart={dropTrapOnOutro}>
       <div class="bg-red-600/95 text-white px-6 py-4 flex flex-wrap items-center justify-center gap-4 shadow-lg">
         <svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 010 12.728m-3.536-3.536a4 4 0 010-5.656M12 12h.01M5.636 5.636a9 9 0 000 12.728"/></svg>
         <span class="font-bold text-lg">{$t.connectionLostMsg}</span>
@@ -2048,7 +2048,7 @@
 
   <!-- App-verlassen-Bestätigung (Zurück am Dashboard) -->
   {#if showExitConfirm}
-    <div class="fixed inset-0 z-[600] flex items-center justify-center bg-black/70 backdrop-blur-sm" data-focus-trap transition:fade={{ duration: 150 }}>
+    <div class="fixed inset-0 z-[600] flex items-center justify-center bg-black/70 backdrop-blur-sm" data-focus-trap transition:uiFade={{ duration: 150 }} on:outrostart={dropTrapOnOutro}>
       <div class="bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl p-8 w-full max-w-md mx-6 flex flex-col gap-6">
         <div>
           <h2 class="text-2xl font-bold text-white">{$t.exitTitle}</h2>
@@ -3069,7 +3069,7 @@
      FILTER-MENÜ
 ============================================================ -->
 {#if showSortMenu}
-  <div data-focus-trap class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8 animate-fade-in"
+  <div data-focus-trap transition:uiFade on:outrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
     on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showSortMenu = false; } }}>
     <div class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full max-w-xl flex flex-col gap-4 shadow-2xl">
       <div class="flex justify-between items-center mb-2">
@@ -3111,7 +3111,7 @@
 {/if}
 
 {#if showFilterMenu}
-  <div data-focus-trap class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8 animate-fade-in">
+  <div data-focus-trap transition:uiFade on:outrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8">
     <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
 
       <!-- Kopf (fix) -->

@@ -1,6 +1,6 @@
 <script>
   import { t } from '../i18n.js';
-  import { focusOnMount } from '../utils.js';
+  import { focusOnMount, uiFade, dropTrapOnOutro } from '../utils.js';
   import { createEventDispatcher } from 'svelte';
 
   export let group   = null;   // aktuelle Gruppe { GroupId, GroupName, Participants: [name] } oder null
@@ -10,7 +10,8 @@
   const dispatch = createEventDispatcher();
 </script>
 
-<div class="fixed inset-0 z-[130] bg-black/85 flex items-center justify-center p-8 animate-fade-in"
+<div class="fixed inset-0 z-[130] bg-black/85 flex items-center justify-center p-8"
+     transition:uiFade on:outrostart={dropTrapOnOutro}
      on:click|self={() => dispatch('close')}>
   <div data-focus-trap
        class="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh]

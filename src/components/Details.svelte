@@ -1,6 +1,6 @@
 <script>
   import { t, LANGUAGES } from '../i18n.js';
-  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn } from '../utils.js';
+  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro } from '../utils.js';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
 
@@ -814,7 +814,7 @@
 
 <!-- MEDIENINFORMATIONEN-MODAL (Codec, Bitrate, Sprachen, …) -->
 {#if showMediaInfo && fullItem?.MediaSources?.length}
-  <div data-focus-trap class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8 animate-fade-in"
+  <div data-focus-trap transition:uiFade on:outrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8"
     on:keydown={(e) => {
       if (isBackKey(e)) { e.stopPropagation(); showMediaInfo = false; return; }
       if (e.key === 'ArrowDown')    { e.preventDefault(); e.stopPropagation(); mediaInfoScroll?.scrollBy({ top: 160, behavior: 'smooth' }); }
@@ -869,7 +869,8 @@
 
 <!-- Teilen: QR-Code mit Titel-Link (IMDb/TMDb) zum Scannen -->
 {#if showShare}
-  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8 animate-fade-in"
+  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
+    transition:uiFade on:outrostart={dropTrapOnOutro}
     on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showShare = false; } }}>
     <div data-modal data-focus-trap
       class="bg-gray-800 border border-gray-700 rounded-2xl p-8 w-full max-w-lg flex flex-col items-center gap-5 shadow-2xl">

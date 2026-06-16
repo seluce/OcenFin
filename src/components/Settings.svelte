@@ -1,7 +1,7 @@
 <script>
   import { currentLang, t, LANGUAGES } from '../i18n.js';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn } from '../utils.js';
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn, uiFade, dropTrapOnOutro } from '../utils.js';
   import { createEventDispatcher, tick, onDestroy, onMount } from 'svelte';
 
   export let serverUrl;
@@ -1595,7 +1595,8 @@
      PROTOKOLL-VIEWER (eigenes Modal, breiter als die Standard-Modals)
 ══════════════════════════════════════════ -->
 {#if showLog}
-  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8 animate-fade-in"
+  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
+    transition:uiFade on:outrostart={dropTrapOnOutro}
     on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); if (qrDataUrl) hideQr(); else showLog = false; } }}>
 
     <div data-modal data-focus-trap
@@ -1639,7 +1640,8 @@
      MODAL (Sprache / Passwort / Quick Connect)
 ══════════════════════════════════════════ -->
 {#if activeModal}
-  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8 animate-fade-in"
+  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
+    transition:uiFade on:outrostart={dropTrapOnOutro}
     on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeModal(); } }}>
 
     <div data-modal data-focus-trap

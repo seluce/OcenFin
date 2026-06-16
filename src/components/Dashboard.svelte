@@ -1,6 +1,6 @@
 <script>
   import { t } from '../i18n.js';
-  import { itemProgress, connectionLost, longPress, authHeaders, blurUp, itemBlurHash } from '../utils.js';
+  import { itemProgress, connectionLost, longPress, authHeaders, blurUp, itemBlurHash, uiFade } from '../utils.js';
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
 
   export let serverUrl;
@@ -310,7 +310,7 @@
 
     <!-- HERO-BANNER — rotierendes Featured-Item -->
     {#if showHero && heroCurrent && heroReady}
-      <div class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden animate-fade-in">
+      <div transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden">
         <!-- Backdrop mit Verläufen -->
         {#each heroItems as h, i}
           {#if i === heroIndex && getHeroBackdrop(h)}

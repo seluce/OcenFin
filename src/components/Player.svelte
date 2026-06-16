@@ -1,6 +1,6 @@
 <script>
   import { t, currentLang } from '../i18n.js';
-  import { isBackKey, focusOnMount, authHeaders, dlog } from '../utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro } from '../utils.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady } from '../syncplay.js';
   import { PgsRenderer, VobSubRenderer } from 'libbitsub';
@@ -1442,7 +1442,7 @@
 
   <!-- WIEDERGABEINFO-OVERLAY (opt-in, vom Info-Button getoggelt) -->
   {#if showInfoOverlay}
-    <div class="absolute top-8 left-8 z-[55] bg-black/75 backdrop-blur-md border border-gray-700 rounded-xl px-6 py-5 text-lg shadow-2xl pointer-events-none max-w-md animate-fade-in">
+    <div transition:uiFade class="absolute top-8 left-8 z-[55] bg-black/75 backdrop-blur-md border border-gray-700 rounded-xl px-6 py-5 text-lg shadow-2xl pointer-events-none max-w-md">
       <div class="text-gray-400 uppercase tracking-wider text-sm font-bold mb-3">{$t.playbackInfo}</div>
       <div class="flex flex-col gap-2">
         <div class="flex justify-between gap-8">
@@ -1702,8 +1702,8 @@
 
     <!-- EINSTELLUNGS-PANEL — bind:this für WebOS D-Pad Fokus -->
     {#if showSettings}
-      <div bind:this={settingsPanel} data-focus-trap
-        class="absolute bottom-32 right-12 bg-gray-900/95 backdrop-blur-md border border-gray-700 rounded-2xl shadow-2xl z-[60] p-6 flex flex-col gap-6 w-96 max-h-[60vh] animate-fade-in">
+      <div bind:this={settingsPanel} data-focus-trap transition:uiFade on:outrostart={dropTrapOnOutro}
+        class="absolute bottom-32 right-12 bg-gray-900/95 backdrop-blur-md border border-gray-700 rounded-2xl shadow-2xl z-[60] p-6 flex flex-col gap-6 w-96 max-h-[60vh]">
 
         <div class="flex justify-between items-center">
           <h2 class="text-2xl font-bold text-white">{settingsTab === 'audio' ? $t.audio : $t.subtitles}</h2>
@@ -1774,7 +1774,7 @@
 
   <!-- INTRO ÜBERSPRINGEN — unten links -->
   {#if showSkipIntro}
-    <div class="absolute bottom-36 left-12 z-[70] animate-fade-in">
+    <div transition:uiFade class="absolute bottom-36 left-12 z-[70]">
       <button on:click={skipIntro} use:focusOnMount
         class="bg-white/10 backdrop-blur-md border-2 border-white text-white font-bold text-xl
                px-8 py-4 rounded-xl flex items-center gap-3 shadow-2xl
@@ -1793,7 +1793,7 @@
   <!-- NÄCHSTE FOLGE — unten rechts -->
   <!-- AUTO-PLAY COUNTDOWN — Netflix-Stil, mit "Jetzt abspielen" / "Abbrechen" -->
   {#if nextCountdown !== null && nextEpisode}
-    <div class="absolute bottom-36 right-12 z-[70] animate-fade-in">
+    <div transition:uiFade class="absolute bottom-36 right-12 z-[70]">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-5 w-80 flex flex-col gap-3">
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{$t.nextEpisodeIn} {nextCountdown} {nextCountdown === 1 ? $t.secondOne : $t.secondsMany}</span>
         <span class="text-lg font-bold text-white truncate">{nextEpisode.Name}</span>
@@ -1820,7 +1820,7 @@
 
   <!-- Manueller "Nächste Folge"-Hinweis (kein Countdown; auch Fallback ohne Kapitel via OUTRO_FALLBACK) -->
   {#if outroPromptActive && nextEpisode && nextCountdown === null}
-    <div class="absolute bottom-36 right-12 z-[70] animate-fade-in">
+    <div transition:uiFade class="absolute bottom-36 right-12 z-[70]">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-5 w-80 flex flex-col gap-3">
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{$t.nextEpisode}</span>
         <span class="text-lg font-bold text-white truncate">{nextEpisode.Name}</span>
@@ -1837,7 +1837,7 @@
 
   <!-- "Schaust du noch?" – nach Inaktivität pausiert -->
   {#if showStillWatching}
-    <div class="absolute inset-0 z-[120] bg-black/85 flex items-center justify-center animate-fade-in">
+    <div transition:uiFade on:outrostart={dropTrapOnOutro} class="absolute inset-0 z-[120] bg-black/85 flex items-center justify-center">
       <div class="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl p-12 flex flex-col items-center gap-7 max-w-md text-center">
         <svg class="w-16 h-16 text-gray-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1 1 0 010-.644C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178a1 1 0 010 .644C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178z"/>
