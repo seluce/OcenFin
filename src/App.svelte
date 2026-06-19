@@ -1683,9 +1683,9 @@
 
   // Gruppierung wie in der Suche: Filme / Serien / Sammlungen (leere Gruppen entfallen im Template)
   let favGroups = $derived([
-    { key: 'movies',      label: $t.movies,      items: favoriteItems.filter(i => i.Type === 'Movie') },
-    { key: 'series',      label: $t.series,      items: favoriteItems.filter(i => i.Type === 'Series') },
-    { key: 'collections', label: $t.collections, items: favoriteItems.filter(i => i.Type === 'BoxSet') },
+    { key: 'movies',      label: $t.movies,      items: favoriteItems.filter(i => i.Type === 'Movie'  && i.UserData?.IsFavorite) },
+    { key: 'series',      label: $t.series,      items: favoriteItems.filter(i => i.Type === 'Series' && i.UserData?.IsFavorite) },
+    { key: 'collections', label: $t.collections, items: favoriteItems.filter(i => i.Type === 'BoxSet' && i.UserData?.IsFavorite) },
   ]);
   // Personen separat (runde Karten, eigene Sektion)
   let favPersons = $derived(favoriteItems.filter(i => i.Type === 'Person'));

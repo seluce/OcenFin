@@ -326,6 +326,7 @@
     // Optimistisch lokal umschalten — kein Neuladen der ganzen Detailseite
     const willBePlayed = !fullItem.UserData?.Played;
     fullItem.UserData = { ...fullItem.UserData, Played: willBePlayed };
+    if (item) item.UserData = { ...item.UserData, Played: willBePlayed };   // Original-Listen-Item mitziehen → Herkunftsliste aktualisiert sich
     try {
       await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/PlayedItems/${fullItem.Id}`, {
         method: willBePlayed ? "POST" : "DELETE",
@@ -335,12 +336,14 @@
       // Bei Fehler zurückrollen
       console.warn('[OcenFin] played-status toggle failed, rolled back:', e);
       fullItem.UserData = { ...fullItem.UserData, Played: !willBePlayed };
+      if (item) item.UserData = { ...item.UserData, Played: !willBePlayed };
     }
   }
 
   async function toggleFavorite() {
     const willBeFav = !fullItem.UserData?.IsFavorite;
     fullItem.UserData = { ...fullItem.UserData, IsFavorite: willBeFav };
+    if (item) item.UserData = { ...item.UserData, IsFavorite: willBeFav };   // Original-Listen-Item mitziehen → Favoriten-Ansicht entfernt/ergänzt reaktiv
     try {
       await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${fullItem.Id}`, {
         method: willBeFav ? "POST" : "DELETE",
@@ -349,6 +352,7 @@
     } catch (e) {
       console.warn('[OcenFin] favorite toggle failed, rolled back:', e);
       fullItem.UserData = { ...fullItem.UserData, IsFavorite: !willBeFav };
+      if (item) item.UserData = { ...item.UserData, IsFavorite: !willBeFav };
     }
   }
 
