@@ -1859,15 +1859,24 @@
 
   // Nach einer Aktion (gesehen/Favorit/zurückgesetzt) die aktuelle Ansicht auffrischen,
   // damit Badges/Fortschritt/"Weiterschauen" den neuen Stand zeigen.
+  // Passt ein Item (noch) zu den aktiven Status-Server-Filtern? (Genre/FSK sind statisch und
+  // ändern sich durch Kontextaktionen nicht, daher hier nicht geprüft.)
+  function matchesStatusFilters(item) {
+    if (activeFilters.isFavorite  && !item.UserData?.IsFavorite) return false;
+    if (activeFilters.isPlayed    && !item.UserData?.Played)     return false;
+    if (activeFilters.isNotPlayed &&  item.UserData?.Played)     return false;
+    return true;
+  }
+
   function onContextChanged() {
-    // Dashboard: ContextMenu hat item.UserData bereits in-place mutiert → Deep Reactivity
-    // aktualisiert Fortschrittsbalken + die abgeleitete "Weiterschauen"-Zeile sofort. Kein
-    // Full-Reload (kein Reshuffle, kein Fokusverlust). Bibliothek/Sammlung: dort hängt die
-    // Sichtbarkeit ggf. an serverseitigen Filtern → gezielt neu laden.
-    if (viewState === 'library' && currentLibraryId) {
-      loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, currentLetter || null);
-    } else if (viewState === 'collection' && currentCollection) {
-      openCollection(currentCollection);
+    // ContextMenu hat item.UserData bereits in-place mutiert → Deep Reactivity aktualisiert
+    // Badges/Fortschritt sofort, ohne Full-Reload (kein Reshuffle, kein Fokusverlust).
+    // Bibliothek: passt das geänderte Item nicht mehr zum aktiven Status-Filter, fliegt es gezielt
+    // aus der Liste (die servergeladene Liste bleibt sonst unberührt → kein Mismatch-Risiko).
+    // Dashboard/Sammlung brauchen keine Aktion (kein membership-relevanter Status-Filter).
+    if (viewState === 'library' && contextItem && !matchesStatusFilters(contextItem)) {
+      const idx = currentItems.findIndex(i => i.Id === contextItem.Id);
+      if (idx >= 0) currentItems.splice(idx, 1);
     }
   }
   function contextOpenDetails(item) {
@@ -2604,7 +2613,7 @@
                     <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg animate-pulse"></div>
                   {/each}
                 {:else}
-                  {#each visibleLibraryItems as item}
+                  {#each visibleLibraryItems as item (item.Id)}
                     <button onclick={() => showItemDetails(item)} data-item-id={item.Id}
                       onfocus={() => previewItem(item)} onblur={cancelPreview}
                       use:longPress onlongpress={() => openContextMenu(item)}
