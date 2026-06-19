@@ -178,7 +178,12 @@
       // /Items/Latest gibt ein DIREKTES Array zurück (nicht { Items: [...] })!
       // Andere Endpunkte geben { Items, TotalRecordCount }. Beide Fälle abfangen.
       pNextUp.then(r => r.json()).then(d => {
-        nextUp = Array.isArray(d) ? d : (d.Items || []);
+        const raw = Array.isArray(d) ? d : (d.Items || []);
+        // In-Progress-Titel ausschließen (stehen schon in "Weiterschauen") — wie die Jellyfin-App.
+        // Per Episode-Id ODER SeriesId, falls eine Folge der Serie bereits angefangen wurde.
+        const inProgress = new Set();
+        continueWatching.forEach(i => { inProgress.add(i.Id); if (i.SeriesId) inProgress.add(i.SeriesId); });
+        nextUp = raw.filter(i => !inProgress.has(i.Id) && !inProgress.has(i.SeriesId));
         apiCache.dashboard.nextUp = nextUp;
       }).catch(() => {});
 
@@ -299,6 +304,89 @@
 
 <div class="px-10 pt-16 pb-20 flex flex-col gap-12">
 
+  <!-- Wiederverwendbare Card-Snippets (statt 8 fast identischer Blöcke) -->
+  {#snippet landscapeCard(item)}
+    {@const img = getItemImageUrl(item, 'landscape')}
+    {@const prog = itemProgress(item)}
+    {@const rem = getRemainingMinutes(item)}
+    {@const sub = getItemSubtitle(item)}
+    <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
+      class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
+      <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
+                  border-4 border-transparent group-focus:border-white group-focus:scale-105
+                  transition-all duration-200 shadow-xl relative">
+        {#if img}
+          <img src={img} use:blurUp={itemBlurHash(item, 'Backdrop')} alt={item.Name}
+            class="w-full h-full object-cover" loading="lazy" />
+        {/if}
+        {#if prog > 0}
+          <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
+            <div class="h-full bg-blue-500" style="width:{prog}%"></div>
+          </div>
+        {/if}
+        {#if rem}
+          <div class="absolute top-2 right-2 bg-black/80 text-white text-xs font-bold px-2 py-1 rounded-md">
+            {rem} {$t.mins} {$t.remaining}
+          </div>
+        {/if}
+      </div>
+      <div class="mt-3 flex flex-col w-full overflow-hidden">
+        <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
+        {#if sub}
+          <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{sub}</span>
+        {/if}
+      </div>
+    </button>
+  {/snippet}
+
+  {#snippet portraitCard(item, img, blur)}
+    {@const prog = itemProgress(item)}
+    {@const sub = getItemSubtitle(item)}
+    <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
+      class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
+      <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
+                  border-4 border-transparent group-focus:border-white
+                  transition-colors duration-200 shadow-xl">
+        {#if img}
+          <img src={img} use:blurUp={blur} alt={item.Name}
+            class="w-full h-full object-cover" loading="lazy" />
+        {/if}
+        {#if prog > 0}
+          <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
+            <div class="h-full bg-blue-500" style="width:{prog}%"></div>
+          </div>
+        {/if}
+      </div>
+      <div class="mt-3 flex flex-col w-full overflow-hidden">
+        <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
+        {#if sub}
+          <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{sub}</span>
+        {/if}
+      </div>
+    </button>
+  {/snippet}
+
+  {#snippet collectionCard(col)}
+    {@const img = getItemImageUrl(col)}
+    <button onclick={() => onOpenCollection?.(col)}
+      class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
+      <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
+                  border-4 border-transparent group-focus:border-white
+                  transition-colors duration-200 shadow-xl">
+        {#if img}
+          <img src={img} use:blurUp={itemBlurHash(col)} alt={col.Name}
+            class="w-full h-full object-cover" loading="lazy" />
+        {:else}
+          <div class="w-full h-full flex items-center justify-center text-gray-600">
+            <svg class="w-14 h-14" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
+          </div>
+        {/if}
+      </div>
+      <span class="mt-3 text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{col.Name}</span>
+    </button>
+  {/snippet}
+
+
   {#if isLoading}
     <!-- Skeleton-Loader -->
     {#each [1, 2, 3] as _}
@@ -401,33 +489,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.continueWatchingRow}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each resumeRow as item (item.Id)}
-            <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
-              class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
-              <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
-                          border-4 border-transparent group-focus:border-white group-focus:scale-105
-                          transition-all duration-200 shadow-xl relative">
-                {#if getItemImageUrl(item, 'landscape')}
-                  <img src={getItemImageUrl(item, 'landscape')} use:blurUp={itemBlurHash(item, 'Backdrop')} alt={item.Name}
-                    class="w-full h-full object-cover" loading="lazy" />
-                {/if}
-                {#if itemProgress(item) > 0}
-                  <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                    <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                  </div>
-                {/if}
-                {#if getRemainingMinutes(item)}
-                  <div class="absolute top-2 right-2 bg-black/80 text-white text-xs font-bold px-2 py-1 rounded-md">
-                    {getRemainingMinutes(item)} {$t.mins} {$t.remaining}
-                  </div>
-                {/if}
-              </div>
-              <div class="mt-3 flex flex-col w-full overflow-hidden">
-                <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
-                {#if getItemSubtitle(item)}
-                  <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{getItemSubtitle(item)}</span>
-                {/if}
-              </div>
-            </button>
+            {@render landscapeCard(item)}
           {/each}
         </div>
       </div>
@@ -439,23 +501,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.nextUp}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each nextUp as item (item.Id)}
-            <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
-              class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
-              <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
-                          border-4 border-transparent group-focus:border-white group-focus:scale-105
-                          transition-all duration-200 shadow-xl">
-                {#if getItemImageUrl(item, 'landscape')}
-                  <img src={getItemImageUrl(item, 'landscape')} use:blurUp={itemBlurHash(item, 'Backdrop')} alt={item.Name}
-                    class="w-full h-full object-cover" loading="lazy" />
-                {/if}
-              </div>
-              <div class="mt-3 flex flex-col w-full overflow-hidden">
-                <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
-                {#if getItemSubtitle(item)}
-                  <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{getItemSubtitle(item)}</span>
-                {/if}
-              </div>
-            </button>
+            {@render landscapeCard(item)}
           {/each}
         </div>
       </div>
@@ -467,28 +513,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.recentlyWatched}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each recentlyWatched as item (item.Id)}
-            <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
-              class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
-              <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                          border-4 border-transparent group-focus:border-white
-                          transition-colors duration-200 shadow-xl">
-                {#if getHistoryImageUrl(item)}
-                  <img src={getHistoryImageUrl(item)} use:blurUp={itemBlurHash(item, 'Backdrop')} alt={item.Name}
-                    class="w-full h-full object-cover" loading="lazy" />
-                {/if}
-                {#if itemProgress(item) > 0}
-                  <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                    <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                  </div>
-                {/if}
-              </div>
-              <div class="mt-3 flex flex-col w-full overflow-hidden">
-                <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
-                {#if getItemSubtitle(item)}
-                  <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{getItemSubtitle(item)}</span>
-                {/if}
-              </div>
-            </button>
+            {@render portraitCard(item, getHistoryImageUrl(item), itemBlurHash(item, 'Backdrop'))}
           {/each}
         </div>
       </div>
@@ -500,23 +525,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.sharedSuggestions}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each sharedSuggestions as item (item.Id)}
-            <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
-              class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
-              <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                          border-4 border-transparent group-focus:border-white
-                          transition-colors duration-200 shadow-xl">
-                {#if getItemImageUrl(item)}
-                  <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name}
-                    class="w-full h-full object-cover" loading="lazy" />
-                {/if}
-              </div>
-              <div class="mt-3 flex flex-col w-full overflow-hidden">
-                <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
-                {#if getItemSubtitle(item)}
-                  <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{getItemSubtitle(item)}</span>
-                {/if}
-              </div>
-            </button>
+            {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
           {/each}
         </div>
       </div>
@@ -528,28 +537,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each rec.items as item (item.Id)}
-            <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
-              class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
-              <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                          border-4 border-transparent group-focus:border-white
-                          transition-colors duration-200 shadow-xl">
-                {#if getItemImageUrl(item)}
-                  <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name}
-                    class="w-full h-full object-cover" loading="lazy" />
-                {/if}
-                {#if itemProgress(item) > 0}
-                  <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                    <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                  </div>
-                {/if}
-              </div>
-              <div class="mt-3 flex flex-col w-full overflow-hidden">
-                <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
-                {#if getItemSubtitle(item)}
-                  <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{getItemSubtitle(item)}</span>
-                {/if}
-              </div>
-            </button>
+            {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
           {/each}
         </div>
       </div>
@@ -561,28 +549,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.latestMovies}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each latestMovies as item (item.Id)}
-            <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
-              class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
-              <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                          border-4 border-transparent group-focus:border-white
-                          transition-colors duration-200 shadow-xl">
-                {#if getItemImageUrl(item)}
-                  <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name}
-                    class="w-full h-full object-cover" loading="lazy" />
-                {/if}
-                {#if itemProgress(item) > 0}
-                  <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                    <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                  </div>
-                {/if}
-              </div>
-              <div class="mt-3 flex flex-col w-full overflow-hidden">
-                <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
-                {#if getItemSubtitle(item)}
-                  <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{getItemSubtitle(item)}</span>
-                {/if}
-              </div>
-            </button>
+            {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
           {/each}
         </div>
       </div>
@@ -594,28 +561,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.latestSeries}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each latestSeries as item (item.Id)}
-            <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
-              class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
-              <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                          border-4 border-transparent group-focus:border-white
-                          transition-colors duration-200 shadow-xl">
-                {#if getItemImageUrl(item)}
-                  <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name}
-                    class="w-full h-full object-cover" loading="lazy" />
-                {/if}
-                {#if itemProgress(item) > 0}
-                  <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                    <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                  </div>
-                {/if}
-              </div>
-              <div class="mt-3 flex flex-col w-full overflow-hidden">
-                <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
-                {#if getItemSubtitle(item)}
-                  <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{getItemSubtitle(item)}</span>
-                {/if}
-              </div>
-            </button>
+            {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
           {/each}
         </div>
       </div>
@@ -627,22 +573,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.collections}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each collections as col (col.Id)}
-            <button onclick={() => onOpenCollection?.(col)}
-              class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
-              <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                          border-4 border-transparent group-focus:border-white
-                          transition-colors duration-200 shadow-xl">
-                {#if getItemImageUrl(col)}
-                  <img src={getItemImageUrl(col)} use:blurUp={itemBlurHash(col)} alt={col.Name}
-                    class="w-full h-full object-cover" loading="lazy" />
-                {:else}
-                  <div class="w-full h-full flex items-center justify-center text-gray-600">
-                    <svg class="w-14 h-14" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
-                  </div>
-                {/if}
-              </div>
-              <span class="mt-3 text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{col.Name}</span>
-            </button>
+            {@render collectionCard(col)}
           {/each}
         </div>
       </div>
