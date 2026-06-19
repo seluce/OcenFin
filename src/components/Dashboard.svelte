@@ -34,6 +34,12 @@
   let recommendations  = $state([]);   // [{ seedTitle, items }] — "Weil du X gesehen hast"
   let collections      = $state([]);   // BoxSets ("Sammlungen")
 
+  // "Weiterschauen" reaktiv ableiten: ein in-place als gesehen markiertes / zurückgesetztes Item
+  // (ContextMenu mutiert item.UserData direkt) verschwindet sofort aus der Zeile — ohne Reload.
+  let resumeRow = $derived(continueWatching.filter(
+    i => !i.UserData?.Played && (i.UserData?.PlaybackPositionTicks || 0) > 0
+  ));
+
   // HERO-BANNER: rotierendes Featured-Item (Netflix-Stil)
   let heroItems  = $state([]);
   let heroIndex  = $state(0);
@@ -312,7 +318,7 @@
     {#if showHero && heroCurrent && heroReady}
       <div transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden">
         <!-- Backdrop mit Verläufen -->
-        {#each heroItems as h, i}
+        {#each heroItems as h, i (h.Id)}
           {#if i === heroIndex && getHeroBackdrop(h)}
             <img src={getHeroBackdrop(h)} use:blurUp={itemBlurHash(h, 'Backdrop')} alt={h.Name} fetchpriority="high" loading="eager" decoding="async"
               class="absolute inset-0 w-full h-full object-cover hero-fade" />
@@ -369,7 +375,7 @@
       <div>
         <h2 class="text-2xl font-bold text-gray-400 mb-4 px-2">{$t.myMedia}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each libraries as library}
+          {#each libraries as library (library.Id)}
             <button onclick={() => onOpenLibrary?.(library)}
               class="shrink-0 group flex flex-col items-center focus:outline-none">
               <div class="w-64 h-36 bg-gray-800 rounded-xl flex items-center justify-center
@@ -390,11 +396,11 @@
     {/if}
 
     <!-- WEITERSCHAUEN -->
-    {#if continueWatching.length > 0}
+    {#if resumeRow.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.continueWatchingRow}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each continueWatching as item}
+          {#each resumeRow as item (item.Id)}
             <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
               class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
               <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
@@ -432,7 +438,7 @@
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.nextUp}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each nextUp as item}
+          {#each nextUp as item (item.Id)}
             <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
               class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
               <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
@@ -460,7 +466,7 @@
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.recentlyWatched}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each recentlyWatched as item}
+          {#each recentlyWatched as item (item.Id)}
             <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
               <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
@@ -493,7 +499,7 @@
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.sharedSuggestions}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each sharedSuggestions as item}
+          {#each sharedSuggestions as item (item.Id)}
             <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
               <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
@@ -521,7 +527,7 @@
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each rec.items as item}
+          {#each rec.items as item (item.Id)}
             <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
               <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
@@ -554,7 +560,7 @@
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.latestMovies}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each latestMovies as item}
+          {#each latestMovies as item (item.Id)}
             <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
               <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
@@ -587,7 +593,7 @@
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.latestSeries}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each latestSeries as item}
+          {#each latestSeries as item (item.Id)}
             <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
               <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
@@ -620,7 +626,7 @@
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.collections}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each collections as col}
+          {#each collections as col (col.Id)}
             <button onclick={() => onOpenCollection?.(col)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
               <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative

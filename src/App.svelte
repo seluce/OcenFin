@@ -1839,18 +1839,18 @@
     contextItem = item;
   }
   // Nach dem Schließen von Kontextmenü UND Picker den Fokus zurück auf die Card legen.
-  // Erst per data-item-id suchen (überlebt einen Hintergrund-Reload), sonst die Element-Referenz.
-  // Das Dashboard lädt async neu (Remount via {#key}), daher kurz pollen, bis die Card wieder da ist.
+  // Dashboard lädt nach Kontextaktionen NICHT mehr neu → die Card-Referenz lebt noch und wird
+  // direkt fokussiert (instant). Bibliothek/Sammlung laden noch async neu → die Card kommt per
+  // data-item-id zurück (kurz pollen), sonst der erste sichtbare Eintrag (statt Fokusverlust).
   function restoreContextFocus() {
     const id = contextReturnId, el = contextReturnEl;
     contextReturnId = null; contextReturnEl = null;
     let tries = 0;
     const attempt = () => {
-      let target = id ? document.querySelector(`[data-item-id="${id}"]`) : null;
-      if (!target && el && document.contains(el) && typeof el.focus === 'function') target = el;
+      if (el && document.contains(el) && typeof el.focus === 'function') { el.focus(); return; }
+      const target = id ? document.querySelector(`[data-item-id="${id}"]`) : null;
       if (target) { target.focus(); return; }
       if (++tries < 12) { setTimeout(attempt, 50); return; }   // bis ~600 ms auf den neu geladenen Eintrag warten
-      // Eintrag ist weg (z.B. durchgemischte Empfehlung) → ersten sichtbaren Eintrag fokussieren, statt den Fokus zu verlieren.
       document.querySelector('[data-item-id]')?.focus();
     };
     tick().then(attempt);
@@ -1860,10 +1860,11 @@
   // Nach einer Aktion (gesehen/Favorit/zurückgesetzt) die aktuelle Ansicht auffrischen,
   // damit Badges/Fortschritt/"Weiterschauen" den neuen Stand zeigen.
   function onContextChanged() {
-    if (viewState === 'dashboard') {
-      apiCache.dashboard = null;
-      dashboardReloadKey++;
-    } else if (viewState === 'library' && currentLibraryId) {
+    // Dashboard: ContextMenu hat item.UserData bereits in-place mutiert → Deep Reactivity
+    // aktualisiert Fortschrittsbalken + die abgeleitete "Weiterschauen"-Zeile sofort. Kein
+    // Full-Reload (kein Reshuffle, kein Fokusverlust). Bibliothek/Sammlung: dort hängt die
+    // Sichtbarkeit ggf. an serverseitigen Filtern → gezielt neu laden.
+    if (viewState === 'library' && currentLibraryId) {
       loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, currentLetter || null);
     } else if (viewState === 'collection' && currentCollection) {
       openCollection(currentCollection);
