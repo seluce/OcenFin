@@ -1,31 +1,35 @@
 <script>
   import { t, LANGUAGES } from '../i18n.js';
-  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, serverUrl, activeToken } from '../utils.js';
-  import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
+  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro } from '../utils.js';
+  import { session } from '../session.svelte.js';
+  import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
 
-  export let item;
-  export let selectedUser;
-  export let reduceAnimations = false;   // Backdrop bei aktivem Sparmodus weglassen
-  export let playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default' };
-  export let use24h = true;   // Zeitformat für den „Endet um"-Chip (folgt der Einstellung)
-  export let serverVobSub = false;   // Server liefert VobSub/DVD extern (.mks, Jellyfin 12.0+)?
-  export let spoilerProtection = true;   // ungesehene Folgen-Thumbnails leicht verschleiern
+  let {
+    item,
+    selectedUser,
+    reduceAnimations = false,   // Backdrop bei aktivem Sparmodus weglassen
+    playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default' },
+    use24h = true,              // Zeitformat für den „Endet um"-Chip (folgt der Einstellung)
+    serverVobSub = false,       // Server liefert VobSub/DVD extern (.mks, Jellyfin 12.0+)?
+    spoilerProtection = true,   // ungesehene Folgen-Thumbnails leicht verschleiern
+    onClose, onLibChanged, onOpenItemById, onOpenPerson, onPlayVideo,   // Callback-Props (statt Events)
+  } = $props();
 
-  const dispatch = createEventDispatcher();
+  let fullItem     = $state(null);
+  let relatedItems = $state([]);
+  let similarItems = $state([]);
+  let isLoading    = $state(true);
 
-  let fullItem     = null;
-  let relatedItems = [];
-  let similarItems = [];
-  let isLoading    = true;
-
-  let selectedAudioIndex    = -1;
-  let selectedSubtitleIndex = -1;
-  let selectedMediaSourceId = null;   // gewählte Version (FullHD/4K …), wenn mehrere existieren
+  let selectedAudioIndex    = $state(-1);
+  let selectedSubtitleIndex = $state(-1);
+  let selectedMediaSourceId = $state(null);   // gewählte Version (FullHD/4K …), wenn mehrere existieren
 
   // aktuell gewählte Quelle (für Stream-Infos, Audio-/Untertitelspuren)
-  $: selectedSource = fullItem?.MediaSources?.find(s => s.Id === selectedMediaSourceId)
-                      || fullItem?.MediaSources?.[0] || null;
+  let selectedSource = $derived(
+    fullItem?.MediaSources?.find(s => s.Id === selectedMediaSourceId)
+    || fullItem?.MediaSources?.[0] || null
+  );
 
   // Label für die Auflösungsauswahl, z. B. "4K HEVC" / "1080p HEVC"
   function sourceLabel(src) {
@@ -64,8 +68,8 @@
 
   // ---- Eigene Dropdowns (Auflösung/Audio/Untertitel) ------------------------------------------
   // Native <select> friert auf webOS beim Zurück-Knopf ein → D-Pad-taugliche Eigenbau-Dropdowns.
-  let openDropdown = null;     // 'resolution' | 'audio' | 'subtitle'
-  let openTrigger  = null;     // Auslöser-Button (Fokus kehrt beim Schließen dorthin zurück)
+  let openDropdown = $state(null);     // 'resolution' | 'audio' | 'subtitle'
+  let openTrigger  = null;     // Auslöser-Button (DOM-Ref; Fokus kehrt beim Schließen dorthin zurück)
 
   async function toggleDropdown(key, e) {
     if (openDropdown === key) { openDropdown = null; openTrigger = null; return; }
@@ -100,20 +104,20 @@
 
   // ---- Zur Sammlung / Wiedergabeliste hinzufügen ----------------------------------------------
   // Der Dialog selbst liegt in der gemeinsamen Komponente <AddToPicker>; hier nur der Schalter.
-  let pickerMode = null;   // null | 'collection' | 'playlist'
+  let pickerMode = $state(null);   // null | 'collection' | 'playlist'
 
   // Trailer-Modal
-  let trailerEmbedUrl = null;
-  let showMediaInfo   = false;   // Medieninformationen-Modal
-  let mediaInfoScroll;           // Scroll-Container des Modals (für D-Pad-Scrollen)
+  let trailerEmbedUrl = $state(null);
+  let showMediaInfo   = $state(false);   // Medieninformationen-Modal
+  let mediaInfoScroll;           // Scroll-Container des Modals (bind:this, für D-Pad-Scrollen)
 
   // Teilen: QR-Code mit öffentlichem Titel-Link (IMDb/TMDb) — jeder kann ihn scannen, kein Serverzugang nötig.
-  let showShare = false;
-  let kebabBtnEl;                 // Drei-Punkte-Button (immer im DOM)
+  let showShare = $state(false);
+  let kebabBtnEl;                 // Drei-Punkte-Button (bind:this, immer im DOM)
   const shareFocus = makeFocusReturn();   // Fokus-Rückgabe nach Schließen des Teilen-Modals
   // Nach dem Schließen des Teilen-Modals den Fokus zurück auf die drei Punkte legen.
-  $: if (!showShare && shareFocus.pending) shareFocus.restore();
-  let shareQrUrl = null;
+  $effect(() => { if (!showShare && shareFocus.pending) shareFocus.restore(); });
+  let shareQrUrl = $state(null);
   function buildShareTarget(item) {
     const p = item?.ProviderIds || {};
     if (p.Imdb) return `https://www.imdb.com/title/${p.Imdb}/`;
@@ -175,7 +179,7 @@
   }
 
   // Besetzung: Schauspieler (max. 20) aus den People-Daten
-  $: castMembers = (fullItem?.People || []).filter(p => p.Type === 'Actor').slice(0, 20);
+  let castMembers = $derived((fullItem?.People || []).filter(p => p.Type === 'Actor').slice(0, 20));
 
   // Findet den Index des ersten Streams (Audio/Subtitle), dessen Sprache zur Präferenz passt.
   // Gibt null zurück wenn keine Präferenz gesetzt ('default') oder kein Treffer.
@@ -221,10 +225,11 @@
     trailerEmbedUrl = null;
   }
 
-  const getAuthHeaders = () => authHeaders($activeToken);
+  const getAuthHeaders = () => authHeaders(session.token);
 
-  // Reaktiv: lädt neu, sobald 'item' prop sich ändert
-  $: if (item) loadFullDetails(item.Id);
+  // Reaktiv: lädt neu, sobald sich die 'item'-Prop ändert. untrack(), damit der Effect NUR auf
+  // item reagiert — nicht auf Stores/User, die loadFullDetails intern synchron liest.
+  $effect(() => { const id = item?.Id; if (id) untrack(() => loadFullDetails(id)); });
 
   async function loadFullDetails(itemId) {
     isLoading    = true;
@@ -237,7 +242,7 @@
 
     try {
       const res = await fetch(
-        `${$serverUrl}/Users/${selectedUser.Id}/Items/${itemId}?Fields=MediaSources,Overview,Path,ProviderIds,People,RemoteTrailers`,
+        `${session.serverUrl}/Users/${selectedUser.Id}/Items/${itemId}?Fields=MediaSources,Overview,Path,ProviderIds,People,RemoteTrailers`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
@@ -269,7 +274,7 @@
   async function loadSimilarItems(itemId) {
     try {
       const res = await fetch(
-        `${$serverUrl}/Items/${itemId}/Similar?Limit=10&Fields=PrimaryImageAspectRatio`,
+        `${session.serverUrl}/Items/${itemId}/Similar?Limit=10&Fields=PrimaryImageAspectRatio`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) { const d = await res.json(); similarItems = d.Items || []; }
@@ -279,7 +284,7 @@
   async function loadRelatedItems(parentId) {
     try {
       const res = await fetch(
-        `${$serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${parentId}&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName`,
+        `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${parentId}&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) { const d = await res.json(); relatedItems = d.Items || []; }
@@ -289,41 +294,40 @@
   async function handlePlay() {
     if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
       const url = fullItem.Type === 'Series'
-        ? `${$serverUrl}/Shows/NextUp?SeriesId=${fullItem.Id}&UserId=${selectedUser.Id}&Limit=1`
-        : `${$serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Filters=IsNotPlayed&Limit=1&SortBy=SortName`;
+        ? `${session.serverUrl}/Shows/NextUp?SeriesId=${fullItem.Id}&UserId=${selectedUser.Id}&Limit=1`
+        : `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Filters=IsNotPlayed&Limit=1&SortBy=SortName`;
       try {
         const res  = await fetch(url, { headers: getAuthHeaders() });
         const data = await res.json();
         if (data.Items?.length > 0) {
-          dispatch('playVideo', { item: data.Items[0], audioIndex: -1, subtitleIndex: -1 });
+          onPlayVideo?.({ item: data.Items[0], audioIndex: -1, subtitleIndex: -1 });
         } else {
           // Fallback: erste Folge
           const fb = await fetch(
-            `${$serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=SortName`,
+            `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=SortName`,
             { headers: getAuthHeaders() }
           );
           const fd = await fb.json();
-          if (fd.Items?.length > 0) dispatch('playVideo', { item: fd.Items[0], audioIndex: -1, subtitleIndex: -1 });
+          if (fd.Items?.length > 0) onPlayVideo?.({ item: fd.Items[0], audioIndex: -1, subtitleIndex: -1 });
         }
       } catch (e) { console.error(e); }
     } else {
-      dispatch('playVideo', { item: fullItem, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId });
+      onPlayVideo?.({ item: fullItem, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId });
     }
   }
 
   // "Von Anfang": gleiches Item, aber Fortsetzen-Position auf 0 → Player startet bei Null.
   function playFromBeginning() {
     const fresh = { ...fullItem, UserData: { ...(fullItem.UserData || {}), PlaybackPositionTicks: 0 } };
-    dispatch('playVideo', { item: fresh, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId });
+    onPlayVideo?.({ item: fresh, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId });
   }
 
   async function togglePlayed() {
     // Optimistisch lokal umschalten — kein Neuladen der ganzen Detailseite
     const willBePlayed = !fullItem.UserData?.Played;
     fullItem.UserData = { ...fullItem.UserData, Played: willBePlayed };
-    fullItem = fullItem;   // Svelte-Reaktivität auslösen
     try {
-      await fetch(`${$serverUrl}/Users/${selectedUser.Id}/PlayedItems/${fullItem.Id}`, {
+      await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/PlayedItems/${fullItem.Id}`, {
         method: willBePlayed ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
@@ -331,23 +335,20 @@
       // Bei Fehler zurückrollen
       console.warn('[OcenFin] played-status toggle failed, rolled back:', e);
       fullItem.UserData = { ...fullItem.UserData, Played: !willBePlayed };
-      fullItem = fullItem;
     }
   }
 
   async function toggleFavorite() {
     const willBeFav = !fullItem.UserData?.IsFavorite;
     fullItem.UserData = { ...fullItem.UserData, IsFavorite: willBeFav };
-    fullItem = fullItem;
     try {
-      await fetch(`${$serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${fullItem.Id}`, {
+      await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${fullItem.Id}`, {
         method: willBeFav ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
     } catch (e) {
       console.warn('[OcenFin] favorite toggle failed, rolled back:', e);
       fullItem.UserData = { ...fullItem.UserData, IsFavorite: !willBeFav };
-      fullItem = fullItem;
     }
   }
 
@@ -356,28 +357,28 @@
   function navigateTo(id) {
     isLoading = true;
     fullItem  = null;   // Spinner sofort zeigen
-    dispatch('openItemById', id);
+    onOpenItemById?.(id);
   }
 
   function getItemImageUrl(targetItem, format = "portrait") {
     if (format === 'landscape') {
       if (targetItem.Type === 'Episode' && targetItem.ImageTags?.Primary)
-        return `${$serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
       if (targetItem.BackdropImageTags?.length > 0)
-        return `${$serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
     }
     if (targetItem.ImageTags?.Primary)
-      return `${$serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&fillHeight=400&quality=80&format=webp`;
+      return `${session.serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&fillHeight=400&quality=80&format=webp`;
     if (targetItem.SeriesPrimaryImageTag)
-      return `${$serverUrl}/Items/${targetItem.SeriesId}/Images/Primary?tag=${targetItem.SeriesPrimaryImageTag}&fillHeight=400&quality=80&format=webp`;
+      return `${session.serverUrl}/Items/${targetItem.SeriesId}/Images/Primary?tag=${targetItem.SeriesPrimaryImageTag}&fillHeight=400&quality=80&format=webp`;
     return null;
   }
 
   function getItemBackdropUrl(targetItem) {
     if (targetItem.BackdropImageTags?.length > 0)
-      return `${$serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
+      return `${session.serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
     if (targetItem.ParentBackdropImageTags?.length > 0)
-      return `${$serverUrl}/Items/${targetItem.ParentBackdropItemId}/Images/Backdrop?tag=${targetItem.ParentBackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
+      return `${session.serverUrl}/Items/${targetItem.ParentBackdropItemId}/Images/Backdrop?tag=${targetItem.ParentBackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
     return null;
   }
 
@@ -431,16 +432,16 @@
 
           <!-- BREADCRUMB + ZURÜCK -->
       <div class="flex items-center gap-6 mb-10" data-focus-group="details-top">
-        <button on:click={() => dispatch('close')}
+        <button onclick={() => onClose?.()}
           class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
           {$t.back}
         </button>
         {#if fullItem.Type === 'Episode'}
           <div class="flex items-center text-xl font-semibold text-gray-400 gap-2">
-            <button on:click={() => navigateTo(fullItem.SeriesId)}
+            <button onclick={() => navigateTo(fullItem.SeriesId)}
               class="hover:text-white focus:text-white focus:outline-none">{fullItem.SeriesName}</button>
             <span>/</span>
-            <button on:click={() => navigateTo(fullItem.SeasonId)}
+            <button onclick={() => navigateTo(fullItem.SeasonId)}
               class="hover:text-white focus:text-white focus:outline-none">{fullItem.SeasonName}</button>
           </div>
         {/if}
@@ -489,7 +490,7 @@
 
           <!-- AKTIONS-BUTTONS -->
           <div class="flex items-center gap-4 mb-12">
-            <button on:click={handlePlay} use:focusOnMount
+            <button onclick={handlePlay} use:focusOnMount
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-2xl px-12 py-4 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-3 shadow-lg">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
@@ -497,7 +498,7 @@
             </button>
 
             {#if fullItem.UserData?.PlaybackPositionTicks > 0 && fullItem.Type !== 'Series' && fullItem.Type !== 'Season'}
-              <button on:click={playFromBeginning}
+              <button onclick={playFromBeginning}
                 class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold text-lg px-7 py-4 rounded-xl
                        focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg flex items-center gap-2">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -508,7 +509,7 @@
             {/if}
 
             {#if fullItem.RemoteTrailers?.length > 0}
-              <button on:click={openTrailer}
+              <button onclick={openTrailer}
                 class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold text-lg px-8 py-4 rounded-xl
                        focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg flex items-center gap-2">
                 <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -516,7 +517,7 @@
               </button>
             {/if}
 
-            <button on:click={togglePlayed}
+            <button onclick={togglePlayed}
               class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg
                      {fullItem.UserData?.Played ? 'bg-green-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
@@ -524,7 +525,7 @@
               </svg>
             </button>
 
-            <button on:click={toggleFavorite}
+            <button onclick={toggleFavorite}
               class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg
                      {fullItem.UserData?.IsFavorite ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
@@ -534,28 +535,28 @@
 
             {#if fullItem.MediaSources?.length > 0}
               <div class="relative" data-dropdown data-focus-trap={openDropdown === 'kebab' || undefined}>
-                <button bind:this={kebabBtnEl} on:click={(e) => toggleDropdown('kebab', e)} aria-label={$t.more} title={$t.more}
+                <button bind:this={kebabBtnEl} onclick={(e) => toggleDropdown('kebab', e)} aria-label={$t.more} title={$t.more}
                   class="p-4 rounded-xl bg-gray-800 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg">
                   <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
                 </button>
                 {#if openDropdown === 'kebab'}
                   <div class="absolute right-0 mt-2 z-50 w-80 flex flex-col gap-1 bg-gray-900 rounded-xl border border-gray-700 p-2 shadow-2xl">
-                    <button on:click={() => { closeDropdown(false); showMediaInfo = true; }}
+                    <button onclick={() => { closeDropdown(false); showMediaInfo = true; }}
                       class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                       {$t.mediaInfo}
                     </button>
-                    <button on:click={() => { closeDropdown(false); pickerMode = 'playlist'; }}
+                    <button onclick={() => { closeDropdown(false); pickerMode = 'playlist'; }}
                       class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h13M3 12h9m-9 6h9m4-3v6m3-3h-6"/></svg>
                       {$t.addToPlaylist}
                     </button>
-                    <button on:click={() => { closeDropdown(false); pickerMode = 'collection'; }}
+                    <button onclick={() => { closeDropdown(false); pickerMode = 'collection'; }}
                       class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
                       {$t.addToCollection}
                     </button>
-                    <button on:click={() => { closeDropdown(false); openShare(); }}
+                    <button onclick={() => { closeDropdown(false); openShare(); }}
                       class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
                       {$t.share}
@@ -577,7 +578,7 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/>
                   </svg>
                   <div class="flex-1" data-dropdown data-focus-trap={openDropdown === 'resolution' || undefined}>
-                    <button on:click={(e) => toggleDropdown('resolution', e)}
+                    <button onclick={(e) => toggleDropdown('resolution', e)}
                       class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
                       <span>{sourceLabel(selectedSource)}</span>
                       <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'resolution' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
@@ -585,7 +586,7 @@
                     {#if openDropdown === 'resolution'}
                       <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
                         {#each fullItem.MediaSources as src}
-                          <button on:click={() => { selectedMediaSourceId = src.Id; onSourceChange(); closeDropdown(); }} data-opt data-active={src.Id === selectedMediaSourceId || undefined}
+                          <button onclick={() => { selectedMediaSourceId = src.Id; onSourceChange(); closeDropdown(); }} data-opt data-active={src.Id === selectedMediaSourceId || undefined}
                             class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {src.Id === selectedMediaSourceId ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                             {sourceLabel(src)}
                           </button>
@@ -612,7 +613,7 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
                   </svg>
                   <div class="flex-1" data-dropdown data-focus-trap={openDropdown === 'audio' || undefined}>
-                    <button on:click={(e) => toggleDropdown('audio', e)}
+                    <button onclick={(e) => toggleDropdown('audio', e)}
                       class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
                       <span>{audioLabel(getMediaStreams('Audio').find(s => s.Index === selectedAudioIndex))}</span>
                       <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'audio' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
@@ -620,7 +621,7 @@
                     {#if openDropdown === 'audio'}
                       <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
                         {#each getMediaStreams('Audio') as stream}
-                          <button on:click={() => { selectedAudioIndex = stream.Index; closeDropdown(); }} data-opt data-active={stream.Index === selectedAudioIndex || undefined}
+                          <button onclick={() => { selectedAudioIndex = stream.Index; closeDropdown(); }} data-opt data-active={stream.Index === selectedAudioIndex || undefined}
                             class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedAudioIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                             {audioLabel(stream)}
                           </button>
@@ -645,19 +646,19 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
                   </svg>
                   <div class="flex-1" data-dropdown data-focus-trap={openDropdown === 'subtitle' || undefined}>
-                    <button on:click={(e) => toggleDropdown('subtitle', e)}
+                    <button onclick={(e) => toggleDropdown('subtitle', e)}
                       class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
                       <span>{selectedSubtitleIndex === -1 ? $t.subtitleOff : subtitleLabel(getMediaStreams('Subtitle').find(s => s.Index === selectedSubtitleIndex))}</span>
                       <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'subtitle' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                     </button>
                     {#if openDropdown === 'subtitle'}
                       <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
-                        <button on:click={() => { selectedSubtitleIndex = -1; closeDropdown(); }} data-opt data-active={selectedSubtitleIndex === -1 || undefined}
+                        <button onclick={() => { selectedSubtitleIndex = -1; closeDropdown(); }} data-opt data-active={selectedSubtitleIndex === -1 || undefined}
                           class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {selectedSubtitleIndex === -1 ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                           {$t.subtitleOff}
                         </button>
                         {#each getMediaStreams('Subtitle') as stream}
-                          <button on:click={() => { selectedSubtitleIndex = stream.Index; closeDropdown(); }} data-opt data-active={stream.Index === selectedSubtitleIndex || undefined}
+                          <button onclick={() => { selectedSubtitleIndex = stream.Index; closeDropdown(); }} data-opt data-active={stream.Index === selectedSubtitleIndex || undefined}
                             class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedSubtitleIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                             {subtitleLabel(stream)}
                           </button>
@@ -692,7 +693,7 @@
           </h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-8 px-2 snap-row">
             {#each relatedItems as ep}
-              <button on:click={() => { fullItem = null; loadFullDetails(ep.Id); }}
+              <button onclick={() => { fullItem = null; loadFullDetails(ep.Id); }}
                 class="shrink-0 group flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
                 <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 transition-all shadow-xl relative">
                   {#if getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')}
@@ -727,10 +728,10 @@
           <h2 class="text-3xl font-bold text-white mb-6">{$t.cast}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-8 px-2 snap-row">
             {#each castMembers as person}
-              <button on:click={() => dispatch('openPerson', person)} class="shrink-0 w-36 group focus:outline-none text-center">
+              <button onclick={() => onOpenPerson?.(person)} class="shrink-0 w-36 group focus:outline-none text-center">
                 <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto">
-                  {#if personImageUrl($serverUrl, person)}
-                    <img src={personImageUrl($serverUrl, person)} use:blurUp={itemBlurHash(person)} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
+                  {#if personImageUrl(session.serverUrl, person)}
+                    <img src={personImageUrl(session.serverUrl, person)} use:blurUp={itemBlurHash(person)} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}
                     <div class="w-full h-full flex items-center justify-center text-gray-600">
                       <svg class="w-14 h-14" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
@@ -751,7 +752,7 @@
           <h2 class="text-3xl font-bold text-white mb-6">{$t.similar}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-8 px-2 snap-row">
             {#each similarItems as si}
-              <button on:click={() => navigateTo(si.Id)} class="shrink-0 w-48 group flex flex-col focus:outline-none text-left">
+              <button onclick={() => navigateTo(si.Id)} class="shrink-0 w-48 group flex flex-col focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
                   {#if getItemImageUrl(si, 'portrait')}
                     <img src={getItemImageUrl(si, 'portrait')} use:blurUp={itemBlurHash(si)} alt={si.Name} class="w-full h-full object-cover" loading="lazy" />
@@ -775,11 +776,11 @@
   <div
     data-focus-trap
     class="fixed inset-0 bg-black z-[200] flex items-center justify-center"
-    on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeTrailer(); } }}
+    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeTrailer(); } }}
   >
     <!-- Schließen-Button (oben rechts, über dem Video) -->
     <button
-      on:click={closeTrailer}
+      onclick={closeTrailer}
       use:focusOnMount
       class="absolute top-6 right-8 z-10 text-white/80 hover:text-white focus:text-white
              bg-black/50 rounded-full p-3 focus:outline-none focus:ring-4 focus:ring-white transition-colors"
@@ -812,8 +813,8 @@
 
 <!-- MEDIENINFORMATIONEN-MODAL (Codec, Bitrate, Sprachen, …) -->
 {#if showMediaInfo && fullItem?.MediaSources?.length}
-  <div data-focus-trap transition:uiFade on:outrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8"
-    on:keydown={(e) => {
+  <div data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8"
+    onkeydown={(e) => {
       if (isBackKey(e)) { e.stopPropagation(); showMediaInfo = false; return; }
       if (e.key === 'ArrowDown')    { e.preventDefault(); e.stopPropagation(); mediaInfoScroll?.scrollBy({ top: 160, behavior: 'smooth' }); }
       else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); mediaInfoScroll?.scrollBy({ top: -160, behavior: 'smooth' }); }
@@ -821,7 +822,7 @@
     <div bind:this={mediaInfoScroll} class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl">
       <div class="flex justify-between items-center p-8 pb-4 sticky top-0 bg-gray-800 z-10">
         <h2 class="text-4xl text-white font-bold">{$t.mediaInfo}</h2>
-        <button on:click={() => showMediaInfo = false} use:focusOnMount
+        <button onclick={() => showMediaInfo = false} use:focusOnMount
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
@@ -868,13 +869,13 @@
 <!-- Teilen: QR-Code mit Titel-Link (IMDb/TMDb) zum Scannen -->
 {#if showShare}
   <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
-    transition:uiFade on:outrostart={dropTrapOnOutro}
-    on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showShare = false; } }}>
+    transition:uiFade onoutrostart={dropTrapOnOutro}
+    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showShare = false; } }}>
     <div data-modal data-focus-trap
       class="bg-gray-800 border border-gray-700 rounded-2xl p-8 w-full max-w-lg flex flex-col items-center gap-5 shadow-2xl">
       <div class="flex items-center justify-between gap-4 w-full">
         <h2 class="text-3xl text-white font-bold">{$t.share}</h2>
-        <button on:click={() => showShare = false} use:focusOnMount
+        <button onclick={() => showShare = false} use:focusOnMount
           class="px-5 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
                  focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.close}</button>
       </div>
@@ -890,7 +891,7 @@
 
 <!-- Zur Sammlung / Wiedergabeliste hinzufügen (gemeinsame Komponente) -->
 <AddToPicker mode={pickerMode} item={fullItem} {selectedUser} {getAuthHeaders}
-  on:created={() => dispatch('libchanged')} on:close={() => pickerMode = null} />
+  onCreated={() => onLibChanged?.()} onClose={() => pickerMode = null} />
 
 <style>
   .hide-scrollbar::-webkit-scrollbar { display: none; }

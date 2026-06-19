@@ -1,7 +1,8 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, itemProgress, connectionLost, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, serverUrl as serverUrlStore, activeToken as activeTokenStore } from './utils.js';
+  import { isBackKey, focusOnMount, itemProgress, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro } from './utils.js';
+  import { session } from './session.svelte.js';
   import { createFocusManager } from './spatialnav.js';
   import { currentLang, t, detectUiLang } from './i18n.js';
   import Clock       from './components/Clock.svelte';
@@ -21,9 +22,9 @@
   // APP PHASE
   // 'servers' → 'users' → 'app'
   // ============================================================
-  let appPhase = 'servers';   // aktueller Schritt im Onboarding-Flow
-  let initializing = true;    // Splashscreen, bis Auto-Login/Start abgeschlossen ist
-  let dashboardReloadKey = 0; // erhöhen erzwingt frisches Neuladen des Dashboards
+  let appPhase = $state('servers');   // aktueller Schritt im Onboarding-Flow
+  let initializing = $state(true);    // Splashscreen, bis Auto-Login/Start abgeschlossen ist
+  let dashboardReloadKey = $state(0); // erhöhen erzwingt frisches Neuladen des Dashboards
 
   // Cache leeren (Einstellungen): In-Memory-Cache verwerfen und Dashboard frisch laden.
   function clearCache() {
@@ -36,42 +37,41 @@
   // ============================================================
   // SERVER-VERWALTUNG
   // ============================================================
-  let savedServers      = [];   // [{ id, url, name }]
-  let selectedServer    = null; // aktuell verbundener Server
-  let serverConnectError = '';
-  let isConnecting      = false;
-  let showAddServer     = false; // Panel "Neuen Server hinzufügen"
+  let savedServers      = $state([]);   // [{ id, url, name }]
+  let selectedServer    = $state(null); // aktuell verbundener Server
+  let serverConnectError = $state('');
+  let isConnecting      = $state(false);
+  let showAddServer     = $state(false); // Panel "Neuen Server hinzufügen"
 
   // Discovery
-  let isDiscovering      = false;
-  let discoveredServers  = [];
+  let isDiscovering      = $state(false);
+  let discoveredServers  = $state([]);
 
   // Manuelle Eingabe im Add-Panel
-  let newServerUrl       = '';
+  let newServerUrl       = $state('');
 
   // ============================================================
   // AUTH / BENUTZER
   // ============================================================
-  let users            = [];
-  let selectedUser     = null;
-  let isLoggedIn       = false;
-  let activeToken      = '';
-  let serverVobSub     = false;   // liefert der Server VobSub/DVD extern als .mks? (Jellyfin 12.0+)
-  let serverVersion    = '';      // Jellyfin-Serverversion (für die Status-Seite)
-  let savedTokens      = {};  // { serverId: { userId: token } } — Schnellwechsel (nur über Profil-Schalter)
-  let sharedTokens     = {};  // { serverId: { userId: token } } — gemeinsames Schauen, GETRENNT vom Schnellwechsel
+  let users            = $state([]);
+  let selectedUser     = $state(null);
+  let isLoggedIn       = $state(false);
+  let serverVobSub     = $state(false);   // liefert der Server VobSub/DVD extern als .mks? (Jellyfin 12.0+)
+  let serverVersion    = $state('');      // Jellyfin-Serverversion (für die Status-Seite)
+  let savedTokens      = $state({});  // { serverId: { userId: token } } — Schnellwechsel (nur über Profil-Schalter)
+  let sharedTokens     = $state({});  // { serverId: { userId: token } } — gemeinsames Schauen, GETRENNT vom Schnellwechsel
 
   // Login-Unteransichten
-  let showPasswordForm  = false;  // Passwort für ausgewähltes Profil
-  let showManualLogin   = false;  // Manuelle Anmeldung (beliebiger Benutzer)
-  let manualUsername    = '';
-  let manualPassword    = '';
-  let loginError        = '';
-  let password          = '';     // Passwort für Profil-Login
+  let showPasswordForm  = $state(false);  // Passwort für ausgewähltes Profil
+  let showManualLogin   = $state(false);  // Manuelle Anmeldung (beliebiger Benutzer)
+  let manualUsername    = $state('');
+  let manualPassword    = $state('');
+  let loginError        = $state('');
+  let password          = $state('');     // Passwort für Profil-Login
 
   // Quick Connect (Login-Flow — TV zeigt Code, Handy scannt)
-  let qcCode    = null;
-  let qcSecret  = null;
+  let qcCode    = $state(null);
+  let qcSecret  = $state(null);
   let qcPolling = null;
 
   const BASE_DEVICE_ID = 'oceonfin-tv-001';
@@ -93,33 +93,34 @@
     `MediaBrowser Client="OcenFin-TV", Device="LG Smart TV", DeviceId="${BASE_DEVICE_ID}", Version="1.0.0"`;
 
   // Hilfreich: auf welchen User der aktuelle Server-Token zeigt
-  $: serverUrl = selectedServer?.url ?? '';
   // App-weite Stores speisen (parallel zu den bestehenden Props; Komponenten werden schrittweise umgestellt).
-  $: serverUrlStore.set(serverUrl);
-  $: activeTokenStore.set(activeToken);
-  $: isCurrentUserSaved = !!(
+  // session.serverUrl aus dem gewählten Server ableiten — in der Pre-Phase, damit Kinder
+  // (Dashboard etc.) beim Remount bereits die aktuelle URL lesen. Der Token wird imperativ bei
+  // Login/Wechsel/Logout direkt in session.token geschrieben (kein Feed, kein Timing-Lag).
+  $effect.pre(() => { session.serverUrl = selectedServer?.url ?? ''; });
+  let isCurrentUserSaved = $derived(!!(
     selectedUser && selectedServer &&
     savedTokens[selectedServer.id]?.[selectedUser.Id]
-  );
+  ));
 
   // ============================================================
   // ANIMATIONEN
   // ============================================================
-  let reduceAnimations = false;
+  let reduceAnimations = $state(false);
 
   // Anzeige-Elemente (Uhr, Hero-Banner, Episodenanzahl, Mediatheken) — einzeln abschaltbar
-  let displaySettings = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} };
+  let displaySettings = $state({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
 
   // Standard-Audio-/Untertitelsprache
-  let playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true };
+  let playbackPrefs = $state({ audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true });
 
   // ── Profil-bezogene Einstellungen ───────────────────────────
   // Sprache + Anzeige + Wiedergabe + Animationen werden PRO BENUTZER gespeichert.
   // Vor dem Login (Server-/Benutzerauswahl) gibt es noch kein Profil — dort gilt
   // die zuletzt gewählte Gerätesprache ('app_language'). Der Bildschirmschoner
   // bleibt geräteweit (schützt das physische OLED-Panel, benutzerunabhängig).
-  let activeUserId = null;
-  let langValue    = 'de';
+  let activeUserId = $state(null);
+  let langValue    = $state('de');
   let prefsReady   = false;   // verhindert Speichern während des initialen Ladens
   let applyingPrefs = false;  // verhindert Speichern WÄHREND applyUserPrefs (sonst halb-fertiger Zustand)
 
@@ -133,12 +134,12 @@
 
   // 12h/24h-Format für beide Uhren (oben rechts + Screensaver).
   // "auto" folgt der Sprache: Deutsch → 24h, Englisch → 12h. Überschreibbar.
-  $: use24h = displaySettings.clockFormat === '24h' ? true
+  let use24h = $derived(displaySettings.clockFormat === '24h' ? true
             : displaySettings.clockFormat === '12h' ? false
-            : langValue !== 'en';
+            : langValue !== 'en');
 
   // Sicherheitsnetz: Greifen-Sperre nie über die Einstellungen hinaus aktiv lassen.
-  $: if (viewState !== 'settings' && navReordering) navReordering = false;
+  $effect(() => { if (viewState !== 'settings' && navReordering) navReordering = false; });
 
   function userPrefsKey(userId) { return `user_prefs_${userId}`; }
 
@@ -194,47 +195,47 @@
     applyingPrefs = false;
   }
 
-  $: {
+  $effect.pre(() => {
     if (typeof document !== 'undefined') {
       document.body.dataset.reduceMotion = reduceAnimations ? '1' : '0';
     }
-  }
+  });
 
   // Darstellung anwenden — leichtgewichtig über CSS: die Root-Schriftgröße skaliert die
   // gesamte Oberfläche (Tailwind rechnet in rem), data-theme schaltet die Akzentfarbe.
   // Läuft reaktiv bei jeder Änderung von displaySettings (Login, Umschalten, Start).
-  $: if (typeof document !== 'undefined') {
+  $effect.pre(() => { if (typeof document !== 'undefined') {
     const sizes = { small: '16px', medium: '20px', large: '24px' };
     document.documentElement.style.fontSize = sizes[displaySettings.uiSize] || '20px';
     document.documentElement.setAttribute('data-theme', displaySettings.theme || 'blue');
-  }
+  } });
 
-  function onReduceAnimationsChange(e) {
-    reduceAnimations = e.detail;
+  function onReduceAnimationsChange(v) {
+    reduceAnimations = v;
     saveUserPrefs();
   }
 
-  function onDisplayChange(e) {
-    displaySettings = e.detail;
+  function onDisplayChange(v) {
+    displaySettings = v;
     saveUserPrefs();
   }
 
-  function onPlaybackPrefsChange(e) {
-    playbackPrefs = e.detail;
+  function onPlaybackPrefsChange(v) {
+    playbackPrefs = v;
     saveUserPrefs();
   }
 
-  let screensaverSettings = { enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45 };
-  let showScreensaver     = false;
+  let screensaverSettings = $state({ enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45 });
+  let showScreensaver     = $state(false);
   let screensaverTimer    = null;
 
   // Screensaver nur im App-Betrieb und nicht während der Wiedergabe
-  $: {
+  $effect(() => {
     if (appPhase !== 'app' || viewState === 'player') {
       if (screensaverTimer) { clearTimeout(screensaverTimer); screensaverTimer = null; }
       showScreensaver = false;
     }
-  }
+  });
 
   function scheduleScreensaver() {
     if (screensaverTimer) clearTimeout(screensaverTimer);
@@ -247,8 +248,8 @@
     scheduleScreensaver();
   }
 
-  function onScreensaverSettingsChange(e) {
-    screensaverSettings = e.detail;
+  function onScreensaverSettingsChange(v) {
+    screensaverSettings = v;
     localStorage.setItem('screensaver_settings', JSON.stringify(screensaverSettings));
     scheduleScreensaver();
   }
@@ -256,32 +257,32 @@
   // ============================================================
   // NAVIGATION (App-intern)
   // ============================================================
-  let viewState          = 'dashboard';
-  let currentItems       = [];
-  let currentDetailItem  = null;
-  let currentLibraryName         = '';
-  let currentLibraryId           = null;
-  let navLibraries               = [];    // echte Mediatheken fürs Menü (vom Dashboard gemeldet)
-  let navReordering              = false;  // true während ein Sidebar-Eintrag „angehoben" ist
-  let totalLibraryItems          = 0;
-  let isFetchingMore     = false;
-  let isLoading          = false;
+  let viewState          = $state('dashboard');
+  let currentItems       = $state([]);
+  let currentDetailItem  = $state(null);
+  let currentLibraryName         = $state('');
+  let currentLibraryId           = $state(null);
+  let navLibraries               = $state([]);    // echte Mediatheken fürs Menü (vom Dashboard gemeldet)
+  let navReordering              = $state(false);  // true während ein Sidebar-Eintrag „angehoben" ist
+  let totalLibraryItems          = $state(0);
+  let isFetchingMore     = $state(false);
+  let isLoading          = $state(false);
   const libraryItemLimit = 50;
 
-  let activeAudioIndex    = -1;
-  let activeSubtitleIndex = -1;
-  let activeMediaSourceId = null;   // gewählte Version (FullHD/4K), aus Details
-  let autoPlayStreak = 0;           // "Schaust du noch?": automatisch abgespielte Folgen in Folge ohne Interaktion
+  let activeAudioIndex    = $state(-1);
+  let activeSubtitleIndex = $state(-1);
+  let activeMediaSourceId = $state(null);   // gewählte Version (FullHD/4K), aus Details
+  let autoPlayStreak = $state(0);           // "Schaust du noch?": automatisch abgespielte Folgen in Folge ohne Interaktion
 
   // A-Z
-  let activeLetter    = '#';
-  let currentLetter   = '';
+  let activeLetter    = $state('#');
+  let currentLetter   = $state('');
   const alphabet = ['#','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'];
   let libraryScrollContainer;
   let libraryGrid;
 
   // A-Z Sprung-Vorschau (großes Buchstaben-Overlay, iOS-Kontakte-Stil)
-  let jumpLetterOverlay = '';
+  let jumpLetterOverlay = $state('');
   let jumpOverlayTimer;
   function showJumpLetter(letter) {
     jumpLetterOverlay = letter;
@@ -292,7 +293,7 @@
   // Backdrop-Vorschau: blendet nach 700ms Fokus auf einer Karte das Backdrop ein.
   // 700ms ist der Sweet Spot — löst beim schnellen Durchscrollen nicht aus,
   // bleibt aber reaktiv. Eine einzige geteilte <img>-Ebene, moderate Auflösung.
-  let previewBackdrop = '';
+  let previewBackdrop = $state('');
   let previewTimer;
   function previewItem(item) {
     if (!displaySettings.backdropPreview) return;   // eigene Einstellung (nicht an "Animationen reduzieren" gekoppelt)
@@ -300,8 +301,8 @@
     previewTimer = setTimeout(() => {
       const tag = item.BackdropImageTags?.[0];
       const pTag = item.ParentBackdropImageTags?.[0];
-      if (tag)       previewBackdrop = `${serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${tag}&maxWidth=1280&quality=70&format=webp`;
-      else if (pTag) previewBackdrop = `${serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${pTag}&maxWidth=1280&quality=70&format=webp`;
+      if (tag)       previewBackdrop = `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${tag}&maxWidth=1280&quality=70&format=webp`;
+      else if (pTag) previewBackdrop = `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${pTag}&maxWidth=1280&quality=70&format=webp`;
     }, 700);
   }
   function cancelPreview() {
@@ -309,34 +310,34 @@
   }
 
   // Position merken: woher wurde Details geöffnet + Scroll/Fokus in der Bibliothek
-  let detailsOrigin      = 'dashboard';   // 'dashboard' | 'library' | 'search'
-  let savedLibraryScroll = 0;
-  let lastFocusedItemId  = null;
+  let detailsOrigin      = $state('dashboard');   // 'dashboard' | 'library' | 'search'
+  let savedLibraryScroll = $state(0);
+  let lastFocusedItemId  = $state(null);
 
   // Filter
-  let showFilterMenu  = false;
-  let activeFilters   = { isFavorite: false, isPlayed: false, isNotPlayed: false };
-  let availableGenres = [];
-  let selectedGenres  = [];
-  let selectedFsk     = [];
+  let showFilterMenu  = $state(false);
+  let activeFilters   = $state({ isFavorite: false, isPlayed: false, isNotPlayed: false });
+  let availableGenres = $state([]);
+  let selectedGenres  = $state([]);
+  let selectedFsk     = $state([]);
   const fskOptions    = ['0','6','12','16','18'];
-  $: hasFilters = activeFilters.isFavorite || activeFilters.isPlayed || activeFilters.isNotPlayed
-                  || selectedGenres.length > 0 || selectedFsk.length > 0;
+  let hasFilters = $derived(activeFilters.isFavorite || activeFilters.isPlayed || activeFilters.isNotPlayed
+                  || selectedGenres.length > 0 || selectedFsk.length > 0);
 
   // ── Gemeinsames Schauen ────────────────────────────────────────────────────
   // Das eingeloggte (Gemeinsam-)Profil referenziert zwei andere Profile. Deren Tokens
   // liegen in savedTokens (gekoppelt an "Token speichern"); hier nur ID + Name gemerkt.
-  let sharedProfile     = { enabled: false, members: [] };  // members: [{ id, name }]
-  let sharedWatchMode   = false;   // Bibliotheks-Filter "Gemeinsam schauen" aktiv
-  let partnersPlayedIds = null;    // Set: von BEIDEN komplett gesehene Item-IDs (aktuelle Bibliothek)
-  $: sharedReady = sharedProfile.enabled
-                   && sharedProfile.members.filter(m => m && m.id).length >= 1;
+  let sharedProfile     = $state({ enabled: false, members: [] });  // members: [{ id, name }]
+  let sharedWatchMode   = $state(false);   // Bibliotheks-Filter "Gemeinsam schauen" aktiv
+  let partnersPlayedIds = $state(null);    // Set: von BEIDEN komplett gesehene Item-IDs (aktuelle Bibliothek)
+  let sharedReady = $derived(sharedProfile.enabled
+                   && sharedProfile.members.filter(m => m && m.id).length >= 1);
   // Aufräumen: Option an, aber kein Profil hinterlegt → beim Verlassen der Einstellungen wieder aus.
-  $: if (viewState !== 'settings' && sharedProfile.enabled
+  $effect(() => { if (viewState !== 'settings' && sharedProfile.enabled
          && sharedProfile.members.filter(m => m && m.id).length === 0) {
     sharedProfile = { ...sharedProfile, enabled: false };
     saveUserPrefs();
-  }
+  } });
   // Token eines Mitglieds: eigener Shared-Speicher zuerst, sonst (falls der Nutzer den
   // Schnellwechsel selbst aktiviert hat) der Schnellwechsel-Speicher.
   function memberToken(m) {
@@ -344,37 +345,37 @@
     return m && (sharedTokens[sid]?.[m.id] || savedTokens[sid]?.[m.id]);
   }
   // Bibliotheks-Grid: im "Gemeinsam schauen"-Modus alles ausblenden, was beide gesehen haben
-  $: visibleLibraryItems = (sharedWatchMode && partnersPlayedIds)
+  let visibleLibraryItems = $derived((sharedWatchMode && partnersPlayedIds)
                            ? currentItems.filter(i => !partnersPlayedIds.has(i.Id))
-                           : currentItems;
+                           : currentItems);
   // Profil-Liste für die Einrichtung bereitstellen, falls noch nicht geladen
-  $: if (viewState === 'settings' && users.length === 0 && serverUrl) fetchUsers();
+  $effect(() => { if (viewState === 'settings' && users.length === 0 && session.serverUrl) fetchUsers(); });
 
   // ── Gemeinsame Vorschläge (Dashboard-Reihe „Für euch beide") ───────────────
-  let sharedSuggestions = [];
+  let sharedSuggestions = $state([]);
   let _loadedSugKey     = null;
-  $: sharedSugKey = (sharedReady && displaySettings.sharedSuggestions)
-                    ? sharedProfile.members.filter(m => m?.id).map(m => m.id).join('|') : '';
-  $: if (!sharedSugKey && sharedSuggestions.length) sharedSuggestions = [];
-  $: if (viewState === 'dashboard' && sharedSugKey && sharedSugKey !== _loadedSugKey) loadSharedSuggestions();
+  let sharedSugKey = $derived((sharedReady && displaySettings.sharedSuggestions)
+                    ? sharedProfile.members.filter(m => m?.id).map(m => m.id).join('|') : '');
+  $effect(() => { if (!sharedSugKey && sharedSuggestions.length) sharedSuggestions = []; });
+  $effect(() => { if (viewState === 'dashboard' && sharedSugKey && sharedSugKey !== _loadedSugKey) loadSharedSuggestions(); });
 
   // ── SyncPlay (Gruppen-Wiedergabe) — Phase 1: Gruppen verwalten ─────────────
-  let showSyncPlay = false;
-  let syncMyGroup  = null;    // { GroupId, GroupName, Participants } oder null
-  let syncGroups   = [];      // verfügbare Gruppen (ohne meine eigene)
-  let syncLoading  = false;
+  let showSyncPlay = $state(false);
+  let syncMyGroup  = $state(null);    // { GroupId, GroupName, Participants } oder null
+  let syncGroups   = $state([]);      // verfügbare Gruppen (ohne meine eigene)
+  let syncLoading  = $state(false);
   let syncPollTimer = null;
-  let syncJoined   = false;   // ist DIESE Sitzung in einer Gruppe? (maßgeblich, nicht der Profilname)
-  let syncMyGroupId = null;   // GroupId der eigenen Gruppe (vom Socket-GroupJoined bzw. beim Beitreten gesetzt)
+  let syncJoined   = $state(false);   // ist DIESE Sitzung in einer Gruppe? (maßgeblich, nicht der Profilname)
+  let syncMyGroupId = $state(null);   // GroupId der eigenen Gruppe (vom Socket-GroupJoined bzw. beim Beitreten gesetzt)
   // Phase 2: empfangene Wiedergabe-Kommandos + aktueller Gruppen-Queue-Stand (an den Player weitergereicht)
-  let syncCommand = null;   // letztes SyncPlayCommand { ...Data, _seq }
-  let syncCmdSeq  = 0;
-  let syncQueue   = null;   // { itemId, playlistItemId, positionTicks, isPlaying }
+  let syncCommand = $state(null);   // letztes SyncPlayCommand { ...Data, _seq }
+  let syncCmdSeq  = $state(0);
+  let syncQueue   = $state(null);   // { itemId, playlistItemId, positionTicks, isPlaying }
 
   // Admin-Fernsteuerung (Jellyfin-Dashboard): Playstate/GeneralCommand über dieselbe WebSocket.
-  let remoteCommand = null;   // { command, seekTicks?, args?, _seq } → an den Player
-  let remoteCmdSeq  = 0;
-  let remoteMessage = null;   // { header, text } – Admin-Nachricht als Overlay
+  let remoteCommand = $state(null);   // { command, seekTicks?, args?, _seq } → an den Player
+  let remoteCmdSeq  = $state(0);
+  let remoteMessage = $state(null);   // { header, text } – Admin-Nachricht als Overlay
   let remoteMessageTimer = null;
   function showRemoteMessage(header, text, timeoutMs) {
     // Jellyfins Standard-Header ("Message from Server") oder leerer Header → lokalisieren.
@@ -390,9 +391,9 @@
   let _lastSyncQueueItem = null;   // zuletzt automatisch geöffnetes Gruppen-Item (kein erneutes Öffnen nach Verlassen)
   let _syncOpeningId = null;       // gerade im Öffnen befindlich (verhindert Doppel-Öffnen)
   async function syncRefresh() {
-    if (!serverUrl || !activeToken) return;
+    if (!session.serverUrl || !session.token) return;
     syncLoading = true;
-    const all = await listSyncGroups(serverUrl, activeToken);
+    const all = await listSyncGroups(session.serverUrl, session.token);
     syncLoading = false;
     // Meine Gruppe = die, der DIESE Sitzung beigetreten ist (per GroupId) — NICHT per Profilname,
     // da derselbe User über mehrere Geräte gleichzeitig Mitglied sein kann.
@@ -416,35 +417,35 @@
   // zurück, schließt sich der Banner von selbst (soft-clear, kein Reload → Platz bleibt erhalten).
   let reconnectTimer = null;
   function manageReconnect(lost) {
-    if (lost && serverUrl) {
+    if (lost && session.serverUrl) {
       if (reconnectTimer) return;
       reconnectTimer = setInterval(async () => {
         try {
-          const r = await fetch(`${serverUrl}/System/Info/Public`, { cache: 'no-store' });
-          if (r.ok) connectionLost.set(false);
+          const r = await fetch(`${session.serverUrl}/System/Info/Public`, { cache: 'no-store' });
+          if (r.ok) session.connectionLost = false;
         } catch { /* weiter versuchen */ }
       }, 5000);
     } else if (reconnectTimer) {
       clearInterval(reconnectTimer); reconnectTimer = null;
     }
   }
-  $: manageReconnect($connectionLost);
+  $effect(() => { manageReconnect(session.connectionLost); });
 
   // Banner-Buttons. "Erneut versuchen" prüft SOFORT, ohne Reload → dein Platz bleibt erhalten:
   // ist der Server zurück, schließt der Banner; sonst bleibt er (Auto-Reconnect läuft weiter).
   let retryBtnEl;
   async function retryNow() {
     try {
-      const r = await fetch(`${serverUrl}/System/Info/Public`, { cache: 'no-store' });
-      if (r.ok) connectionLost.set(false);
+      const r = await fetch(`${session.serverUrl}/System/Info/Public`, { cache: 'no-store' });
+      if (r.ok) session.connectionLost = false;
     } catch { /* weiterhin weg → Banner bleibt */ }
   }
   // Fokus zuverlässig auf den Button legen, wenn der Banner erscheint (er mountet durch ein
   // Hintergrund-Ereignis; use:focusOnMount griff dort nicht — tick() nach dem Flush gewinnt).
-  $: if ($connectionLost) tick().then(() => retryBtnEl?.focus());
-  async function syncCreate() { await createSyncGroup(serverUrl, activeToken, selectedUser?.Name || 'OcenFin'); syncJoined = true; await setSyncIgnoreWait(serverUrl, activeToken, false); await syncRefresh(); }
-  async function syncJoin(groupId) { await joinSyncGroup(serverUrl, activeToken, groupId); syncJoined = true; syncMyGroupId = groupId; await setSyncIgnoreWait(serverUrl, activeToken, false); await syncRefresh(); }
-  async function syncLeave() { await leaveSyncGroup(serverUrl, activeToken); syncJoined = false; syncMyGroupId = null; syncQueue = null; _lastSyncQueueItem = null; await syncRefresh(); }
+  $effect(() => { if (session.connectionLost) tick().then(() => retryBtnEl?.focus()); });
+  async function syncCreate() { await createSyncGroup(session.serverUrl, session.token, selectedUser?.Name || 'OcenFin'); syncJoined = true; await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
+  async function syncJoin(groupId) { await joinSyncGroup(session.serverUrl, session.token, groupId); syncJoined = true; syncMyGroupId = groupId; await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
+  async function syncLeave() { await leaveSyncGroup(session.serverUrl, session.token); syncJoined = false; syncMyGroupId = null; syncQueue = null; _lastSyncQueueItem = null; await syncRefresh(); }
 
   // Auto-Laden: Item, das die Gruppe spielt, programmatisch im Player öffnen (springt per Ready→Unpause an die Gruppenposition).
   async function openItemInPlayer(itemId) {
@@ -454,7 +455,7 @@
     if (_syncOpeningId === norm(itemId)) return;                                          // gerade am Öffnen
     _syncOpeningId = norm(itemId);
     try {
-      const res = await fetch(`${serverUrl}/Users/${selectedUser.Id}/Items/${itemId}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${itemId}`, { headers: getAuthHeaders() });
       if (res.ok) {
         currentDetailItem   = await res.json();
         activeAudioIndex    = -1;
@@ -477,10 +478,10 @@
   let syncReconnect = null;
   function connectSyncSocket() {
     syncSocketWanted = true;
-    if (!serverUrl || !activeToken) return;
+    if (!session.serverUrl || !session.token) return;
     if (syncSocket && (syncSocket.readyState === WebSocket.OPEN || syncSocket.readyState === WebSocket.CONNECTING)) return;
     let ws;
-    try { ws = new WebSocket(syncSocketUrl(serverUrl, activeToken, deviceIdFor(selectedUser?.Name))); }
+    try { ws = new WebSocket(syncSocketUrl(session.serverUrl, session.token, deviceIdFor(selectedUser?.Name))); }
     catch (e) { console.warn('[SyncPlay] socket could not be opened', e); return; }
     syncSocket = ws;
     ws.onopen = () => {
@@ -552,20 +553,20 @@
     }
   }
   // Socket öffnen, sobald angemeldet — deckt regulären Login UND Auto-Wiederherstellung beim Reload ab.
-  $: if (isLoggedIn && activeToken && serverUrl && !syncSocketWanted) {
-    registerSession(serverUrl, activeToken);   // Sitzung als steuerbar registrieren (für SyncPlay)
+  $effect(() => { if (isLoggedIn && session.token && session.serverUrl && !syncSocketWanted) {
+    registerSession(session.serverUrl, session.token);   // Sitzung als steuerbar registrieren (für SyncPlay)
     connectSyncSocket();                        // SyncPlay-Echtzeitkanal öffnen
-  }
+  } });
 
   // Sortierung
-  let showSortMenu = false;
+  let showSortMenu = $state(false);
   const sortFilterFocus = makeFocusReturn();   // Auslöser-Button für Fokus-Rückgabe nach Schließen
   // Fokus nach dem Schließen von Sortieren/Filtern zurück auf den auslösenden Button.
-  $: if (!showSortMenu && !showFilterMenu && sortFilterFocus.pending) sortFilterFocus.restore();
+  $effect(() => { if (!showSortMenu && !showFilterMenu && sortFilterFocus.pending) sortFilterFocus.restore(); });
 
-  let showExitConfirm = false;   // Bestätigungsdialog "App verlassen?" (Zurück am Dashboard)
-  let currentSort  = { by: 'SortName', order: 'Ascending' };
-  let librarySorts = {};   // pro Bibliothek gemerkte Sortierung (im Profil gespeichert)
+  let showExitConfirm = $state(false);   // Bestätigungsdialog "App verlassen?" (Zurück am Dashboard)
+  let currentSort  = $state({ by: 'SortName', order: 'Ascending' });
+  let librarySorts = $state({});   // pro Bibliothek gemerkte Sortierung (im Profil gespeichert)
   const sortOptions = [
     { by: 'SortName',        order: 'Ascending',  key: 'sortName' },
     { by: 'DateCreated',     order: 'Descending', key: 'sortDateAdded' },
@@ -575,7 +576,7 @@
   ];
   // Cache nur für die Standardansicht (Name aufsteigend) — andere Sortierungen
   // bypassen den Cache wie Filter. A-Z-Leiste ergibt nur bei Namenssortierung Sinn.
-  $: showLetterBar = currentSort.by === 'SortName';   // A-Z-Leiste: bei Namenssortierung in beiden Richtungen sinnvoll
+  let showLetterBar = $derived(currentSort.by === 'SortName');   // A-Z-Leiste: bei Namenssortierung in beiden Richtungen sinnvoll
 
   // Synchrone Variante für loadLibraryItems: die reaktive `hasFilters` wird erst
   // im nächsten Tick aktualisiert — beim sofortigen Aufruf nach toggleFilter wäre
@@ -688,11 +689,11 @@
   }
 
   function saveCurrentSession() {
-    if (selectedServer && selectedUser && activeToken) {
+    if (selectedServer && selectedUser && session.token) {
       localStorage.setItem('current_session', JSON.stringify({
         serverId: selectedServer.id,
         userId:   selectedUser.Id,
-        token:    activeToken
+        token:    session.token
       }));
     }
   }
@@ -724,8 +725,8 @@
     // eigene Fokus-Gruppe; sein Schieberegler verarbeitet Links/Rechts selbst.
     createFocusManager(() => !navReordering);
     // Netzwerkstatus überwachen (Banner bei Verbindungsverlust)
-    window.addEventListener('offline', () => connectionLost.set(true));
-    window.addEventListener('online',  () => connectionLost.set(false));
+    window.addEventListener('offline', () => session.connectionLost = true);
+    window.addEventListener('online',  () => session.connectionLost = false);
 
     // webOS-Lifecycle: Kehrt man über Home zur (suspendierten) App zurück, feuert webOSRelaunch.
     // Auf manchen Builds/appinfo-Konfigurationen (handlesRelaunch:true) bleibt die App dann im
@@ -770,15 +771,15 @@
       dlog('[restore] current_session present:', !!sessionStr);
       if (sessionStr) {
         try {
-          const session = JSON.parse(sessionStr);
-          const server  = savedServers.find(s => s.id === session.serverId);
-          dlog('[restore] server found:', !!server, '| token:', !!session.token, '| userId:', !!session.userId);
-          if (server && session.token && session.userId) {
+          const saved = JSON.parse(sessionStr);
+          const server  = savedServers.find(s => s.id === saved.serverId);
+          dlog('[restore] server found:', !!server, '| token:', !!saved.token, '| userId:', !!saved.userId);
+          if (server && saved.token && saved.userId) {
             selectedServer = server;
-            activeToken    = session.token;
+            session.token    = saved.token;
 
-            if (await validateToken(session.token, server.url)) {
-              const res = await fetch(`${server.url}/Users/${session.userId}`, {
+            if (await validateToken(saved.token, server.url)) {
+              const res = await fetch(`${server.url}/Users/${saved.userId}`, {
                 headers: getAuthHeaders()
               });
               dlog('[restore] /Users/{id} HTTP', res.status);
@@ -965,11 +966,11 @@
   // AUTH
   // ============================================================
 
-  const getAuthHeaders = () => authHeaders(activeToken);
+  const getAuthHeaders = () => authHeaders(session.token);
 
   async function fetchUsers() {
     try {
-      const res = await fetch(`${serverUrl}/Users/Public`);
+      const res = await fetch(`${session.serverUrl}/Users/Public`);
       if (res.ok) users = await res.json();
       else console.warn('[Server] user list HTTP', res.status);
     } catch (e) { console.warn('[Server] could not load user list:', e); }
@@ -994,7 +995,7 @@
     if (!token) {
       if (user.HasPassword && !pw) return 'needPassword';
       try {
-        const res = await fetch(`${serverUrl}/Users/AuthenticateByName`, {
+        const res = await fetch(`${session.serverUrl}/Users/AuthenticateByName`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': authHeaderFor(user.Name) },
           body:    JSON.stringify({ Username: user.Name, Pw: pw || '' })
@@ -1048,7 +1049,7 @@
       if (!token) { console.warn('[Shared] no valid token for', m.name, '– please re-add profile.'); continue; }
       try {
         const res = await fetch(
-          `${serverUrl}/Users/${m.id}/Items?ParentId=${libraryId}&Recursive=true` +
+          `${session.serverUrl}/Users/${m.id}/Items?ParentId=${libraryId}&Recursive=true` +
           `&IncludeItemTypes=Movie,Series&Fields=UserData&EnableImages=false` +
           `&Limit=100000&EnableTotalRecordCount=false`,
           { headers: { 'Authorization': `MediaBrowser Token="${token}"`, 'Content-Type': 'application/json' } }
@@ -1082,7 +1083,7 @@
       if (!token) continue;
       try {
         const res = await fetch(
-          `${serverUrl}/Users/${m.id}/Items?Recursive=true&IncludeItemTypes=Movie,Series` +
+          `${session.serverUrl}/Users/${m.id}/Items?Recursive=true&IncludeItemTypes=Movie,Series` +
           `&Fields=Genres,CommunityRating,UserData&EnableImageTypes=Primary&Limit=100000&EnableTotalRecordCount=false`,
           { headers: { 'Authorization': `MediaBrowser Token="${token}"`, 'Content-Type': 'application/json' } }
         );
@@ -1131,10 +1132,10 @@
     dlog('[Shared] suggestions:', sharedSuggestions.length);
   }
 
-  // baseUrl explizit übergebbar: beim Auto-Login ist der reaktive serverUrl ($:) noch nicht
+  // baseUrl explizit übergebbar: beim Auto-Login ist der reaktive session.serverUrl ($:) noch nicht
   // aktualisiert (Svelte flusht Reaktivität erst nach dem synchronen Block), daher würde
-  // `${serverUrl}` dort auf '' zeigen → relativer Fetch auf die App-Origin statt auf den Server.
-  async function validateToken(token, baseUrl = serverUrl) {
+  // `${session.serverUrl}` dort auf '' zeigen → relativer Fetch auf die App-Origin statt auf den Server.
+  async function validateToken(token, baseUrl = session.serverUrl) {
     try {
       const res = await fetch(`${baseUrl}/Users/Me`, {
         headers: { "Authorization": `MediaBrowser Token="${token}"` }
@@ -1159,7 +1160,7 @@
     const storedToken = savedTokens[selectedServer.id]?.[user.Id];
     if (storedToken) {
       if (await validateToken(storedToken)) {
-        activeToken = storedToken;
+        session.token = storedToken;
         finishLogin(user, storedToken);
         return;
       } else {
@@ -1178,7 +1179,7 @@
   async function authenticateUser(username, pw) {
     loginError = '';
     try {
-      const res = await fetch(`${serverUrl}/Users/AuthenticateByName`, {
+      const res = await fetch(`${session.serverUrl}/Users/AuthenticateByName`, {
         method:  "POST",
         headers: { "Content-Type": "application/json", "Authorization": authHeaderFor(username) },
         body:    JSON.stringify({ Username: username, Pw: pw })
@@ -1199,7 +1200,7 @@
 
   function finishLogin(user, token) {
     selectedUser = user;
-    activeToken  = token;
+    session.token  = token;
     isLoggedIn   = true;
     appPhase     = 'app';
     applyUserPrefs(user.Id);   // Profil-Einstellungen laden
@@ -1233,7 +1234,7 @@
     serverVobSub = false;
     serverVersion = '';
     try {
-      const res = await fetch(`${serverUrl}/System/Info/Public`);
+      const res = await fetch(`${session.serverUrl}/System/Info/Public`);
       if (res.ok) {
         const info = await res.json();
         serverVersion = info?.Version || '';
@@ -1249,7 +1250,7 @@
     showPasswordForm = false;
     showManualLogin  = false;
     try {
-      const res = await fetch(`${serverUrl}/QuickConnect/Initiate`, {
+      const res = await fetch(`${session.serverUrl}/QuickConnect/Initiate`, {
         headers: { "Authorization": CLIENT_AUTH_HEADER }
       });
       if (res.ok) {
@@ -1258,13 +1259,13 @@
         qcSecret = data.Secret;
         qcPolling = setInterval(async () => {
           try {
-            const poll = await fetch(`${serverUrl}/QuickConnect/Connect?Secret=${qcSecret}`, {
+            const poll = await fetch(`${session.serverUrl}/QuickConnect/Connect?Secret=${qcSecret}`, {
               headers: { "Authorization": CLIENT_AUTH_HEADER }
             });
             const pd   = await poll.json();
             if (pd.Authenticated) {
               clearInterval(qcPolling);
-              const authRes = await fetch(`${serverUrl}/Users/AuthenticateWithQuickConnect`, {
+              const authRes = await fetch(`${session.serverUrl}/Users/AuthenticateWithQuickConnect`, {
                 method:  "POST",
                 headers: { "Content-Type": "application/json", "Authorization": CLIENT_AUTH_HEADER },
                 body:    JSON.stringify({ Secret: qcSecret })
@@ -1295,7 +1296,7 @@
     if (savedTokens[sid][selectedUser.Id]) {
       delete savedTokens[sid][selectedUser.Id];
     } else {
-      savedTokens[sid][selectedUser.Id] = activeToken;
+      savedTokens[sid][selectedUser.Id] = session.token;
     }
     savedTokens = { ...savedTokens };
     persistSavedTokens();
@@ -1305,7 +1306,7 @@
   function handleSwitchUser() {
     isLoggedIn       = false;
     selectedUser     = null;
-    activeToken      = '';
+    session.token      = '';
     password         = '';
     loginError       = '';
     showPasswordForm = false;
@@ -1407,7 +1408,7 @@
 
   async function loadGenres(libraryId) {
     try {
-      const res = await fetch(`${serverUrl}/Genres?ParentId=${libraryId}&UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/Genres?ParentId=${libraryId}&UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
       if (res.ok) { const d = await res.json(); availableGenres = d.Items || []; }
     } catch { }
   }
@@ -1502,7 +1503,7 @@
     isLoading    = true;
     currentItems = [];
 
-    let url = `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${library.Id}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=0`;
+    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${library.Id}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=0`;
     url += letterFilter();
     url += getFilterQuery();
 
@@ -1514,8 +1515,8 @@
         totalLibraryItems = data.TotalRecordCount || 0;
         if (isCacheableView()) cacheLibraryView(library.Id, { items: currentItems, total: totalLibraryItems });
       }
-      connectionLost.set(false);
-    } catch { connectionLost.set(true); } finally { isLoading = false; }
+      session.connectionLost = false;
+    } catch { session.connectionLost = true; } finally { isLoading = false; }
   }
 
   // Zufälliges Item aus der aktuellen Bibliothek holen und dessen Details öffnen.
@@ -1524,7 +1525,7 @@
     if (!currentLibraryId) return;
     try {
       const res = await fetch(
-        `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}` +
+        `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}` +
         `&SortBy=Random&Limit=1&Recursive=true&IncludeItemTypes=Movie,Series&Fields=Overview`,
         { headers: getAuthHeaders() }
       );
@@ -1536,20 +1537,20 @@
   }
 
   // ── Personen-Ansicht (Filmografie) ──────────────────────────
-  let currentPersonName  = '';
-  let currentPerson      = null;
-  let currentPersonFav   = false;
-  let currentPersonItems = [];
-  let personReturnView   = 'search';   // wohin "Zurück" führt
-  let isLoadingPerson    = false;
+  let currentPersonName  = $state('');
+  let currentPerson      = $state(null);
+  let currentPersonFav   = $state(false);
+  let currentPersonItems = $state([]);
+  let personReturnView   = $state('search');   // wohin "Zurück" führt
+  let isLoadingPerson    = $state(false);
 
   // Sammlungen (BoxSets) — eigene Grid-Ansicht, gespiegelt von der Personen-Ansicht
-  let collectionItems      = [];
-  let currentCollectionName = '';
-  let currentCollection     = null;
-  let collectionReturnView = 'dashboard';
-  let isLoadingCollection  = false;
-  let playlistEditMode     = false;   // Bearbeiten-Modus der Wiedergabelisten-Ansicht (Entfernen/Umsortieren)
+  let collectionItems      = $state([]);
+  let currentCollectionName = $state('');
+  let currentCollection     = $state(null);
+  let collectionReturnView = $state('dashboard');
+  let isLoadingCollection  = $state(false);
+  let playlistEditMode     = $state(false);   // Bearbeiten-Modus der Wiedergabelisten-Ansicht (Entfernen/Umsortieren)
 
   async function openCollection(boxSet) {
     collectionReturnView  = viewState;
@@ -1562,8 +1563,8 @@
     // Wiedergabelisten über ihren eigenen Endpunkt laden (zuverlässig + in Listen-Reihenfolge),
     // Sammlungen/BoxSets über ParentId.
     const url = boxSet.Type === 'Playlist'
-      ? `${serverUrl}/Playlists/${boxSet.Id}/Items?UserId=${selectedUser.Id}&Fields=PrimaryImageAspectRatio&Limit=300`
-      : `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${boxSet.Id}&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=100`;
+      ? `${session.serverUrl}/Playlists/${boxSet.Id}/Items?UserId=${selectedUser.Id}&Fields=PrimaryImageAspectRatio&Limit=300`
+      : `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${boxSet.Id}&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=100`;
     try {
       const res = await fetch(url, { headers: getAuthHeaders() });
       if (res.ok) collectionItems = (await res.json()).Items || [];
@@ -1582,7 +1583,7 @@
   // Mediatheks-Ansicht (z. B. "Playlists") – Sidebar/Menü sofort aktualisieren statt erst beim Neustart.
   async function refreshLibraries() {
     try {
-      const res = await fetch(`${serverUrl}/Users/${selectedUser.Id}/Views`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Views`, { headers: getAuthHeaders() });
       if (res.ok) navLibraries = (await res.json()).Items || [];
     } catch { }
   }
@@ -1598,7 +1599,7 @@
     arr.splice(toIndex, 0, moved);
     collectionItems = arr;
     try {
-      const res = await fetch(`${serverUrl}/Playlists/${currentCollection.Id}/Items/${item.PlaylistItemId}/Move/${toIndex}`,
+      const res = await fetch(`${session.serverUrl}/Playlists/${currentCollection.Id}/Items/${item.PlaylistItemId}/Move/${toIndex}`,
         { method: 'POST', headers: getAuthHeaders() });
       if (!res.ok) console.warn('[OcenFin] move failed', res.status);
     } catch (e) { console.warn('[OcenFin] move error', e); }
@@ -1610,18 +1611,18 @@
     const gi = currentItems.find(x => x.Id === currentCollection.Id);
     if (gi) { gi.ChildCount = collectionItems.length; currentItems = [...currentItems]; }
     try {
-      const res = await fetch(`${serverUrl}/Playlists/${currentCollection.Id}/Items?EntryIds=${item.PlaylistItemId}`,
+      const res = await fetch(`${session.serverUrl}/Playlists/${currentCollection.Id}/Items?EntryIds=${item.PlaylistItemId}`,
         { method: 'DELETE', headers: getAuthHeaders() });
       if (!res.ok) console.warn('[OcenFin] remove failed', res.status);
     } catch (e) { console.warn('[OcenFin] remove error', e); }
   }
   // Ganze Wiedergabeliste löschen (Inline-Sicherheitsabfrage im Bearbeiten-Modus).
-  let confirmDeletePlaylist = false;
+  let confirmDeletePlaylist = $state(false);
   async function deletePlaylist() {
     if (!currentCollection || currentCollection.Type !== 'Playlist') return;
     const id = currentCollection.Id;
     try {
-      const res = await fetch(`${serverUrl}/Items/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/Items/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
       if (!res.ok) { console.warn('[OcenFin] playlist delete failed', res.status); return; }
     } catch (e) { console.warn('[OcenFin] playlist delete error', e); return; }
     currentItems          = currentItems.filter(i => i.Id !== id);   // sofort aus dem Grid
@@ -1642,9 +1643,9 @@
   }
 
   // Playlist umbenennen (Inline-Eingabe im Bearbeiten-Modus).
-  let renamingPlaylist = false;
-  let renameValue      = '';
-  let renameError      = false;
+  let renamingPlaylist = $state(false);
+  let renameValue      = $state('');
+  let renameError      = $state(false);
   function startRename() {
     renameValue           = currentCollectionName;
     confirmDeletePlaylist = false;
@@ -1660,7 +1661,7 @@
     try {
       // Playlist-eigener Update-Endpunkt: nutzt die Besitzrechte des Nutzers (kein Admin-Recht nötig).
       // POST /Items/{id} wäre Metadaten-Bearbeitung und verlangt Adminrechte — daher hier bewusst nicht.
-      const res = await fetch(`${serverUrl}/Playlists/${id}`, {
+      const res = await fetch(`${session.serverUrl}/Playlists/${id}`, {
         method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ Name: name })
       });
       if (!res.ok) { console.warn('[OcenFin] rename failed', res.status); renameError = true; return; }
@@ -1676,18 +1677,18 @@
 
   // Favoriten — eigene Ansicht (Filme, Serien, Sammlungen), aus dem Menü erreichbar.
   // Wird bei jedem Aufruf frisch geladen, da sich Favoriten jederzeit ändern können.
-  let favoriteItems      = [];
-  let isLoadingFavorites = false;
+  let favoriteItems      = $state([]);
+  let isLoadingFavorites = $state(false);
   let favoritesGrid;
 
   // Gruppierung wie in der Suche: Filme / Serien / Sammlungen (leere Gruppen entfallen im Template)
-  $: favGroups = [
+  let favGroups = $derived([
     { key: 'movies',      label: $t.movies,      items: favoriteItems.filter(i => i.Type === 'Movie') },
     { key: 'series',      label: $t.series,      items: favoriteItems.filter(i => i.Type === 'Series') },
     { key: 'collections', label: $t.collections, items: favoriteItems.filter(i => i.Type === 'BoxSet') },
-  ];
+  ]);
   // Personen separat (runde Karten, eigene Sektion)
-  $: favPersons = favoriteItems.filter(i => i.Type === 'Person');
+  let favPersons = $derived(favoriteItems.filter(i => i.Type === 'Person'));
 
   async function loadFavorites() {
     isLoadingFavorites = true;
@@ -1697,13 +1698,13 @@
       // Stattdessen der dedizierte /Persons-Endpunkt mit IsFavorite-Filter (UserId für den Kontext).
       const [contentRes, personRes] = await Promise.all([
         fetch(
-          `${serverUrl}/Users/${selectedUser.Id}/Items?Filters=IsFavorite&Recursive=true` +
+          `${session.serverUrl}/Users/${selectedUser.Id}/Items?Filters=IsFavorite&Recursive=true` +
           `&IncludeItemTypes=Movie,Series,BoxSet&SortBy=SortName&SortOrder=Ascending` +
           `&Fields=PrimaryImageAspectRatio,ProductionYear,UserData&EnableImageTypes=Primary,Backdrop,Thumb`,
           { headers: getAuthHeaders() }
         ),
         fetch(
-          `${serverUrl}/Persons?UserId=${selectedUser.Id}&IsFavorite=true&SortBy=SortName&SortOrder=Ascending&Fields=PrimaryImageAspectRatio`,
+          `${session.serverUrl}/Persons?UserId=${selectedUser.Id}&IsFavorite=true&SortBy=SortName&SortOrder=Ascending&Fields=PrimaryImageAspectRatio`,
           { headers: getAuthHeaders() }
         ),
       ]);
@@ -1728,13 +1729,13 @@
     isLoadingPerson    = true;
     viewState          = 'person';
     // Person-Item separat holen → korrekter Favoritenstatus (aus Suche/Besetzung fehlt UserData oft)
-    fetch(`${serverUrl}/Users/${selectedUser.Id}/Items/${person.Id}`, { headers: getAuthHeaders() })
+    fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${person.Id}`, { headers: getAuthHeaders() })
       .then(r => r.ok ? r.json() : null)
       .then(p => { if (p) { currentPerson = p; currentPersonFav = !!p.UserData?.IsFavorite; } })
       .catch(() => {});
     try {
       const res = await fetch(
-        `${serverUrl}/Users/${selectedUser.Id}/Items?PersonIds=${person.Id}` +
+        `${session.serverUrl}/Users/${selectedUser.Id}/Items?PersonIds=${person.Id}` +
         `&Recursive=true&IncludeItemTypes=Movie,Series&SortBy=PremiereDate&SortOrder=Descending` +
         `&Limit=100&Fields=PrimaryImageAspectRatio,SeriesName`,
         { headers: getAuthHeaders() }
@@ -1750,22 +1751,22 @@
     const next = !currentPersonFav;
     currentPersonFav = next;
     try {
-      await fetch(`${serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${currentPerson.Id}`,
+      await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${currentPerson.Id}`,
         { method: next ? 'POST' : 'DELETE', headers: getAuthHeaders() });
     } catch (e) { console.warn('[OcenFin] person favorite failed, rolled back:', e); currentPersonFav = !next; }
   }
 
   // Filmografie nach Typ gruppieren (nur Filme / Serien). Folgen werden bewusst weggelassen –
   // wer in Serie X mitspielt, taucht sonst in dutzenden Folgen auf und überlagert alles.
-  $: personGroups = [
+  let personGroups = $derived([
     { label: $t.movies,   items: currentPersonItems.filter(i => i.Type === 'Movie') },
     { label: $t.series,   items: currentPersonItems.filter(i => i.Type === 'Series') },
-  ].filter(g => g.items.length > 0);
+  ].filter(g => g.items.length > 0));
 
   async function loadMoreLibraryItems() {
     if (isFetchingMore || currentItems.length >= totalLibraryItems || !currentLibraryId) return;
     isFetchingMore = true;
-    let url = `${serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${currentItems.length}`;
+    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${currentItems.length}`;
     url += letterFilter();
     url += getFilterQuery();
     try {
@@ -1794,7 +1795,7 @@
   // Lädt das Benutzerobjekt neu (z. B. nach Profilbild-Upload) → Avatar aktualisiert sich überall.
   async function refreshSelectedUser() {
     try {
-      const res = await fetch(`${serverUrl}/Users/${selectedUser.Id}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}`, { headers: getAuthHeaders() });
       if (res.ok) selectedUser = await res.json();
     } catch { /* ignorieren */ }
   }
@@ -1827,11 +1828,11 @@
   // ============================================================
   // KONTEXTMENÜ (langes Drücken auf eine Karte)
   // ============================================================
-  let contextItem = null;
-  let contextReturnId = null;     // Item-Id der auslösenden Card (Fokus-Rückgabe, überlebt Reload)
-  let contextReturnEl = null;     // Fallback: Element-Referenz, falls keine data-item-id vorhanden
-  let contextPickerMode = null;   // null | 'playlist' — AddToPicker aus dem Kontextmenü
-  let contextPickerItem = null;
+  let contextItem = $state(null);
+  let contextReturnId = $state(null);     // Item-Id der auslösenden Card (Fokus-Rückgabe, überlebt Reload)
+  let contextReturnEl = $state(null);     // Fallback: Element-Referenz, falls keine data-item-id vorhanden
+  let contextPickerMode = $state(null);   // null | 'playlist' — AddToPicker aus dem Kontextmenü
+  let contextPickerItem = $state(null);
   function openContextMenu(item) {
     contextReturnId = item?.Id ?? null;
     contextReturnEl = document.activeElement;
@@ -1854,7 +1855,7 @@
     };
     tick().then(attempt);
   }
-  $: if (!contextItem && !contextPickerMode && (contextReturnId || contextReturnEl)) restoreContextFocus();
+  $effect(() => { if (!contextItem && !contextPickerMode && (contextReturnId || contextReturnEl)) restoreContextFocus(); });
 
   // Nach einer Aktion (gesehen/Favorit/zurückgesetzt) die aktuelle Ansicht auffrischen,
   // damit Badges/Fortschritt/"Weiterschauen" den neuen Stand zeigen.
@@ -1868,14 +1869,14 @@
       openCollection(currentCollection);
     }
   }
-  function contextOpenDetails(e) {
+  function contextOpenDetails(item) {
     contextReturnId = null; contextReturnEl = null;   // Details übernimmt den Fokus
     contextItem = null;
-    showItemDetails(e.detail);
+    showItemDetails(item);
   }
   // "Zur Wiedergabeliste hinzufügen" aus dem Kontextmenü → AddToPicker öffnen (Fokus-Rückgabe-Id bleibt
   // erhalten und greift erst, wenn auch der Picker geschlossen ist).
-  function contextAddToList(e) { contextPickerItem = e.detail; contextPickerMode = 'playlist'; }
+  function contextAddToList(item) { contextPickerItem = item; contextPickerMode = 'playlist'; }
 
   // Zurück aus Details/Player → an die Herkunft, Bibliotheksposition wiederherstellen
   async function returnFromDetails() {
@@ -1897,14 +1898,14 @@
 
   async function loadItemById(itemId) {
     try {
-      const res = await fetch(`${serverUrl}/Users/${selectedUser.Id}/Items/${itemId}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${itemId}`, { headers: getAuthHeaders() });
       if (res.ok) { currentDetailItem = await res.json(); viewState = 'details'; }
     } catch { }
   }
 
   function getItemImageUrl(item) {
     if (item.ImageTags?.Primary)
-      return `${serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
+      return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
     return null;
   }
 
@@ -1952,10 +1953,10 @@
 </script>
 
 <svelte:window
-  on:keydown={resetActivity}
-  on:mousemove={resetActivity}
-  on:pointermove={resetActivity}
-  on:click={resetActivity}
+  onkeydown={resetActivity}
+  onmousemove={resetActivity}
+  onpointermove={resetActivity}
+  onclick={resetActivity}
 />
 
 <style>
@@ -2067,16 +2068,16 @@
     </div>
   {/if}
 
-  {#if $connectionLost && !initializing}
-    <div class="fixed inset-0 z-[500] bg-black/60 flex flex-col items-stretch" data-focus-trap transition:uiFade={{ duration: 200 }} on:outrostart={dropTrapOnOutro}>
+  {#if session.connectionLost && !initializing}
+    <div class="fixed inset-0 z-[500] bg-black/60 flex flex-col items-stretch" data-focus-trap transition:uiFade={{ duration: 200 }} onoutrostart={dropTrapOnOutro}>
       <div class="bg-red-600/95 text-white px-6 py-4 flex flex-wrap items-center justify-center gap-4 shadow-lg">
         <svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 010 12.728m-3.536-3.536a4 4 0 010-5.656M12 12h.01M5.636 5.636a9 9 0 000 12.728"/></svg>
         <span class="font-bold text-lg">{$t.connectionLostMsg}</span>
-        <button on:click={retryNow} bind:this={retryBtnEl}
+        <button onclick={retryNow} bind:this={retryBtnEl}
           class="bg-white text-red-700 font-bold px-5 py-2 rounded-lg focus:outline-none focus:ring-4 focus:ring-white/70 hover:bg-gray-100 transition-colors">
           {$t.retry}
         </button>
-        <button on:click={() => { connectionLost.set(false); handleLogout(); }}
+        <button onclick={() => { session.connectionLost = false; handleLogout(); }}
           class="bg-red-800 text-white font-bold px-5 py-2 rounded-lg focus:outline-none focus:ring-4 focus:ring-white/70 hover:bg-red-900 transition-colors">
           {$t.switchServer}
         </button>
@@ -2086,18 +2087,18 @@
 
   <!-- App-verlassen-Bestätigung (Zurück am Dashboard) -->
   {#if showExitConfirm}
-    <div class="fixed inset-0 z-[600] flex items-center justify-center bg-black/70 backdrop-blur-sm" data-focus-trap transition:uiFade={{ duration: 150 }} on:outrostart={dropTrapOnOutro}>
+    <div class="fixed inset-0 z-[600] flex items-center justify-center bg-black/70 backdrop-blur-sm" data-focus-trap transition:uiFade={{ duration: 150 }} onoutrostart={dropTrapOnOutro}>
       <div class="bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl p-8 w-full max-w-md mx-6 flex flex-col gap-6">
         <div>
           <h2 class="text-2xl font-bold text-white">{$t.exitTitle}</h2>
           <p class="text-gray-400 mt-2">{$t.exitMessage}</p>
         </div>
         <div class="flex gap-3">
-          <button on:click={() => showExitConfirm = false} use:focusOnMount
+          <button onclick={() => showExitConfirm = false} use:focusOnMount
             class="flex-1 bg-gray-700 text-white font-bold py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-600 transition-colors">
             {$t.cancel}
           </button>
-          <button on:click={exitApp}
+          <button onclick={exitApp}
             class="flex-1 bg-red-600 text-white font-bold py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-red-500 transition-colors">
             {$t.exitConfirm}
           </button>
@@ -2125,7 +2126,7 @@
             {#each savedServers as server, i}
               <div class="flex items-center gap-3">
                 <button
-                  on:click={() => connectToServer(server)}
+                  onclick={() => connectToServer(server)}
                   use:focusOnMount={i === 0}
                   class="flex-1 flex items-center justify-between p-5 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700
                          border border-gray-600 hover:border-blue-500 focus:border-blue-500
@@ -2145,7 +2146,7 @@
                 </button>
                 <!-- Server entfernen -->
                 <button
-                  on:click={() => removeServer(server.id)}
+                  onclick={() => removeServer(server.id)}
                   class="p-3 text-gray-600 hover:text-red-400 focus:text-red-400 focus:outline-none focus:ring-2 focus:ring-red-500 rounded-lg transition-colors"
                   title={$t.backToServers}
                 >
@@ -2169,7 +2170,7 @@
             </div>
             <div class="flex gap-3">
               <button
-                on:click={() => selectedServer && connectToServer(selectedServer)}
+                onclick={() => selectedServer && connectToServer(selectedServer)}
                 use:focusOnMount
                 class="flex-1 bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white font-bold py-3 rounded-lg
                        focus:outline-none focus:ring-2 focus:ring-white transition-colors"
@@ -2177,7 +2178,7 @@
                 {$t.serverRetry}
               </button>
               <button
-                on:click={() => { serverConnectError = ''; selectedServer = null; }}
+                onclick={() => { serverConnectError = ''; selectedServer = null; }}
                 class="flex-1 bg-transparent border border-gray-600 hover:bg-gray-800 focus:bg-gray-800 text-gray-300 font-bold py-3 rounded-lg
                        focus:outline-none focus:ring-2 focus:ring-white transition-colors"
               >
@@ -2189,7 +2190,7 @@
 
         <!-- Neuen Server hinzufügen (Toggle-Panel) -->
         <button
-          on:click={() => { showAddServer = !showAddServer; if (showAddServer) discoverJellyfinServers(); }}
+          onclick={() => { showAddServer = !showAddServer; if (showAddServer) discoverJellyfinServers(); }}
           class="w-full flex items-center justify-center gap-3 py-4 rounded-xl border-2 transition-all
                  focus:outline-none focus:ring-4 focus:ring-blue-300 font-bold text-lg
                  {showAddServer ? 'bg-gray-800 border-blue-600 text-blue-400' : 'bg-transparent border-gray-700 text-gray-400 hover:border-blue-500 hover:text-blue-400'}"
@@ -2205,7 +2206,7 @@
 
             <!-- Discovery -->
             <button
-              on:click={discoverJellyfinServers}
+              onclick={discoverJellyfinServers}
               disabled={isDiscovering}
               class="w-full flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900
                      text-white font-bold text-lg py-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-300 transition-colors"
@@ -2227,7 +2228,7 @@
                 <p class="text-xs text-gray-400 uppercase tracking-wider font-bold">{$t.serverFound}</p>
                 {#each discoveredServers as d}
                   <button
-                    on:click={() => addAndConnectServer(d.url)}
+                    onclick={() => addAndConnectServer(d.url)}
                     class="flex items-center justify-between p-4 bg-gray-900 hover:bg-gray-700 focus:bg-gray-700
                            border border-gray-600 hover:border-blue-500 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-left"
                   >
@@ -2255,13 +2256,13 @@
               <input
                 type="text"
                 bind:value={newServerUrl}
-                on:keydown={(e) => e.key === 'Enter' && addAndConnectServer(newServerUrl)}
+                onkeydown={(e) => e.key === 'Enter' && addAndConnectServer(newServerUrl)}
                 placeholder="z.B. http://192.168.1.100:8096"
                 class="flex-1 bg-gray-900 text-white text-lg p-4 rounded-xl border border-gray-600
                        focus:outline-none focus:ring-4 focus:ring-blue-500"
               />
               <button
-                on:click={() => addAndConnectServer(newServerUrl)}
+                onclick={() => addAndConnectServer(newServerUrl)}
                 disabled={!newServerUrl.trim() || isConnecting}
                 class="bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-white font-bold px-6 rounded-xl
                        focus:outline-none focus:ring-4 focus:ring-white transition-colors"
@@ -2298,7 +2299,7 @@
             <div class="bg-gray-900 border-2 border-blue-500 rounded-lg py-6 mb-6">
               <span class="text-6xl font-mono font-bold text-white tracking-widest">{qcCode}</span>
             </div>
-            <button on:click={cancelQuickConnect}
+            <button onclick={cancelQuickConnect}
               class="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-4 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               {$t.qcCancel}
@@ -2314,22 +2315,22 @@
               bind:value={password}
               class="w-full bg-gray-900 text-white text-2xl p-5 rounded-xl mb-6 border border-gray-600 text-center
                      focus:outline-none focus:ring-4 focus:ring-blue-500"
-              on:keydown={(e) => e.key === 'Enter' && authenticateUser(selectedUser.Name, password)}
+              onkeydown={(e) => e.key === 'Enter' && authenticateUser(selectedUser.Name, password)}
               use:focusOnMount
             />
-            <button on:click={() => authenticateUser(selectedUser.Name, password)}
+            <button onclick={() => authenticateUser(selectedUser.Name, password)}
               class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xl py-4 rounded-xl mb-4
                      focus:outline-none focus:ring-4 focus:ring-white">
               {$t.loginText}
             </button>
             <!-- Alternative: Quick Connect (falls Kennwort nicht gespeichert/getippt werden soll) -->
-            <button on:click={startQuickConnect}
+            <button onclick={startQuickConnect}
               class="w-full flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold text-lg py-3.5 rounded-xl mb-4
                      focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
               {$t.quickConnect}
             </button>
-            <button on:click={() => { showPasswordForm = false; selectedUser = null; }}
+            <button onclick={() => { showPasswordForm = false; selectedUser = null; }}
               class="w-full bg-gray-700/50 hover:bg-gray-600 text-gray-300 hover:text-white font-bold text-lg py-3.5 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               {$t.back}
@@ -2345,7 +2346,7 @@
               type="text"
               bind:value={manualUsername}
               placeholder={$t.username}
-              on:keydown={(e) => e.key === 'Enter' && authenticateUser(manualUsername, manualPassword)}
+              onkeydown={(e) => e.key === 'Enter' && authenticateUser(manualUsername, manualPassword)}
               class="w-full bg-gray-900 text-white text-xl p-5 rounded-xl mb-4 border border-gray-600
                      focus:outline-none focus:ring-4 focus:ring-blue-500"
               use:focusOnMount
@@ -2354,16 +2355,16 @@
               type="password"
               bind:value={manualPassword}
               placeholder="Passwort"
-              on:keydown={(e) => e.key === 'Enter' && authenticateUser(manualUsername, manualPassword)}
+              onkeydown={(e) => e.key === 'Enter' && authenticateUser(manualUsername, manualPassword)}
               class="w-full bg-gray-900 text-white text-xl p-5 rounded-xl mb-6 border border-gray-600
                      focus:outline-none focus:ring-4 focus:ring-blue-500"
             />
-            <button on:click={() => authenticateUser(manualUsername, manualPassword)}
+            <button onclick={() => authenticateUser(manualUsername, manualPassword)}
               class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xl py-4 rounded-xl mb-4
                      focus:outline-none focus:ring-4 focus:ring-white">
               {$t.loginText}
             </button>
-            <button on:click={() => showManualLogin = false}
+            <button onclick={() => showManualLogin = false}
               class="w-full bg-gray-700/50 hover:bg-gray-600 text-gray-300 hover:text-white font-bold text-lg py-3.5 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               {$t.back}
@@ -2379,10 +2380,10 @@
           {#if users.length > 0}
             <div class="flex flex-wrap justify-center gap-10">
               {#each users as user, i}
-                <button on:click={() => handleUserClick(user)} use:focusOnMount={i === 0} class="flex flex-col items-center group focus:outline-none">
+                <button onclick={() => handleUserClick(user)} use:focusOnMount={i === 0} class="flex flex-col items-center group focus:outline-none">
                   <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl transition-all">
                     {#if user.PrimaryImageTag}
-                      <img src="{serverUrl}/Users/{user.Id}/Images/Primary?tag={user.PrimaryImageTag}" alt={user.Name} class="w-full h-full object-cover"/>
+                      <img src="{session.serverUrl}/Users/{user.Id}/Images/Primary?tag={user.PrimaryImageTag}" alt={user.Name} class="w-full h-full object-cover"/>
                     {:else}
                       <div class="w-full h-full bg-gray-700 flex items-center justify-center">
                         <span class="text-6xl font-bold">{user.Name.charAt(0)}</span>
@@ -2405,7 +2406,7 @@
           <!-- Manuelle Anmeldung + Quick Connect Buttons (wie original Jellyfin) -->
           <div class="flex gap-4">
             <button
-              on:click={() => { showManualLogin = true; loginError = ''; }}
+              onclick={() => { showManualLogin = true; loginError = ''; }}
               class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700
                      border border-gray-700 hover:border-gray-500 text-gray-300 hover:text-white
                      font-bold text-lg px-8 py-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-all"
@@ -2417,7 +2418,7 @@
             </button>
 
             <button
-              on:click={startQuickConnect}
+              onclick={startQuickConnect}
               class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700
                      border border-gray-700 hover:border-blue-500 text-gray-300 hover:text-blue-300
                      font-bold text-lg px-8 py-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all"
@@ -2431,7 +2432,7 @@
 
           <!-- Anderen Server wählen -->
           <button
-            on:click={handleLogout}
+            onclick={handleLogout}
             class="text-gray-600 hover:text-gray-400 focus:text-gray-400 focus:outline-none text-sm font-medium mt-2"
           >
             ← {$t.switchServer}
@@ -2458,10 +2459,10 @@
         navHidden={displaySettings.navHidden}
         navIcons={displaySettings.navIcons}
         activeLibraryId={currentLibraryId}
-        on:navigate={(e) => { if (e.detail === 'syncplay') { openSyncPlay(); } else { viewState = e.detail; if (e.detail === 'favorites') loadFavorites(); else focusMain(); } }}
-        on:navigateLibrary={(e) => navigateToLibrary(e.detail, true)}
-        on:switchUser={handleSwitchUser}
-        on:logOutServer={handleLogout}
+        onNavigate={(target) => { if (target === 'syncplay') { openSyncPlay(); } else { viewState = target; if (target === 'favorites') loadFavorites(); else focusMain(); } }}
+        onNavigateLibrary={(lib) => navigateToLibrary(lib, true)}
+        onSwitchUser={handleSwitchUser}
+        onLogOutServer={handleLogout}
       />
 
       <div data-focus-group="main" class="flex-1 h-full overflow-y-auto hide-scrollbar bg-gray-900 relative">
@@ -2480,11 +2481,11 @@
             showCollections={displaySettings.collections}
             {sharedSuggestions}
             showSharedSuggestions={sharedReady && displaySettings.sharedSuggestions}
-            on:openLibrary={(e) => loadLibraryItems(e.detail)}
-            on:librariesLoaded={(e) => navLibraries = e.detail}
-            on:openDetails={(e) => showItemDetails(e.detail)}
-            on:openCollection={(e) => openCollection(e.detail)}
-            on:openContext={(e) => openContextMenu(e.detail)}
+            onOpenLibrary={(lib) => loadLibraryItems(lib)}
+            onLibrariesLoaded={(libs) => navLibraries = libs}
+            onOpenDetails={(item) => showItemDetails(item)}
+            onOpenCollection={(col) => openCollection(col)}
+            onOpenContext={(item) => openContextMenu(item)}
           />
           {/key}
 
@@ -2511,7 +2512,7 @@
               </div>
             {/if}
 
-            <div bind:this={libraryScrollContainer} on:scroll={handleLibraryScroll}
+            <div bind:this={libraryScrollContainer} onscroll={handleLibraryScroll}
               class="flex-1 p-10 pt-16 overflow-y-auto hide-scrollbar relative z-10">
 
               <div class="flex justify-between items-center mb-10 pr-6">
@@ -2521,7 +2522,7 @@
                 </h1>
                 <div class="flex items-center gap-3">
                   <!-- Zufällig abspielen -->
-                  <button on:click={playRandomItem}
+                  <button onclick={playRandomItem}
                     class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
                            focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105"
                     title={$t.shuffle}>
@@ -2531,7 +2532,7 @@
                     {$t.shuffle}
                   </button>
                   <!-- Sortierung -->
-                  <button on:click={(e) => { sortFilterFocus.capture(e.currentTarget); showSortMenu = true; }}
+                  <button onclick={(e) => { sortFilterFocus.capture(e.currentTarget); showSortMenu = true; }}
                     class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
                            focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105"
                     title={$t.sortBy}>
@@ -2541,7 +2542,7 @@
                     {$t.sortBy}
                   </button>
                   <!-- Filter -->
-                  <button on:click={(e) => { sortFilterFocus.capture(e.currentTarget); showFilterMenu = true; }}
+                  <button onclick={(e) => { sortFilterFocus.capture(e.currentTarget); showFilterMenu = true; }}
                     class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
                            focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -2552,7 +2553,7 @@
                   </button>
                   <!-- Gemeinsam schauen: blendet aus, was beide Profile schon gesehen haben -->
                   {#if sharedReady}
-                    <button on:click={toggleSharedWatch}
+                    <button onclick={toggleSharedWatch}
                       class="flex items-center gap-3 px-6 py-3 rounded-xl font-bold focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border focus:scale-105
                              {sharedWatchMode ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-white'}"
                       title={$t.watchTogether}>
@@ -2568,7 +2569,7 @@
               <!-- SCHNELLFILTER-CHIPS: Favoriten + Sortierung (Genre/FSK über den Filter-Button) -->
               <div class="flex gap-3 mb-6 px-2 py-3 overflow-x-auto hide-scrollbar">
                 <!-- Favoriten-Chip (immer zuerst) -->
-                <button on:click={() => toggleFilter('isFavorite')}
+                <button onclick={() => toggleFilter('isFavorite')}
                   class="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm whitespace-nowrap
                          focus:outline-none focus:ring-4 focus:ring-white transition-all focus:scale-105
                          {activeFilters.isFavorite ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">
@@ -2577,7 +2578,7 @@
                 </button>
                 <!-- Sortier-Chips -->
                 {#each sortOptions as opt}
-                  <button on:click={() => setSort(opt)}
+                  <button onclick={() => setSort(opt)}
                     class="shrink-0 flex items-center gap-1.5 px-5 py-2.5 rounded-full font-bold text-sm whitespace-nowrap
                            focus:outline-none focus:ring-4 focus:ring-white transition-all focus:scale-105
                            {currentSort.by === opt.by ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">
@@ -2603,9 +2604,9 @@
                   {/each}
                 {:else}
                   {#each visibleLibraryItems as item}
-                    <button on:click={() => showItemDetails(item)} data-item-id={item.Id}
-                      on:focus={() => previewItem(item)} on:blur={cancelPreview}
-                      use:longPress on:longpress={() => openContextMenu(item)}
+                    <button onclick={() => showItemDetails(item)} data-item-id={item.Id}
+                      onfocus={() => previewItem(item)} onblur={cancelPreview}
+                      use:longPress onlongpress={() => openContextMenu(item)}
                       class="group focus:outline-none text-left cv-auto">
                       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
                         {#if item.Type === 'Playlist' && item.ChildCount === 0}
@@ -2655,8 +2656,8 @@
             <div data-hbar class="w-16 shrink-0 bg-gradient-to-l from-gray-950/85 via-gray-950/55 to-transparent backdrop-blur-sm flex flex-col items-center justify-between py-6 overflow-y-auto hide-scrollbar z-10">
               {#each alphabet as letter}
                 <button
-                  on:click={() => { showJumpLetter(letter); loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, letter); }}
-                  on:focus={() => showJumpLetter(letter)}
+                  onclick={() => { showJumpLetter(letter); loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, letter); }}
+                  onfocus={() => showJumpLetter(letter)}
                   data-hbar-current={activeLetter === letter ? '' : null}
                   class="w-10 h-10 flex items-center justify-center rounded-full text-sm font-bold drop-shadow
                          focus:outline-none focus:ring-4 focus:ring-white transition-all transform focus:scale-125
@@ -2669,8 +2670,8 @@
 
         {:else if viewState === 'search'}
           <Search {selectedUser}
-            on:openDetails={(e) => showItemDetails(e.detail)}
-            on:openPerson={(e) => openPerson(e.detail)} />
+            onOpenDetails={(item) => showItemDetails(item)}
+            onOpenPerson={(person) => openPerson(person)} />
 
         {:else if viewState === 'settings'}
           <Settings
@@ -2682,16 +2683,16 @@
             onSharedToggle={toggleSharedEnabled}
             onSharedSetMember={setSharedMember}
             onSharedRemoveMember={removeSharedMember}
-            on:toggleSave={toggleCurrentUserSave}
-            on:switchUser={handleSwitchUser}
-            on:logout={handleLogout}
-            on:screensaverChange={onScreensaverSettingsChange}
-            on:reduceAnimationsChange={onReduceAnimationsChange}
-            on:displayChange={onDisplayChange}
-            on:reorderingChange={(e) => navReordering = e.detail}
-            on:profileImageChanged={refreshSelectedUser}
-            on:playbackPrefsChange={onPlaybackPrefsChange}
-            on:clearCache={clearCache}
+            onToggleSave={toggleCurrentUserSave}
+            onSwitchUser={handleSwitchUser}
+            onLogout={handleLogout}
+            onScreensaverChange={onScreensaverSettingsChange}
+            onReduceAnimationsChange={onReduceAnimationsChange}
+            onDisplayChange={onDisplayChange}
+            onReorderingChange={(v) => navReordering = v}
+            onProfileImageChanged={refreshSelectedUser}
+            onPlaybackPrefsChange={onPlaybackPrefsChange}
+            onClearCache={clearCache}
           />
 
         {:else if viewState === 'details' && currentDetailItem}
@@ -2699,15 +2700,15 @@
             item={currentDetailItem}
             {selectedUser} {reduceAnimations} {playbackPrefs} {use24h} {serverVobSub}
             spoilerProtection={displaySettings.spoilerProtection}
-            on:close={returnFromDetails}
-            on:openItemById={(e) => loadItemById(e.detail)}
-            on:openPerson={(e) => openPerson(e.detail)}
-            on:libchanged={refreshLibraries}
-            on:playVideo={(e) => {
-              if (e.detail.item) currentDetailItem = e.detail.item;
-              activeAudioIndex    = e.detail.audioIndex    ?? -1;
-              activeSubtitleIndex = e.detail.subtitleIndex ?? -1;
-              activeMediaSourceId = e.detail.mediaSourceId ?? null;
+            onClose={returnFromDetails}
+            onOpenItemById={(id) => loadItemById(id)}
+            onOpenPerson={(person) => openPerson(person)}
+            onLibChanged={refreshLibraries}
+            onPlayVideo={(p) => {
+              if (p.item) currentDetailItem = p.item;
+              activeAudioIndex    = p.audioIndex    ?? -1;
+              activeSubtitleIndex = p.subtitleIndex ?? -1;
+              activeMediaSourceId = p.mediaSourceId ?? null;
               viewState = 'player';
             }}
           />
@@ -2715,11 +2716,11 @@
         {:else if viewState === 'person'}
           <div class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
             <div class="flex items-center gap-6 mb-8">
-              <button on:click={() => viewState = personReturnView} use:focusOnMount
+              <button onclick={() => viewState = personReturnView} use:focusOnMount
                 class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
                 {$t.back}
               </button>
-              <button on:click={togglePersonFavorite} aria-label={$t.favorites}
+              <button onclick={togglePersonFavorite} aria-label={$t.favorites}
                 class="w-12 h-12 rounded-lg focus:outline-none focus:ring-4 focus:ring-white transition-colors flex items-center justify-center
                        {currentPersonFav ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700 focus:bg-gray-700'}">
                 <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0z"/></svg>
@@ -2744,8 +2745,8 @@
                 <h2 class="text-2xl font-bold text-white mb-4 mt-2">{group.label}</h2>
                 <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-10">
                   {#each group.items as item}
-                    <button on:click={() => showItemDetails(item)}
-                      use:longPress on:longpress={() => openContextMenu(item)}
+                    <button onclick={() => showItemDetails(item)}
+                      use:longPress onlongpress={() => openContextMenu(item)}
                       class="group focus:outline-none text-left cv-auto">
                       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
                         {#if getItemImageUrl(item)}
@@ -2796,8 +2797,8 @@
                     <h2 class="text-3xl font-bold text-white mb-6 px-2">{group.label}</h2>
                     <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-12">
                       {#each group.items as item (item.Id)}
-                        <button on:click={() => showItemDetails(item)}
-                          use:longPress on:longpress={() => openContextMenu(item)}
+                        <button onclick={() => showItemDetails(item)}
+                          use:longPress onlongpress={() => openContextMenu(item)}
                           class="group focus:outline-none text-left cv-auto">
                           <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
                             {#if getItemImageUrl(item)}
@@ -2821,10 +2822,10 @@
                   <h2 class="text-3xl font-bold text-white mb-6 px-2">{$t.people}</h2>
                   <div class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-6 pr-4 mb-12">
                     {#each favPersons as p (p.Id)}
-                      <button on:click={() => openPerson(p)} class="group focus:outline-none text-center cv-auto">
+                      <button onclick={() => openPerson(p)} class="group focus:outline-none text-center cv-auto">
                         <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
-                          {#if personImageUrl(serverUrl, p)}
-                            <img src={personImageUrl(serverUrl, p)} use:blurUp={itemBlurHash(p)} alt={p.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
+                          {#if personImageUrl(session.serverUrl, p)}
+                            <img src={personImageUrl(session.serverUrl, p)} use:blurUp={itemBlurHash(p)} alt={p.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                           {:else}
                             <div class="w-full h-full flex items-center justify-center text-gray-600">
                               <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
@@ -2846,12 +2847,12 @@
         {:else if viewState === 'collection'}
           <div class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
             <div class="flex items-center gap-6 mb-8">
-              <button on:click={() => viewState = collectionReturnView} use:focusOnMount
+              <button onclick={() => viewState = collectionReturnView} use:focusOnMount
                 class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
                 {$t.back}
               </button>
               {#if currentCollection?.Type === 'Playlist'}
-                <button on:click={() => { playlistEditMode = !playlistEditMode; confirmDeletePlaylist = false; renamingPlaylist = false; }}
+                <button onclick={() => { playlistEditMode = !playlistEditMode; confirmDeletePlaylist = false; renamingPlaylist = false; }}
                   class="ml-auto px-6 py-2 rounded-lg font-bold focus:outline-none focus:ring-4 focus:ring-white transition-colors
                          {playlistEditMode ? 'bg-blue-600 text-white' : 'bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white'}">
                   {playlistEditMode ? $t.done : $t.edit}
@@ -2886,15 +2887,15 @@
                           {#if item.ProductionYear}<div class="text-sm text-gray-400">{item.ProductionYear}</div>{/if}
                         {/if}
                       </div>
-                      <button on:click={() => movePlaylistItem(i, i - 1)} disabled={i === 0} title={$t.moveUp} aria-label={$t.moveUp}
+                      <button onclick={() => movePlaylistItem(i, i - 1)} disabled={i === 0} title={$t.moveUp} aria-label={$t.moveUp}
                         class="p-3 rounded-lg text-gray-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white disabled:opacity-30 disabled:cursor-not-allowed">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
                       </button>
-                      <button on:click={() => movePlaylistItem(i, i + 1)} disabled={i === collectionItems.length - 1} title={$t.moveDown} aria-label={$t.moveDown}
+                      <button onclick={() => movePlaylistItem(i, i + 1)} disabled={i === collectionItems.length - 1} title={$t.moveDown} aria-label={$t.moveDown}
                         class="p-3 rounded-lg text-gray-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white disabled:opacity-30 disabled:cursor-not-allowed">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                       </button>
-                      <button on:click={() => removePlaylistItem(item)} title={$t.remove} aria-label={$t.remove}
+                      <button onclick={() => removePlaylistItem(item)} title={$t.remove} aria-label={$t.remove}
                         class="p-3 rounded-lg text-red-400 hover:bg-red-900/40 focus:bg-red-900/40 focus:outline-none focus:ring-2 focus:ring-red-500">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-7 0v12a1 1 0 001 1h6a1 1 0 001-1V7"/></svg>
                       </button>
@@ -2913,16 +2914,16 @@
                           bind:value={renameValue}
                           use:focusOnMount
                           maxlength="100"
-                          on:input={() => renameError = false}
-                          on:keydown={(e) => { if (e.key === 'Enter') savePlaylistName(); }}
+                          oninput={() => renameError = false}
+                          onkeydown={(e) => { if (e.key === 'Enter') savePlaylistName(); }}
                           class="flex-1 min-w-[220px] bg-gray-900 text-white text-lg px-4 py-3 rounded-lg border border-gray-600
                                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
-                        <button on:click={savePlaylistName}
+                        <button onclick={savePlaylistName}
                           class="px-6 py-3 rounded-lg font-bold bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
                           {$t.save}
                         </button>
-                        <button on:click={() => renamingPlaylist = false}
+                        <button onclick={() => renamingPlaylist = false}
                           class="px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
                           {$t.cancel}
                         </button>
@@ -2934,23 +2935,23 @@
                   {:else if confirmDeletePlaylist}
                     <div class="flex items-center gap-4 flex-wrap">
                       <span class="text-gray-200 font-semibold">{$t.deletePlaylistConfirm}</span>
-                      <button on:click={deletePlaylist}
+                      <button onclick={deletePlaylist}
                         class="px-6 py-3 rounded-lg font-bold bg-red-600 hover:bg-red-500 focus:bg-red-500 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
                         {$t.deletePlaylist}
                       </button>
-                      <button on:click={() => confirmDeletePlaylist = false} use:focusOnMount
+                      <button onclick={() => confirmDeletePlaylist = false} use:focusOnMount
                         class="px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
                         {$t.cancel}
                       </button>
                     </div>
                   {:else}
                     <div class="flex items-center gap-3 flex-wrap">
-                      <button on:click={startRename}
+                      <button onclick={startRename}
                         class="flex items-center gap-3 px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                         {$t.renamePlaylist}
                       </button>
-                      <button on:click={() => confirmDeletePlaylist = true}
+                      <button onclick={() => confirmDeletePlaylist = true}
                         class="flex items-center gap-3 px-6 py-3 rounded-lg font-bold bg-red-900/40 hover:bg-red-900/60 focus:bg-red-900/60 text-red-300 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-red-500 transition-colors">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-7 0v12a1 1 0 001 1h6a1 1 0 001-1V7"/></svg>
                         {$t.deletePlaylist}
@@ -2974,8 +2975,8 @@
                     {/if}
                     <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
                       {#each group.items as item}
-                        <button on:click={() => showItemDetails(item)}
-                          use:longPress on:longpress={() => openContextMenu(item)}
+                        <button onclick={() => showItemDetails(item)}
+                          use:longPress onlongpress={() => openContextMenu(item)}
                           class="group focus:outline-none text-left cv-auto">
                           <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
                             {#if getItemImageUrl(item)}
@@ -3033,11 +3034,11 @@
           {syncCommand}
           {remoteCommand}
           {syncQueue}
-          on:exit={() => viewState = 'details'}
-          on:libchanged={refreshLibraries}
-          on:next={(e) => handleNextEpisode(e.detail)}
-          on:prev={(e) => handlePrevEpisode(e.detail)}
-          on:syncplay={openSyncPlay}
+          onExit={() => viewState = 'details'}
+          onLibChanged={refreshLibraries}
+          onNext={(payload) => handleNextEpisode(payload)}
+          onPrev={(episode) => handlePrevEpisode(episode)}
+          onSyncplay={openSyncPlay}
         />
       {/key}
     </div>
@@ -3049,11 +3050,11 @@
       group={syncMyGroup}
       groups={syncGroups}
       loading={syncLoading}
-      on:create={syncCreate}
-      on:join={(e) => syncJoin(e.detail)}
-      on:leave={syncLeave}
-      on:refresh={syncRefresh}
-      on:close={closeSyncPlay}
+      onCreate={syncCreate}
+      onJoin={(groupId) => syncJoin(groupId)}
+      onLeave={syncLeave}
+      onRefresh={syncRefresh}
+      onClose={closeSyncPlay}
     />
   {/if}
 
@@ -3062,16 +3063,16 @@
     <ContextMenu
       item={contextItem}
       userId={activeUserId}
-      on:close={() => contextItem = null}
-      on:changed={onContextChanged}
-      on:openDetails={contextOpenDetails}
-      on:addToList={contextAddToList}
+      onClose={() => contextItem = null}
+      onChanged={onContextChanged}
+      onOpenDetails={contextOpenDetails}
+      onAddToList={contextAddToList}
     />
   {/if}
 
   <!-- AddToPicker fürs Kontextmenü (Fokus kehrt nach dem Schließen zur Card zurück) -->
   <AddToPicker mode={contextPickerMode} item={contextPickerItem} {selectedUser} {getAuthHeaders}
-    on:created={refreshLibraries} on:close={() => contextPickerMode = null} />
+    onCreated={refreshLibraries} onClose={() => contextPickerMode = null} />
 
   <!-- UHRZEIT — oben rechts, sichtbar im App-Betrieb außer im Player -->
   {#if appPhase === 'app' && viewState !== 'player' && displaySettings.clock}
@@ -3101,7 +3102,7 @@
   {#if showScreensaver}
     <Screensaver {use24h} userId={activeUserId}
       mode={screensaverSettings.mode} artSource={screensaverSettings.artSource} brightness={screensaverSettings.brightness}
-      on:dismiss={resetActivity} />
+      onDismiss={resetActivity} />
   {/if}
 
 </main>
@@ -3110,12 +3111,12 @@
      FILTER-MENÜ
 ============================================================ -->
 {#if showSortMenu}
-  <div data-focus-trap transition:uiFade on:outrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
-    on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showSortMenu = false; } }}>
+  <div data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
+    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showSortMenu = false; } }}>
     <div class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full max-w-xl flex flex-col gap-4 shadow-2xl">
       <div class="flex justify-between items-center mb-2">
         <h2 class="text-4xl text-white font-bold">{$t.sortBy}</h2>
-        <button on:click={() => showSortMenu = false} use:focusOnMount
+        <button onclick={() => showSortMenu = false} use:focusOnMount
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
@@ -3123,7 +3124,7 @@
         </button>
       </div>
       {#each sortOptions as opt}
-        <button on:click={() => setSort(opt)}
+        <button onclick={() => setSort(opt)}
           class="w-full text-left p-5 text-xl font-bold rounded-xl transition-colors flex items-center justify-between
                  focus:outline-none focus:ring-4 focus:ring-white
                  {currentSort.by === opt.by ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-200 hover:bg-blue-600 focus:bg-blue-600'}">
@@ -3152,13 +3153,13 @@
 {/if}
 
 {#if showFilterMenu}
-  <div data-focus-trap transition:uiFade on:outrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8">
+  <div data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8">
     <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
 
       <!-- Kopf (fix) -->
       <div class="flex justify-between items-center p-8 pb-4 shrink-0">
         <h2 class="text-4xl text-white font-bold">{$t.filter}</h2>
-        <button on:click={() => showFilterMenu = false} use:focusOnMount
+        <button onclick={() => showFilterMenu = false} use:focusOnMount
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
@@ -3174,7 +3175,7 @@
           <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{$t.status}</h3>
           <div class="flex flex-wrap gap-3">
             {#each [['isFavorite', $t.filterFavorites],['isNotPlayed', $t.filterUnplayed],['isPlayed', $t.filterPlayed]] as [key, label]}
-              <button on:click={() => toggleFilter(key)}
+              <button onclick={() => toggleFilter(key)}
                 class="px-5 py-2 rounded-full font-bold text-lg border-2 transition-all focus:outline-none focus:ring-4 focus:ring-white
                        {activeFilters[key] ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-white'}">
                 {label}
@@ -3188,7 +3189,7 @@
           <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{$t.ageRating}</h3>
           <div class="flex flex-wrap gap-3">
             {#each fskOptions as age}
-              <button on:click={() => toggleFsk(age)}
+              <button onclick={() => toggleFsk(age)}
                 class="px-5 py-2 rounded-full font-bold text-lg border-2 transition-all focus:outline-none focus:ring-4 focus:ring-white
                        {selectedFsk.includes(age) ? 'bg-red-700 border-red-500 text-white' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-white'}">
                 FSK {age}
@@ -3203,7 +3204,7 @@
             <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{$t.genres}</h3>
             <div class="flex flex-wrap gap-3">
               {#each availableGenres as genre}
-                <button on:click={() => toggleGenre(genre.Name)}
+                <button onclick={() => toggleGenre(genre.Name)}
                   class="px-5 py-2 rounded-full font-bold text-lg border-2 transition-all focus:outline-none focus:ring-4 focus:ring-white
                          {selectedGenres.includes(genre.Name) ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-white'}">
                   {genre.Name}
@@ -3217,7 +3218,7 @@
 
       <!-- Fußzeile (fix) -->
       <div class="p-8 pt-4 shrink-0">
-        <button on:click={() => showFilterMenu = false}
+        <button onclick={() => showFilterMenu = false}
           class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold text-xl py-5 rounded-xl
                  focus:outline-none focus:ring-4 focus:ring-white transition-colors">
           {$t.filterClose}

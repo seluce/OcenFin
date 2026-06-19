@@ -1,5 +1,4 @@
 // Gemeinsame Hilfsfunktionen (geteilt zwischen App und Komponenten)
-import { writable } from 'svelte/store';
 import { tick } from 'svelte';
 import { fade } from 'svelte/transition';
 import { dependencies as deps } from '../package.json';   // für Versions-Anzeige auf der Status-Seite
@@ -20,16 +19,6 @@ export function dropTrapOnOutro(e) {
   if (root.hasAttribute?.('data-focus-trap')) root.removeAttribute('data-focus-trap');
   root.querySelectorAll?.('[data-focus-trap]').forEach((el) => el.removeAttribute('data-focus-trap'));
 }
-
-// Verbindungsstatus: true, wenn ein API-Aufruf wegen Netzwerk-/Serverfehler scheitert.
-// App zeigt dann ein Hinweis-Banner. Wird bei Erfolg wieder zurückgesetzt.
-export const connectionLost = writable(false);
-
-// App-weite Quelle der Wahrheit für Server-URL und Zugangstoken. Ersetzt schrittweise das
-// Prop-Drilling durch ~9 Komponenten: App speist diese Stores, Komponenten lesen $serverUrl /
-// $activeToken direkt. Token ändert sich bei Login/Logout/Relaunch → Store propagiert automatisch.
-export const serverUrl = writable('');
-export const activeToken = writable('');
 
 // Fokus-Rückgabe nach dem Schließen eines Modals/Overlays: beim Öffnen den Auslöser merken,
 // beim Schließen dorthin zurückspringen. capture()/restore() (inkl. tick-Timing) sind hier

@@ -1,18 +1,18 @@
 <script>
   import { t } from '../i18n.js';
   import { focusOnMount, uiFade, dropTrapOnOutro } from '../utils.js';
-  import { createEventDispatcher } from 'svelte';
 
-  export let group   = null;   // aktuelle Gruppe { GroupId, GroupName, Participants: [name] } oder null
-  export let groups  = [];     // verfügbare Gruppen
-  export let loading = false;
-
-  const dispatch = createEventDispatcher();
+  let {
+    group   = null,   // aktuelle Gruppe { GroupId, GroupName, Participants: [name] } oder null
+    groups  = [],     // verfügbare Gruppen
+    loading = false,
+    onClose, onLeave, onCreate, onRefresh, onJoin,   // Callback-Props (statt Events)
+  } = $props();
 </script>
 
 <div class="fixed inset-0 z-[130] bg-black/85 flex items-center justify-center p-8"
-     transition:uiFade on:outrostart={dropTrapOnOutro}
-     on:click|self={() => dispatch('close')}>
+     transition:uiFade onoutrostart={dropTrapOnOutro}
+     onclick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
   <div data-focus-trap
        class="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh]
               overflow-y-auto hide-scrollbar p-8 flex flex-col gap-6">
@@ -39,14 +39,14 @@
           {/each}
         </div>
       </div>
-      <button on:click={() => dispatch('leave')} use:focusOnMount
+      <button onclick={() => onLeave?.()} use:focusOnMount
         class="w-full bg-red-600 hover:bg-red-500 focus:bg-red-500 text-white font-bold text-xl py-4 rounded-xl
                focus:outline-none focus:ring-4 focus:ring-white transition-colors">
         {$t.leaveGroup}
       </button>
     {:else}
       <!-- Nicht in einer Gruppe: erstellen oder beitreten -->
-      <button on:click={() => dispatch('create')} use:focusOnMount
+      <button onclick={() => onCreate?.()} use:focusOnMount
         class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-xl py-4 rounded-xl
                focus:outline-none focus:ring-4 focus:ring-white transition-colors flex items-center justify-center gap-3">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -58,7 +58,7 @@
       <div class="flex flex-col gap-2">
         <div class="flex items-center justify-between">
           <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{$t.availableGroups}</span>
-          <button on:click={() => dispatch('refresh')}
+          <button onclick={() => onRefresh?.()}
             class="text-gray-400 hover:text-white focus:text-white text-sm font-bold px-3 py-1 rounded-lg
                    focus:outline-none focus:ring-2 focus:ring-white">{$t.refresh}</button>
         </div>
@@ -69,7 +69,7 @@
                 <span class="text-white font-bold truncate block">{g.GroupName}</span>
                 <span class="text-gray-400 text-sm">{(g.Participants || []).length} · {(g.Participants || []).join(', ')}</span>
               </div>
-              <button on:click={() => dispatch('join', g.GroupId)}
+              <button onclick={() => onJoin?.(g.GroupId)}
                 class="shrink-0 bg-gray-700 hover:bg-blue-600 focus:bg-blue-600 text-white font-bold px-6 py-2.5 rounded-lg
                        focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.joinGroup}</button>
             </div>
@@ -80,7 +80,7 @@
       </div>
     {/if}
 
-    <button on:click={() => dispatch('close')}
+    <button onclick={() => onClose?.()}
       class="w-full bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-gray-300 font-bold py-3 rounded-xl
              focus:outline-none focus:ring-4 focus:ring-white transition-colors mt-2">
       {$t.close}

@@ -1,19 +1,18 @@
 <script>
   import { t } from '../i18n.js';
-  import { personImageUrl, authHeaders, blurUp, itemBlurHash, serverUrl, activeToken } from '../utils.js';
-  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import { personImageUrl, authHeaders, blurUp, itemBlurHash } from '../utils.js';
+  import { session } from '../session.svelte.js';
+  import { onMount, onDestroy } from 'svelte';
 
-  export let selectedUser;
+  let { selectedUser, onOpenDetails, onOpenPerson } = $props();
 
-  const dispatch = createEventDispatcher();
-
-  let query   = "";
-  let results = [];
-  let isLoading = false;
+  let query   = $state("");
+  let results = $state([]);
+  let isLoading = $state(false);
   let searchTimeout;
   let searchInput;
 
-  let searchHistory  = [];
+  let searchHistory  = $state([]);
   const MAX_HISTORY  = 8;
 
   // FIX: Nur ein einziges onMount — lädt Verlauf UND fokussiert das Eingabefeld
@@ -49,12 +48,12 @@
     performSearch();
   }
 
-  $: movies   = results.filter(r => r.Type === 'Movie');
-  $: series   = results.filter(r => r.Type === 'Series');
-  $: episodes = results.filter(r => r.Type === 'Episode');
-  let people  = [];
+  let movies   = $derived(results.filter(r => r.Type === 'Movie'));
+  let series   = $derived(results.filter(r => r.Type === 'Series'));
+  let episodes = $derived(results.filter(r => r.Type === 'Episode'));
+  let people   = $state([]);
 
-  const getAuthHeaders = () => authHeaders($activeToken);
+  const getAuthHeaders = () => authHeaders(session.token);
 
   function onSearchInput() {
     clearTimeout(searchTimeout);
@@ -67,9 +66,9 @@
     try {
       // Titel + Personen parallel suchen
       const [itemsRes, peopleRes] = await Promise.all([
-        fetch(`${$serverUrl}/Users/${selectedUser.Id}/Items?searchTerm=${encodeURIComponent(query)}&Recursive=true&IncludeItemTypes=Movie,Series,Episode&Limit=24&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName`,
+        fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items?searchTerm=${encodeURIComponent(query)}&Recursive=true&IncludeItemTypes=Movie,Series,Episode&Limit=24&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName`,
           { headers: getAuthHeaders() }),
-        fetch(`${$serverUrl}/Persons?searchTerm=${encodeURIComponent(query)}&Limit=10&userId=${selectedUser.Id}`,
+        fetch(`${session.serverUrl}/Persons?searchTerm=${encodeURIComponent(query)}&Limit=10&userId=${selectedUser.Id}`,
           { headers: getAuthHeaders() })
       ]);
       if (itemsRes.ok) results = (await itemsRes.json()).Items || [];
@@ -82,7 +81,7 @@
         const checked = await Promise.all(found.map(async p => {
           try {
             const c = await fetch(
-              `${$serverUrl}/Users/${selectedUser.Id}/Items?PersonIds=${p.Id}&Recursive=true&IncludeItemTypes=Movie,Series&Limit=0`,
+              `${session.serverUrl}/Users/${selectedUser.Id}/Items?PersonIds=${p.Id}&Recursive=true&IncludeItemTypes=Movie,Series&Limit=0`,
               { headers: getAuthHeaders() }
             );
             return ((await c.json()).TotalRecordCount || 0) > 0 ? p : null;
@@ -99,14 +98,14 @@
   function getItemImageUrl(item, format = 'portrait') {
     if (format === 'landscape') {
       if (item.Type === 'Episode' && item.ImageTags?.Primary)
-        return `${$serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
       if (item.BackdropImageTags?.length > 0)
-        return `${$serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
     }
     if (item.ImageTags?.Primary)
-      return `${$serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&quality=80&format=webp`;
+      return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&quality=80&format=webp`;
     if (item.SeriesPrimaryImageTag)
-      return `${$serverUrl}/Items/${item.SeriesId}/Images/Primary?tag=${item.SeriesPrimaryImageTag}&fillHeight=400&quality=80&format=webp`;
+      return `${session.serverUrl}/Items/${item.SeriesId}/Images/Primary?tag=${item.SeriesPrimaryImageTag}&fillHeight=400&quality=80&format=webp`;
     return null;
   }
 </script>
@@ -121,7 +120,7 @@
     <input
       bind:this={searchInput}
       bind:value={query}
-      on:input={onSearchInput}
+      oninput={onSearchInput}
       type="text"
       placeholder={$t.searchPlaceholder}
       class="w-full bg-gray-800 text-white text-3xl pl-20 pr-6 py-6 rounded-2xl border-2 border-transparent
@@ -134,7 +133,7 @@
     <div class="mb-8 flex flex-col gap-4">
       <div class="flex justify-between items-center px-2">
         <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider">{$t.searchHistory}</h2>
-        <button on:click={clearHistory}
+        <button onclick={clearHistory}
           class="flex items-center gap-2 bg-gray-800 hover:bg-red-900/80 focus:bg-red-900/80 text-gray-400 hover:text-red-200 focus:text-red-200
                  px-4 py-2 rounded-lg text-sm font-bold transition-all focus:outline-none focus:ring-2 focus:ring-red-500">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -145,7 +144,7 @@
       </div>
       <div class="flex flex-wrap gap-4 px-2">
         {#each searchHistory as term}
-          <button on:click={() => useHistory(term)}
+          <button onclick={() => useHistory(term)}
             class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-gray-300 focus:text-white
                    px-6 py-3 rounded-full font-bold focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all border border-gray-700">
             {term}
@@ -169,7 +168,7 @@
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{$t.series}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-4 px-2">
             {#each series as s}
-              <button on:click={() => dispatch('openDetails', s)} class="shrink-0 w-48 group focus:outline-none text-left">
+              <button onclick={() => onOpenDetails?.(s)} class="shrink-0 w-48 group focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
                   {#if getItemImageUrl(s, 'portrait')}<img src={getItemImageUrl(s, 'portrait')} use:blurUp={itemBlurHash(s)} alt={s.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>
@@ -188,7 +187,7 @@
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{$t.movies}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-4 px-2">
             {#each movies as m}
-              <button on:click={() => dispatch('openDetails', m)} class="shrink-0 w-48 group focus:outline-none text-left">
+              <button onclick={() => onOpenDetails?.(m)} class="shrink-0 w-48 group focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
                   {#if getItemImageUrl(m, 'portrait')}<img src={getItemImageUrl(m, 'portrait')} use:blurUp={itemBlurHash(m)} alt={m.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>
@@ -207,7 +206,7 @@
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{$t.episodes}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-4 px-2">
             {#each episodes as ep}
-              <button on:click={() => dispatch('openDetails', ep)} class="shrink-0 w-80 group focus:outline-none text-left">
+              <button onclick={() => onOpenDetails?.(ep)} class="shrink-0 w-80 group focus:outline-none text-left">
                 <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
                   {#if getItemImageUrl(ep, 'landscape')}<img src={getItemImageUrl(ep, 'landscape')} use:blurUp={itemBlurHash(ep)} alt={ep.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>
@@ -229,10 +228,10 @@
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{$t.people}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-4 px-2">
             {#each people as p}
-              <button on:click={() => dispatch('openPerson', p)} class="shrink-0 w-40 group focus:outline-none text-center">
+              <button onclick={() => onOpenPerson?.(p)} class="shrink-0 w-40 group focus:outline-none text-center">
                 <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto">
-                  {#if personImageUrl($serverUrl, p)}
-                    <img src={personImageUrl($serverUrl, p)} use:blurUp={itemBlurHash(p)} alt={p.Name} class="w-full h-full object-cover" loading="lazy" />
+                  {#if personImageUrl(session.serverUrl, p)}
+                    <img src={personImageUrl(session.serverUrl, p)} use:blurUp={itemBlurHash(p)} alt={p.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}
                     <div class="w-full h-full flex items-center justify-center text-gray-600">
                       <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>

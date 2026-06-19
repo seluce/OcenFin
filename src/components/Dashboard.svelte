@@ -1,43 +1,45 @@
 <script>
   import { t } from '../i18n.js';
-  import { itemProgress, connectionLost, longPress, authHeaders, blurUp, itemBlurHash, uiFade, serverUrl, activeToken } from '../utils.js';
-  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import { itemProgress, longPress, authHeaders, blurUp, itemBlurHash, uiFade } from '../utils.js';
+  import { session } from '../session.svelte.js';
+  import { onMount, onDestroy } from 'svelte';
 
-  export let selectedUser;
-  export let apiCache;
-  export let reduceAnimations = false;   // steuert Hero-Auto-Rotation
-  export let showHero         = true;    // Hero-Banner anzeigen (Einstellung)
-  export let showLibraries    = true;    // "Meine Mediatheken"-Zeile anzeigen
-  export let showHistory      = true;    // "Zuletzt gesehen"-Zeile anzeigen
-  export let showNextUp       = true;    // "Als Nächstes"-Zeile anzeigen
-  export let showRecommendations = true; // "Weil du … gesehen hast"-Zeile anzeigen
-  export let recommendationRows   = 1;    // 1 oder 2 Empfehlungs-Reihen
-  export let showLatest       = true;    // "Zuletzt hinzugefügt" (Filme + Serien)
-  export let showCollections  = true;    // "Sammlungen" (BoxSets)
-  export let sharedSuggestions = [];      // "Für euch beide" — Titel, die zur gemeinsamen Vorliebe passen
-  export let showSharedSuggestions = false; // Reihe anzeigen (nur wenn gemeinsames Profil eingerichtet)
+  let {
+    selectedUser,
+    apiCache,
+    reduceAnimations = false,   // steuert Hero-Auto-Rotation
+    showHero         = true,    // Hero-Banner anzeigen (Einstellung)
+    showLibraries    = true,    // "Meine Mediatheken"-Zeile anzeigen
+    showHistory      = true,    // "Zuletzt gesehen"-Zeile anzeigen
+    showNextUp       = true,    // "Als Nächstes"-Zeile anzeigen
+    showRecommendations = true, // "Weil du … gesehen hast"-Zeile anzeigen
+    recommendationRows   = 1,   // 1 oder 2 Empfehlungs-Reihen
+    showLatest       = true,    // "Zuletzt hinzugefügt" (Filme + Serien)
+    showCollections  = true,    // "Sammlungen" (BoxSets)
+    sharedSuggestions = [],     // "Für euch beide" — Titel, die zur gemeinsamen Vorliebe passen
+    showSharedSuggestions = false, // Reihe anzeigen (nur wenn gemeinsames Profil eingerichtet)
+    onLibrariesLoaded, onOpenCollection, onOpenContext, onOpenDetails, onOpenLibrary,   // Callback-Props
+  } = $props();
 
-  const dispatch = createEventDispatcher();
-
-  let isLoading        = false;
-  let libraries        = [];
+  let isLoading        = $state(false);
+  let libraries        = $state([]);
   // An App melden, sobald die Mediatheken da sind (Cache-Hit oder Fetch) — speist die
   // Sidebar/Navigation reaktiv, ohne dass App separat fetchen muss (verhindert Race).
-  $: if (libraries.length) dispatch('librariesLoaded', libraries);
-  let continueWatching = [];
-  let nextUp           = [];
-  let latestMovies     = [];
-  let latestSeries     = [];
-  let recentlyWatched  = [];   // "Zuletzt gesehen" (Verlauf)
-  let recommendations  = [];   // [{ seedTitle, items }] — "Weil du X gesehen hast"
-  let collections      = [];   // BoxSets ("Sammlungen")
+  $effect(() => { if (libraries.length) onLibrariesLoaded?.(libraries); });
+  let continueWatching = $state([]);
+  let nextUp           = $state([]);
+  let latestMovies     = $state([]);
+  let latestSeries     = $state([]);
+  let recentlyWatched  = $state([]);   // "Zuletzt gesehen" (Verlauf)
+  let recommendations  = $state([]);   // [{ seedTitle, items }] — "Weil du X gesehen hast"
+  let collections      = $state([]);   // BoxSets ("Sammlungen")
 
   // HERO-BANNER: rotierendes Featured-Item (Netflix-Stil)
-  let heroItems  = [];
-  let heroIndex  = 0;
+  let heroItems  = $state([]);
+  let heroIndex  = $state(0);
   let heroTimer;
-  let heroReady  = false;   // erst true, wenn das erste Backdrop dekodiert ist → kein Aufploppen
-  $: heroCurrent = heroItems[heroIndex] || null;
+  let heroReady  = $state(false);   // erst true, wenn das erste Backdrop dekodiert ist → kein Aufploppen
+  let heroCurrent = $derived(heroItems[heroIndex] || null);
 
   const skeletons = Array(6).fill(0);
 
@@ -84,7 +86,7 @@
     }
   }
 
-  const getAuthHeaders = () => authHeaders($activeToken);
+  const getAuthHeaders = () => authHeaders(session.token);
 
   // Empfehlungen: Seeds aus zuletzt gesehenen Items, dann /Items/{id}/Similar.
   // Best Practice (Netflix/Plex): direkt im Dashboard, kein eigener Tab.
@@ -92,7 +94,7 @@
     try {
       // Zuletzt gespielte Filme/Serien als Aufhänger holen
       const res = await fetch(
-        `${$serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
+        `${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
         `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=4&Fields=${fields}`, opts
       );
       const seeds = (await res.json()).Items || [];
@@ -101,7 +103,7 @@
       // Einstellung 1 oder 2 — so wirkt das Umschalten ohne Neuladen sofort.
       const rows = [];
       for (const seed of seeds.slice(0, 2)) {
-        const sim = await fetch(`${$serverUrl}/Items/${seed.Id}/Similar?userId=${uId}&limit=12&Fields=${fields}`, opts);
+        const sim = await fetch(`${session.serverUrl}/Items/${seed.Id}/Similar?userId=${uId}&limit=12&Fields=${fields}`, opts);
         const items = (await sim.json()).Items || [];
         if (items.length >= 4) rows.push({ seedTitle: seed.Name, items });
       }
@@ -128,23 +130,23 @@
       const fields = "PrimaryImageAspectRatio,Overview,BackdropImageTags";
 
       // Alle 5 Fetches gleichzeitig starten — kein sequentielles Warten
-      const pViews        = fetch(`${$serverUrl}/Users/${uId}/Views`, opts);
-      const pResume       = fetch(`${$serverUrl}/Users/${uId}/Items/Resume?Limit=12&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
-      const pNextUp       = fetch(`${$serverUrl}/Shows/NextUp?UserId=${uId}&Limit=6&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
-      const pLatestMovies = fetch(`${$serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Movie&Limit=6&Fields=${fields}`, opts);
-      const pLatestSeries = fetch(`${$serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Series&Limit=6&Fields=${fields}`, opts);
+      const pViews        = fetch(`${session.serverUrl}/Users/${uId}/Views`, opts);
+      const pResume       = fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=12&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
+      const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=6&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
+      const pLatestMovies = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Movie&Limit=6&Fields=${fields}`, opts);
+      const pLatestSeries = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Series&Limit=6&Fields=${fields}`, opts);
       // Verlauf: zuletzt gesehene Filme/Folgen. Mehr holen (40), da Serien danach
       // zu je einem Eintrag zusammengefasst werden (Puffer für eine gute Mischung).
-      const pHistory      = fetch(`${$serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}`, opts);
+      const pHistory      = fetch(`${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}`, opts);
       // Sammlungen (BoxSets)
-      const pCollections  = fetch(`${$serverUrl}/Users/${uId}/Items?IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=50`, opts);
+      const pCollections  = fetch(`${session.serverUrl}/Users/${uId}/Items?IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=50`, opts);
 
       // Priorität: Views + Resume → UI sofort freigeben
       const [resViews, resResume] = await Promise.all([pViews, pResume]);
       libraries        = (await resViews.json()).Items  || [];
       continueWatching = (await resResume.json()).Items || [];
       isLoading        = false;
-      connectionLost.set(false);   // Server erreichbar
+      session.connectionLost = false;   // Server erreichbar
 
       // Cache früh befüllen → Sidebar-Navigation funktioniert sofort
       apiCache.dashboard = { libraries, continueWatching, nextUp: [], latestMovies: [], latestSeries: [], recentlyWatched: [], recommendations: [], collections: [] };
@@ -189,7 +191,7 @@
     } catch (err) {
       console.error("Dashboard load failed:", err);
       isLoading = false;
-      connectionLost.set(true);   // Server nicht erreichbar → Banner
+      session.connectionLost = true;   // Server nicht erreichbar → Banner
     }
   }
 
@@ -224,9 +226,9 @@
   // Verlauf-Karten einheitlich Hochkant: Folgen nutzen das Serien-Poster
   function getHistoryImageUrl(item) {
     if (item.Type === 'Episode' && item.SeriesId && item.SeriesPrimaryImageTag)
-      return `${$serverUrl}/Items/${item.SeriesId}/Images/Primary?tag=${item.SeriesPrimaryImageTag}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
+      return `${session.serverUrl}/Items/${item.SeriesId}/Images/Primary?tag=${item.SeriesPrimaryImageTag}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
     if (item.ImageTags?.Primary)
-      return `${$serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
+      return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
     return null;
   }
 
@@ -235,20 +237,20 @@
       // Wie Jellyfin (preferThumb): Querformat-Artwork bevorzugen — eigenes Thumb, sonst
       // Serien-/Eltern-Thumb, dann Backdrop (Folge → Serie), zuletzt der Folgen-Still.
       if (item.ImageTags?.Thumb)
-        return `${$serverUrl}/Items/${item.Id}/Images/Thumb?tag=${item.ImageTags.Thumb}&maxWidth=600&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${item.Id}/Images/Thumb?tag=${item.ImageTags.Thumb}&maxWidth=600&quality=80&format=webp`;
       if (item.ParentThumbItemId && item.ParentThumbImageTag)
-        return `${$serverUrl}/Items/${item.ParentThumbItemId}/Images/Thumb?tag=${item.ParentThumbImageTag}&maxWidth=600&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${item.ParentThumbItemId}/Images/Thumb?tag=${item.ParentThumbImageTag}&maxWidth=600&quality=80&format=webp`;
       if (item.SeriesId && item.SeriesThumbImageTag)
-        return `${$serverUrl}/Items/${item.SeriesId}/Images/Thumb?tag=${item.SeriesThumbImageTag}&maxWidth=600&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${item.SeriesId}/Images/Thumb?tag=${item.SeriesThumbImageTag}&maxWidth=600&quality=80&format=webp`;
       if (item.BackdropImageTags?.length > 0)
-        return `${$serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
       if (item.ParentBackdropItemId && item.ParentBackdropImageTags?.length > 0)
-        return `${$serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${item.ParentBackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${item.ParentBackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
       if (item.ImageTags?.Primary)
-        return `${$serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
     } else {
       if (item.ImageTags?.Primary)
-        return `${$serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
     }
     return null;
   }
@@ -277,7 +279,7 @@
   // Hero-Backdrop in hoher Auflösung
   function getHeroBackdrop(item) {
     if (item?.BackdropImageTags?.length > 0)
-      return `${$serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=1920&quality=85&format=webp`;
+      return `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=1920&quality=85&format=webp`;
     return null;
   }
 
@@ -285,7 +287,7 @@
   // Wirkt hochwertiger; ein zusätzliches Bild, kein Mehraufwand bei den Daten.
   function getHeroLogo(item) {
     if (item.ImageTags?.Logo)
-      return `${$serverUrl}/Items/${item.Id}/Images/Logo?tag=${item.ImageTags.Logo}&maxHeight=130&quality=90&format=webp`;
+      return `${session.serverUrl}/Items/${item.Id}/Images/Logo?tag=${item.ImageTags.Logo}&maxHeight=130&quality=90&format=webp`;
     return null;
   }</script>
 
@@ -343,7 +345,7 @@
             <p class="text-gray-300 text-lg line-clamp-2 max-w-2xl drop-shadow">{heroCurrent.Overview}</p>
           {/if}
           <div class="flex items-center gap-4 mt-2">
-            <button on:click={() => dispatch('openDetails', heroCurrent)} data-scroll-top
+            <button onclick={() => onOpenDetails?.(heroCurrent)} data-scroll-top
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-lg px-8 py-3 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-2 shadow-lg">
               <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
@@ -368,7 +370,7 @@
         <h2 class="text-2xl font-bold text-gray-400 mb-4 px-2">{$t.myMedia}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each libraries as library}
-            <button on:click={() => dispatch('openLibrary', library)}
+            <button onclick={() => onOpenLibrary?.(library)}
               class="shrink-0 group flex flex-col items-center focus:outline-none">
               <div class="w-64 h-36 bg-gray-800 rounded-xl flex items-center justify-center
                           border-4 border-transparent group-focus:border-white group-hover:border-gray-400
@@ -393,7 +395,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.continueWatchingRow}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each continueWatching as item}
-            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
+            <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
               class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
               <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
                           border-4 border-transparent group-focus:border-white group-focus:scale-105
@@ -431,7 +433,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.nextUp}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each nextUp as item}
-            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
+            <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
               class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
               <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
                           border-4 border-transparent group-focus:border-white group-focus:scale-105
@@ -459,7 +461,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.recentlyWatched}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each recentlyWatched as item}
-            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
+            <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
               <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                           border-4 border-transparent group-focus:border-white
@@ -492,7 +494,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.sharedSuggestions}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each sharedSuggestions as item}
-            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
+            <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
               <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                           border-4 border-transparent group-focus:border-white
@@ -520,7 +522,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each rec.items as item}
-            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
+            <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
               <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                           border-4 border-transparent group-focus:border-white
@@ -553,7 +555,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.latestMovies}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each latestMovies as item}
-            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
+            <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
               <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                           border-4 border-transparent group-focus:border-white
@@ -586,7 +588,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.latestSeries}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each latestSeries as item}
-            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
+            <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
               <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                           border-4 border-transparent group-focus:border-white
@@ -619,7 +621,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.collections}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each collections as col}
-            <button on:click={() => dispatch('openCollection', col)}
+            <button onclick={() => onOpenCollection?.(col)}
               class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
               <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                           border-4 border-transparent group-focus:border-white

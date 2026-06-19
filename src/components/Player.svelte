@@ -1,6 +1,7 @@
 <script>
   import { t, currentLang } from '../i18n.js';
-  import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro, serverUrl, activeToken } from '../utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro } from '../utils.js';
+  import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady } from '../syncplay.js';
   import { PgsRenderer, VobSubRenderer } from 'libbitsub';
@@ -10,52 +11,53 @@
   // Pfad: neuere jassub-Versionen legen die Dateien unter dist/wasm/ ab.
   import jassubWorkerUrl from 'jassub/dist/wasm/jassub-worker.js?url';
   import jassubWasmUrl from 'jassub/dist/wasm/jassub-worker.wasm?url';
-  import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
 
-  export let item;
-  export let selectedAudioIndex;
-  export let selectedSubtitleIndex;
-  export let mediaSourceId = null;   // gewählte Version (FullHD/4K); null = Server-Standard
-  export let selectedUser;
-  export let playbackPrefs = { autoSkipIntro: false, autoSkipCredits: false };
-  export let use24h = true;   // Uhrzeit-Format (aus Einstellung) für die Uhr im Player
-  export let showClock = true; // Uhr im Player anzeigen (folgt der Anzeige-Einstellung)
-  export let showChapters = false; // Kapitelmarken auf der Leiste (Opt-in)
-  export let seekStep = 30;        // Sprungweite der Vor-/Zurück-Buttons in Sekunden (pro Profil)
-  export let autoPlayStreak = 0;   // "Schaust du noch?": Folgen, die ohne Interaktion auto-gestartet wurden (von App gehalten)
-  export let syncPlayOpen = false; // SyncPlay-Modal offen (von App) → Wiedergabe solange pausieren …
-  export let inSyncGroup  = false; // … außer in aktiver Gruppe: dann NICHT lokal pausieren (Sync nicht stören)
-  export let syncCommand = null;   // letztes empfangenes SyncPlayCommand { ...Data, _seq } (von App)
-  export let syncQueue   = null;   // aktueller Gruppen-Queue-Stand (von App): { itemId, playlistItemId, positionTicks, isPlaying }
-  export let remoteCommand = null; // Admin-Fernsteuerung (Dashboard): { command, seekTicks?, args?, _seq } (von App)
-  export let serverVobSub = false; // Server liefert VobSub/DVD extern (.mks, Jellyfin 12.0+)?
-
-  const dispatch = createEventDispatcher();
+  let {
+    item,
+    selectedAudioIndex = $bindable(),
+    selectedSubtitleIndex = $bindable(),
+    mediaSourceId = null,   // gewählte Version (FullHD/4K); null = Server-Standard
+    selectedUser,
+    playbackPrefs = { autoSkipIntro: false, autoSkipCredits: false },
+    use24h = true,   // Uhrzeit-Format (aus Einstellung) für die Uhr im Player
+    showClock = true, // Uhr im Player anzeigen (folgt der Anzeige-Einstellung)
+    showChapters = false, // Kapitelmarken auf der Leiste (Opt-in)
+    seekStep = 30,        // Sprungweite der Vor-/Zurück-Buttons in Sekunden (pro Profil)
+    autoPlayStreak = 0,   // "Schaust du noch?": Folgen ohne Interaktion auto-gestartet (von App)
+    syncPlayOpen = false, // SyncPlay-Modal offen (von App) → Wiedergabe solange pausieren …
+    inSyncGroup  = false, // … außer in aktiver Gruppe: dann NICHT lokal pausieren
+    syncCommand = null,   // letztes empfangenes SyncPlayCommand (von App)
+    syncQueue   = null,   // aktueller Gruppen-Queue-Stand (von App)
+    remoteCommand = null, // Admin-Fernsteuerung (Dashboard) (von App)
+    serverVobSub = false, // Server liefert VobSub/DVD extern (.mks, Jellyfin 12.0+)?
+    onExit, onPrev, onNext, onSyncplay, onLibChanged,   // Callback-Props (statt Events)
+  } = $props();
 
   let videoElement;
   let playerContainer;
   let settingsPanel;       // bind für Auto-Fokus auf WebOS
   let playPauseBtn;        // bind: damit ▼ von der Leiste direkt hierher springt
   let seekBarEl;           // bind: damit Links/Rechts bei verborgenem HUD direkt hierher springt
-  let isPlaying  = false;
-  let currentTime = 0;
-  let duration    = 0;
+  let isPlaying  = $state(false);
+  let currentTime = $state(0);
+  let duration    = $state(0);
 
   // Scrubbing
-  let isSeeking  = false;
-  let seekTime   = 0;
+  let isSeeking  = $state(false);
+  let seekTime   = $state(0);
   let seekCommitTimer = null;   // gebündeltes Spulen: erst nach kurzer Pause EINMAL springen
-  $: displayTime = isSeeking ? seekTime : currentTime;
-  $: seekPct     = duration > 0 ? (displayTime / duration) * 100 : 0;
+  let displayTime = $derived(isSeeking ? seekTime : currentTime);
+  let seekPct = $derived(duration > 0 ? (displayTime / duration) * 100 : 0);
 
   // Rechte Zeit-Anzeige: tippbar, wechselt Gesamtdauer → Restzeit → Endzeit (dezent, kein neues Element)
-  let timeMode = 'total';
+  let timeMode = $state('total');
   function cycleTimeMode() {
     timeMode = timeMode === 'total' ? 'remaining' : timeMode === 'remaining' ? 'end' : 'total';
     resetControlsTimeout();
   }
-  $: rightTimeLabel = (() => {
+  let rightTimeLabel = $derived.by(() => {
     if (!duration) return formatTime(0);
     if (timeMode === 'remaining') return '-' + formatTime(Math.max(0, duration - displayTime));
     if (timeMode === 'end') {
@@ -63,20 +65,20 @@
       return end.toLocaleTimeString($currentLang === 'de' ? 'de-DE' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: !use24h });
     }
     return formatTime(duration);
-  })();
+  });
 
   // Uhrzeit (oben rechts, nur sichtbar wenn Steuerung eingeblendet — schont OLED)
-  let clockNow = '';
+  let clockNow = $state('');
   let clockTimer;
   function updateClock() {
     clockNow = new Date().toLocaleTimeString($currentLang === 'de' ? 'de-DE' : 'en-US',
       { hour: '2-digit', minute: '2-digit', hour12: !use24h });
   }
-  $: $currentLang, use24h, updateClock();
+  $effect(() => { $currentLang; use24h; updateClock(); });
 
   // Ladeanimation + Fehlerzustand
-  let isBuffering = true;
-  let playbackError = false;     // zeigt Fehlermeldung statt endlosem Spinner
+  let isBuffering = $state(true);
+  let playbackError = $state(false);     // zeigt Fehlermeldung statt endlosem Spinner
   let bufferWatchdog = null;
 
   // Wenn die Wiedergabe WIRKLICH hängt (Stall ohne 'error'-Event), Fehler anzeigen.
@@ -158,10 +160,10 @@
   }
 
   // UI
-  let showControls  = true;
-  let showSettings  = false;
+  let showControls  = $state(true);
+  let showSettings  = $state(false);
   let controlOpener = null;        // Button, der Panel/Picker geöffnet hat → Fokus kehrt dorthin zurück
-  let pickerMode    = null;        // null | 'collection' | 'playlist' – steuert <AddToPicker>
+  let pickerMode    = $state(null);        // null | 'collection' | 'playlist' – steuert <AddToPicker>
   let wasPlayingBeforePicker = false;
   // Beim Öffnen des "Hinzufügen"-Dialogs pausieren (läuft sonst im Hintergrund weiter).
   function openPicker(mode) {
@@ -175,7 +177,7 @@
   // (dort würde ein lokales Pausieren den Gleichlauf stören). Resümee beim Schließen.
   let wasPlayingBeforeSync = false;
   let _prevSyncOpen = false;
-  $: if (syncPlayOpen !== _prevSyncOpen) { onSyncPlayToggle(syncPlayOpen); _prevSyncOpen = syncPlayOpen; }
+  $effect(() => { if (syncPlayOpen !== _prevSyncOpen) { onSyncPlayToggle(syncPlayOpen); _prevSyncOpen = syncPlayOpen; } });
   function onSyncPlayToggle(open) {
     if (open) {
       if (inSyncGroup) return;
@@ -208,7 +210,7 @@
     if (!inSyncGroup || !syncReady) return;
     if (Date.now() < syncSuppressUntil) return;
     dlog('[SyncPlay] →', action, posTicks());
-    sendSyncCommand($serverUrl, $activeToken, action, posTicks());
+    sendSyncCommand(session.serverUrl, session.token, action, posTicks());
   }
   // Erster Start in einer Gruppe legt die Queue fest (Server spielt für alle los); spätere Plays = Unpause.
   async function onLocalPlay() {
@@ -226,7 +228,7 @@
     syncQueueSet = true;
     if (syncQueue && syncQueue.itemId === item.Id) { syncReady = true; return; }  // Gruppe spielt dieses Item bereits
     dlog('[SyncPlay] → SetNewQueue', item.Id, posTicks());
-    await setSyncQueue($serverUrl, $activeToken, item.Id, posTicks());
+    await setSyncQueue(session.serverUrl, session.token, item.Id, posTicks());
     syncReady = true;
   }
   function onLocalPause() { syncEmit('Pause'); }
@@ -242,14 +244,14 @@
     if (!inSyncGroup || !syncQueue?.playlistItemId || _syncBuffering) return;
     _syncBuffering = true;
     dlog('[SyncPlay] → Buffering', posTicks());
-    sendSyncBuffering($serverUrl, $activeToken, posTicks(), true, syncQueue.playlistItemId);
+    sendSyncBuffering(session.serverUrl, session.token, posTicks(), true, syncQueue.playlistItemId);
   }
   function syncReportReady() {
     if (!inSyncGroup || !syncQueue?.playlistItemId) return;
     if (!_syncBuffering && _syncReadySent) return;   // nichts Neues seit dem letzten Ready
     _syncBuffering = false; _syncReadySent = true;
     dlog('[SyncPlay] → Ready', posTicks());
-    sendSyncReady($serverUrl, $activeToken, posTicks(), true, syncQueue.playlistItemId);
+    sendSyncReady(session.serverUrl, session.token, posTicks(), true, syncQueue.playlistItemId);
   }
 
   // Empfangenes Gruppen-Kommando anwenden (mit grobem Zeitbezug über "When"; Feinabgleich = Phase 2b).
@@ -277,12 +279,12 @@
       videoElement.pause();
     }
   }
-  $: if (syncCommand && syncCommand._seq !== _appliedSyncSeq) applySyncCommand(syncCommand);
+  $effect(() => { if (syncCommand && syncCommand._seq !== _appliedSyncSeq) applySyncCommand(syncCommand); });
 
   // ---- Admin-Fernsteuerung (Jellyfin-Dashboard) -------------------------------------------
   // Initial auf den aktuellen Stand setzen → vor dem Öffnen gesendete Befehle nicht nachträglich anwenden.
   let _appliedRemoteSeq = remoteCommand?._seq ?? 0;
-  $: if (remoteCommand && remoteCommand._seq !== _appliedRemoteSeq) applyRemoteCommand(remoteCommand);
+  $effect(() => { if (remoteCommand && remoteCommand._seq !== _appliedRemoteSeq) applyRemoteCommand(remoteCommand); });
   function applyRemoteCommand(c) {
     if (!c || c._seq === _appliedRemoteSeq) return;
     _appliedRemoteSeq = c._seq;
@@ -291,13 +293,13 @@
     if (cmd === 'pause') videoElement?.pause();
     else if (cmd === 'unpause') videoElement?.play().catch(() => {});
     else if (cmd === 'playpause') togglePlay();
-    else if (cmd === 'stop') { videoElement?.pause(); dispatch('exit'); }
+    else if (cmd === 'stop') { videoElement?.pause(); onExit?.(); }
     else if (cmd === 'seek' && videoElement) {
       const t = Math.max(0, (c.seekTicks || 0) / 10000000);
       videoElement.currentTime = t; currentTime = t;
     }
     else if (cmd === 'nexttrack') { if (nextEpisode) goToNextEpisode(true); }
-    else if (cmd === 'previoustrack') { if (prevEpisode) dispatch('prev', prevEpisode); }
+    else if (cmd === 'previoustrack') { if (prevEpisode) onPrev?.(prevEpisode); }
     // Lautstärke/Stummschaltung (GeneralCommand)
     else if (cmd === 'setvolume' && videoElement) { const v = parseInt(c.args?.Volume, 10); if (!isNaN(v)) videoElement.volume = Math.max(0, Math.min(1, v / 100)); }
     else if (cmd === 'volumeup'   && videoElement) videoElement.volume = Math.min(1, videoElement.volume + 0.1);
@@ -305,16 +307,16 @@
     else if ((cmd === 'mute' || cmd === 'unmute' || cmd === 'togglemute') && videoElement)
       videoElement.muted = cmd === 'mute' ? true : cmd === 'unmute' ? false : !videoElement.muted;
   }
-  let settingsTab   = 'audio';     // 'audio' | 'subtitle' — welcher Bereich im Panel gezeigt wird
+  let settingsTab   = $state('audio');     // 'audio' | 'subtitle' — welcher Bereich im Panel gezeigt wird
   let controlsTimeout;
-  let isFavorite = item.UserData?.IsFavorite || false;
+  let isFavorite = $state(item.UserData?.IsFavorite || false);
 
   // Playback
   let progressTimer;
   let startTicks    = item.UserData?.PlaybackPositionTicks || 0;
   let resumeApplied = false;   // Fortsetzen-Sprung nur einmal ausführen
   let playSessionId = crypto.randomUUID();  // wird durch PlaybackInfo ersetzt
-  let playMethod    = 'DirectPlay';         // DirectPlay | DirectStream | Transcode
+  let playMethod    = $state('DirectPlay');         // DirectPlay | DirectStream | Transcode
   let triedTranscodeFallback = false;       // einmaliger Auto-Fallback wenn Direct Play am Gerät scheitert
   let hls           = null;                 // hls.js-Instanz (nur bei Transcode/HLS)
   let maxBitrate    = 120000000;            // 120 Mbit/s (lokales Netz) — Grenze für Direct Play
@@ -333,21 +335,21 @@
   }
 
   // Streams
-  let mediaStreams   = [];
+  let mediaStreams   = $state([]);
   let currentMediaSource = null;   // aktuell laufende Quelle – für den Instant-Switch von Textuntertiteln
-  $: audioStreams    = mediaStreams.filter(s => s.Type === 'Audio');
-  $: subtitleStreams = mediaStreams.filter(s => s.Type === 'Subtitle');
+  let audioStreams = $derived(mediaStreams.filter(s => s.Type === 'Audio'));
+  let subtitleStreams = $derived(mediaStreams.filter(s => s.Type === 'Subtitle'));
 
   // --- Wiedergabeinfo-Overlay (opt-in via playbackPrefs.showPlaybackInfo) ---------------------
-  let showInfoOverlay = false;
+  let showInfoOverlay = $state(false);
   let infoInterval    = null;
-  let liveStats       = { bufferAhead: 0, dropped: 0, total: 0, width: 0, height: 0 };
-  $: infoVideoStream  = mediaStreams.find(s => s.Type === 'Video');
-  $: infoAudioStream  = (selectedAudioIndex >= 0)
+  let liveStats       = $state({ bufferAhead: 0, dropped: 0, total: 0, width: 0, height: 0 });
+  let infoVideoStream = $derived(mediaStreams.find(s => s.Type === 'Video'));
+  let infoAudioStream = $derived((selectedAudioIndex >= 0)
         ? mediaStreams.find(s => s.Index === selectedAudioIndex)
-        : (mediaStreams.find(s => s.Type === 'Audio' && s.IsDefault) || mediaStreams.find(s => s.Type === 'Audio'));
-  $: playMethodLabel  = playMethod === 'Transcode' ? 'Transcode' : (playMethod === 'DirectStream' ? 'Direct Stream' : 'Direct Play');
-  $: playMethodColor  = playMethod === 'Transcode' ? 'text-amber-400' : (playMethod === 'DirectStream' ? 'text-sky-400' : 'text-green-400');
+        : (mediaStreams.find(s => s.Type === 'Audio' && s.IsDefault) || mediaStreams.find(s => s.Type === 'Audio')));
+  let playMethodLabel = $derived(playMethod === 'Transcode' ? 'Transcode' : (playMethod === 'DirectStream' ? 'Direct Stream' : 'Direct Play'));
+  let playMethodColor = $derived(playMethod === 'Transcode' ? 'text-amber-400' : (playMethod === 'DirectStream' ? 'text-sky-400' : 'text-green-400'));
   const fmtBitrate = (bps) => bps ? (bps >= 1e6 ? (bps/1e6).toFixed(1) + ' Mbit/s' : Math.round(bps/1e3) + ' kbit/s') : null;
   function updateLiveStats() {
     if (!videoElement) return;
@@ -370,7 +372,7 @@
   // Jellyfin liefert Kachel-Sheets (z. B. 10×10 Thumbnails/Bild). Wir berechnen pro Zeit das
   // richtige Sheet + die Position darin und schneiden es per background-position aus. Sheets
   // bleiben im Browser-Cache → flüssiges Scrubben, nur an Sheet-Grenzen wird neu geladen.
-  let trickplayInfo = null;   // { width, Width, Height, TileWidth, TileHeight, ThumbnailCount, Interval }
+  let trickplayInfo = $state(null);   // { width, Width, Height, TileWidth, TileHeight, ThumbnailCount, Interval }
   let trickplayMsId = null;
   function parseTrickplay(data) {
     trickplayInfo = null; trickplayMsId = null;
@@ -386,7 +388,7 @@
     trickplayInfo = { width: w, ...byWidth[String(w)] };
     trickplayMsId = msId;
   }
-  $: trickplayTile = (isSeeking && playbackPrefs.trickplay !== false && trickplayInfo && duration > 0) ? computeTrickplayTile(seekTime) : null;
+  let trickplayTile = $derived((isSeeking && playbackPrefs.trickplay !== false && trickplayInfo && duration > 0) ? computeTrickplayTile(seekTime) : null);
   function computeTrickplayTile(t) {
     const { Interval, TileWidth, TileHeight, Width, Height, width, ThumbnailCount } = trickplayInfo;
     if (!Interval || !TileWidth || !TileHeight || !Width || !Height) return null;
@@ -395,7 +397,7 @@
     const sheet   = Math.floor(idx / perTile);
     const local   = idx % perTile;
     return {
-      url: `${$serverUrl}/Videos/${item.Id}/Trickplay/${width}/${sheet}.jpg?ApiKey=${$activeToken}&MediaSourceId=${trickplayMsId}`,
+      url: `${session.serverUrl}/Videos/${item.Id}/Trickplay/${width}/${sheet}.jpg?ApiKey=${session.token}&MediaSourceId=${trickplayMsId}`,
       x: (local % TileWidth) * Width,
       y: Math.floor(local / TileWidth) * Height,
       w: Width, h: Height,
@@ -419,7 +421,7 @@
       let titleStreams = (item?.MediaStreams?.length ? item.MediaStreams : mediaStreams) || [];
       if (!titleStreams.length && item?.Id) {
         try {
-          const r = await fetch(`${$serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaStreams`, { headers: getAuthHeaders() });
+          const r = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaStreams`, { headers: getAuthHeaders() });
           if (r.ok) { const full = await r.json(); if (full?.MediaStreams?.length) titleStreams = full.MediaStreams; }
         } catch {}
       }
@@ -454,7 +456,7 @@
       // Direct Play: volle Bitrate; Transcode: deckeln, damit der Server in Echtzeit mitkommt.
       const requestBitrate = enableDirectPlay ? maxBitrate : Math.min(maxBitrate, TRANSCODE_MAX_BITRATE);
       const info = await getPlaybackInfoFast({
-        serverUrl: $serverUrl, userId: selectedUser.Id, token: $activeToken, itemId: item.Id,
+        serverUrl: session.serverUrl, userId: selectedUser.Id, token: session.token, itemId: item.Id,
         audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex,
         maxBitrate: requestBitrate, startTicks: 0,   // Resume passiert client-seitig (seekToResume)
         enableDirectPlay, enableDirectStream, allowAudioStreamCopy,
@@ -465,7 +467,7 @@
       if (info.playSessionId) playSessionId = info.playSessionId;
       const ms = info.mediaSource;
       currentMediaSource = ms;   // für den fliegenden Untertitel-Wechsel merken
-      const resolved = resolveStream({ serverUrl: $serverUrl, token: $activeToken, itemId: item.Id, mediaSource: ms, audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex });
+      const resolved = resolveStream({ serverUrl: session.serverUrl, token: session.token, itemId: item.Id, mediaSource: ms, audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex });
       playMethod = resolved.method;
       dlog('[OcenFin] resolveStream →', { method: resolved.method, isHls: resolved.isHls, url: resolved.url });
       // Warum transkodiert der Server? TranscodeReasons nennt es direkt (VideoCodecNotSupported,
@@ -480,7 +482,7 @@
     } catch (e) {
       console.error('PlaybackInfo failed, falling back to Direct Play:', e);
       playMethod = 'DirectPlay';
-      const url = `${$serverUrl}/Videos/${item.Id}/stream?static=true&ApiKey=${$activeToken}` +
+      const url = `${session.serverUrl}/Videos/${item.Id}/stream?static=true&ApiKey=${session.token}` +
                   (audioIndex !== -1 ? `&AudioStreamIndex=${audioIndex}` : '');
       await attachSource(url, false);
     }
@@ -530,11 +532,10 @@
   // Externe Textuntertitel selbst rendern: VTT per fetch holen (Jellyfin erlaubt CORS) und
   // parsen, statt einen <track> zu setzen. Ein cross-origin <track> wird vom Browser blockiert,
   // und webOS rendert native Cues ohnehin unzuverlässig. So haben wir volle Kontrolle.
-  let currentSubtitleText = '';
-  let subtitleCues = [];           // [{ start, end, text }] in Sekunden
+  let subtitleCues = $state([]);           // [{ start, end, text }] in Sekunden
   // Untertitel-Versatz (nur Text-Overlay = VTT/SRT/ASS-zu-VTT). + = Untertitel später (verzögert),
   // − = früher. Pro Spur/Titel zurückgesetzt; bewusst NICHT gespeichert (ist inhaltsspezifisch).
-  let subtitleOffset = 0;
+  let subtitleOffset = $state(0);
   function adjustSubtitleOffset(delta) {
     subtitleOffset = Math.round(Math.max(-10, Math.min(10, subtitleOffset + delta)) * 10) / 10;
   }
@@ -542,28 +543,28 @@
     return (s > 0 ? '+' : '') + s.toFixed(1).replace('.', ',') + ' s';
   }
   let subtitleFetchToken = 0;      // ignoriert Antworten eines überholten Wechsels
-  let graphicRenderer = null;      // libbitsub-Instanz für das AKTUELL sichtbare Bild-Untertitel-Overlay
-  let pendingRenderer = null;      // beim Sprachwechsel: neuer Renderer, der noch lädt (Altbild bleibt)
+  let graphicRenderer = $state(null);      // libbitsub-Instanz für das AKTUELL sichtbare Bild-Untertitel-Overlay
+  let pendingRenderer = $state(null);      // beim Sprachwechsel: neuer Renderer, der noch lädt (Altbild bleibt)
   // Bild-Untertitel clientseitig rendern? Nur wenn aktiviert UND nicht ohnehin alles eingebrannt wird.
-  $: clientGraphicRender = playbackPrefs.pgsRendering && !playbackPrefs.burnSubtitles;
+  let clientGraphicRender = $derived(playbackPrefs.pgsRendering && !playbackPrefs.burnSubtitles);
   // ASS/SSA mit Original-Layout rendern (JASSUB)? Aus → schlichtes Text-Overlay, beides Direct Play.
   let assRenderer = null;
-  $: clientAssRender = playbackPrefs.assRendering && !playbackPrefs.burnSubtitles;
+  let clientAssRender = $derived(playbackPrefs.assRendering && !playbackPrefs.burnSubtitles);
 
   // Textuntertitel-Styling (NUR fürs .subtitle-box-Overlay = WebVTT/SRT). PGS/VobSub sind Bitmaps
   // (nur skalierbar), ASS bringt sein eigenes Styling mit. Defaults = bisheriges Verhalten.
-  $: subColor = ({ white:'#ffffff', yellow:'#ffe14d', green:'#6dff6d', cyan:'#66e0ff' })[playbackPrefs.subtitleColor || 'white'] || '#ffffff';
-  $: subEdgeCss = (playbackPrefs.subtitleEdge === 'outline')
+  let subColor = $derived(({ white:'#ffffff', yellow:'#ffe14d', green:'#6dff6d', cyan:'#66e0ff' })[playbackPrefs.subtitleColor || 'white'] || '#ffffff');
+  let subEdgeCss = $derived((playbackPrefs.subtitleEdge === 'outline')
         ? '-webkit-text-stroke:0.35vh #000;paint-order:stroke fill;text-shadow:0 0 3px rgba(0,0,0,.55);'
         : (playbackPrefs.subtitleEdge === 'none')
         ? '-webkit-text-stroke:0;text-shadow:none;'
-        : '-webkit-text-stroke:0;text-shadow:0 1px 2px #000,0 2px 8px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.9);';
-  $: subBgCss = (playbackPrefs.subtitleBackground === 'solid')
+        : '-webkit-text-stroke:0;text-shadow:0 1px 2px #000,0 2px 8px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.9);');
+  let subBgCss = $derived((playbackPrefs.subtitleBackground === 'solid')
         ? 'background:#000;padding:0.05em 0.5em;border-radius:0.5vh;'
         : (playbackPrefs.subtitleBackground === 'semi')
         ? 'background:rgba(0,0,0,.6);padding:0.05em 0.5em;border-radius:0.5vh;'
-        : 'background:transparent;';
-  $: subStyle = `color:${subColor};${subEdgeCss}${subBgCss}`;
+        : 'background:transparent;');
+  let subStyle = $derived(`color:${subColor};${subEdgeCss}${subBgCss}`);
 
   // Untertitelgröße → libbitsub-Skalierung (Variante B: gilt für PGS UND VobSub, nicht nur VTT).
   function graphicSubScale() {
@@ -607,7 +608,7 @@
   // Spurwechsel via setTrackByUrl ohne Renderer-Neuaufbau.
   function applyAssSubtitle(stream, ms) {
     if (!videoElement) return;
-    const url = assSubtitleUrl({ serverUrl: $serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: $activeToken });
+    const url = assSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
     try {
       if (assRenderer) {                       // weicher Spurwechsel (z.B. eng → deu)
         assRenderer.setTrackByUrl(url);
@@ -631,7 +632,7 @@
       .map(a => {
         const u = a.DeliveryUrl; if (!u) return null;
         if (/^https?:/i.test(u)) return u;
-        return `${$serverUrl}${u}${(u.includes('api_key') || u.includes('ApiKey')) ? '' : (u.includes('?') ? '&' : '?') + 'ApiKey=' + $activeToken}`;
+        return `${session.serverUrl}${u}${(u.includes('api_key') || u.includes('ApiKey')) ? '' : (u.includes('?') ? '&' : '?') + 'ApiKey=' + session.token}`;
       })
       .filter(Boolean);
   }
@@ -642,7 +643,7 @@
   }
   function applyGraphicSubtitle(stream, ms) {
     if (!videoElement) return;
-    const url = graphicSubtitleUrl({ serverUrl: $serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: $activeToken });
+    const url = graphicSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
     if (!url) { disposeGraphic(); dlog('[OcenFin] image subtitle not available (server does not provide it externally):', stream.Index); return; }
     // Wechsel ohne Lücke: den NEUEN Renderer aufbauen, aber den alten erst entsorgen, wenn der
     // neue fertig geparst ist ('loaded'). So bleibt der bisherige Untertitel sichtbar, bis der
@@ -688,10 +689,10 @@
     if (graphicRenderer) { try { graphicRenderer.dispose(); } catch {} graphicRenderer = null; }
   }
   // Größenänderung zur Laufzeit live auf den laufenden (und gerade ladenden) Renderer anwenden.
-  $: if ((graphicRenderer || pendingRenderer) && (playbackPrefs.subtitleSize || 'normal')) {
+  $effect(() => { if ((graphicRenderer || pendingRenderer) && (playbackPrefs.subtitleSize || 'normal')) {
     const sc = graphicSubScale();
     for (const r of [graphicRenderer, pendingRenderer]) if (r) { try { r.setDisplaySettings({ scale: sc }); } catch {} }
-  }
+  } });
 
   // VTT-Zeitstempel "HH:MM:SS.mmm" oder "MM:SS.mmm" → Sekunden
   function parseVttTime(t) {
@@ -717,9 +718,9 @@
   }
 
   // Aktiven Cue aus der aktuellen Zeit ableiten (reaktiv, folgt currentTime)
-  $: currentSubtitleText = subtitleCues.length
+  let currentSubtitleText = $derived(subtitleCues.length
     ? (subtitleCues.find(c => (currentTime - subtitleOffset) >= c.start && (currentTime - subtitleOffset) <= c.end)?.text ?? '')
-    : '';
+    : '');
 
   async function applyExternalSubtitleIfNeeded(index, ms) {
     subtitleCues = [];
@@ -732,7 +733,7 @@
     const graphic = ['pgssub', 'dvdsub', 'pgs', 'dvbsub', 'vobsub', 'sub'].includes((stream.Codec || '').toLowerCase());
     if (method === 'encode' || graphic) return;   // gebrannt oder Grafik-Untertitel → kein VTT-Overlay
 
-    const url = externalSubtitleUrl({ serverUrl: $serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: $activeToken });
+    const url = externalSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
     try {
       const res = await fetch(url);
       if (!res.ok || myToken !== subtitleFetchToken) return;   // überholt oder Fehler
@@ -744,22 +745,22 @@
   }
 
   // Intro Skipper / Media Segments
-  let introData = null;
-  let segmentsChecked = false;     // Plugin-APIs abgefragt → Kapitel-Fallback darf greifen
+  let introData = $state(null);
+  let segmentsChecked = $state(false);     // Plugin-APIs abgefragt → Kapitel-Fallback darf greifen
   let chapterFallbackDone = false;
-  $: showSkipIntro = introData?.Introduction?.Valid
+  let showSkipIntro = $derived(introData?.Introduction?.Valid
     && currentTime >= (introData.Introduction.ShowSkipPromptAt ?? 0)
-    && currentTime <= (introData.Introduction.HideSkipPromptAt ?? 0);
+    && currentTime <= (introData.Introduction.HideSkipPromptAt ?? 0));
 
   // Outro/Abspann (Media-Segments-/Plugin-Daten) — Auslöser für Auto-Skip & Auto-Play-Countdown
-  $: showSkipCredits = introData?.Credits?.Valid
-    && currentTime >= (introData.Credits.ShowSkipPromptAt ?? Infinity);
+  let showSkipCredits = $derived(introData?.Credits?.Valid
+    && currentTime >= (introData.Credits.ShowSkipPromptAt ?? Infinity));
 
   // Auto-Play der nächsten Folge mit Countdown-Overlay (Netflix-Prinzip).
   // Startet nahe dem Ende; "Abspann automatisch überspringen" hat Vorrang (sofortiger Sprung).
-  let chapters          = [];
-  let nextCountdown     = null;   // verbleibende Sekunden (ganzzahlig, für den Text), null = inaktiv
-  let countdownProgress = 0;      // 1 → 0, treibt den Balken
+  let chapters          = $state([]);
+  let nextCountdown     = $state(null);   // verbleibende Sekunden (ganzzahlig, für den Text), null = inaktiv
+  let countdownProgress = $state(0);      // 1 → 0, treibt den Balken
   let countdownTimer    = null;
   let countdownEnd      = 0;
   let countdownDismissed = false; // pro Folge: nach Abbruch nicht erneut starten
@@ -768,33 +769,33 @@
 
   // Kapitel-Fallback für Intro/Abspann: greift reaktiv, sobald die Plugin-APIs nichts lieferten
   // UND die Kapitel geladen sind (nur eindeutig benannte Kapitel, sonst kein Prompt).
-  $: if (segmentsChecked && !chapterFallbackDone && introData === null && chapters.length) {
+  $effect(() => { if (segmentsChecked && !chapterFallbackDone && introData === null && chapters.length) {
     chapterFallbackDone = true;
     introData = chaptersToIntroData(chapters);
-  }
+  } });
 
-  $: nearEnd = duration > 0 && currentTime > 0 && (
+  let nearEnd = $derived(duration > 0 && currentTime > 0 && (
     showSkipCredits || (duration - currentTime) <= COUNTDOWN_FROM
-  );
+  ));
   // "Nächste Folge"-Karte (manuell) zeigen: bei echten Abspann-Daten ab Abspannbeginn, sonst
   // als zuverlässiger Fallback in den letzten OUTRO_FALLBACK Sekunden (auch ohne Kapitel/Segmente).
   // Der Auto-Play-Countdown (nearEnd, 12 s) bleibt davon unberührt, damit nie Inhalt abgeschnitten wird.
-  $: outroPromptActive = duration > 0 && currentTime > 0 && (
+  let outroPromptActive = $derived(duration > 0 && currentTime > 0 && (
     showSkipCredits || (duration - currentTime) <= OUTRO_FALLBACK
-  );
+  ));
   // Ein interaktives Overlay ist offen → OK soll dessen fokussierten Button auslösen, nicht pausieren.
-  $: overlayActive = showSkipIntro || showStillWatching || (outroPromptActive && !!nextEpisode);
-  $: if (playbackPrefs.autoPlayNext && nextEpisode && !playbackPrefs.autoSkipCredits
+  let overlayActive = $derived(showSkipIntro || showStillWatching || (outroPromptActive && !!nextEpisode));
+  $effect(() => { if (playbackPrefs.autoPlayNext && nextEpisode && !playbackPrefs.autoSkipCredits
          && nearEnd && nextCountdown === null && !countdownDismissed) {
     startCountdown();
-  }
+  } });
 
   function startCountdown() {
     // Nächste Folge leicht vorladen (nur PlaybackInfo/Stream-URL, kein Video-Pre-Buffering),
     // damit der Wechsel den Roundtrip spart. Greift nur, wenn die Parameter beim Wechsel passen.
     if (nextEpisode?.Id) {
       prefetchPlaybackInfo({
-        serverUrl: $serverUrl, userId: selectedUser.Id, token: $activeToken, itemId: nextEpisode.Id,
+        serverUrl: session.serverUrl, userId: selectedUser.Id, token: session.token, itemId: nextEpisode.Id,
         audioStreamIndex: selectedAudioIndex, subtitleStreamIndex: selectedSubtitleIndex,
         maxBitrate, burnSubtitles: playbackPrefs.burnSubtitles, mediaSourceId: null,
         clientGraphicSubs: clientGraphicRender, serverVobSub,
@@ -831,7 +832,7 @@
 
   // Aktueller Kapitelname (für Anzeige beim Spulen). Nichtssagende Auto-Namen (Zeitstempel,
   // "Chapter N", reine Nummern) werden durch ein sauberes "Kapitel N" ersetzt.
-  $: currentChapterName = (() => {
+  let currentChapterName = $derived.by(() => {
     if (!chapters?.length) return null;
     let idx = -1;
     for (let i = 0; i < chapters.length; i++) {
@@ -844,36 +845,36 @@
       || /^(chapter|kapitel|chapitre|capitolo|cap[ií]tulo)\b/i.test(raw)
       || /^\d{1,3}$/.test(raw);
     return junk ? `${$t.chapter} ${idx + 1}` : raw;
-  })();
+  });
 
   // Auto-Skip (abhängig von Einstellung + installiertem Intro-Skipper-Plugin).
   // Flags verhindern wiederholtes Springen; werden beim Episodenwechsel via {#key}-Remount zurückgesetzt.
   let introAutoSkipped   = false;
   let creditsAutoSkipped = false;
-  $: if (playbackPrefs.autoSkipIntro && showSkipIntro && !introAutoSkipped && videoElement) {
+  $effect(() => { if (playbackPrefs.autoSkipIntro && showSkipIntro && !introAutoSkipped && videoElement) {
     introAutoSkipped = true;
     skipIntro();
-  }
-  $: if (playbackPrefs.autoSkipCredits && showSkipCredits && !creditsAutoSkipped && nextEpisode) {
+  } });
+  $effect(() => { if (playbackPrefs.autoSkipCredits && showSkipCredits && !creditsAutoSkipped && nextEpisode) {
     creditsAutoSkipped = true;
     goToNextEpisode();
-  }
+  } });
 
   // Serien-Episoden (alle Staffeln) für zuverlässige Vor/Zurück-Navigation über Staffelgrenzen hinweg
-  let seriesEpisodes = [];
-  let episodeIndex   = -1;
-  $: prevEpisode = episodeIndex > 0 ? seriesEpisodes[episodeIndex - 1] : null;
-  $: nextByIndex = episodeIndex >= 0 && episodeIndex < seriesEpisodes.length - 1
-                   ? seriesEpisodes[episodeIndex + 1] : null;
-  $: nextEpisode = nextByIndex;   // Auto-Play/Outro nutzen dieselbe sequentielle nächste Folge (auch zur nächsten Staffel)
+  let seriesEpisodes = $state([]);
+  let episodeIndex   = $state(-1);
+  let prevEpisode = $derived(episodeIndex > 0 ? seriesEpisodes[episodeIndex - 1] : null);
+  let nextByIndex = $derived(episodeIndex >= 0 && episodeIndex < seriesEpisodes.length - 1
+                   ? seriesEpisodes[episodeIndex + 1] : null);
+  let nextEpisode = $derived(nextByIndex);   // Auto-Play/Outro nutzen dieselbe sequentielle nächste Folge (auch zur nächsten Staffel)
   // Position in der Staffel für die Anzeige oben links: "Folge X von Y"
-  $: seasonTotal = (item?.Type === 'Episode' && item.ParentIndexNumber != null)
-                   ? seriesEpisodes.filter(e => e.ParentIndexNumber === item.ParentIndexNumber).length : 0;
-  $: episodePosition = (item?.Type === 'Episode' && item.IndexNumber != null && seasonTotal > 0)
-                   ? `${$t.episode} ${item.IndexNumber} ${$t.of} ${seasonTotal}` : '';
+  let seasonTotal = $derived((item?.Type === 'Episode' && item.ParentIndexNumber != null)
+                   ? seriesEpisodes.filter(e => e.ParentIndexNumber === item.ParentIndexNumber).length : 0);
+  let episodePosition = $derived((item?.Type === 'Episode' && item.IndexNumber != null && seasonTotal > 0)
+                   ? `${$t.episode} ${item.IndexNumber} ${$t.of} ${seasonTotal}` : '');
 
   // Infozeile zur nächsten Folge: "S2 · E1 · 52 Min · endet um 11:59"
-  $: nextEpisodeMeta = (() => {
+  let nextEpisodeMeta = $derived.by(() => {
     if (!nextEpisode) return '';
     const parts = [];
     if (nextEpisode.ParentIndexNumber != null && nextEpisode.IndexNumber != null)
@@ -885,7 +886,7 @@
       parts.push(`${$t.endsAt} ${end.toLocaleTimeString($currentLang === 'de' ? 'de-DE' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`);
     }
     return parts.join(' · ');
-  })();
+  });
 
   // ============================================================
   // LIFECYCLE
@@ -895,13 +896,13 @@
   // mehreren automatisch abgespielten Folgen in Folge ohne Interaktion. Greift damit nur bei
   // Serien-Auto-Play (Einschlaf-Schutz) und unterbricht nie einen Film oder eine aktiv geschaute Folge.
   // Der Zähler (autoPlayStreak) lebt in App.svelte, weil der Player pro Folge neu aufsetzt.
-  let showStillWatching = false;
+  let showStillWatching = $state(false);
   let interacted = false;   // hat der Nutzer in DIESER Folge etwas getan? (Tastendruck/Remote/Klick)
   function markInteraction() { interacted = true; }
   function resumeFromStillWatching() {
     showStillWatching = false;
     // Nutzer ist wach → weiter zur nächsten Folge; Zähler in App zurücksetzen.
-    if (nextEpisode) dispatch('next', { episode: nextEpisode, resetStreak: true });
+    if (nextEpisode) onNext?.({ episode: nextEpisode, resetStreak: true });
   }
 
   onMount(async () => {
@@ -948,12 +949,12 @@
   // API
   // ============================================================
 
-  const getAuthHeaders = () => authHeaders($activeToken);
+  const getAuthHeaders = () => authHeaders(session.token);
 
   async function fetchMediaSources() {
     try {
       const res = await fetch(
-        `${$serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaSources,Chapters,Trickplay`,
+        `${session.serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaSources,Chapters,Trickplay`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
@@ -972,7 +973,7 @@
     // 1) Moderne Media-Segments-API (Intro Skipper ab Jellyfin 10.9 liefert hierüber).
     //    Ohne Typ-Filter abfragen und selbst filtern — robuster gegen Server-/Versionsunterschiede.
     try {
-      const res = await fetch(`${$serverUrl}/MediaSegments/${item.Id}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/MediaSegments/${item.Id}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const segs = (await res.json()).Items || [];
         dlog('[OcenFin] media segments:', segs.map(s => s.Type));
@@ -988,7 +989,7 @@
     // 2) Ältere ConfusedPolarBear-Plugin-API. Manche Versionen liefern das Intro flach
     //    ({ Valid, IntroStart, … }), andere als { Introduction, Credits } → beide Formen abfangen.
     try {
-      const res = await fetch(`${$serverUrl}/Episode/${item.Id}/IntroTimestamps/v1`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/Episode/${item.Id}/IntroTimestamps/v1`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         dlog('[OcenFin] IntroTimestamps/v1:', JSON.stringify(data));
@@ -1041,7 +1042,7 @@
     if (item.Type !== 'Episode' || !item.SeriesId) return;
     try {
       const res = await fetch(
-        `${$serverUrl}/Shows/${item.SeriesId}/Episodes?UserId=${selectedUser.Id}`,
+        `${session.serverUrl}/Shows/${item.SeriesId}/Episodes?UserId=${selectedUser.Id}`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
@@ -1054,7 +1055,7 @@
 
   async function reportPlaybackStart() {
     try {
-      await fetch(`${$serverUrl}/Sessions/Playing`, {
+      await fetch(`${session.serverUrl}/Sessions/Playing`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -1069,7 +1070,7 @@
   async function reportPlaybackProgress() {
     if (!isPlaying || !videoElement) return;
     try {
-      await fetch(`${$serverUrl}/Sessions/Playing/Progress`, {
+      await fetch(`${session.serverUrl}/Sessions/Playing/Progress`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -1085,7 +1086,7 @@
   async function reportPlaybackStopped() {
     if (!videoElement) return;
     try {
-      await fetch(`${$serverUrl}/Sessions/Playing/Stopped`, {
+      await fetch(`${session.serverUrl}/Sessions/Playing/Stopped`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -1168,14 +1169,14 @@
       return;
     }
     // resetStreak: wach → Zähler in App auf 0; sonst hochzählen.
-    dispatch('next', { episode: nextEpisode, resetStreak: awake });
+    onNext?.({ episode: nextEpisode, resetStreak: awake });
   }
 
   async function toggleFavorite() {
     isFavorite = !isFavorite;
     resetControlsTimeout();
     try {
-      await fetch(`${$serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${item.Id}`, {
+      await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${item.Id}`, {
         method: isFavorite ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
@@ -1242,7 +1243,7 @@
   }
 
   // Kapitel-Sprünge — nur sinnvoll/sichtbar wenn das Video echte Kapitelmarken hat
-  $: hasChapterNav = showChapters && chapters.length > 1;
+  let hasChapterNav = $derived(showChapters && chapters.length > 1);
   function chapterStartsSorted() {
     return chapters.map(c => c.StartPositionTicks / 10000000).sort((a, b) => a - b);
   }
@@ -1318,7 +1319,7 @@
   function handleKeyDown(e) {
     // Fehler-Overlay offen: Pfeile/OK steuern nur die zwei Buttons (Spatial-Nav + Button-Klick), Zurück verlässt.
     if (playbackError) {
-      if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); dispatch('exit'); }
+      if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); onExit?.(); }
       return;
     }
     if (showSettings) {
@@ -1334,7 +1335,7 @@
     if (isBackKey(e)) {
       e.preventDefault();
       e.stopPropagation();
-      dispatch('exit');
+      onExit?.();
       return;
     }
     // HUD verborgen (man schaut gerade) → OK pausiert/spielt direkt und fokussiert Play/Pause,
@@ -1376,33 +1377,33 @@
   data-focus-trap
   tabindex="0"
   class="w-full h-screen bg-black relative overflow-hidden flex items-center justify-center cursor-none focus:outline-none subs-{playbackPrefs.subtitleSize || 'normal'}"
-  on:mousemove={resetControlsTimeout}
-  on:pointermove={resetControlsTimeout}
-  on:keydown={handleKeyDown}
+  onmousemove={resetControlsTimeout}
+  onpointermove={resetControlsTimeout}
+  onkeydown={handleKeyDown}
 >
 
   <video
     bind:this={videoElement}
     preload="auto"
     class="w-full h-full object-contain"
-    on:play={() => { vlog('play'); isPlaying = true; onPlayable(); onLocalPlay(); }}
-    on:playing={() => { vlog('playing'); onPlayable(); syncReportReady(); }}
-    on:pause={() => { isPlaying = false; clearSpinner(); isBuffering = false; clearBufferWatchdog(); onLocalPause(); }}
-    on:seeked={onLocalSeeked}
-    on:seeking={syncReportBuffering}
-    on:waiting={() => { vlog('waiting'); onWaiting(); syncReportBuffering(); }}
-    on:stalled={() => { vlog('stalled'); onWaiting(); syncReportBuffering(); }}
-    on:canplay={onPlayable}
-    on:loadstart={() => vlog('loadstart')}
-    on:suspend={() => vlog('suspend')}
-    on:error={onVideoError}
-    on:timeupdate={() => { if (!isSeeking) currentTime = videoElement?.currentTime ?? 0; onProgressTick(); }}
-    on:loadedmetadata={() => {
+    onplay={() => { vlog('play'); isPlaying = true; onPlayable(); onLocalPlay(); }}
+    onplaying={() => { vlog('playing'); onPlayable(); syncReportReady(); }}
+    onpause={() => { isPlaying = false; clearSpinner(); isBuffering = false; clearBufferWatchdog(); onLocalPause(); }}
+    onseeked={onLocalSeeked}
+    onseeking={syncReportBuffering}
+    onwaiting={() => { vlog('waiting'); onWaiting(); syncReportBuffering(); }}
+    onstalled={() => { vlog('stalled'); onWaiting(); syncReportBuffering(); }}
+    oncanplay={onPlayable}
+    onloadstart={() => vlog('loadstart')}
+    onsuspend={() => vlog('suspend')}
+    onerror={onVideoError}
+    ontimeupdate={() => { if (!isSeeking) currentTime = videoElement?.currentTime ?? 0; onProgressTick(); }}
+    onloadedmetadata={() => {
       vlog('loadedmetadata', { dur: Math.round(videoElement?.duration || 0), w: videoElement?.videoWidth, h: videoElement?.videoHeight });
       seekToResume();
     }}
-    on:ended={onVideoEnded}
-    on:click={togglePlay}
+    onended={onVideoEnded}
+    onclick={togglePlay}
   />
 
   <!-- LADEANIMATION — sichtbar solange Video puffert oder NAS aufwacht -->
@@ -1425,11 +1426,11 @@
         <p class="text-white text-2xl font-bold">{$t.playbackError}</p>
         <p class="text-gray-400">{$t.playbackErrorHint}</p>
         <div class="flex gap-4 mt-2">
-          <button on:click={retryPlayback} use:focusOnMount
+          <button onclick={retryPlayback} use:focusOnMount
             class="bg-white text-black font-bold px-6 py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
             {$t.retry}
           </button>
-          <button on:click={() => dispatch('exit')}
+          <button onclick={() => onExit?.()}
             class="bg-gray-700 text-white font-bold px-6 py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-600 transition-colors">
             {$t.back}
           </button>
@@ -1485,7 +1486,7 @@
   <!-- HAUPT-OVERLAY — Klick auf die leere Bildfläche (|self, nicht auf Buttons) pausiert/spielt -->
   <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/50 flex flex-col justify-between p-10 transition-opacity duration-500 z-50
               {showControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}"
-       on:click|self={togglePlay}>
+       onclick={(e) => { if (e.target === e.currentTarget) togglePlay(); }}>
 
     <!-- OBEN: Titel + Uhrzeit -->
     <div class="flex items-start justify-between gap-6">
@@ -1499,7 +1500,7 @@
         {/if}
       </div>
       <div class="flex items-center gap-4 shrink-0">
-        <button on:click|stopPropagation={() => dispatch('syncplay')}
+        <button onclick={(e) => { e.stopPropagation(); onSyncplay?.(); }}
           aria-label={$t.syncPlay} title={$t.syncPlay}
           class="text-white/90 hover:text-blue-300 focus:text-white focus:bg-blue-600 rounded-lg p-2
                  focus:outline-none focus:ring-2 focus:ring-white transition-colors">
@@ -1526,10 +1527,10 @@
             max={duration || 0}
             value={isSeeking ? seekTime : currentTime}
             bind:this={seekBarEl}
-            on:pointerdown={onSeekStart}
-            on:input={onSeekInput}
-            on:pointerup={onSeekEnd}
-            on:keydown={onSeekKey}
+            onpointerdown={onSeekStart}
+            oninput={onSeekInput}
+            onpointerup={onSeekEnd}
+            onkeydown={onSeekKey}
             style="background: linear-gradient(to right, var(--color-blue-500, #3b82f6) {seekPct}%, rgba(255,255,255,0.22) {seekPct}%);"
             class="seekbar w-full h-1.5 rounded-full appearance-none cursor-pointer focus:outline-none"
           />
@@ -1562,7 +1563,7 @@
           {#if timeMode === 'end'}
             <span class="absolute bottom-full right-2 mb-1 text-sm font-medium text-gray-400 whitespace-nowrap pointer-events-none">{$t.endsAt}</span>
           {/if}
-          <button on:click|stopPropagation={cycleTimeMode}
+          <button onclick={(e) => { e.stopPropagation(); cycleTimeMode(); }}
             class="text-xl font-mono text-right tabular-nums cursor-pointer rounded-md px-2 py-1
                    transition-colors hover:text-blue-300
                    focus:text-white focus:bg-blue-600 focus:ring-2 focus:ring-white focus:outline-none">
@@ -1576,7 +1577,7 @@
         <div class="flex items-center gap-6">
 
           <!-- Vorige Folge: |◄ — Transport-Navigation (sequentiell) -->
-          <button on:click={() => prevEpisode && dispatch('prev', prevEpisode)}
+          <button onclick={() => prevEpisode && onPrev?.(prevEpisode)}
             disabled={!prevEpisode}
             class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none disabled:opacity-30"
             title={$t.prevEpisode}>
@@ -1589,7 +1590,7 @@
           <!-- Kapitel zurück — nur wenn aktiviert UND Kapitelmarken vorhanden.
                Icon bewusst ANDERS als Folgen-Skip: Chevron auf einen Punkt (= Kapitelmarke). -->
           {#if hasChapterNav}
-            <button on:click={chapterPrev} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={$t.chapterPrev}>
+            <button onclick={chapterPrev} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={$t.chapterPrev}>
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 7l-5 5 5 5"/>
                 <circle cx="8" cy="12" r="1.6" fill="currentColor" stroke="none"/>
@@ -1597,13 +1598,13 @@
             </button>
           {/if}
 
-          <button on:click={() => skip(-seekStep)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none" title="-{seekStep}s">
+          <button onclick={() => skip(-seekStep)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none" title="-{seekStep}s">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.334 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z"/>
             </svg>
           </button>
 
-          <button on:click={togglePlay} use:focusOnMount bind:this={playPauseBtn}
+          <button onclick={togglePlay} use:focusOnMount bind:this={playPauseBtn}
             class="p-4 bg-white text-black rounded-full hover:scale-110 focus:scale-110 transition-transform focus:outline-none shadow-xl">
             {#if isPlaying}
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
@@ -1612,7 +1613,7 @@
             {/if}
           </button>
 
-          <button on:click={() => skip(seekStep)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none" title="+{seekStep}s">
+          <button onclick={() => skip(seekStep)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none" title="+{seekStep}s">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M11.934 12.8a1 1 0 000-1.6l-5.334-4A1 1 0 005 8v8a1 1 0 001.6.8l5.334-4zM19.934 12.8a1 1 0 000-1.6l-5.334-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.334-4z"/>
             </svg>
@@ -1621,7 +1622,7 @@
           <!-- Kapitel vor — nur wenn aktiviert UND Kapitelmarken vorhanden.
                Icon bewusst ANDERS als Folgen-Skip: Chevron auf einen Punkt (= Kapitelmarke). -->
           {#if hasChapterNav}
-            <button on:click={chapterNext} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={$t.chapterNext}>
+            <button onclick={chapterNext} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={$t.chapterNext}>
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 7l5 5-5 5"/>
                 <circle cx="16" cy="12" r="1.6" fill="currentColor" stroke="none"/>
@@ -1630,7 +1631,7 @@
           {/if}
 
           <!-- Nächste Folge: ►| — Transport-Navigation (sequentiell), zählt als bewusste Aktion -->
-          <button on:click={() => goToNextEpisode(true)}
+          <button onclick={() => goToNextEpisode(true)}
             disabled={!nextByIndex}
             class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none disabled:opacity-30"
             title={$t.nextEpisode}>
@@ -1644,7 +1645,7 @@
         <div class="flex items-center gap-4">
 
           <!-- Favorit -->
-          <button on:click={toggleFavorite}
+          <button onclick={toggleFavorite}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors {isFavorite ? 'text-red-500' : 'text-gray-400 hover:text-white focus:text-white'}">
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
@@ -1652,19 +1653,19 @@
           </button>
 
           <!-- Zur Wiedergabeliste hinzufügen -->
-          <button on:click|stopPropagation={() => openPicker('playlist')} title={$t.addToPlaylist} aria-label={$t.addToPlaylist}
+          <button onclick={(e) => { e.stopPropagation(); openPicker('playlist'); }} title={$t.addToPlaylist} aria-label={$t.addToPlaylist}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors text-gray-400 hover:text-white focus:text-white">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h13M3 12h9m-9 6h9m4-3v6m3-3h-6"/></svg>
           </button>
 
           <!-- Zur Sammlung hinzufügen -->
-          <button on:click|stopPropagation={() => openPicker('collection')} title={$t.addToCollection} aria-label={$t.addToCollection}
+          <button onclick={(e) => { e.stopPropagation(); openPicker('collection'); }} title={$t.addToCollection} aria-label={$t.addToCollection}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors text-gray-400 hover:text-white focus:text-white">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
           </button>
 
           <!-- AUDIO — nur Icon (ersetzt das Zahnrad) -->
-          <button on:click|stopPropagation={() => openSettings('audio')} title={$t.audio} aria-label={$t.audio}
+          <button onclick={(e) => { e.stopPropagation(); openSettings('audio'); }} title={$t.audio} aria-label={$t.audio}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                    {showSettings && settingsTab === 'audio' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1673,7 +1674,7 @@
           </button>
 
           <!-- UNTERTITEL — nur Icon -->
-          <button on:click|stopPropagation={() => openSettings('subtitle')} title={$t.subtitles} aria-label={$t.subtitles}
+          <button onclick={(e) => { e.stopPropagation(); openSettings('subtitle'); }} title={$t.subtitles} aria-label={$t.subtitles}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                    {showSettings && settingsTab === 'subtitle' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1684,7 +1685,7 @@
 
           <!-- WIEDERGABEINFOS — nur wenn in den Einstellungen freigeschaltet -->
           {#if playbackPrefs.showPlaybackInfo}
-            <button on:click|stopPropagation={toggleInfoOverlay} title={$t.playbackInfo} aria-label={$t.playbackInfo}
+            <button onclick={(e) => { e.stopPropagation(); toggleInfoOverlay(); }} title={$t.playbackInfo} aria-label={$t.playbackInfo}
               class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                      {showInfoOverlay ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1700,12 +1701,12 @@
 
     <!-- EINSTELLUNGS-PANEL — bind:this für WebOS D-Pad Fokus -->
     {#if showSettings}
-      <div bind:this={settingsPanel} data-focus-trap transition:uiFade on:outrostart={dropTrapOnOutro}
+      <div bind:this={settingsPanel} data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro}
         class="absolute bottom-32 right-12 bg-gray-900/95 backdrop-blur-md border border-gray-700 rounded-2xl shadow-2xl z-[60] p-6 flex flex-col gap-6 w-96 max-h-[60vh]">
 
         <div class="flex justify-between items-center">
           <h2 class="text-2xl font-bold text-white">{settingsTab === 'audio' ? $t.audio : $t.subtitles}</h2>
-          <button on:click={toggleSettings} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
+          <button onclick={toggleSettings} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
             </svg>
@@ -1716,7 +1717,7 @@
 
           {#if settingsTab === 'audio'}
             {#each audioStreams as stream}
-              <button on:click={() => changeTrack('audio', stream.Index)}
+              <button onclick={() => changeTrack('audio', stream.Index)}
                 class="text-left p-3 rounded-lg font-medium text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors
                        {selectedAudioIndex === stream.Index ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                 {stream.DisplayTitle || `${stream.Language || 'Unbekannt'} – ${stream.Codec}`}
@@ -1725,13 +1726,13 @@
               <p class="text-gray-500 text-sm p-3">—</p>
             {/each}
           {:else}
-            <button on:click={() => changeTrack('subtitle', -1)}
+            <button onclick={() => changeTrack('subtitle', -1)}
               class="text-left p-3 rounded-lg font-medium text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors
                      {selectedSubtitleIndex === -1 ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
               {$t.subtitleOff}
             </button>
             {#each subtitleStreams as stream}
-              <button on:click={() => changeTrack('subtitle', stream.Index)}
+              <button onclick={() => changeTrack('subtitle', stream.Index)}
                 class="text-left p-3 rounded-lg font-medium text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors
                        {selectedSubtitleIndex === stream.Index ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                 {stream.DisplayTitle || stream.Language || 'Unbekannt'}
@@ -1743,10 +1744,10 @@
             <div class="mt-3 pt-3 border-t border-gray-700/60 flex items-center justify-between gap-3 px-1">
               <span class="text-sm text-gray-300 font-medium">{$t.subtitleOffset}</span>
               <div class="flex items-center gap-2">
-                <button on:click={() => adjustSubtitleOffset(-0.5)} aria-label="-0,5 s"
+                <button onclick={() => adjustSubtitleOffset(-0.5)} aria-label="-0,5 s"
                   class="w-9 h-9 rounded-lg bg-gray-800 text-white text-xl font-bold leading-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white hover:bg-gray-700 focus:bg-gray-700 transition-colors">−</button>
                 <span class="text-sm font-mono text-white w-16 text-center tabular-nums">{formatOffset(subtitleOffset)}</span>
-                <button on:click={() => adjustSubtitleOffset(0.5)} aria-label="+0,5 s"
+                <button onclick={() => adjustSubtitleOffset(0.5)} aria-label="+0,5 s"
                   class="w-9 h-9 rounded-lg bg-gray-800 text-white text-xl font-bold leading-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white hover:bg-gray-700 focus:bg-gray-700 transition-colors">+</button>
               </div>
             </div>
@@ -1773,7 +1774,7 @@
   <!-- INTRO ÜBERSPRINGEN — unten links -->
   {#if showSkipIntro}
     <div transition:uiFade class="absolute bottom-36 left-12 z-[70]">
-      <button on:click={skipIntro} use:focusOnMount
+      <button onclick={skipIntro} use:focusOnMount
         class="bg-white/10 backdrop-blur-md border-2 border-white text-white font-bold text-xl
                px-8 py-4 rounded-xl flex items-center gap-3 shadow-2xl
                hover:bg-white hover:text-black focus:bg-white focus:text-black
@@ -1800,13 +1801,13 @@
           <div class="h-full bg-blue-500" style="width: {countdownProgress * 100}%; transition: width 0.12s linear;"></div>
         </div>
         <div class="flex gap-3">
-          <button on:click={() => goToNextEpisode(true)} use:focusOnMount
+          <button onclick={() => goToNextEpisode(true)} use:focusOnMount
             class="flex-1 bg-white text-black font-bold py-2.5 rounded-lg flex items-center justify-center gap-2
                    focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
             {$t.playNow}
           </button>
-          <button on:click={cancelCountdown}
+          <button onclick={cancelCountdown}
             class="px-4 bg-gray-700 text-white font-bold py-2.5 rounded-lg
                    focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-600 transition-colors">
             {$t.cancel}
@@ -1823,7 +1824,7 @@
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{$t.nextEpisode}</span>
         <span class="text-lg font-bold text-white truncate">{nextEpisode.Name}</span>
         {#if nextEpisodeMeta}<span class="text-sm text-gray-400 truncate">{nextEpisodeMeta}</span>{/if}
-        <button on:click={() => goToNextEpisode(true)} use:focusOnMount
+        <button onclick={() => goToNextEpisode(true)} use:focusOnMount
           class="bg-white text-black font-bold py-2.5 rounded-lg flex items-center justify-center gap-2
                  focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
           <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -1835,14 +1836,14 @@
 
   <!-- "Schaust du noch?" – nach Inaktivität pausiert -->
   {#if showStillWatching}
-    <div transition:uiFade on:outrostart={dropTrapOnOutro} class="absolute inset-0 z-[120] bg-black/85 flex items-center justify-center">
+    <div transition:uiFade onoutrostart={dropTrapOnOutro} class="absolute inset-0 z-[120] bg-black/85 flex items-center justify-center">
       <div class="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl p-12 flex flex-col items-center gap-7 max-w-md text-center">
         <svg class="w-16 h-16 text-gray-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1 1 0 010-.644C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178a1 1 0 010 .644C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178z"/>
           <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
         </svg>
         <h2 class="text-3xl font-bold text-white">{$t.stillWatching}</h2>
-        <button on:click={resumeFromStillWatching} use:focusOnMount
+        <button onclick={resumeFromStillWatching} use:focusOnMount
           class="bg-white text-black font-bold text-xl px-10 py-4 rounded-xl flex items-center gap-3
                  focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
           <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -1856,8 +1857,8 @@
 
 <!-- Zur Sammlung / Wiedergabeliste hinzufügen (gemeinsame Komponente) -->
 <AddToPicker mode={pickerMode} {item} {selectedUser} {getAuthHeaders}
-  on:created={() => dispatch('libchanged')}
-  on:close={async () => { pickerMode = null; if (wasPlayingBeforePicker) videoElement?.play().catch(() => {}); wasPlayingBeforePicker = false; await tick(); if (controlOpener && document.contains(controlOpener)) controlOpener.focus(); else playerContainer?.focus(); controlOpener = null; }} />
+  onCreated={() => onLibChanged?.()}
+  onClose={async () => { pickerMode = null; if (wasPlayingBeforePicker) videoElement?.play().catch(() => {}); wasPlayingBeforePicker = false; await tick(); if (controlOpener && document.contains(controlOpener)) controlOpener.focus(); else playerContainer?.focus(); controlOpener = null; }} />
 
 <style>
   .hide-scrollbar::-webkit-scrollbar { display: none; }
