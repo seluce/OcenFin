@@ -217,9 +217,14 @@
   let logText = $state('');
   let qrDataUrl = $state(null);
   let qrBtnEl;   // für Fokus-Rückgabe beim Verlassen der QR-Ansicht
-  function openLog()  { modalFocus.capture(); logText = formatLog(); qrDataUrl = null; showLog = true; }
+  let logEl = $state(null);   // <pre> mit den Log-Zeilen (für Auto-Scroll + Blättern)
+  // Neueste Einträge stehen unten → beim Öffnen ans Ende springen.
+  function scrollLogToBottom() { if (logEl) logEl.scrollTop = logEl.scrollHeight; }
+  // D-Pad-Blättern: ~85 % der sichtbaren Höhe pro Druck, Fokus bleibt auf dem Button.
+  function scrollLog(dir) { logEl?.scrollBy({ top: dir * logEl.clientHeight * 0.85, behavior: 'smooth' }); }
+  async function openLog()  { modalFocus.capture(); logText = formatLog(); qrDataUrl = null; showLog = true; await tick(); scrollLogToBottom(); }
   function clearLog() { clearLogBuffer(); logText = formatLog(); qrDataUrl = null; }
-  function hideQr()   { qrDataUrl = null; tick().then(() => qrBtnEl?.focus()); }
+  function hideQr()   { qrDataUrl = null; tick().then(() => { qrBtnEl?.focus(); scrollLogToBottom(); }); }
   async function showLogQr() {
     try {
       const mod = await import('qrcode');   // dynamisch → nicht im Start-Bundle
@@ -1609,9 +1614,19 @@
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.logBackToText}</button>
         </div>
       {:else}
-        <pre class="flex-1 min-h-0 overflow-auto hide-scrollbar bg-black/50 rounded-xl p-5 text-sm text-gray-300
+        <pre bind:this={logEl} class="flex-1 min-h-0 overflow-auto hide-scrollbar bg-black/50 rounded-xl p-5 text-sm text-gray-300
                     font-mono whitespace-pre-wrap break-words leading-relaxed">{logText || $t.logEmpty}</pre>
-        <div class="flex justify-end shrink-0">
+        <div class="flex items-center justify-between gap-3 shrink-0">
+          <div class="flex gap-3">
+            <button onclick={() => scrollLog(-1)} aria-label="↑"
+              class="px-5 py-3 rounded-xl bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
+            </button>
+            <button onclick={() => scrollLog(1)} aria-label="↓"
+              class="px-5 py-3 rounded-xl bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+          </div>
           <button onclick={clearLog}
             class="px-6 py-3 rounded-xl font-bold bg-gray-700 hover:bg-red-600 focus:bg-red-600 text-white
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.clear}</button>
