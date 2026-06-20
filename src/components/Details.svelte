@@ -118,12 +118,16 @@
   // Nach dem Schließen des Teilen-Modals den Fokus zurück auf die drei Punkte legen.
   $effect(() => { if (!showShare && shareFocus.pending) shareFocus.restore(); });
   let shareQrUrl = $state(null);
-  function buildShareTarget(item) {
+  // Öffentlicher Link (IMDb/TMDb) eines Items — oder null, wenn keine eigene ID vorhanden.
+  function buildShareUrl(item) {
     const p = item?.ProviderIds || {};
     if (p.Imdb) return `https://www.imdb.com/title/${p.Imdb}/`;
     if (p.Tmdb && (item.Type === 'Movie' || item.Type === 'Series'))
       return `https://www.themoviedb.org/${item.Type === 'Series' ? 'tv' : 'movie'}/${p.Tmdb}`;
-    // Kein öffentlicher Link → Titel als Text (Scan zeigt den Titel zum Nachschlagen, nie ein toter Link).
+    return null;
+  }
+  // Titel als lesbarer Fallback (Scan zeigt den Namen zum Nachschlagen, nie ein toter Link).
+  function shareTitleText(item) {
     return item?.ProductionYear ? `${item.Name} (${item.ProductionYear})` : (item?.Name || '');
   }
   async function openShare() {
@@ -131,9 +135,18 @@
     showShare = true;
     shareQrUrl = null;
     try {
+      let target = buildShareUrl(fullItem);
+      // Kein eigener öffentlicher Link (z.B. Staffel/Episode ohne ID) → auf den Serien-Link ausweichen.
+      if (!target && fullItem.SeriesId) {
+        try {
+          const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${fullItem.SeriesId}?Fields=ProviderIds`, { headers: getAuthHeaders() });
+          if (res.ok) target = buildShareUrl(await res.json());
+        } catch { /* Serie nicht erreichbar → Titel-Fallback unten */ }
+      }
+      target = target || shareTitleText(fullItem);
       const mod = await import('qrcode');   // bereits vorhandene Abhängigkeit, dynamisch geladen
       const toDataURL = (mod.default && mod.default.toDataURL) ? mod.default.toDataURL : mod.toDataURL;
-      shareQrUrl = await toDataURL(buildShareTarget(fullItem) || ' ', { margin: 1, width: 360, errorCorrectionLevel: 'M' });
+      shareQrUrl = await toDataURL(target || ' ', { margin: 1, width: 360, errorCorrectionLevel: 'M' });
     } catch (e) { console.warn('[OcenFin] share QR failed', e); }
   }
 
@@ -537,7 +550,7 @@
               </svg>
             </button>
 
-            {#if fullItem.MediaSources?.length > 0}
+            {#if fullItem.MediaSources?.length > 0 || fullItem.Type === 'Series' || fullItem.Type === 'Season'}
               <div class="relative" data-dropdown data-focus-trap={openDropdown === 'kebab' || undefined}>
                 <button bind:this={kebabBtnEl} onclick={(e) => toggleDropdown('kebab', e)} aria-label={$t.more} title={$t.more}
                   class="p-4 rounded-xl bg-gray-800 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg">
@@ -545,11 +558,13 @@
                 </button>
                 {#if openDropdown === 'kebab'}
                   <div class="absolute right-0 mt-2 z-50 w-80 flex flex-col gap-1 bg-gray-900 rounded-xl border border-gray-700 p-2 shadow-2xl">
-                    <button onclick={() => { closeDropdown(false); showMediaInfo = true; }}
-                      class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
-                      <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                      {$t.mediaInfo}
-                    </button>
+                    {#if fullItem.MediaSources?.length > 0}
+                      <button onclick={() => { closeDropdown(false); showMediaInfo = true; }}
+                        class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
+                        <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        {$t.mediaInfo}
+                      </button>
+                    {/if}
                     <button onclick={() => { closeDropdown(false); pickerMode = 'playlist'; }}
                       class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h13M3 12h9m-9 6h9m4-3v6m3-3h-6"/></svg>
