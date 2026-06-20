@@ -178,6 +178,26 @@ export function itemProgress(item) {
   return 0;
 }
 
+// Karten-/Grid-Untertitel: Folge → "S1:E2 – Titel"; Serie → Jahresbereich
+// ("2016 – 2019" / "2024 – heute"); sonst das Produktionsjahr.
+// `todayLabel` = lokalisiertes "heute" ($t.today), da $t hier nicht verfügbar ist.
+export function getItemSubtitle(item, todayLabel = '') {
+  if (item.Type === 'Episode') {
+    const s = item.ParentIndexNumber ?? '?';
+    const e = item.IndexNumber ?? '?';
+    return `S${s}:E${e} – ${item.Name}`;
+  }
+  if (item.Type === 'Series') {
+    const start = item.ProductionYear || '';
+    const end   = item.Status === 'Continuing'
+      ? todayLabel
+      : (item.EndDate ? new Date(item.EndDate).getFullYear() : '');
+    if (start && end && start != end) return `${start} – ${end}`;
+    return start.toString();
+  }
+  return item.ProductionYear?.toString() ?? '';
+}
+
 // ============================================================
 // SEITENLEISTEN-NAVIGATION (dynamisch + pro Profil anpassbar)
 // ============================================================

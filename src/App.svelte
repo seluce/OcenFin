@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, itemProgress, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro } from './utils.js';
+  import { isBackKey, focusOnMount, itemProgress, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, getItemSubtitle } from './utils.js';
   import { session } from './session.svelte.js';
   import { createFocusManager } from './spatialnav.js';
   import { currentLang, t, detectUiLang } from './i18n.js';
@@ -1919,19 +1919,6 @@
     return null;
   }
 
-  function getGridItemSubtitle(item) {
-    if (item.Type === 'Series') {
-      const start = item.ProductionYear || '';
-      const end   = item.Status === 'Continuing'
-        ? $t.today
-        : (item.EndDate ? new Date(item.EndDate).getFullYear() : '');
-      if (start && end && start != end) return `${start} – ${end}`;
-      if (start && item.Status === 'Continuing') return `${start} – ${$t.today}`;
-      return start.toString();
-    }
-    return item.ProductionYear?.toString() || '';
-  }
-
   function infiniteScroll(node) {
     const obs = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) loadMoreLibraryItems(); },
@@ -2641,7 +2628,7 @@
                       </div>
                       <div class="mt-3 flex flex-col items-start w-full overflow-hidden">
                         <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate block w-full">{item.Name}</span>
-                        <span class="text-xs text-gray-500 group-focus:text-gray-400 block truncate w-full mt-0.5">{getGridItemSubtitle(item)}</span>
+                        <span class="text-xs text-gray-500 group-focus:text-gray-400 block truncate w-full mt-0.5">{getItemSubtitle(item, $t.today)}</span>
                       </div>
                     </button>
                   {/each}

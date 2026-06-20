@@ -1,6 +1,6 @@
 <script>
   import { t } from '../i18n.js';
-  import { itemProgress, longPress, authHeaders, blurUp, itemBlurHash, uiFade } from '../utils.js';
+  import { itemProgress, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy } from 'svelte';
 
@@ -167,8 +167,22 @@
       loadRecommendations(uId, opts, fields);
 
       // Verlauf laden + nach Serie zusammenfassen
-      pHistory.then(r => r.json()).then(d => {
-        recentlyWatched = dedupeHistory(d.Items || []);
+      pHistory.then(r => r.json()).then(async d => {
+        let items = dedupeHistory(d.Items || []);
+        // Serien wie in der Mediathek mit echtem Jahresbereich zeigen ("2016 – 2019" / "2024 – heute"):
+        // einmalig die echten Serien-Infos (Jahr/Status/EndDate) für alle Serien-Einträge nachladen.
+        const seriesIds = items.filter(i => i.Type === 'Series').map(i => i.Id);
+        if (seriesIds.length) {
+          try {
+            const r2 = await fetch(`${session.serverUrl}/Users/${uId}/Items?Ids=${seriesIds.join(',')}&Fields=ProductionYear,Status,EndDate`, opts);
+            const info = new Map(((await r2.json()).Items || []).map(s => [s.Id, s]));
+            items = items.map(i => {
+              const s = i.Type === 'Series' ? info.get(i.Id) : null;
+              return s ? { ...i, ProductionYear: s.ProductionYear, Status: s.Status, EndDate: s.EndDate } : i;
+            });
+          } catch { /* Anreicherung optional — schlägt sie fehl, bleibt nur der Titel */ }
+        }
+        recentlyWatched = items;
         apiCache.dashboard.recentlyWatched = recentlyWatched;
       }).catch(() => {});
 
@@ -270,15 +284,6 @@
     return (item.Type === 'Episode' && item.SeriesName) ? item.SeriesName : item.Name;
   }
 
-  function getItemSubtitle(item) {
-    if (item.Type === 'Episode') {
-      const s = item.ParentIndexNumber ?? '?';
-      const e = item.IndexNumber ?? '?';
-      return `S${s}:E${e} – ${item.Name}`;
-    }
-    return item.ProductionYear?.toString() ?? '';
-  }
-
   // Restzeit in Minuten für "Weiterschauen"
   function getRemainingMinutes(item) {
     if (!item.RunTimeTicks || !item.UserData?.PlaybackPositionTicks) return null;
@@ -309,7 +314,7 @@
     {@const img = getItemImageUrl(item, 'landscape')}
     {@const prog = itemProgress(item)}
     {@const rem = getRemainingMinutes(item)}
-    {@const sub = getItemSubtitle(item)}
+    {@const sub = getItemSubtitle(item, $t.today)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
       class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
       <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
@@ -341,7 +346,7 @@
 
   {#snippet portraitCard(item, img, blur)}
     {@const prog = itemProgress(item)}
-    {@const sub = getItemSubtitle(item)}
+    {@const sub = getItemSubtitle(item, $t.today)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
       class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
