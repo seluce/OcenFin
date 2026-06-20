@@ -1158,7 +1158,7 @@
               class="px-5 py-3 rounded-xl font-bold text-base bg-gray-700 text-white hover:bg-gray-600 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               {$t.customize}
             </button>
-            <button onclick={saveProfileImage} disabled={avatarSaving || !hasEditedAvatar}
+            <button onclick={saveProfileImage} disabled={!hasEditedAvatar}
               class="px-6 py-3 rounded-xl font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-colors
                      {avatarSaved ? 'bg-green-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50'}">
               {avatarSaved ? $t.saved : avatarSaving ? $t.saving : $t.save}
