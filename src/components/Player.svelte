@@ -150,6 +150,7 @@
     clearBufferWatchdog();
     isBuffering = false;
     playbackError = true;
+    flushProgress();          // Position auch bei Wiedergabefehler sichern
   }
   function retryPlayback() {
     playbackError = false;
@@ -917,6 +918,9 @@
     window.addEventListener('keydown', markInteraction);
     window.addEventListener('pointermove', markInteraction);
     window.addEventListener('click', markInteraction);
+    // Position auch bei App-Suspend (webOS Home) / Schließen / Neuladen sichern.
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', onPageHide);
 
     // PlaybackInfo entscheidet Direct Play vs. Transcode; setzt Quelle + ggf. HLS.
     // Resume (startTicks) passiert client-seitig nach 'loadedmetadata' (seekToResume).
@@ -932,6 +936,8 @@
     window.removeEventListener('keydown', markInteraction);
     window.removeEventListener('pointermove', markInteraction);
     window.removeEventListener('click', markInteraction);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener('pagehide', onPageHide);
     if (controlsTimeout) clearTimeout(controlsTimeout);
     if (progressTimer)   clearInterval(progressTimer);
     if (countdownTimer)  clearInterval(countdownTimer);
@@ -942,7 +948,7 @@
     if (hls) { try { hls.destroy(); } catch {} hls = null; }
     disposeGraphic();
     disposeAss();
-    reportPlaybackStopped();
+    reportPlaybackStopped(true);
   });
 
   // ============================================================
@@ -1083,12 +1089,13 @@
     } catch { }
   }
 
-  async function reportPlaybackStopped() {
+  async function reportPlaybackStopped(keepalive = false) {
     if (!videoElement) return;
     try {
       await fetch(`${session.serverUrl}/Sessions/Playing/Stopped`, {
         method: "POST",
         headers: getAuthHeaders(),
+        keepalive,
         body: JSON.stringify({
           ItemId: item.Id,
           PositionTicks: Math.round(videoElement.currentTime * 10000000),
@@ -1097,6 +1104,31 @@
       });
     } catch { }
   }
+
+  // Aktuelle Position sofort sichern (auch pausiert) — `keepalive` lässt den Request den App-Suspend/
+  // Teardown überleben und behält den Auth-Header. Für visibilitychange→hidden und Wiedergabefehler,
+  // damit die Position nie verloren geht (ohne die Session zu beenden — daher Progress, nicht Stopped).
+  function flushProgress() {
+    if (!videoElement || !playSessionId) return;
+    try {
+      fetch(`${session.serverUrl}/Sessions/Playing/Progress`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        keepalive: true,
+        body: JSON.stringify({
+          ItemId: item.Id,
+          PositionTicks: Math.round(videoElement.currentTime * 10000000),
+          IsPaused: !isPlaying, PlayMethod: playMethod,
+          PlaySessionId: playSessionId
+        })
+      }).catch(() => {});
+    } catch { }
+  }
+
+  // App wird in den Hintergrund geschickt/suspendiert (webOS Home, Tab-Wechsel): Position flushen.
+  // pagehide = endgültiges Schließen/Neuladen → sauberes Stopped (keepalive überlebt den Teardown).
+  function onVisibilityChange() { if (document.hidden) flushProgress(); }
+  function onPageHide() { reportPlaybackStopped(true); }
 
   // ============================================================
   // TRACK WECHSEL
