@@ -1681,14 +1681,26 @@
   let isLoadingFavorites = $state(false);
   let favoritesGrid;
 
-  // Gruppierung wie in der Suche: Filme / Serien / Sammlungen (leere Gruppen entfallen im Template)
+  // Gruppierung wie in der Suche: Filme / Serien / Staffeln / Sammlungen (leere Gruppen entfallen im Template)
   let favGroups = $derived([
     { key: 'movies',      label: $t.movies,      items: favoriteItems.filter(i => i.Type === 'Movie'  && i.UserData?.IsFavorite) },
     { key: 'series',      label: $t.series,      items: favoriteItems.filter(i => i.Type === 'Series' && i.UserData?.IsFavorite) },
+    { key: 'seasons',     label: $t.seasons,     items: favoriteItems.filter(i => i.Type === 'Season' && i.UserData?.IsFavorite) },
     { key: 'collections', label: $t.collections, items: favoriteItems.filter(i => i.Type === 'BoxSet' && i.UserData?.IsFavorite) },
   ]);
   // Personen separat (runde Karten, eigene Sektion)
   let favPersons = $derived(favoriteItems.filter(i => i.Type === 'Person'));
+  // Episoden separat (Landscape-Karten, eigene Sektion) — nach Serie → Staffel → Folge sortiert,
+  // damit Folgen derselben Serie beieinanderstehen.
+  let favEpisodes = $derived(
+    favoriteItems
+      .filter(i => i.Type === 'Episode' && i.UserData?.IsFavorite)
+      .sort((a, b) =>
+        (a.SeriesName || '').localeCompare(b.SeriesName || '') ||
+        ((a.ParentIndexNumber ?? 0) - (b.ParentIndexNumber ?? 0)) ||
+        ((a.IndexNumber ?? 0) - (b.IndexNumber ?? 0))
+      )
+  );
 
   async function loadFavorites() {
     isLoadingFavorites = true;
@@ -1699,8 +1711,8 @@
       const [contentRes, personRes] = await Promise.all([
         fetch(
           `${session.serverUrl}/Users/${selectedUser.Id}/Items?Filters=IsFavorite&Recursive=true` +
-          `&IncludeItemTypes=Movie,Series,BoxSet&SortBy=SortName&SortOrder=Ascending` +
-          `&Fields=PrimaryImageAspectRatio,ProductionYear,UserData&EnableImageTypes=Primary,Backdrop,Thumb`,
+          `&IncludeItemTypes=Movie,Series,BoxSet,Season,Episode&SortBy=SortName&SortOrder=Ascending` +
+          `&Fields=PrimaryImageAspectRatio,ProductionYear,UserData,SeriesName,ParentIndexNumber,IndexNumber,SeriesId&EnableImageTypes=Primary,Backdrop,Thumb`,
           { headers: getAuthHeaders() }
         ),
         fetch(
@@ -1913,9 +1925,23 @@
     } catch { }
   }
 
-  function getItemImageUrl(item) {
+  function getItemImageUrl(item, format = 'portrait') {
+    if (format === 'landscape') {
+      // Episoden-Favoriten: 16:9-Still der Folge (Primary), sonst Serien-Thumb als Rückfall.
+      if (item.ImageTags?.Primary)
+        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
+      if (item.SeriesId && item.SeriesThumbImageTag)
+        return `${session.serverUrl}/Items/${item.SeriesId}/Images/Thumb?tag=${item.SeriesThumbImageTag}&maxWidth=600&quality=80&format=webp`;
+      return null;
+    }
     if (item.ImageTags?.Primary)
       return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
+    return null;
+  }
+  // 16:9-Variante für Episoden-Thumbs (deren Primary IST querformat). Portrait-Helfer würde sie beschneiden.
+  function getItemThumbUrl(item) {
+    if (item.ImageTags?.Primary)
+      return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillWidth=480&fillHeight=270&quality=80&format=webp`;
     return null;
   }
 
@@ -1947,6 +1973,7 @@
       }
     }, 150);
   }
+
 </script>
 
 <svelte:window
@@ -2792,7 +2819,7 @@
                 {#each favGroups as group (group.key)}
                   {#if group.items.length > 0}
                     <h2 class="text-3xl font-bold text-white mb-6 px-2">{group.label}</h2>
-                    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-12">
+                    <div data-focus-group data-enter-first class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-12">
                       {#each group.items as item (item.Id)}
                         <button onclick={() => showItemDetails(item)}
                           use:longPress onlongpress={() => openContextMenu(item)}
@@ -2807,17 +2834,45 @@
                               </div>
                             {/if}
                           </div>
-                          <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Name}</span>
-                          {#if item.ProductionYear}<span class="text-xs text-gray-500 block truncate w-full">{item.ProductionYear}</span>{/if}
+                          <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Type === 'Season' ? (item.SeriesName || item.Name) : item.Name}</span>
+                          {#if item.Type === 'Season'}
+                            <span class="text-xs text-gray-500 block truncate w-full">{item.Name}</span>
+                          {:else if item.ProductionYear}
+                            <span class="text-xs text-gray-500 block truncate w-full">{item.ProductionYear}</span>
+                          {/if}
                         </button>
                       {/each}
                     </div>
                   {/if}
                 {/each}
 
+                {#if favEpisodes.length > 0}
+                  <h2 class="text-3xl font-bold text-white mb-6 px-2">{$t.episodes}</h2>
+                  <div data-focus-group data-enter-first class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pr-4 mb-12">
+                    {#each favEpisodes as item (item.Id)}
+                      <button onclick={() => showItemDetails(item)}
+                        use:longPress onlongpress={() => openContextMenu(item)}
+                        class="group focus:outline-none text-left cv-auto">
+                        <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
+                          {#if getItemImageUrl(item, 'landscape')}
+                            <img src={getItemImageUrl(item, 'landscape')} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
+                          {/if}
+                          {#if itemProgress(item) > 0}
+                            <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
+                              <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
+                            </div>
+                          {/if}
+                        </div>
+                        <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.SeriesName || item.Name}</span>
+                        <span class="text-xs text-gray-500 block truncate w-full">{getItemSubtitle(item, $t.today)}</span>
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+
                 {#if favPersons.length > 0}
                   <h2 class="text-3xl font-bold text-white mb-6 px-2">{$t.people}</h2>
-                  <div class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-6 pr-4 mb-12">
+                  <div data-focus-group data-enter-first class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-6 pr-4 mb-12">
                     {#each favPersons as p (p.Id)}
                       <button onclick={() => openPerson(p)} class="group focus:outline-none text-center cv-auto">
                         <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
