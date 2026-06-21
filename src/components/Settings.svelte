@@ -1,111 +1,109 @@
 <script>
   import { currentLang, t, LANGUAGES } from '../i18n.js';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn, uiFade, dropTrapOnOutro, serverUrl, activeToken } from '../utils.js';
-  import { createEventDispatcher, tick, onDestroy, onMount } from 'svelte';
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn, uiFade, dropTrapOnOutro } from '../utils.js';
+  import { session } from '../session.svelte.js';
+  import { tick, onDestroy, onMount } from 'svelte';
 
-  export let selectedUser;
-  export let selectedServer;
-  export let savedTokens        = {};
-  export let screensaverSettings = { enabled: true, timeout: 90 };
-  export let reduceAnimations    = false;
-  export let displaySettings     = { clock: true, hero: true, episodeCount: true };
-  export let playbackPrefs       = { audioLanguage: 'default', subtitleLanguage: 'default', subtitleSize: 'normal' };
-  export let serverVersion       = '';      // Jellyfin-Serverversion (Status-Seite)
-  export let serverVobSub        = false;   // liefert der Server Bild-Untertitel clientseitig aus?
-  export let libraries           = [];   // echte Mediatheken (für den Navigations-Editor)
-  export let publicUsers         = [];   // wählbare Profile (öffentliche Liste vom Server)
-  export let sharedProfile       = { enabled: false, members: [] };
-  export let sharedTokens        = {};   // eigener Token-Speicher fürs gemeinsame Schauen
-  export let onSharedToggle      = () => {};
-  export let onSharedSetMember   = async () => 'error';   // (slot, user, pw) → 'ok'|'needPassword'|'error'
-  export let onSharedRemoveMember = () => {};
+  let {
+    selectedUser,
+    selectedServer,
+    savedTokens         = {},
+    screensaverSettings = { enabled: true, timeout: 90 },
+    reduceAnimations    = false,
+    displaySettings     = { clock: true, hero: true, episodeCount: true },
+    playbackPrefs       = { audioLanguage: 'default', subtitleLanguage: 'default', subtitleSize: 'normal' },
+    serverVersion       = '',      // Jellyfin-Serverversion (Status-Seite)
+    serverVobSub        = false,   // liefert der Server Bild-Untertitel clientseitig aus?
+    libraries           = [],      // echte Mediatheken (für den Navigations-Editor)
+    publicUsers         = [],      // wählbare Profile (öffentliche Liste vom Server)
+    sharedProfile       = { enabled: false, members: [] },
+    sharedTokens        = {},      // eigener Token-Speicher fürs gemeinsame Schauen
+    onSharedToggle       = () => {},
+    onSharedSetMember    = async () => 'error',   // (slot, user, pw) → 'ok'|'needPassword'|'error'
+    onSharedRemoveMember = () => {},
+    // Callback-Props (ersetzen die früheren Events)
+    onToggleSave, onSwitchUser, onLogout, onScreensaverChange, onReduceAnimationsChange,
+    onDisplayChange, onReorderingChange, onProfileImageChanged, onPlaybackPrefsChange, onClearCache,
+  } = $props();
 
-  let showDisplayOptions = false;   // Unterpunkt ein-/ausklappen
+  let showDisplayOptions = $state(false);   // Unterpunkt ein-/ausklappen
 
   // Audio-/Untertitel-Sprachoptionen für die Modals
-  $: audioLangOptions = [
+  let audioLangOptions = $derived([
     { key: 'default', name: $t.langDefault },
     ...LANGUAGES
-  ];
-  $: subtitleLangOptions = [
+  ]);
+  let subtitleLangOptions = $derived([
     { key: 'off',     name: $t.langOff },
     { key: 'default', name: $t.langDefault },
     ...LANGUAGES
-  ];
-  $: audioLangName    = (audioLangOptions.find(o => o.key === playbackPrefs.audioLanguage)    || audioLangOptions[0]).name;
-  $: subtitleLangName = (subtitleLangOptions.find(o => o.key === playbackPrefs.subtitleLanguage) || subtitleLangOptions[0]).name;
+  ]);
+  let audioLangName    = $derived((audioLangOptions.find(o => o.key === playbackPrefs.audioLanguage)    || audioLangOptions[0]).name);
+  let subtitleLangName = $derived((subtitleLangOptions.find(o => o.key === playbackPrefs.subtitleLanguage) || subtitleLangOptions[0]).name);
 
   function setAudioLang(key) {
-    playbackPrefs = { ...playbackPrefs, audioLanguage: key };
-    dispatch('playbackPrefsChange', playbackPrefs);
+    onPlaybackPrefsChange?.({ ...playbackPrefs, audioLanguage: key });
     closeModal();
   }
   function setSubtitleLang(key) {
-    playbackPrefs = { ...playbackPrefs, subtitleLanguage: key };
-    dispatch('playbackPrefsChange', playbackPrefs);
+    onPlaybackPrefsChange?.({ ...playbackPrefs, subtitleLanguage: key });
     closeModal();
   }
 
   function togglePlaybackPref(key) {
-    playbackPrefs = { ...playbackPrefs, [key]: !playbackPrefs[key] };
-    dispatch('playbackPrefsChange', playbackPrefs);
+    onPlaybackPrefsChange?.({ ...playbackPrefs, [key]: !playbackPrefs[key] });
   }
 
   function setSubtitleSize(size) {
-    playbackPrefs = { ...playbackPrefs, subtitleSize: size };
-    dispatch('playbackPrefsChange', playbackPrefs);
+    onPlaybackPrefsChange?.({ ...playbackPrefs, subtitleSize: size });
   }
   // Generisch für die Text-Styling-Selektoren (Farbe/Rand/Hintergrund).
   function setSubtitlePref(key, val) {
-    playbackPrefs = { ...playbackPrefs, [key]: val };
-    dispatch('playbackPrefsChange', playbackPrefs);
+    onPlaybackPrefsChange?.({ ...playbackPrefs, [key]: val });
   }
 
   function setStillWatchingEpisodes(n) {
-    playbackPrefs = { ...playbackPrefs, stillWatchingEpisodes: n };
-    dispatch('playbackPrefsChange', playbackPrefs);
+    onPlaybackPrefsChange?.({ ...playbackPrefs, stillWatchingEpisodes: n });
   }
 
   // Version: YYYYMMDD — bei Updates hier anpassen
-  const APP_VERSION = '20260616';
+  const APP_VERSION = '20260621';
 
-  const dispatch = createEventDispatcher();
-
-  $: isCurrentUserSaved = !!(
+  let isCurrentUserSaved = $derived(!!(
     selectedUser && selectedServer &&
     savedTokens[selectedServer.id]?.[selectedUser.Id]
-  );
+  ));
 
-  let activeModal  = null;
+  let activeModal  = $state(null);
   const modalFocus = makeFocusReturn();   // Auslöser-Button, auf den der Fokus nach dem Schließen zurückkehrt
-  let currentPw    = '';
-  let showCurrentPw = false;  // Augen-Umschalter fürs aktuelle Kennwort
-  let newPw        = '';
-  let showNewPw    = false;   // Augen-Umschalter: neues Kennwort kurz einblenden zum Prüfen
-  let pwMessage    = '';
-  let qcCode       = '';
-  let qcMessage    = '';
+  let currentPw    = $state('');
+  let showCurrentPw = $state(false);  // Augen-Umschalter fürs aktuelle Kennwort
+  let newPw        = $state('');
+  let showNewPw    = $state(false);   // Augen-Umschalter: neues Kennwort kurz einblenden zum Prüfen
+  let pwMessage    = $state('');
+  let qcCode       = $state('');
+  let qcMessage    = $state('');
   let modalTimeout = null;  // für Memory-Leak-freies setTimeout
 
   // Gemeinsames Schauen — Picker-Zustand
-  let sharedPickerSlot = null;   // 0 | 1 (welcher Steckplatz wird gefüllt)
-  let sharedPickerUser = null;   // gewähltes Profil (Passwort-Schritt)
-  let sharedPw    = '';
-  let sharedBusy  = false;
-  let sharedError = '';
-  $: sharedMembers = [0, 1].map(i => sharedProfile.members?.[i] || null);
+  let sharedPickerSlot = $state(null);   // 0 | 1 (welcher Steckplatz wird gefüllt)
+  let sharedPickerUser = $state(null);   // gewähltes Profil (Passwort-Schritt)
+  let sharedPw    = $state('');
+  let sharedBusy  = $state(false);
+  let sharedError = $state('');
+  let sharedMembers = $derived([0, 1].map(i => sharedProfile.members?.[i] || null));
 
-  $: timeoutOptions = [
+  let timeoutOptions = $derived([
     { label: `1 ${$t.minuteShort}`,  value: 60  },
     { label: `90 ${$t.secondShort}`, value: 90  },
     { label: `2 ${$t.minuteShort}`,  value: 120 },
     { label: `5 ${$t.minuteShort}`,  value: 300 },
-  ];
+  ]);
 
   onDestroy(() => { if (modalTimeout) clearTimeout(modalTimeout); });
 
-  const getAuthHeaders = () => authHeaders($activeToken);
+  const getAuthHeaders = () => authHeaders(session.token);
 
   async function openModal(name) {
     modalFocus.capture();
@@ -168,12 +166,12 @@
     try { localStorage.setItem('app_language', lang); } catch {}   // Wahl überlebt den Neustart
     closeModal();
   }
-  $: currentLangName = (LANGUAGES.find(l => l.key === $currentLang) || {}).name || 'English';
+  let currentLangName = $derived((LANGUAGES.find(l => l.key === $currentLang) || {}).name || 'English');
 
   async function changePassword() {
     pwMessage = '';
     try {
-      const res = await fetch(`${$serverUrl}/Users/${selectedUser.Id}/Password`, {
+      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Password`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ Id: selectedUser.Id, CurrentPw: currentPw, NewPw: newPw })
@@ -189,7 +187,7 @@
   async function authorizeQuickConnect() {
     qcMessage = '';
     try {
-      const res = await fetch(`${$serverUrl}/QuickConnect/Authorize`, {
+      const res = await fetch(`${session.serverUrl}/QuickConnect/Authorize`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ Code: qcCode })
@@ -200,13 +198,12 @@
   }
 
   function updateScreensaver(patch) {
-    screensaverSettings = { ...screensaverSettings, ...patch };
-    dispatch('screensaverChange', screensaverSettings);
+    onScreensaverChange?.({ ...screensaverSettings, ...patch });
   }
 
   // Diagnose-Logging: geräteweiter Opt-in-Schalter (wie der Bildschirmschoner nicht profilgebunden).
   // setDebug wirkt sofort auf alle dlog-Aufrufe (geteiltes utils-Modul); localStorage hält es fest.
-  let debugLogging = localStorage.getItem('ocenfin_debug') === '1';
+  let debugLogging = $state(localStorage.getItem('ocenfin_debug') === '1');
   function toggleDebugLogging() {
     debugLogging = !debugLogging;
     localStorage.setItem('ocenfin_debug', debugLogging ? '1' : '0');
@@ -216,13 +213,18 @@
   // In-App-Log-Viewer: Puffer anzeigen, leeren, als QR (letzte Zeilen) teilen.
   // Kein "Kopieren": Auf dem TV gibt es kein Ziel zum Einfügen — QR (aufs Handy) und
   // Abfotografieren sind die sinnvollen Wege.
-  let showLog = false;
-  let logText = '';
-  let qrDataUrl = null;
+  let showLog = $state(false);
+  let logText = $state('');
+  let qrDataUrl = $state(null);
   let qrBtnEl;   // für Fokus-Rückgabe beim Verlassen der QR-Ansicht
-  function openLog()  { modalFocus.capture(); logText = formatLog(); qrDataUrl = null; showLog = true; }
+  let logEl = $state(null);   // <pre> mit den Log-Zeilen (für Auto-Scroll + Blättern)
+  // Neueste Einträge stehen unten → beim Öffnen ans Ende springen.
+  function scrollLogToBottom() { if (logEl) logEl.scrollTop = logEl.scrollHeight; }
+  // D-Pad-Blättern: ~85 % der sichtbaren Höhe pro Druck, Fokus bleibt auf dem Button.
+  function scrollLog(dir) { logEl?.scrollBy({ top: dir * logEl.clientHeight * 0.85, behavior: 'smooth' }); }
+  async function openLog()  { modalFocus.capture(); logText = formatLog(); qrDataUrl = null; showLog = true; await tick(); scrollLogToBottom(); }
   function clearLog() { clearLogBuffer(); logText = formatLog(); qrDataUrl = null; }
-  function hideQr()   { qrDataUrl = null; tick().then(() => qrBtnEl?.focus()); }
+  function hideQr()   { qrDataUrl = null; tick().then(() => { qrBtnEl?.focus(); scrollLogToBottom(); }); }
   async function showLogQr() {
     try {
       const mod = await import('qrcode');   // dynamisch → nicht im Start-Bundle
@@ -236,22 +238,22 @@
   const envVersions = runtimeVersions();
 
   // Fernseher-Fähigkeiten für die Status-Seite: Panel-Flags (deviceInfo) + Codec-Probe (Browser).
-  let tvInfo = null;        // { available, modelName, uhd, uhd8K, oled, hdr10, dolbyVision, dolbyAtmos, ... }
-  let codecs = {};          // { h264, hevc, vp9, av1 } – laut Browser-Decoder
+  let tvInfo = $state(null);        // { available, modelName, uhd, uhd8K, oled, hdr10, dolbyVision, dolbyAtmos, ... }
+  let codecs = $state({});          // { h264, hevc, vp9, av1 } – laut Browser-Decoder
   onMount(async () => {
     codecs = probeBrowserCodecs();
     tvInfo = await getTvDeviceInfo();
   });
-  $: tvResolution = !tvInfo?.available ? null
+  let tvResolution = $derived(!tvInfo?.available ? null
        : tvInfo.uhd8K === true ? '8K'
        : tvInfo.uhd === true ? '4K (UHD)'
-       : (tvInfo.screenWidth ? `${tvInfo.screenWidth}×${tvInfo.screenHeight}` : null);
+       : (tvInfo.screenWidth ? `${tvInfo.screenWidth}×${tvInfo.screenHeight}` : null));
   // Tri-State: true → Ja (grün), false → Nein (grau), undefined → Unbekannt (gedämpft)
   const capText  = (v) => v === true ? $t.statusYes : v === false ? $t.statusNo : $t.statusUnknown;
   const capClass = (v) => v === true ? 'text-green-400' : v === false ? 'text-gray-400' : 'text-gray-600';
   // Einklappbare Status-Gruppen (fokussierbare Kopfzeilen → D-Pad kann nach unten wandern/scrollen).
   // Fernseher standardmäßig zugeklappt, da nicht für jeden sofort relevant.
-  let openStatus = { tv: false, runtime: true, components: true };
+  let openStatus = $state({ tv: false, runtime: true, components: true });
   const toggleStatus = (k) => { openStatus = { ...openStatus, [k]: !openStatus[k] }; };
   // Beim Fokussieren einer Kopfzeile die ganze Karte (inkl. Inhalt) sichtbar scrollen — sonst
   // bliebe der Inhalt der untersten offenen Gruppe verdeckt (kein fokussierbares Element darunter).
@@ -261,50 +263,43 @@
   };
 
   function toggleReduceAnimations() {
-    reduceAnimations = !reduceAnimations;
-    dispatch('reduceAnimationsChange', reduceAnimations);
+    onReduceAnimationsChange?.(!reduceAnimations);
   }
 
   function toggleDisplay(key) {
-    displaySettings = { ...displaySettings, [key]: !displaySettings[key] };
-    dispatch('displayChange', displaySettings);
+    onDisplayChange?.({ ...displaySettings, [key]: !displaySettings[key] });
   }
 
   function setClockFormat(fmt) {
-    displaySettings = { ...displaySettings, clockFormat: fmt };
-    dispatch('displayChange', displaySettings);
+    onDisplayChange?.({ ...displaySettings, clockFormat: fmt });
   }
 
   function setUiSize(size) {
-    displaySettings = { ...displaySettings, uiSize: size };
-    dispatch('displayChange', displaySettings);
+    onDisplayChange?.({ ...displaySettings, uiSize: size });
   }
   function setRecRows(n) {
-    displaySettings = { ...displaySettings, recommendationRows: n };
-    dispatch('displayChange', displaySettings);
+    onDisplayChange?.({ ...displaySettings, recommendationRows: n });
   }
   function setTheme(theme) {
-    displaySettings = { ...displaySettings, theme };
-    dispatch('displayChange', displaySettings);
+    onDisplayChange?.({ ...displaySettings, theme });
   }
   function setSeekStep(sec) {
-    displaySettings = { ...displaySettings, seekStep: sec };
-    dispatch('displayChange', displaySettings);
+    onDisplayChange?.({ ...displaySettings, seekStep: sec });
   }
 
   // ---- Navigations-Editor (Sidebar-Einträge anordnen/ausblenden, pro Profil) ----
   // Gemeinsame Quelle wie die Sidebar; zeigt hier ALLE Einträge inkl. ausgeblendeter.
-  $: navEntries = applyNavConfig(buildNavEntries(libraries, $t, displaySettings.navIcons || {}), displaySettings.navOrder || [], displaySettings.navHidden || []);
-  let grabbedId = null;   // angehobener Eintrag (Greifen-Modus) – null = keiner
+  let navEntries = $derived(applyNavConfig(buildNavEntries(libraries, $t, displaySettings.navIcons || {}), displaySettings.navOrder || [], displaySettings.navHidden || []));
+  let grabbedId = $state(null);   // angehobener Eintrag (Greifen-Modus) – null = keiner
   let navListEl;          // bind: zum Refokussieren nach dem Verschieben
   let lastGrabToggle = 0; // gegen Auto-Repeat: gehaltene OK-Taste = ein Umschalten
-  let iconPickerFor = null;   // Eintrags-Id, für die gerade ein Icon gewählt wird (null = zu)
+  let iconPickerFor = $state(null);   // Eintrags-Id, für die gerade ein Icon gewählt wird (null = zu)
   let iconGridEl;             // bind: Auto-Fokus im Icon-Wähler
 
   // grabbedId zentral setzen + App melden, damit der Fokus-Manager die Sidebar währenddessen sperrt.
   function setGrabbed(id) {
     grabbedId = id;
-    dispatch('reorderingChange', id !== null);
+    onReorderingChange?.(id !== null);
   }
   function toggleGrab(entry) {
     const now = Date.now();
@@ -318,8 +313,7 @@
     const j = i + dir;
     if (i < 0 || j < 0 || j >= ids.length) return;
     [ids[i], ids[j]] = [ids[j], ids[i]];
-    displaySettings = { ...displaySettings, navOrder: ids };   // vollständige Reihenfolge sichern
-    dispatch('displayChange', displaySettings);
+    onDisplayChange?.({ ...displaySettings, navOrder: ids });
     await tick();
     navListEl?.querySelector(`[data-nav-id="${grabbedId}"]`)?.focus();   // Fokus folgt dem Eintrag
   }
@@ -327,8 +321,7 @@
     if (entry.locked) return;
     const hidden = new Set(displaySettings.navHidden || []);
     hidden.has(entry.id) ? hidden.delete(entry.id) : hidden.add(entry.id);
-    displaySettings = { ...displaySettings, navHidden: [...hidden] };
-    dispatch('displayChange', displaySettings);
+    onDisplayChange?.({ ...displaySettings, navHidden: [...hidden] });
   }
   // --- Icon-Wähler ---
   async function openIconPicker(entry) {
@@ -337,8 +330,7 @@
     iconGridEl?.querySelector('button')?.focus();
   }
   function pickIcon(key) {
-    displaySettings = { ...displaySettings, navIcons: { ...(displaySettings.navIcons || {}), [iconPickerFor]: key } };
-    dispatch('displayChange', displaySettings);
+    onDisplayChange?.({ ...displaySettings, navIcons: { ...(displaySettings.navIcons || {}), [iconPickerFor]: key } });
     iconPickerFor = null;
   }
   function onIconPickerKey(e) {
@@ -346,40 +338,40 @@
   }
 
   // --- Profilbild (Symbol-Avatar ODER Poster eines zuletzt gesehenen Titels → Jellyfin) ---
-  let avatarIcon  = null;                  // null = noch nichts gewählt (kein Avatar markiert)
-  let avatarColor = null;                  // null = noch nichts gewählt (keine Farbe markiert)
-  let avatarSaving = false;
-  let avatarSaved  = false;                // kurzer Bestätigungshinweis nach dem Hochladen
-  let hasEditedAvatar = false;             // false → Vorschau zeigt das echte aktuelle Profilbild
-  let avatarModalOpen = false;             // „Anpassen"-Modal
-  let avatarTab = 'recent';                // 'recent' = Poster zuletzt gesehener Titel, 'symbols' = Icon+Farbe
-  let recentTitles = [];                   // [{ id, name, imageUrl }] – neueste zuerst, dedupliziert
-  let recentLoading = false;
-  let avatarPoster = null;                 // im 'recent'-Tab gewähltes Poster (sonst null)
+  let avatarIcon  = $state(null);                  // null = noch nichts gewählt (kein Avatar markiert)
+  let avatarColor = $state(null);                  // null = noch nichts gewählt (keine Farbe markiert)
+  let avatarSaving = $state(false);
+  let avatarSaved  = $state(false);                // kurzer Bestätigungshinweis nach dem Hochladen
+  let hasEditedAvatar = $state(false);             // false → Vorschau zeigt das echte aktuelle Profilbild
+  let avatarModalOpen = $state(false);             // „Anpassen"-Modal
+  let avatarTab = $state('recent');                // 'recent' = Poster zuletzt gesehener Titel, 'symbols' = Icon+Farbe
+  let recentTitles = $state([]);                   // [{ id, name, imageUrl }] – neueste zuerst, dedupliziert
+  let recentLoading = $state(false);
+  let avatarPoster = $state(null);                 // im 'recent'-Tab gewähltes Poster (sonst null)
   function onAvatarModalKey(e) {
     if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); avatarModalOpen = false; }
   }
   // Effektive Werte nur fürs Rendern/Hochladen (Fallback auf Standard), Markierung bleibt an den Rohwerten.
-  $: effectiveIcon  = avatarIcon  || AVATAR_ICON_KEYS[0];
-  $: effectiveColor = avatarColor || AVATAR_COLORS[0];
+  let effectiveIcon  = $derived(avatarIcon  || AVATAR_ICON_KEYS[0]);
+  let effectiveColor = $derived(avatarColor || AVATAR_COLORS[0]);
   // Beim Verlassen von "Profil & Sicherheit" ohne Speichern → Vorschau/Auswahl zurücksetzen.
-  $: if (activeCategory !== 'security' && hasEditedAvatar) {
+  $effect(() => { if (activeCategory !== 'security' && hasEditedAvatar) {
     hasEditedAvatar = false; avatarIcon = null; avatarColor = null; avatarPoster = null;
-  }
-  $: if (activeCategory !== 'security' && avatarModalOpen) avatarModalOpen = false;
+  } });
+  $effect(() => { if (activeCategory !== 'security' && avatarModalOpen) avatarModalOpen = false; });
 
   // Nach dem Schließen eines Modals (egal welches/wie) den Fokus auf den auslösenden Button zurücklegen.
-  $: {
+  $effect(() => {
     const anyModalOpen = !!activeModal || avatarModalOpen || showLog;
     if (!anyModalOpen && modalFocus.pending) modalFocus.restore();
-  }
+  });
 
   // Zuletzt gesehene Filme/Serien als Avatar-Vorschläge holen: neueste zuerst, Episoden → Serie,
   // dedupliziert, max. so viele wie es Symbole gibt. Bei jedem Öffnen frisch (aktuelle Reihenfolge).
   async function loadRecentTitles() {
     recentLoading = true;
     try {
-      const base = `${$serverUrl}/Users/${selectedUser.Id}/Items?Recursive=true&IncludeItemTypes=Movie,Episode`
+      const base = `${session.serverUrl}/Users/${selectedUser.Id}/Items?Recursive=true&IncludeItemTypes=Movie,Episode`
         + `&Fields=SeriesId,SeriesPrimaryImageTag,UserData&EnableImageTypes=Primary&ImageTypeLimit=1`
         + `&SortBy=DatePlayed&SortOrder=Descending&EnableTotalRecordCount=false&Limit=72`;
       const [played, resume] = await Promise.all([
@@ -398,7 +390,7 @@
         list.push({
           id,
           name: isEp ? (it.SeriesName || it.Name) : it.Name,
-          imageUrl: `${$serverUrl}/Items/${id}/Images/Primary?tag=${tag}&fillHeight=300&quality=90&ApiKey=${$activeToken}`,
+          imageUrl: `${session.serverUrl}/Items/${id}/Images/Primary?tag=${tag}&fillHeight=300&quality=90&ApiKey=${session.token}`,
         });
         if (list.length >= AVATAR_ICON_KEYS.length) break;
       }
@@ -418,14 +410,14 @@
       const base64 = (avatarTab === 'recent' && avatarPoster)
         ? await renderImageAvatarPng(avatarPoster.imageUrl)
         : await renderAvatarPng(effectiveIcon, effectiveColor);
-      const res = await fetch(`${$serverUrl}/Users/${selectedUser.Id}/Images/Primary`, {
+      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Images/Primary`, {
         method: 'POST',
-        headers: { 'Authorization': `MediaBrowser Token="${$activeToken}"`, 'Content-Type': 'image/png' },
+        headers: { 'Authorization': `MediaBrowser Token="${session.token}"`, 'Content-Type': 'image/png' },
         body: base64,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       avatarSaved = true;
-      dispatch('profileImageChanged');     // App lädt selectedUser neu → Sidebar zeigt es sofort
+      onProfileImageChanged?.();     // App lädt selectedUser neu → Sidebar zeigt es sofort
       setTimeout(() => avatarSaved = false, 2500);
     } catch (e) {
       console.error('[OcenFin] avatar upload failed:', e);
@@ -458,8 +450,8 @@
   ];
 
   // Anzeige-Elemente gruppiert: Startseiten-Zeilen vs. allgemeine Oberfläche
-  $: sharedSetUp = sharedProfile.enabled && sharedProfile.members.filter(m => m && m.id).length >= 1;
-  $: homeToggles = [
+  let sharedSetUp = $derived(sharedProfile.enabled && sharedProfile.members.filter(m => m && m.id).length >= 1);
+  let homeToggles = $derived([
     { key: 'hero',            label: $t.displayHero },
     { key: 'libraries',       label: $t.displayLibraries },
     { key: 'nextUp',          label: $t.nextUp },
@@ -468,20 +460,24 @@
     { key: 'recommendations', label: $t.displayRecommendations },
     { key: 'latest',          label: $t.displayLatest },
     { key: 'collections',     label: $t.collections },
-  ];
-  $: uiToggles = [
+  ]);
+  let uiToggles = $derived([
     { key: 'showLogo',        label: $t.displayLogo },
     { key: 'clock',           label: $t.displayClock },
     { key: 'episodeCount',    label: $t.displayEpisodeCount },
     { key: 'backdropPreview', label: $t.displayBackdropPreview },
+  ]);
+  let detailToggles = $derived([
+    { key: 'detailsBackdrop',   label: $t.displayDetailsBackdrop },
+    { key: 'detailsLogo',       label: $t.displayDetailsLogo },
     { key: 'spoilerProtection', label: $t.spoilerProtection },
-  ];
+  ]);
 
   // Zwei-Spalten-Navigation: Kategorie links wählen, Inhalt rechts (kein langes Scrollen)
-  let activeCategory = 'appearance';
+  let activeCategory = $state('appearance');
   // Unterpunkt "Anzeige-Elemente" schließen, sobald man den Darstellungs-Reiter verlässt
-  $: if (activeCategory !== 'appearance') showDisplayOptions = false;
-  $: categories = [
+  $effect(() => { if (activeCategory !== 'appearance') showDisplayOptions = false; });
+  let categories = $derived([
     { id: 'appearance', label: $t.settingsDisplay,    icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
     { id: 'navigation', label: $t.settingsNavigation, icon: 'M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z' },
     { id: 'oled',       label: $t.screensaverSection, icon: 'M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
@@ -490,7 +486,7 @@
     { id: 'security',   label: $t.profileSecurity,    icon: 'M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z' },
     { id: 'account',    label: $t.settingsAccount,    icon: 'M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.7 5.1a3.375 3.375 0 012.7-1.35h7.13c1.06 0 2.06.5 2.7 1.35l2.59 3.45a4.5 4.5 0 01.9 2.7' },
     { id: 'status',     label: $t.statusSection,      icon: 'M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6' },
-  ];
+  ]);
 </script>
 
 <div class="flex h-full">
@@ -500,7 +496,7 @@
   <nav data-hbar class="w-72 shrink-0 bg-gray-900/60 border-r border-gray-800 p-6 pt-16 flex flex-col gap-2 overflow-y-auto hide-scrollbar">
     <h1 class="text-3xl font-bold text-white mb-4 ml-2">{$t.settings}</h1>
     {#each categories as cat}
-      <button on:click={() => activeCategory = cat.id}
+      <button onclick={() => activeCategory = cat.id}
         data-hbar-current={activeCategory === cat.id ? '' : null}
         class="flex items-center gap-4 px-4 py-4 rounded-xl text-left font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                {activeCategory === cat.id ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800 focus:bg-gray-800'}">
@@ -529,7 +525,7 @@
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
         <!-- Sprache -->
-        <button on:click={() => openModal('lang')}
+        <button onclick={() => openModal('lang')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
@@ -542,7 +538,7 @@
         <div class="h-px bg-gray-700"></div>
 
         <!-- Animationen reduzieren -->
-        <button on:click={toggleReduceAnimations}
+        <button onclick={toggleReduceAnimations}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
@@ -564,7 +560,7 @@
           <span class="text-gray-400 mt-1 mb-4 block text-sm">{$t.uiSizeDesc}</span>
           <div class="flex gap-3">
             {#each [['small', $t.sizeSmall],['medium', $t.sizeMedium],['large', $t.sizeLarge]] as [val, label]}
-              <button on:click={() => setUiSize(val)}
+              <button onclick={() => setUiSize(val)}
                 class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                        {(displaySettings.uiSize || 'medium') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                 {label}
@@ -581,7 +577,7 @@
           <span class="text-gray-400 mt-1 mb-4 block text-sm">{$t.accentColorDesc}</span>
           <div class="flex gap-4 flex-wrap">
             {#each themeSwatches as sw}
-              <button on:click={() => setTheme(sw.id)} title={sw.label}
+              <button onclick={() => setTheme(sw.id)} title={sw.label}
                 class="w-14 h-14 rounded-full focus:outline-none focus:ring-4 focus:ring-white transition-all
                        {(displaySettings.theme || 'blue') === sw.id ? 'ring-4 ring-white scale-110' : 'hover:scale-105'}"
                 style="background-color: {sw.color}">
@@ -598,7 +594,7 @@
         <div class="h-px bg-gray-700"></div>
 
         <!-- ANZEIGE-ELEMENTE — ausklappbarer Unterpunkt, hält das Menü schlank -->
-        <button on:click={() => showDisplayOptions = !showDisplayOptions}
+        <button onclick={() => showDisplayOptions = !showDisplayOptions}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
@@ -612,12 +608,43 @@
         </button>
 
         {#if showDisplayOptions}
-          <!-- Gruppe: Startseite (Dashboard-Zeilen) -->
+          <!-- Gruppe: Oberfläche (allgemeine Elemente) -->
           <div class="pl-10 pr-6 pt-4 pb-2 bg-gray-900/50">
+            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{$t.groupInterface}</h3>
+          </div>
+          {#each uiToggles as tg}
+            <button onclick={() => toggleDisplay(tg.key)}
+              class="flex items-center justify-between w-full pl-10 pr-6 py-4 bg-gray-900/50 hover:bg-gray-700 focus:bg-gray-700
+                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+              <span class="text-lg text-gray-200">{tg.label}</span>
+              <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
+                          {displaySettings[tg.key] ? 'bg-blue-500' : 'bg-gray-600'}">
+                <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
+                            {displaySettings[tg.key] ? 'translate-x-7' : ''}"></div>
+              </div>
+            </button>
+          {/each}
+
+          <!-- Zeitformat (gilt für beide Uhren) -->
+          <div class="pl-10 pr-6 py-4 bg-gray-900/50">
+            <span class="text-lg text-gray-200 block mb-3">{$t.clockFormat}</span>
+            <div class="flex gap-2">
+              {#each [['auto', $t.clockAuto],['24h', $t.clock24h],['12h', $t.clock12h]] as [val, label]}
+                <button onclick={() => setClockFormat(val)}
+                  class="flex-1 py-2.5 rounded-lg font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {(displaySettings.clockFormat || 'auto') === val ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">
+                  {label}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <!-- Gruppe: Startseite (Dashboard-Zeilen) -->
+          <div class="pl-10 pr-6 pt-5 pb-2 bg-gray-900/50 border-t border-gray-700/40">
             <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{$t.groupHome}</h3>
           </div>
           {#each homeToggles as tg}
-            <button on:click={() => toggleDisplay(tg.key)}
+            <button onclick={() => toggleDisplay(tg.key)}
               class="flex items-center justify-between w-full pl-10 pr-6 py-4 bg-gray-900/50 hover:bg-gray-700 focus:bg-gray-700
                      focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
               <span class="text-lg text-gray-200">{tg.label}</span>
@@ -635,7 +662,7 @@
               <span class="text-lg text-gray-200 block mb-3">{$t.recommendationRows}</span>
               <div class="flex gap-2">
                 {#each [[1, $t.rowsOne],[2, $t.rowsTwo]] as [val, label]}
-                  <button on:click={() => setRecRows(val)}
+                  <button onclick={() => setRecRows(val)}
                     class="flex-1 py-2.5 rounded-lg font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-all
                            {(displaySettings.recommendationRows || 1) === val ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">
                     {label}
@@ -645,12 +672,12 @@
             </div>
           {/if}
 
-          <!-- Gruppe: Oberfläche (allgemeine Elemente) -->
+          <!-- Gruppe: Details (Detailseite eines Films/einer Serie) -->
           <div class="pl-10 pr-6 pt-5 pb-2 bg-gray-900/50 border-t border-gray-700/40">
-            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{$t.groupInterface}</h3>
+            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{$t.groupDetails}</h3>
           </div>
-          {#each uiToggles as tg}
-            <button on:click={() => toggleDisplay(tg.key)}
+          {#each detailToggles as tg}
+            <button onclick={() => toggleDisplay(tg.key)}
               class="flex items-center justify-between w-full pl-10 pr-6 py-4 bg-gray-900/50 hover:bg-gray-700 focus:bg-gray-700
                      focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
               <span class="text-lg text-gray-200">{tg.label}</span>
@@ -661,20 +688,6 @@
               </div>
             </button>
           {/each}
-
-          <!-- Zeitformat (gilt für beide Uhren) -->
-          <div class="pl-10 pr-6 py-4 bg-gray-900/50">
-            <span class="text-lg text-gray-200 block mb-3">{$t.clockFormat}</span>
-            <div class="flex gap-2">
-              {#each [['auto', $t.clockAuto],['24h', $t.clock24h],['12h', $t.clock12h]] as [val, label]}
-                <button on:click={() => setClockFormat(val)}
-                  class="flex-1 py-2.5 rounded-lg font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-all
-                         {(displaySettings.clockFormat || 'auto') === val ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">
-                  {label}
-                </button>
-              {/each}
-            </div>
-          </div>
         {/if}
 
       </div>
@@ -692,7 +705,7 @@
         {#each navEntries as entry (entry.id)}
           <div class="flex items-center gap-2 px-3 py-1.5 border-b border-gray-700/40 last:border-b-0 {entry.hidden ? 'opacity-50' : ''}">
             <!-- Anheben / Verschieben (OK greift, ▲▼ bewegt) -->
-            <button data-nav-id={entry.id} on:click={() => toggleGrab(entry)} on:keydown={(e) => onNavRowKey(e, entry)}
+            <button data-nav-id={entry.id} onclick={() => toggleGrab(entry)} onkeydown={(e) => onNavRowKey(e, entry)}
               class="flex-1 flex items-center gap-4 p-3 rounded-xl text-left focus:outline-none transition-all
                      {grabbedId === entry.id
                        ? 'bg-blue-600 text-white ring-4 ring-white scale-[1.02] shadow-xl'
@@ -705,7 +718,7 @@
               {/if}
             </button>
             <!-- Icon wählen -->
-            <button on:click={() => openIconPicker(entry)}
+            <button onclick={() => openIconPicker(entry)}
               class="p-3 rounded-xl text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors"
               title={$t.chooseIcon}>
               <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d={entry.icon}/></svg>
@@ -716,7 +729,7 @@
                 <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
               </div>
             {:else}
-              <button on:click={() => toggleHidden(entry)}
+              <button onclick={() => toggleHidden(entry)}
                 class="p-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-colors
                        {entry.hidden ? 'text-gray-500 hover:text-white focus:text-white' : 'text-blue-400 hover:text-white focus:text-white'}"
                 title={entry.hidden ? $t.navShow : $t.navHide}>
@@ -734,17 +747,17 @@
       <!-- Icon-Wähler (Modal, D-Pad-Grid) -->
       {#if iconPickerFor}
         <div class="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-8"
-             data-focus-trap on:keydown={onIconPickerKey} role="dialog" tabindex="-1">
+             data-focus-trap onkeydown={onIconPickerKey} role="dialog" tabindex="-1">
           <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-2xl max-w-xl w-full">
             <div class="flex justify-between items-center mb-5">
               <h3 class="text-2xl font-bold text-white">{$t.chooseIcon}</h3>
-              <button on:click={() => iconPickerFor = null} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
+              <button onclick={() => iconPickerFor = null} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
                 <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
             <div bind:this={iconGridEl} class="grid grid-cols-5 gap-3 max-h-[58vh] overflow-y-auto hide-scrollbar p-2">
               {#each NAV_ICON_KEYS as key}
-                <button on:click={() => pickIcon(key)}
+                <button onclick={() => pickIcon(key)}
                   class="aspect-square flex items-center justify-center rounded-xl bg-gray-700 hover:bg-gray-600 focus:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
                   <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d={NAV_ICON_PALETTE[key]}/></svg>
                 </button>
@@ -765,7 +778,7 @@
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
         <!-- Screensaver Toggle -->
-        <button on:click={() => updateScreensaver({ enabled: !screensaverSettings.enabled })}
+        <button onclick={() => updateScreensaver({ enabled: !screensaverSettings.enabled })}
           class="flex items-center justify-between w-full px-6 py-5 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
@@ -787,7 +800,7 @@
             <span class="text-base text-gray-400 font-medium block mb-3">{$t.screensaverAfter}</span>
             <div class="flex gap-3">
               {#each timeoutOptions as opt}
-                <button on:click={() => updateScreensaver({ timeout: opt.value })}
+                <button onclick={() => updateScreensaver({ timeout: opt.value })}
                   class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                          {screensaverSettings.timeout === opt.value ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                   {opt.label}
@@ -802,7 +815,7 @@
             <span class="text-base text-gray-400 font-medium block mb-3">{$t.screensaverStyle}</span>
             <div class="flex gap-3">
               {#each [['clock', $t.screensaverModeClock, $t.screensaverModeClockDesc], ['art', $t.screensaverModeArt, $t.screensaverModeArtDesc]] as [val, label, desc]}
-                <button on:click={() => updateScreensaver({ mode: val })}
+                <button onclick={() => updateScreensaver({ mode: val })}
                   class="flex-1 text-left p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-all
                          {screensaverSettings.mode === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                   <span class="block font-bold text-lg">{label}</span>
@@ -819,7 +832,7 @@
               <span class="text-base text-gray-400 font-medium block mb-3">{$t.screensaverArtSource}</span>
               <div class="flex gap-3">
                 {#each [['watched', $t.screensaverArtWatched], ['unwatched', $t.screensaverArtUnwatched], ['random', $t.screensaverArtRandom]] as [val, label]}
-                  <button on:click={() => updateScreensaver({ artSource: val })}
+                  <button onclick={() => updateScreensaver({ artSource: val })}
                     class="flex-1 py-3 rounded-xl font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-all
                            {screensaverSettings.artSource === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                     {label}
@@ -833,7 +846,7 @@
               <span class="text-base text-gray-400 font-medium block mb-3">{$t.screensaverBrightness}</span>
               <div class="flex gap-3">
                 {#each [[0.45, $t.brightnessDim], [0.65, $t.brightnessMedium], [0.85, $t.brightnessBright]] as [val, label]}
-                  <button on:click={() => updateScreensaver({ brightness: val })}
+                  <button onclick={() => updateScreensaver({ brightness: val })}
                     class="flex-1 py-3 rounded-xl font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-all
                            {screensaverSettings.brightness === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                     {label}
@@ -857,7 +870,7 @@
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
         <!-- Standard-Audiosprache -->
-        <button on:click={() => openModal('audioLang')}
+        <button onclick={() => openModal('audioLang')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <span class="text-2xl text-white font-medium">{$t.audioLanguage}</span>
@@ -872,7 +885,7 @@
           <span class="text-gray-400 mt-1 mb-4 block text-sm">{$t.seekIntervalDesc}</span>
           <div class="flex gap-3">
             {#each [10, 30, 60] as sec}
-              <button on:click={() => setSeekStep(sec)}
+              <button onclick={() => setSeekStep(sec)}
                 class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                        {(displaySettings.seekStep || 30) === sec ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                 {sec}s
@@ -884,7 +897,7 @@
         <div class="h-px bg-gray-700"></div>
 
         <!-- Kapitelmarken im Player anzeigen (Player-Anzeige-Element → gehört zur Wiedergabe) -->
-        <button on:click={() => toggleDisplay('showChapters')}
+        <button onclick={() => toggleDisplay('showChapters')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
           <div>
@@ -901,7 +914,7 @@
         <div class="h-px bg-gray-700"></div>
 
         <!-- Auto-Skip Intro -->
-        <button on:click={() => togglePlaybackPref('autoSkipIntro')}
+        <button onclick={() => togglePlaybackPref('autoSkipIntro')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
@@ -918,7 +931,7 @@
         <div class="h-px bg-gray-700"></div>
 
         <!-- Auto-Skip Outro -->
-        <button on:click={() => togglePlaybackPref('autoSkipCredits')}
+        <button onclick={() => togglePlaybackPref('autoSkipCredits')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
@@ -933,7 +946,7 @@
         </button>
 
         <!-- Nächste Folge automatisch -->
-        <button on:click={() => togglePlaybackPref('autoPlayNext')}
+        <button onclick={() => togglePlaybackPref('autoPlayNext')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
@@ -948,7 +961,7 @@
         </button>
 
         <!-- Wiedergabeinfos – Info-Button im Player freischalten (Live-Details als Overlay) -->
-        <button on:click={() => togglePlaybackPref('showPlaybackInfo')}
+        <button onclick={() => togglePlaybackPref('showPlaybackInfo')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
@@ -963,7 +976,7 @@
         </button>
 
         <!-- Vorschaubilder beim Spulen (Trickplay) – opt-out, fällt auf Kapitel/Zeit zurück -->
-        <button on:click={() => togglePlaybackPref('trickplay')}
+        <button onclick={() => togglePlaybackPref('trickplay')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
@@ -978,7 +991,7 @@
         </button>
 
         <!-- Schaust du noch? – Wiedergabe nach Inaktivität pausieren -->
-        <button on:click={() => togglePlaybackPref('stillWatching')}
+        <button onclick={() => togglePlaybackPref('stillWatching')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
@@ -997,7 +1010,7 @@
             <span class="text-2xl text-white font-medium block">{$t.stillWatchingAfter}</span>
             <div class="flex gap-3 mt-4">
               {#each [2, 3, 4] as n}
-                <button on:click={() => setStillWatchingEpisodes(n)}
+                <button onclick={() => setStillWatchingEpisodes(n)}
                   class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                          {(playbackPrefs.stillWatchingEpisodes || 3) === n ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                   {n} {$t.episodes}
@@ -1017,7 +1030,7 @@
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
         <!-- Standard-Untertitel: welche Spur automatisch gewählt wird -->
-        <button on:click={() => openModal('subtitleLang')}
+        <button onclick={() => openModal('subtitleLang')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl">
           <span class="text-2xl text-white font-medium">{$t.subtitleLanguage}</span>
@@ -1026,7 +1039,7 @@
 
         <!-- Erzwungene/Standard-BILD-Untertitel (DVDSUB) automatisch wählen — braucht Transcode (kein Direct Play).
              Text- und PGS-Untertitel werden ohnehin ohne Transcode automatisch gewählt. -->
-        <button on:click={() => togglePlaybackPref('forcedGraphicSubs')}
+        <button onclick={() => togglePlaybackPref('forcedGraphicSubs')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
@@ -1041,7 +1054,7 @@
         </button>
 
         <!-- Untertitel einbrennen -->
-        <button on:click={() => togglePlaybackPref('burnSubtitles')}
+        <button onclick={() => togglePlaybackPref('burnSubtitles')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
@@ -1057,7 +1070,7 @@
 
         <!-- PGS-Rendering + Untertitelgröße sind irrelevant, wenn alles eingebrannt wird → dann ausblenden -->
         {#if !playbackPrefs.burnSubtitles}
-          <button on:click={() => togglePlaybackPref('pgsRendering')}
+          <button onclick={() => togglePlaybackPref('pgsRendering')}
             class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
                    focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
             <div>
@@ -1071,8 +1084,8 @@
             </div>
           </button>
 
-          <!-- ASS/SSA mit Original-Layout (JASSUB) — aus: schlichtes Text-Overlay, beides Direct Play -->
-          <button on:click={() => togglePlaybackPref('assRendering')}
+          <!-- ASS/SSA mit Original-Layout (assjs) — aus: schlichtes Text-Overlay, beides Direct Play -->
+          <button onclick={() => togglePlaybackPref('assRendering')}
             class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
                    focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
             <div>
@@ -1091,7 +1104,7 @@
             <span class="text-gray-400 mt-1 mb-4 block text-sm">{$t.subtitleSizeDesc}</span>
             <div class="flex gap-3">
               {#each [['small', $t.sizeSmall], ['normal', $t.sizeNormal], ['large', $t.sizeLarge]] as [val, label]}
-                <button on:click={() => setSubtitleSize(val)}
+                <button onclick={() => setSubtitleSize(val)}
                   class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                          {playbackPrefs.subtitleSize === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                   {label}
@@ -1106,7 +1119,7 @@
             <span class="text-gray-400 mt-1 mb-4 block text-sm">{$t.subtitleStyleHint}</span>
             <div class="flex gap-3">
               {#each [['white', $t.colorWhite], ['yellow', $t.colorYellow], ['green', $t.colorGreen], ['cyan', $t.colorCyan]] as [val, label]}
-                <button on:click={() => setSubtitlePref('subtitleColor', val)}
+                <button onclick={() => setSubtitlePref('subtitleColor', val)}
                   class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                          {(playbackPrefs.subtitleColor || 'white') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                   {label}
@@ -1119,7 +1132,7 @@
             <span class="text-2xl text-white font-medium block mb-4">{$t.subtitleEdge}</span>
             <div class="flex gap-3">
               {#each [['none', $t.styleNone], ['shadow', $t.edgeShadow], ['outline', $t.edgeOutline]] as [val, label]}
-                <button on:click={() => setSubtitlePref('subtitleEdge', val)}
+                <button onclick={() => setSubtitlePref('subtitleEdge', val)}
                   class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                          {(playbackPrefs.subtitleEdge || 'shadow') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                   {label}
@@ -1132,7 +1145,7 @@
             <span class="text-2xl text-white font-medium block mb-4">{$t.subtitleBackground}</span>
             <div class="flex gap-3">
               {#each [['none', $t.styleNone], ['semi', $t.bgSemi], ['solid', $t.bgSolid]] as [val, label]}
-                <button on:click={() => setSubtitlePref('subtitleBackground', val)}
+                <button onclick={() => setSubtitlePref('subtitleBackground', val)}
                   class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                          {(playbackPrefs.subtitleBackground || 'none') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                   {label}
@@ -1157,7 +1170,7 @@
             {#if hasEditedAvatar && avatarPoster}
               <img src={avatarPoster.imageUrl} alt={avatarPoster.name} class="w-full h-full object-cover" />
             {:else if !hasEditedAvatar && selectedUser?.PrimaryImageTag}
-              <img src="{$serverUrl}/Users/{selectedUser.Id}/Images/Primary?tag={selectedUser.PrimaryImageTag}" alt={$t.profilePicture} class="w-full h-full object-cover" />
+              <img src="{session.serverUrl}/Users/{selectedUser.Id}/Images/Primary?tag={selectedUser.PrimaryImageTag}" alt={$t.profilePicture} class="w-full h-full object-cover" />
             {:else}
               <svg class="w-11 h-11 text-white" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[effectiveIcon]}/></svg>
             {/if}
@@ -1167,11 +1180,11 @@
             <span class="text-gray-400 mt-1 block text-sm">{$t.profilePictureHint}</span>
           </div>
           <div class="flex gap-3 shrink-0">
-            <button on:click={openAvatarModal}
+            <button onclick={openAvatarModal}
               class="px-5 py-3 rounded-xl font-bold text-base bg-gray-700 text-white hover:bg-gray-600 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               {$t.customize}
             </button>
-            <button on:click={saveProfileImage} disabled={avatarSaving || !hasEditedAvatar}
+            <button onclick={saveProfileImage} disabled={!hasEditedAvatar}
               class="px-6 py-3 rounded-xl font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-colors
                      {avatarSaved ? 'bg-green-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50'}">
               {avatarSaved ? $t.saved : avatarSaving ? $t.saving : $t.save}
@@ -1183,22 +1196,22 @@
       <!-- „Anpassen"-Modal: Live-Vorschau + Icon-Raster + Farb-Swatches (Padding p-2 → Fokus-Ringe am Rand nicht abgeschnitten) -->
       {#if avatarModalOpen}
         <div class="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-8"
-             data-focus-trap on:keydown={onAvatarModalKey} role="dialog" tabindex="-1">
+             data-focus-trap onkeydown={onAvatarModalKey} role="dialog" tabindex="-1">
           <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-2xl max-w-2xl w-full flex flex-col gap-5">
             <div class="flex justify-between items-center">
               <h3 class="text-2xl font-bold text-white">{$t.profilePicture}</h3>
-              <button on:click={() => avatarModalOpen = false} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
+              <button onclick={() => avatarModalOpen = false} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
                 <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
             <!-- Umschalter: zuletzt gesehene Titel ↔ Symbole -->
             <div class="flex gap-2 bg-gray-900/60 p-1 rounded-xl">
-              <button on:click={() => avatarTab = 'recent'}
+              <button onclick={() => avatarTab = 'recent'}
                 class="flex-1 py-2.5 rounded-lg font-bold text-sm focus:outline-none focus:ring-4 focus:ring-white transition-colors
                        {avatarTab === 'recent' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}">
                 {$t.avatarTabRecent}
               </button>
-              <button on:click={() => avatarTab = 'symbols'}
+              <button onclick={() => avatarTab = 'symbols'}
                 class="flex-1 py-2.5 rounded-lg font-bold text-sm focus:outline-none focus:ring-4 focus:ring-white transition-colors
                        {avatarTab === 'symbols' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'}">
                 {$t.avatarTabSymbols}
@@ -1225,7 +1238,7 @@
                 <!-- Poster zuletzt gesehener Titel (neueste zuerst), mittig in den runden Avatar zugeschnitten -->
                 <div class="grid grid-cols-6 gap-3 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 scroll-py-3 content-start">
                   {#each recentTitles as t (t.id)}
-                    <button on:click={() => { avatarPoster = t; hasEditedAvatar = true; }} title={t.name}
+                    <button onclick={() => { avatarPoster = t; hasEditedAvatar = true; }} title={t.name}
                       class="aspect-square rounded-xl overflow-hidden focus:outline-none focus:ring-4 focus:ring-white transition-all
                              {avatarPoster?.id === t.id ? 'ring-4 ring-blue-500' : 'hover:opacity-80'}">
                       <img src={t.imageUrl} alt={t.name} class="w-full h-full object-cover" />
@@ -1241,7 +1254,7 @@
               <div class="flex gap-5 items-start">
                 <div class="grid grid-cols-6 gap-3 flex-1 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 scroll-py-3 content-start">
                   {#each AVATAR_ICON_KEYS as key}
-                    <button on:click={() => { avatarIcon = key; hasEditedAvatar = true; }}
+                    <button onclick={() => { avatarIcon = key; hasEditedAvatar = true; }}
                       class="aspect-square flex items-center justify-center rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-all
                              {effectiveIcon === key ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}">
                       <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[key]}/></svg>
@@ -1250,14 +1263,14 @@
                 </div>
                 <div class="grid grid-cols-2 gap-2.5 shrink-0 p-2 content-start">
                   {#each AVATAR_COLORS as color}
-                    <button on:click={() => { avatarColor = color; hasEditedAvatar = true; }}
+                    <button onclick={() => { avatarColor = color; hasEditedAvatar = true; }}
                       class="w-10 h-10 rounded-full focus:outline-none focus:ring-4 focus:ring-white transition-all {effectiveColor === color ? 'ring-2 ring-white scale-110' : ''}"
                       style="background:{color}" aria-label={$t.customize}></button>
                   {/each}
                 </div>
               </div>
             {/if}
-            <button on:click={() => avatarModalOpen = false}
+            <button onclick={() => avatarModalOpen = false}
               class="w-full py-3 rounded-xl font-bold text-base bg-blue-600 text-white hover:bg-blue-500 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               {$t.close}
             </button>
@@ -1268,7 +1281,7 @@
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
         <!-- Kennwort speichern / Schnellwechsel (vormals eigene Kategorie "Profil") -->
-        <button on:click={() => dispatch('toggleSave')}
+        <button onclick={() => onToggleSave?.()}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
@@ -1285,7 +1298,7 @@
         <div class="h-px bg-gray-700"></div>
 
         <!-- Passwort ändern -->
-        <button on:click={() => openModal('password')}
+        <button onclick={() => openModal('password')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
@@ -1300,7 +1313,7 @@
         <div class="h-px bg-gray-700"></div>
 
         <!-- Quick Connect (Gerät autorisieren) -->
-        <button on:click={() => openModal('quickConnect')}
+        <button onclick={() => openModal('quickConnect')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
@@ -1316,7 +1329,7 @@
 
       <!-- Gemeinsames Schauen: zwei Profile zusammenführen -->
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
-        <button on:click={onSharedToggle}
+        <button onclick={onSharedToggle}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
@@ -1345,13 +1358,13 @@
                     {:else}
                       <span class="text-amber-400 text-xs font-bold">{$t.sharedNeedsLogin}</span>
                     {/if}
-                    <button data-slot-btn={slot} on:click={() => removeMember(slot)}
+                    <button data-slot-btn={slot} onclick={() => removeMember(slot)}
                       class="mt-1 text-red-400 hover:text-red-300 focus:text-red-300 text-sm font-bold
                              focus:outline-none focus:ring-2 focus:ring-white rounded px-3 py-1.5">
                       {$t.remove}
                     </button>
                   {:else}
-                    <button data-slot-btn={slot} on:click={() => openSharedPicker(slot)}
+                    <button data-slot-btn={slot} onclick={() => openSharedPicker(slot)}
                       class="flex flex-col items-center gap-2 text-gray-400 hover:text-white focus:text-white
                              focus:outline-none focus:ring-4 focus:ring-white rounded-lg px-4 py-3">
                       <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1386,7 +1399,7 @@
       {/if}
 
       <!-- Cache leeren (direkt unter der Server-Adresse) -->
-      <button on:click={() => dispatch('clearCache')}
+      <button onclick={() => onClearCache?.()}
         class="bg-gray-800/80 border border-gray-700 rounded-2xl shadow-xl flex items-center justify-between w-full p-6
                hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-4 focus:ring-white transition-all text-left">
         <div>
@@ -1400,7 +1413,7 @@
 
       <!-- Benutzer wechseln / Abmelden -->
       <div class="grid grid-cols-2 gap-5">
-        <button on:click={() => dispatch('switchUser')}
+        <button onclick={() => onSwitchUser?.()}
           class="flex flex-col items-center justify-center p-7 bg-gray-800 border border-gray-700 rounded-2xl
                  hover:bg-gray-700 hover:scale-105 focus:scale-105
                  focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-xl">
@@ -1411,7 +1424,7 @@
           <span class="text-gray-400 mt-1 text-center text-sm">{$t.switchUserDesc}</span>
         </button>
 
-        <button on:click={() => dispatch('logout')}
+        <button onclick={() => onLogout?.()}
           class="flex flex-col items-center justify-center p-7 bg-red-900/40 border border-red-800/50 rounded-2xl
                  hover:bg-red-600 focus:bg-red-600 focus:scale-105
                  focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-xl group">
@@ -1439,7 +1452,7 @@
 
       <!-- Diagnose-Logging Toggle (geräteweit, opt-in) -->
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
-        <button on:click={toggleDebugLogging}
+        <button onclick={toggleDebugLogging}
           class="flex items-center justify-between w-full px-6 py-5 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left rounded-2xl">
           <div class="pr-4">
@@ -1455,7 +1468,7 @@
       </div>
 
       <!-- Protokoll anzeigen: In-App-Log-Viewer (kein ares inspect nötig) -->
-      <button on:click={openLog}
+      <button onclick={openLog}
         class="flex items-center justify-between w-full px-6 py-5 bg-gray-800/80 border border-gray-700 rounded-2xl
                hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
         <div class="pr-4">
@@ -1470,7 +1483,7 @@
 
       <!-- Fernseher (standardmäßig zugeklappt): Panel-Fähigkeiten (deviceInfo) + Codec-Probe -->
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
-        <button on:click={() => toggleStatus('tv')} on:focus={scrollGroupIntoView}
+        <button onclick={() => toggleStatus('tv')} onfocus={scrollGroupIntoView}
           class="flex items-center justify-between w-full p-6 rounded-t-2xl {openStatus.tv ? '' : 'rounded-b-2xl'} hover:bg-gray-700/50 focus:bg-gray-700/50 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-colors text-left gap-4">
           <span class="text-sm text-gray-300 uppercase tracking-wider font-bold flex items-center gap-3">
             <svg class="w-4 h-4 shrink-0 transition-transform {openStatus.tv ? 'rotate-90' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
@@ -1517,7 +1530,7 @@
 
       <!-- App & Server -->
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
-        <button on:click={() => toggleStatus('runtime')} on:focus={scrollGroupIntoView}
+        <button onclick={() => toggleStatus('runtime')} onfocus={scrollGroupIntoView}
           class="flex items-center justify-between w-full p-6 rounded-t-2xl {openStatus.runtime ? '' : 'rounded-b-2xl'} hover:bg-gray-700/50 focus:bg-gray-700/50 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-colors text-left">
           <span class="text-sm text-gray-300 uppercase tracking-wider font-bold flex items-center gap-3">
             <svg class="w-4 h-4 shrink-0 transition-transform {openStatus.runtime ? 'rotate-90' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
@@ -1556,7 +1569,7 @@
 
       <!-- Komponenten — relevant beim Melden von Wiedergabe-/Untertitel-Problemen -->
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
-        <button on:click={() => toggleStatus('components')} on:focus={scrollGroupIntoView}
+        <button onclick={() => toggleStatus('components')} onfocus={scrollGroupIntoView}
           class="flex items-center justify-between w-full p-6 rounded-t-2xl {openStatus.components ? '' : 'rounded-b-2xl'} hover:bg-gray-700/50 focus:bg-gray-700/50 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-colors text-left">
           <span class="text-sm text-gray-300 uppercase tracking-wider font-bold flex items-center gap-3">
             <svg class="w-4 h-4 shrink-0 transition-transform {openStatus.components ? 'rotate-90' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
@@ -1576,8 +1589,8 @@
             </div>
             <div class="h-px bg-gray-700/70"></div>
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusJassub}</span>
-              <span class="text-white font-mono text-sm">{envVersions.jassub || '—'}</span>
+              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{$t.statusAssjs}</span>
+              <span class="text-white font-mono text-sm">{envVersions.assjs || '—'}</span>
             </div>
           </div>
         {/if}
@@ -1594,8 +1607,8 @@
 ══════════════════════════════════════════ -->
 {#if showLog}
   <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
-    transition:uiFade on:outrostart={dropTrapOnOutro}
-    on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); if (qrDataUrl) hideQr(); else showLog = false; } }}>
+    transition:uiFade onoutrostart={dropTrapOnOutro}
+    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); if (qrDataUrl) hideQr(); else showLog = false; } }}>
 
     <div data-modal data-focus-trap
       class="bg-gray-800 border border-gray-700 p-8 rounded-2xl w-full max-w-4xl max-h-[88vh] flex flex-col gap-5 shadow-2xl">
@@ -1603,10 +1616,10 @@
       <div class="flex items-center justify-between gap-4 shrink-0">
         <h2 class="text-4xl text-white font-bold">{$t.logTitle}</h2>
         <div class="flex items-center gap-3">
-          <button bind:this={qrBtnEl} on:click={showLogQr}
+          <button bind:this={qrBtnEl} onclick={showLogQr}
             class="px-5 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.logQrButton}</button>
-          <button on:click={() => showLog = false} use:focusOnMount
+          <button onclick={() => showLog = false} use:focusOnMount
             class="px-5 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.close}</button>
         </div>
@@ -1617,15 +1630,25 @@
           <img src={qrDataUrl} alt="QR" class="rounded-xl bg-white p-3"
                style="width:320px;height:320px;max-width:40vh;max-height:40vh;" />
           <p class="text-gray-400 text-lg text-center max-w-md">{$t.logQrHint}</p>
-          <button on:click={hideQr} use:focusOnMount
+          <button onclick={hideQr} use:focusOnMount
             class="px-6 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.logBackToText}</button>
         </div>
       {:else}
-        <pre class="flex-1 min-h-0 overflow-auto hide-scrollbar bg-black/50 rounded-xl p-5 text-sm text-gray-300
+        <pre bind:this={logEl} class="flex-1 min-h-0 overflow-auto hide-scrollbar bg-black/50 rounded-xl p-5 text-sm text-gray-300
                     font-mono whitespace-pre-wrap break-words leading-relaxed">{logText || $t.logEmpty}</pre>
-        <div class="flex justify-end shrink-0">
-          <button on:click={clearLog}
+        <div class="flex items-center justify-between gap-3 shrink-0">
+          <div class="flex gap-3">
+            <button onclick={() => scrollLog(-1)} aria-label="↑"
+              class="px-5 py-3 rounded-xl bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
+            </button>
+            <button onclick={() => scrollLog(1)} aria-label="↓"
+              class="px-5 py-3 rounded-xl bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+          </div>
+          <button onclick={clearLog}
             class="px-6 py-3 rounded-xl font-bold bg-gray-700 hover:bg-red-600 focus:bg-red-600 text-white
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.clear}</button>
         </div>
@@ -1639,8 +1662,8 @@
 ══════════════════════════════════════════ -->
 {#if activeModal}
   <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
-    transition:uiFade on:outrostart={dropTrapOnOutro}
-    on:keydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeModal(); } }}>
+    transition:uiFade onoutrostart={dropTrapOnOutro}
+    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeModal(); } }}>
 
     <div data-modal data-focus-trap
       class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full max-w-xl flex flex-col gap-6 shadow-2xl">
@@ -1649,7 +1672,7 @@
         <h2 class="text-4xl text-white font-bold mb-2">{$t.language}</h2>
         <div class="flex flex-col gap-3 max-h-[60vh] overflow-y-auto hide-scrollbar p-2 -m-2">
           {#each LANGUAGES as l (l.key)}
-            <button on:click={() => setLanguage(l.key)}
+            <button onclick={() => setLanguage(l.key)}
               class="w-full text-left p-6 text-2xl font-bold text-white rounded-xl transition-colors
                      focus:outline-none focus:ring-4 focus:ring-white
                      {$currentLang === l.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
@@ -1662,7 +1685,7 @@
         <h2 class="text-4xl text-white font-bold mb-2">{$t.audioLanguage}</h2>
         <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
           {#each audioLangOptions as opt}
-            <button on:click={() => setAudioLang(opt.key)}
+            <button onclick={() => setAudioLang(opt.key)}
               class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
                      focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white
                      {playbackPrefs.audioLanguage === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
@@ -1675,7 +1698,7 @@
         <h2 class="text-4xl text-white font-bold mb-2">{$t.subtitleLanguage}</h2>
         <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
           {#each subtitleLangOptions as opt}
-            <button on:click={() => setSubtitleLang(opt.key)}
+            <button onclick={() => setSubtitleLang(opt.key)}
               class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
                      focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white
                      {playbackPrefs.subtitleLanguage === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
@@ -1689,10 +1712,10 @@
         <div class="relative">
           <input type={showCurrentPw ? 'text' : 'password'} bind:value={currentPw} placeholder={$t.currentPassword}
             use:tvKeyboard
-            on:keydown={(e) => e.key === 'Enter' && changePassword()}
+            onkeydown={(e) => e.key === 'Enter' && changePassword()}
             class="w-full bg-gray-900 text-white text-2xl p-6 pr-20 rounded-xl border border-gray-600
                    focus:outline-none focus:ring-4 focus:ring-blue-500" />
-          <button type="button" on:click={() => showCurrentPw = !showCurrentPw}
+          <button type="button" onclick={() => showCurrentPw = !showCurrentPw}
             aria-label={showCurrentPw ? $t.hidePassword : $t.showPassword} title={showCurrentPw ? $t.hidePassword : $t.showPassword}
             class="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-lg text-gray-400 hover:text-white focus:text-white
                    focus:outline-none focus:ring-2 focus:ring-white transition-colors">
@@ -1706,10 +1729,10 @@
         <div class="relative">
           <input type={showNewPw ? 'text' : 'password'} bind:value={newPw} placeholder={$t.newPassword}
             use:tvKeyboard
-            on:keydown={(e) => e.key === 'Enter' && changePassword()}
+            onkeydown={(e) => e.key === 'Enter' && changePassword()}
             class="w-full bg-gray-900 text-white text-2xl p-6 pr-20 rounded-xl border border-gray-600
                    focus:outline-none focus:ring-4 focus:ring-blue-500" />
-          <button type="button" on:click={() => showNewPw = !showNewPw}
+          <button type="button" onclick={() => showNewPw = !showNewPw}
             aria-label={showNewPw ? $t.hidePassword : $t.showPassword} title={showNewPw ? $t.hidePassword : $t.showPassword}
             class="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-lg text-gray-400 hover:text-white focus:text-white
                    focus:outline-none focus:ring-2 focus:ring-white transition-colors">
@@ -1721,7 +1744,7 @@
           </button>
         </div>
         {#if pwMessage}<p class="text-blue-400 font-bold text-lg">{pwMessage}</p>{/if}
-        <button on:click={changePassword}
+        <button onclick={changePassword}
           class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-2xl py-6 rounded-xl
                  focus:outline-none focus:ring-4 focus:ring-white mt-2">{$t.save}</button>
 
@@ -1729,11 +1752,11 @@
         <h2 class="text-4xl text-white font-bold mb-2">{$t.quickConnect}</h2>
         <p class="text-gray-400 text-lg">{$t.qcAuthInstruction}</p>
         <input type="text" bind:value={qcCode} placeholder={$t.qcPlaceholder}
-          on:keydown={(e) => e.key === 'Enter' && authorizeQuickConnect()}
+          onkeydown={(e) => e.key === 'Enter' && authorizeQuickConnect()}
           class="w-full bg-gray-900 text-white text-4xl tracking-widest text-center p-6 rounded-xl border border-gray-600
                  focus:outline-none focus:ring-4 focus:ring-blue-500" />
         {#if qcMessage}<p class="text-blue-400 font-bold text-lg">{qcMessage}</p>{/if}
-        <button on:click={authorizeQuickConnect}
+        <button onclick={authorizeQuickConnect}
           class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-2xl py-6 rounded-xl
                  focus:outline-none focus:ring-4 focus:ring-white mt-2">{$t.qcAuthorizeBtn}</button>
 
@@ -1741,7 +1764,7 @@
         <h2 class="text-4xl text-white font-bold mb-2">{$t.selectProfile}</h2>
         <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
           {#each pickableUsers(sharedPickerSlot) as u (u.Id)}
-            <button on:click={() => chooseSharedUser(u)}
+            <button onclick={() => chooseSharedUser(u)}
               class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
                      bg-gray-900 hover:bg-blue-600 focus:bg-blue-600
                      focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white">
@@ -1757,16 +1780,16 @@
         <h2 class="text-4xl text-white font-bold mb-2">{sharedPickerUser?.Name}</h2>
         <input type="password" bind:value={sharedPw} placeholder={$t.password}
           use:tvKeyboard
-          on:keydown={(e) => e.key === 'Enter' && commitSharedUser(sharedPickerUser, sharedPw)}
+          onkeydown={(e) => e.key === 'Enter' && commitSharedUser(sharedPickerUser, sharedPw)}
           class="w-full bg-gray-900 text-white text-2xl p-6 rounded-xl border border-gray-600
                  focus:outline-none focus:ring-4 focus:ring-blue-500" />
         {#if sharedError}<p class="text-red-400 font-bold text-lg">{sharedError}</p>{/if}
-        <button on:click={() => commitSharedUser(sharedPickerUser, sharedPw)} disabled={sharedBusy}
+        <button onclick={() => commitSharedUser(sharedPickerUser, sharedPw)} disabled={sharedBusy}
           class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-2xl py-6 rounded-xl
                  focus:outline-none focus:ring-4 focus:ring-white mt-2 disabled:opacity-50">{$t.confirm}</button>
       {/if}
 
-      <button on:click={closeModal}
+      <button onclick={closeModal}
         class="w-full bg-transparent hover:bg-gray-700 focus:bg-gray-700 text-gray-400 font-bold text-xl py-4 rounded-xl
                border border-gray-600 focus:outline-none focus:ring-4 focus:ring-white mt-2">{$t.qcCancel}</button>
 

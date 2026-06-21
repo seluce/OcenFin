@@ -1,21 +1,19 @@
 <script>
   import { t } from '../i18n.js';
-  import { isBackKey, focusOnMount, serverUrl, activeToken } from '../utils.js';
-  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import { isBackKey, focusOnMount } from '../utils.js';
+  import { session } from '../session.svelte.js';
+  import { onMount, onDestroy } from 'svelte';
 
-  export let item;
-  export let userId;
-
-  const dispatch = createEventDispatcher();
+  let { item, userId, onChanged, onOpenDetails, onAddToList, onClose } = $props();
 
   let busy = false;
 
   // Lokale (optimistische) Zustände — werden beim Klick sofort umgeschaltet, damit
   // Beschriftung/Icons im Menü die Änderung direkt zeigen. Initial aus dem Item.
-  let played    = !!item?.UserData?.Played;
-  let favorite  = !!item?.UserData?.IsFavorite;
-  let hasResume = (item?.UserData?.PlaybackPositionTicks || 0) > 0
-                  && item?.Type !== 'Series' && item?.Type !== 'Season';
+  let played    = $state(!!item?.UserData?.Played);
+  let favorite  = $state(!!item?.UserData?.IsFavorite);
+  let hasResume = $state((item?.UserData?.PlaybackPositionTicks || 0) > 0
+                  && item?.Type !== 'Series' && item?.Type !== 'Season');
 
   // "Scharfschalten": Wird das Menü durch langes OK-Halten geöffnet, ist die Taste noch
   // gedrückt. Wir nehmen Eingaben ERST nach dem Loslassen an (keyup bzw. pointerup) —
@@ -33,12 +31,12 @@
   });
 
   function headers() {
-    return { "Authorization": `MediaBrowser Token="${$activeToken}"`, "Content-Type": "application/json" };
+    return { "Authorization": `MediaBrowser Token="${session.token}"`, "Content-Type": "application/json" };
   }
   async function call(method, path) {
     busy = true;
     try {
-      await fetch(`${$serverUrl}${path}`, { method, headers: headers() });
+      await fetch(`${session.serverUrl}${path}`, { method, headers: headers() });
     } catch (e) {
       console.error('context action failed', e);
     }
@@ -51,40 +49,40 @@
     played = next;                         // optimistisch umschalten
     if (next) hasResume = false;           // als gesehen → kein Fortsetzen mehr
     if (item.UserData) item.UserData.Played = next;
-    dispatch('changed');                   // Liste im Hintergrund aktualisieren (NICHT schließen)
     await call(next ? 'POST' : 'DELETE', `/Users/${userId}/PlayedItems/${item.Id}`);
+    onChanged?.();                   // ERST nach dem Server-Write neu laden (sonst Race: Reload liest veraltete Daten)
   }
   async function toggleFavorite() {
     if (!armed) return;
     const next = !favorite;
     favorite = next;
     if (item.UserData) item.UserData.IsFavorite = next;
-    dispatch('changed');
     await call(next ? 'POST' : 'DELETE', `/Users/${userId}/FavoriteItems/${item.Id}`);
+    onChanged?.();
   }
   async function resetProgress() {
     if (!armed) return;
     hasResume = false; played = false;     // raus aus "Weiterschauen"
     if (item.UserData) { item.UserData.Played = false; item.UserData.PlaybackPositionTicks = 0; }
-    dispatch('changed');
     await call('DELETE', `/Users/${userId}/PlayedItems/${item.Id}`);
+    onChanged?.();
   }
-  function openDetails() { if (!armed) return; dispatch('openDetails', item); dispatch('close'); }
-  function addToList()   { if (!armed) return; dispatch('addToList', item); dispatch('close'); }
+  function openDetails() { if (!armed) return; onOpenDetails?.(item); onClose?.(); }
+  function addToList()   { if (!armed) return; onAddToList?.(item); onClose?.(); }
 
   function handleKeyDown(e) {
-    if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); dispatch('close'); }
+    if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); onClose?.(); }
   }
 
   // Titel: bei Folgen "Serie · Folgentitel", sonst der Name
-  $: title = item?.SeriesName ? `${item.SeriesName} · ${item.Name}` : item?.Name;
+  let title = $derived(item?.SeriesName ? `${item.SeriesName} · ${item.Name}` : item?.Name);
 </script>
 
-<svelte:window on:keydown|capture={handleKeyDown} />
+<svelte:window onkeydowncapture={handleKeyDown} />
 
 <!-- Overlay -->
 <div data-focus-trap class="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-center justify-center p-8"
-     on:click|self={() => dispatch('close')}>
+     onclick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
 
   <div class="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden ring-1 ring-white/10">
     <!-- Kopf -->
@@ -95,7 +93,7 @@
 
     <!-- Aktionen -->
     <div class="p-3 flex flex-col gap-1">
-      <button on:click={toggleWatched} use:focusOnMount
+      <button onclick={toggleWatched} use:focusOnMount
         class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
                hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
         <svg class="w-6 h-6 shrink-0 {played ? 'text-green-400' : 'text-gray-400'}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -104,7 +102,7 @@
         {played ? $t.markUnwatched : $t.markWatched}
       </button>
 
-      <button on:click={toggleFavorite}
+      <button onclick={toggleFavorite}
         class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
                hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
         <svg class="w-6 h-6 shrink-0 {favorite ? 'text-red-500' : 'text-gray-400'}" fill={favorite ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -114,7 +112,7 @@
       </button>
 
       {#if hasResume}
-        <button on:click={resetProgress}
+        <button onclick={resetProgress}
           class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
                  hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
           <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -124,7 +122,7 @@
         </button>
       {/if}
 
-      <button on:click={addToList}
+      <button onclick={addToList}
         class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
                hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
         <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -133,7 +131,7 @@
         {$t.addToPlaylist}
       </button>
 
-      <button on:click={openDetails}
+      <button onclick={openDetails}
         class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
                hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
         <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">

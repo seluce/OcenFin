@@ -125,6 +125,13 @@ function focusEl(el) {
 // Eintrittspunkt einer Gruppe beim Übergang: zuletzt fokussiert (falls noch sichtbar),
 // sonst geometrisch nächstes in Richtung, sonst überhaupt nächstes.
 function entryOf(group, dir, from) {
+  // Opt-in [data-enter-first]: Beim Betreten der Gruppe (Hoch/Runter zwischen Sektionen) immer auf
+  // deren ERSTE Karte – stabil und vorhersehbar, egal aus welcher Spalte man kam. Innerhalb der Gruppe
+  // bleibt die Navigation geometrisch (greift nur beim Gruppen-Übergang, nicht zeilenweise).
+  if (group.hasAttribute('data-enter-first')) {
+    const first = focusablesIn(group)[0];
+    if (first) return first;
+  }
   // Als aktiv markiertes Element bevorzugen (z.B. der aktuelle Sidebar-Eintrag): Beim Wechsel in
   // die Gruppe landet der Fokus so immer auf dem aktiven Element, nicht auf dem zuletzt fokussierten.
   const current = group.querySelector('[data-group-current]');
@@ -146,7 +153,9 @@ function entryOf(group, dir, from) {
 
 function nearestGroup(dir, from, currentGroup) {
   const groups = Array.from(document.querySelectorAll('[data-focus-group]'))
-    .filter(g => g !== currentGroup && isVisible(g) && focusablesIn(g).length);
+    .filter(g => g !== currentGroup && isVisible(g) && focusablesIn(g).length
+              && !(currentGroup && g.contains(currentGroup)));   // Vorfahr-Gruppen (z.B. der Inhalts-Container "main")
+                                                                 // sind kein Sprungziel – man ist bereits darin.
   return pickGeometric(dir, from, groups, null);
 }
 

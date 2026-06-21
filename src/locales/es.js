@@ -220,6 +220,9 @@ export default {
     spoilerProtection: "Protección contra spoilers de episodios",
     groupHome: "Pantalla de inicio",
     groupInterface: "Interfaz",
+    groupDetails: "Detalles",
+    displayDetailsBackdrop: "Fondo (página de detalles)",
+    displayDetailsLogo: "Título como logo en vez de texto",
     clockFormat: "Formato de hora",
     clockAuto: "Automático",
     clock24h: "24 horas",
@@ -326,7 +329,7 @@ export default {
     statusChromium: "Chromium / WebView",
     statusHls: "hls.js",
     statusLibbitsub: "libbitsub",
-    statusJassub: "jassub",
+    statusAssjs: "assjs",
     statusYes: "Sí",
     statusNo: "No",
 

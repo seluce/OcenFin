@@ -21,7 +21,7 @@ So I decided to build a better app: A native WebOS app based on Svelte and Tailw
 * **Shared Profile:** If you use a shared profile, you can link two personal profiles to it. It hides movies or series that one of you has already seen. This makes it easy to find something new to watch together.
 * **Custom Avatars:** Create your own profile picture directly on the TV. You can use your recently watched shows or movies as a background. Or you can choose an SVG icon with a custom background. No need to upload images.
 * **WebSockets & SyncPlay:** Full WebSocket support for remote commands from the Jellyfin server and SyncPlay features to watch together.
-* **Direct Play Focus:** I use `libbitsub`, `jassub`, and `hls` to support many formats. This helps to run Direct Play on the TV and avoid transcoding on the server, even for complex subtitles like VobSub and DVDSub.
+* **Direct Play Focus:** I use `libbitsub`, `assjs`, and `hls` to support many formats. This helps to run Direct Play on the TV and avoid transcoding on the server, even for complex subtitles like VobSub and DVDSub.
 * **Multi-Language:** The app supports English, German, Spanish, French, Italian, Dutch, Portuguese, and Polish.
 
 ---

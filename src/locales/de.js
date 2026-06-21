@@ -220,6 +220,9 @@ export default {
     spoilerProtection: "Spoilerschutz f\u00fcr Folgen",
     groupHome: "Startseite",
     groupInterface: "Oberfläche",
+    groupDetails: "Details",
+    displayDetailsBackdrop: "Backdrop (Detailseite)",
+    displayDetailsLogo: "Titel als Logo statt Text",
     clockFormat: "Zeitformat",
     clockAuto: "Automatisch",
     clock24h: "24 Stunden",
@@ -326,7 +329,7 @@ export default {
     statusChromium: "Chromium / WebView",
     statusHls: "hls.js",
     statusLibbitsub: "libbitsub",
-    statusJassub: "jassub",
+    statusAssjs: "assjs",
     statusYes: "Ja",
     statusNo: "Nein",
 

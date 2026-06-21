@@ -3,10 +3,9 @@
   import { onMount, onDestroy } from 'svelte';
 
   // viewState wird übergeben um bei Bibliothek-Ansicht (A-Z-Leiste) nach links zu rücken
-  export let viewState = '';
-  export let use24h    = true;   // Zeitformat (aus Einstellung abgeleitet)
+  let { viewState = '', use24h = true } = $props();   // use24h: Zeitformat aus Einstellung
 
-  let timeString = '';
+  let timeString = $state('');
   let ticker;
 
   function updateTime() {
@@ -17,11 +16,12 @@
     );
   }
 
-  // Sprache + Format reaktiv
-  $: $currentLang, use24h, updateTime();
+  // Sprache + Format reaktiv: $effect verfolgt die Lesezugriffe in updateTime ($currentLang, use24h)
+  // und formatiert die Zeit bei jeder Änderung neu.
+  $effect(() => { updateTime(); });
 
   // A-Z-Leiste ist w-16 (64px). Im Library-View Uhrzeit nach links versetzen.
-  $: rightClass = viewState === 'library' ? 'right-20' : 'right-8';
+  let rightClass = $derived(viewState === 'library' ? 'right-20' : 'right-8');
 
   onMount(() => {
     updateTime();

@@ -1,43 +1,51 @@
 <script>
   import { t } from '../i18n.js';
-  import { itemProgress, connectionLost, longPress, authHeaders, blurUp, itemBlurHash, uiFade, serverUrl, activeToken } from '../utils.js';
-  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import { itemProgress, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle } from '../utils.js';
+  import { session } from '../session.svelte.js';
+  import { onMount, onDestroy } from 'svelte';
 
-  export let selectedUser;
-  export let apiCache;
-  export let reduceAnimations = false;   // steuert Hero-Auto-Rotation
-  export let showHero         = true;    // Hero-Banner anzeigen (Einstellung)
-  export let showLibraries    = true;    // "Meine Mediatheken"-Zeile anzeigen
-  export let showHistory      = true;    // "Zuletzt gesehen"-Zeile anzeigen
-  export let showNextUp       = true;    // "Als Nächstes"-Zeile anzeigen
-  export let showRecommendations = true; // "Weil du … gesehen hast"-Zeile anzeigen
-  export let recommendationRows   = 1;    // 1 oder 2 Empfehlungs-Reihen
-  export let showLatest       = true;    // "Zuletzt hinzugefügt" (Filme + Serien)
-  export let showCollections  = true;    // "Sammlungen" (BoxSets)
-  export let sharedSuggestions = [];      // "Für euch beide" — Titel, die zur gemeinsamen Vorliebe passen
-  export let showSharedSuggestions = false; // Reihe anzeigen (nur wenn gemeinsames Profil eingerichtet)
+  let {
+    selectedUser,
+    apiCache,
+    reduceAnimations = false,   // steuert Hero-Auto-Rotation
+    showHero         = true,    // Hero-Banner anzeigen (Einstellung)
+    showLibraries    = true,    // "Meine Mediatheken"-Zeile anzeigen
+    showHistory      = true,    // "Zuletzt gesehen"-Zeile anzeigen
+    showNextUp       = true,    // "Als Nächstes"-Zeile anzeigen
+    showRecommendations = true, // "Weil du … gesehen hast"-Zeile anzeigen
+    recommendationRows   = 1,   // 1 oder 2 Empfehlungs-Reihen
+    showLatest       = true,    // "Zuletzt hinzugefügt" (Filme + Serien)
+    showCollections  = true,    // "Sammlungen" (BoxSets)
+    sharedSuggestions = [],     // "Für euch beide" — Titel, die zur gemeinsamen Vorliebe passen
+    showSharedSuggestions = false, // Reihe anzeigen (nur wenn gemeinsames Profil eingerichtet)
+    onLibrariesLoaded, onOpenCollection, onOpenContext, onOpenDetails, onOpenLibrary,   // Callback-Props
+  } = $props();
 
-  const dispatch = createEventDispatcher();
-
-  let isLoading        = false;
-  let libraries        = [];
+  let isLoading        = $state(false);
+  let libraries        = $state([]);
   // An App melden, sobald die Mediatheken da sind (Cache-Hit oder Fetch) — speist die
   // Sidebar/Navigation reaktiv, ohne dass App separat fetchen muss (verhindert Race).
-  $: if (libraries.length) dispatch('librariesLoaded', libraries);
-  let continueWatching = [];
-  let nextUp           = [];
-  let latestMovies     = [];
-  let latestSeries     = [];
-  let recentlyWatched  = [];   // "Zuletzt gesehen" (Verlauf)
-  let recommendations  = [];   // [{ seedTitle, items }] — "Weil du X gesehen hast"
-  let collections      = [];   // BoxSets ("Sammlungen")
+  $effect(() => { if (libraries.length) onLibrariesLoaded?.(libraries); });
+  let continueWatching = $state([]);
+  let nextUp           = $state([]);
+  let latestMovies     = $state([]);
+  let latestSeries     = $state([]);
+  let recentlyWatched  = $state([]);   // "Zuletzt gesehen" (Verlauf)
+  let recommendations  = $state([]);   // [{ seedTitle, items }] — "Weil du X gesehen hast"
+  let collections      = $state([]);   // BoxSets ("Sammlungen")
+
+  // "Weiterschauen" reaktiv ableiten: ein in-place als gesehen markiertes / zurückgesetztes Item
+  // (ContextMenu mutiert item.UserData direkt) verschwindet sofort aus der Zeile — ohne Reload.
+  let resumeRow = $derived(continueWatching.filter(
+    i => !i.UserData?.Played && (i.UserData?.PlaybackPositionTicks || 0) > 0
+  ));
 
   // HERO-BANNER: rotierendes Featured-Item (Netflix-Stil)
-  let heroItems  = [];
-  let heroIndex  = 0;
+  let heroItems  = $state([]);
+  let heroIndex  = $state(0);
   let heroTimer;
-  let heroReady  = false;   // erst true, wenn das erste Backdrop dekodiert ist → kein Aufploppen
-  $: heroCurrent = heroItems[heroIndex] || null;
+  let heroReady  = $state(false);   // erst true, wenn das erste Backdrop dekodiert ist → kein Aufploppen
+  let heroCurrent = $derived(heroItems[heroIndex] || null);
 
   const skeletons = Array(6).fill(0);
 
@@ -84,7 +92,7 @@
     }
   }
 
-  const getAuthHeaders = () => authHeaders($activeToken);
+  const getAuthHeaders = () => authHeaders(session.token);
 
   // Empfehlungen: Seeds aus zuletzt gesehenen Items, dann /Items/{id}/Similar.
   // Best Practice (Netflix/Plex): direkt im Dashboard, kein eigener Tab.
@@ -92,7 +100,7 @@
     try {
       // Zuletzt gespielte Filme/Serien als Aufhänger holen
       const res = await fetch(
-        `${$serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
+        `${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
         `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=4&Fields=${fields}`, opts
       );
       const seeds = (await res.json()).Items || [];
@@ -101,7 +109,7 @@
       // Einstellung 1 oder 2 — so wirkt das Umschalten ohne Neuladen sofort.
       const rows = [];
       for (const seed of seeds.slice(0, 2)) {
-        const sim = await fetch(`${$serverUrl}/Items/${seed.Id}/Similar?userId=${uId}&limit=12&Fields=${fields}`, opts);
+        const sim = await fetch(`${session.serverUrl}/Items/${seed.Id}/Similar?userId=${uId}&limit=12&Fields=${fields}`, opts);
         const items = (await sim.json()).Items || [];
         if (items.length >= 4) rows.push({ seedTitle: seed.Name, items });
       }
@@ -128,23 +136,23 @@
       const fields = "PrimaryImageAspectRatio,Overview,BackdropImageTags";
 
       // Alle 5 Fetches gleichzeitig starten — kein sequentielles Warten
-      const pViews        = fetch(`${$serverUrl}/Users/${uId}/Views`, opts);
-      const pResume       = fetch(`${$serverUrl}/Users/${uId}/Items/Resume?Limit=12&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
-      const pNextUp       = fetch(`${$serverUrl}/Shows/NextUp?UserId=${uId}&Limit=6&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
-      const pLatestMovies = fetch(`${$serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Movie&Limit=6&Fields=${fields}`, opts);
-      const pLatestSeries = fetch(`${$serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Series&Limit=6&Fields=${fields}`, opts);
+      const pViews        = fetch(`${session.serverUrl}/Users/${uId}/Views`, opts);
+      const pResume       = fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=12&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
+      const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=6&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
+      const pLatestMovies = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Movie&Limit=6&Fields=${fields}`, opts);
+      const pLatestSeries = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Series&Limit=6&Fields=${fields}`, opts);
       // Verlauf: zuletzt gesehene Filme/Folgen. Mehr holen (40), da Serien danach
       // zu je einem Eintrag zusammengefasst werden (Puffer für eine gute Mischung).
-      const pHistory      = fetch(`${$serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}`, opts);
+      const pHistory      = fetch(`${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}`, opts);
       // Sammlungen (BoxSets)
-      const pCollections  = fetch(`${$serverUrl}/Users/${uId}/Items?IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=50`, opts);
+      const pCollections  = fetch(`${session.serverUrl}/Users/${uId}/Items?IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=50`, opts);
 
       // Priorität: Views + Resume → UI sofort freigeben
       const [resViews, resResume] = await Promise.all([pViews, pResume]);
       libraries        = (await resViews.json()).Items  || [];
       continueWatching = (await resResume.json()).Items || [];
       isLoading        = false;
-      connectionLost.set(false);   // Server erreichbar
+      session.connectionLost = false;   // Server erreichbar
 
       // Cache früh befüllen → Sidebar-Navigation funktioniert sofort
       apiCache.dashboard = { libraries, continueWatching, nextUp: [], latestMovies: [], latestSeries: [], recentlyWatched: [], recommendations: [], collections: [] };
@@ -159,8 +167,22 @@
       loadRecommendations(uId, opts, fields);
 
       // Verlauf laden + nach Serie zusammenfassen
-      pHistory.then(r => r.json()).then(d => {
-        recentlyWatched = dedupeHistory(d.Items || []);
+      pHistory.then(r => r.json()).then(async d => {
+        let items = dedupeHistory(d.Items || []);
+        // Serien wie in der Mediathek mit echtem Jahresbereich zeigen ("2016 – 2019" / "2024 – heute"):
+        // einmalig die echten Serien-Infos (Jahr/Status/EndDate) für alle Serien-Einträge nachladen.
+        const seriesIds = items.filter(i => i.Type === 'Series').map(i => i.Id);
+        if (seriesIds.length) {
+          try {
+            const r2 = await fetch(`${session.serverUrl}/Users/${uId}/Items?Ids=${seriesIds.join(',')}&Fields=ProductionYear,Status,EndDate`, opts);
+            const info = new Map(((await r2.json()).Items || []).map(s => [s.Id, s]));
+            items = items.map(i => {
+              const s = i.Type === 'Series' ? info.get(i.Id) : null;
+              return s ? { ...i, ProductionYear: s.ProductionYear, Status: s.Status, EndDate: s.EndDate } : i;
+            });
+          } catch { /* Anreicherung optional — schlägt sie fehl, bleibt nur der Titel */ }
+        }
+        recentlyWatched = items;
         apiCache.dashboard.recentlyWatched = recentlyWatched;
       }).catch(() => {});
 
@@ -170,7 +192,12 @@
       // /Items/Latest gibt ein DIREKTES Array zurück (nicht { Items: [...] })!
       // Andere Endpunkte geben { Items, TotalRecordCount }. Beide Fälle abfangen.
       pNextUp.then(r => r.json()).then(d => {
-        nextUp = Array.isArray(d) ? d : (d.Items || []);
+        const raw = Array.isArray(d) ? d : (d.Items || []);
+        // In-Progress-Titel ausschließen (stehen schon in "Weiterschauen") — wie die Jellyfin-App.
+        // Per Episode-Id ODER SeriesId, falls eine Folge der Serie bereits angefangen wurde.
+        const inProgress = new Set();
+        continueWatching.forEach(i => { inProgress.add(i.Id); if (i.SeriesId) inProgress.add(i.SeriesId); });
+        nextUp = raw.filter(i => !inProgress.has(i.Id) && !inProgress.has(i.SeriesId));
         apiCache.dashboard.nextUp = nextUp;
       }).catch(() => {});
 
@@ -189,7 +216,7 @@
     } catch (err) {
       console.error("Dashboard load failed:", err);
       isLoading = false;
-      connectionLost.set(true);   // Server nicht erreichbar → Banner
+      session.connectionLost = true;   // Server nicht erreichbar → Banner
     }
   }
 
@@ -224,9 +251,9 @@
   // Verlauf-Karten einheitlich Hochkant: Folgen nutzen das Serien-Poster
   function getHistoryImageUrl(item) {
     if (item.Type === 'Episode' && item.SeriesId && item.SeriesPrimaryImageTag)
-      return `${$serverUrl}/Items/${item.SeriesId}/Images/Primary?tag=${item.SeriesPrimaryImageTag}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
+      return `${session.serverUrl}/Items/${item.SeriesId}/Images/Primary?tag=${item.SeriesPrimaryImageTag}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
     if (item.ImageTags?.Primary)
-      return `${$serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
+      return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
     return null;
   }
 
@@ -235,35 +262,26 @@
       // Wie Jellyfin (preferThumb): Querformat-Artwork bevorzugen — eigenes Thumb, sonst
       // Serien-/Eltern-Thumb, dann Backdrop (Folge → Serie), zuletzt der Folgen-Still.
       if (item.ImageTags?.Thumb)
-        return `${$serverUrl}/Items/${item.Id}/Images/Thumb?tag=${item.ImageTags.Thumb}&maxWidth=600&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${item.Id}/Images/Thumb?tag=${item.ImageTags.Thumb}&maxWidth=600&quality=80&format=webp`;
       if (item.ParentThumbItemId && item.ParentThumbImageTag)
-        return `${$serverUrl}/Items/${item.ParentThumbItemId}/Images/Thumb?tag=${item.ParentThumbImageTag}&maxWidth=600&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${item.ParentThumbItemId}/Images/Thumb?tag=${item.ParentThumbImageTag}&maxWidth=600&quality=80&format=webp`;
       if (item.SeriesId && item.SeriesThumbImageTag)
-        return `${$serverUrl}/Items/${item.SeriesId}/Images/Thumb?tag=${item.SeriesThumbImageTag}&maxWidth=600&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${item.SeriesId}/Images/Thumb?tag=${item.SeriesThumbImageTag}&maxWidth=600&quality=80&format=webp`;
       if (item.BackdropImageTags?.length > 0)
-        return `${$serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
       if (item.ParentBackdropItemId && item.ParentBackdropImageTags?.length > 0)
-        return `${$serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${item.ParentBackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${item.ParentBackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
       if (item.ImageTags?.Primary)
-        return `${$serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
     } else {
       if (item.ImageTags?.Primary)
-        return `${$serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
+        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
     }
     return null;
   }
 
   function getItemTitle(item) {
     return (item.Type === 'Episode' && item.SeriesName) ? item.SeriesName : item.Name;
-  }
-
-  function getItemSubtitle(item) {
-    if (item.Type === 'Episode') {
-      const s = item.ParentIndexNumber ?? '?';
-      const e = item.IndexNumber ?? '?';
-      return `S${s}:E${e} – ${item.Name}`;
-    }
-    return item.ProductionYear?.toString() ?? '';
   }
 
   // Restzeit in Minuten für "Weiterschauen"
@@ -277,7 +295,7 @@
   // Hero-Backdrop in hoher Auflösung
   function getHeroBackdrop(item) {
     if (item?.BackdropImageTags?.length > 0)
-      return `${$serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=1920&quality=85&format=webp`;
+      return `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=1920&quality=85&format=webp`;
     return null;
   }
 
@@ -285,11 +303,94 @@
   // Wirkt hochwertiger; ein zusätzliches Bild, kein Mehraufwand bei den Daten.
   function getHeroLogo(item) {
     if (item.ImageTags?.Logo)
-      return `${$serverUrl}/Items/${item.Id}/Images/Logo?tag=${item.ImageTags.Logo}&maxHeight=130&quality=90&format=webp`;
+      return `${session.serverUrl}/Items/${item.Id}/Images/Logo?tag=${item.ImageTags.Logo}&maxHeight=130&quality=90&format=webp`;
     return null;
   }</script>
 
 <div class="px-10 pt-16 pb-20 flex flex-col gap-12">
+
+  <!-- Wiederverwendbare Card-Snippets (statt 8 fast identischer Blöcke) -->
+  {#snippet landscapeCard(item)}
+    {@const img = getItemImageUrl(item, 'landscape')}
+    {@const prog = itemProgress(item)}
+    {@const rem = getRemainingMinutes(item)}
+    {@const sub = getItemSubtitle(item, $t.today)}
+    <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
+      class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
+      <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
+                  border-4 border-transparent group-focus:border-white group-focus:scale-105
+                  transition-all duration-200 shadow-xl relative">
+        {#if img}
+          <img src={img} use:blurUp={itemBlurHash(item, 'Backdrop')} alt={item.Name}
+            class="w-full h-full object-cover" loading="lazy" />
+        {/if}
+        {#if prog > 0}
+          <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
+            <div class="h-full bg-blue-500" style="width:{prog}%"></div>
+          </div>
+        {/if}
+        {#if rem}
+          <div class="absolute top-2 right-2 bg-black/80 text-white text-xs font-bold px-2 py-1 rounded-md">
+            {rem} {$t.mins} {$t.remaining}
+          </div>
+        {/if}
+      </div>
+      <div class="mt-3 flex flex-col w-full overflow-hidden">
+        <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
+        {#if sub}
+          <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{sub}</span>
+        {/if}
+      </div>
+    </button>
+  {/snippet}
+
+  {#snippet portraitCard(item, img, blur)}
+    {@const prog = itemProgress(item)}
+    {@const sub = getItemSubtitle(item, $t.today)}
+    <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
+      class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
+      <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
+                  border-4 border-transparent group-focus:border-white
+                  transition-colors duration-200 shadow-xl">
+        {#if img}
+          <img src={img} use:blurUp={blur} alt={item.Name}
+            class="w-full h-full object-cover" loading="lazy" />
+        {/if}
+        {#if prog > 0}
+          <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
+            <div class="h-full bg-blue-500" style="width:{prog}%"></div>
+          </div>
+        {/if}
+      </div>
+      <div class="mt-3 flex flex-col w-full overflow-hidden">
+        <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
+        {#if sub}
+          <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{sub}</span>
+        {/if}
+      </div>
+    </button>
+  {/snippet}
+
+  {#snippet collectionCard(col)}
+    {@const img = getItemImageUrl(col)}
+    <button onclick={() => onOpenCollection?.(col)}
+      class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
+      <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
+                  border-4 border-transparent group-focus:border-white
+                  transition-colors duration-200 shadow-xl">
+        {#if img}
+          <img src={img} use:blurUp={itemBlurHash(col)} alt={col.Name}
+            class="w-full h-full object-cover" loading="lazy" />
+        {:else}
+          <div class="w-full h-full flex items-center justify-center text-gray-600">
+            <svg class="w-14 h-14" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
+          </div>
+        {/if}
+      </div>
+      <span class="mt-3 text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{col.Name}</span>
+    </button>
+  {/snippet}
+
 
   {#if isLoading}
     <!-- Skeleton-Loader -->
@@ -310,7 +411,7 @@
     {#if showHero && heroCurrent && heroReady}
       <div transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden">
         <!-- Backdrop mit Verläufen -->
-        {#each heroItems as h, i}
+        {#each heroItems as h, i (h.Id)}
           {#if i === heroIndex && getHeroBackdrop(h)}
             <img src={getHeroBackdrop(h)} use:blurUp={itemBlurHash(h, 'Backdrop')} alt={h.Name} fetchpriority="high" loading="eager" decoding="async"
               class="absolute inset-0 w-full h-full object-cover hero-fade" />
@@ -343,7 +444,7 @@
             <p class="text-gray-300 text-lg line-clamp-2 max-w-2xl drop-shadow">{heroCurrent.Overview}</p>
           {/if}
           <div class="flex items-center gap-4 mt-2">
-            <button on:click={() => dispatch('openDetails', heroCurrent)} data-scroll-top
+            <button onclick={() => onOpenDetails?.(heroCurrent)} data-scroll-top
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-lg px-8 py-3 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-2 shadow-lg">
               <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
@@ -367,8 +468,8 @@
       <div>
         <h2 class="text-2xl font-bold text-gray-400 mb-4 px-2">{$t.myMedia}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each libraries as library}
-            <button on:click={() => dispatch('openLibrary', library)}
+          {#each libraries as library (library.Id)}
+            <button onclick={() => onOpenLibrary?.(library)}
               class="shrink-0 group flex flex-col items-center focus:outline-none">
               <div class="w-64 h-36 bg-gray-800 rounded-xl flex items-center justify-center
                           border-4 border-transparent group-focus:border-white group-hover:border-gray-400
@@ -388,38 +489,12 @@
     {/if}
 
     <!-- WEITERSCHAUEN -->
-    {#if continueWatching.length > 0}
+    {#if resumeRow.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.continueWatchingRow}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each continueWatching as item}
-            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
-              class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
-              <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
-                          border-4 border-transparent group-focus:border-white group-focus:scale-105
-                          transition-all duration-200 shadow-xl relative">
-                {#if getItemImageUrl(item, 'landscape')}
-                  <img src={getItemImageUrl(item, 'landscape')} use:blurUp={itemBlurHash(item, 'Backdrop')} alt={item.Name}
-                    class="w-full h-full object-cover" loading="lazy" />
-                {/if}
-                {#if itemProgress(item) > 0}
-                  <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                    <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                  </div>
-                {/if}
-                {#if getRemainingMinutes(item)}
-                  <div class="absolute top-2 right-2 bg-black/80 text-white text-xs font-bold px-2 py-1 rounded-md">
-                    {getRemainingMinutes(item)} {$t.mins} {$t.remaining}
-                  </div>
-                {/if}
-              </div>
-              <div class="mt-3 flex flex-col w-full overflow-hidden">
-                <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
-                {#if getItemSubtitle(item)}
-                  <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{getItemSubtitle(item)}</span>
-                {/if}
-              </div>
-            </button>
+          {#each resumeRow as item (item.Id)}
+            {@render landscapeCard(item)}
           {/each}
         </div>
       </div>
@@ -430,24 +505,8 @@
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.nextUp}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each nextUp as item}
-            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
-              class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
-              <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
-                          border-4 border-transparent group-focus:border-white group-focus:scale-105
-                          transition-all duration-200 shadow-xl">
-                {#if getItemImageUrl(item, 'landscape')}
-                  <img src={getItemImageUrl(item, 'landscape')} use:blurUp={itemBlurHash(item, 'Backdrop')} alt={item.Name}
-                    class="w-full h-full object-cover" loading="lazy" />
-                {/if}
-              </div>
-              <div class="mt-3 flex flex-col w-full overflow-hidden">
-                <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
-                {#if getItemSubtitle(item)}
-                  <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{getItemSubtitle(item)}</span>
-                {/if}
-              </div>
-            </button>
+          {#each nextUp as item (item.Id)}
+            {@render landscapeCard(item)}
           {/each}
         </div>
       </div>
@@ -458,29 +517,8 @@
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.recentlyWatched}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each recentlyWatched as item}
-            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
-              class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
-              <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                          border-4 border-transparent group-focus:border-white
-                          transition-colors duration-200 shadow-xl">
-                {#if getHistoryImageUrl(item)}
-                  <img src={getHistoryImageUrl(item)} use:blurUp={itemBlurHash(item, 'Backdrop')} alt={item.Name}
-                    class="w-full h-full object-cover" loading="lazy" />
-                {/if}
-                {#if itemProgress(item) > 0}
-                  <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                    <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                  </div>
-                {/if}
-              </div>
-              <div class="mt-3 flex flex-col w-full overflow-hidden">
-                <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
-                {#if getItemSubtitle(item)}
-                  <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{getItemSubtitle(item)}</span>
-                {/if}
-              </div>
-            </button>
+          {#each recentlyWatched as item (item.Id)}
+            {@render portraitCard(item, getHistoryImageUrl(item), itemBlurHash(item, 'Backdrop'))}
           {/each}
         </div>
       </div>
@@ -491,24 +529,8 @@
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.sharedSuggestions}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each sharedSuggestions as item}
-            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
-              class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
-              <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                          border-4 border-transparent group-focus:border-white
-                          transition-colors duration-200 shadow-xl">
-                {#if getItemImageUrl(item)}
-                  <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name}
-                    class="w-full h-full object-cover" loading="lazy" />
-                {/if}
-              </div>
-              <div class="mt-3 flex flex-col w-full overflow-hidden">
-                <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
-                {#if getItemSubtitle(item)}
-                  <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{getItemSubtitle(item)}</span>
-                {/if}
-              </div>
-            </button>
+          {#each sharedSuggestions as item (item.Id)}
+            {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
           {/each}
         </div>
       </div>
@@ -519,29 +541,8 @@
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each rec.items as item}
-            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
-              class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
-              <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                          border-4 border-transparent group-focus:border-white
-                          transition-colors duration-200 shadow-xl">
-                {#if getItemImageUrl(item)}
-                  <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name}
-                    class="w-full h-full object-cover" loading="lazy" />
-                {/if}
-                {#if itemProgress(item) > 0}
-                  <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                    <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                  </div>
-                {/if}
-              </div>
-              <div class="mt-3 flex flex-col w-full overflow-hidden">
-                <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
-                {#if getItemSubtitle(item)}
-                  <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{getItemSubtitle(item)}</span>
-                {/if}
-              </div>
-            </button>
+          {#each rec.items as item (item.Id)}
+            {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
           {/each}
         </div>
       </div>
@@ -552,29 +553,8 @@
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.latestMovies}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each latestMovies as item}
-            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
-              class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
-              <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                          border-4 border-transparent group-focus:border-white
-                          transition-colors duration-200 shadow-xl">
-                {#if getItemImageUrl(item)}
-                  <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name}
-                    class="w-full h-full object-cover" loading="lazy" />
-                {/if}
-                {#if itemProgress(item) > 0}
-                  <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                    <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                  </div>
-                {/if}
-              </div>
-              <div class="mt-3 flex flex-col w-full overflow-hidden">
-                <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
-                {#if getItemSubtitle(item)}
-                  <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{getItemSubtitle(item)}</span>
-                {/if}
-              </div>
-            </button>
+          {#each latestMovies as item (item.Id)}
+            {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
           {/each}
         </div>
       </div>
@@ -585,29 +565,8 @@
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.latestSeries}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each latestSeries as item}
-            <button on:click={() => dispatch('openDetails', item)} data-item-id={item.Id} use:longPress on:longpress={() => dispatch('openContext', item)}
-              class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
-              <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                          border-4 border-transparent group-focus:border-white
-                          transition-colors duration-200 shadow-xl">
-                {#if getItemImageUrl(item)}
-                  <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name}
-                    class="w-full h-full object-cover" loading="lazy" />
-                {/if}
-                {#if itemProgress(item) > 0}
-                  <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                    <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                  </div>
-                {/if}
-              </div>
-              <div class="mt-3 flex flex-col w-full overflow-hidden">
-                <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
-                {#if getItemSubtitle(item)}
-                  <span class="text-xs text-gray-400 group-focus:text-gray-300 truncate w-full mt-0.5">{getItemSubtitle(item)}</span>
-                {/if}
-              </div>
-            </button>
+          {#each latestSeries as item (item.Id)}
+            {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
           {/each}
         </div>
       </div>
@@ -618,23 +577,8 @@
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.collections}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
-          {#each collections as col}
-            <button on:click={() => dispatch('openCollection', col)}
-              class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
-              <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                          border-4 border-transparent group-focus:border-white
-                          transition-colors duration-200 shadow-xl">
-                {#if getItemImageUrl(col)}
-                  <img src={getItemImageUrl(col)} use:blurUp={itemBlurHash(col)} alt={col.Name}
-                    class="w-full h-full object-cover" loading="lazy" />
-                {:else}
-                  <div class="w-full h-full flex items-center justify-center text-gray-600">
-                    <svg class="w-14 h-14" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
-                  </div>
-                {/if}
-              </div>
-              <span class="mt-3 text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{col.Name}</span>
-            </button>
+          {#each collections as col (col.Id)}
+            {@render collectionCard(col)}
           {/each}
         </div>
       </div>

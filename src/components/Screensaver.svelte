@@ -1,17 +1,19 @@
 <script>
   import { currentLang } from '../i18n.js';
-  import { authHeaders, serverUrl, activeToken } from '../utils.js';
-  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import { authHeaders } from '../utils.js';
+  import { session } from '../session.svelte.js';
+  import { onMount, onDestroy } from 'svelte';
 
-  const dispatch = createEventDispatcher();
+  let {
+    use24h    = true,            // Zeitformat (aus Einstellung abgeleitet)
+    mode      = 'clock',         // 'clock' | 'art'
+    artSource = 'watched',       // 'watched' | 'unwatched' | 'random'
+    brightness = 0.45,           // Art-Mode-Helligkeit (0.45 gedimmt = OLED-Standard)
+    userId    = '',
+    onDismiss,                   // Callback-Prop (statt 'dismiss'-Event)
+  } = $props();
 
-  export let use24h    = true;            // Zeitformat (aus Einstellung abgeleitet)
-  export let mode      = 'clock';         // 'clock' | 'art'
-  export let artSource = 'watched';       // 'watched' | 'unwatched' | 'random'
-  export let brightness = 0.45;           // Art-Mode-Helligkeit (0.45 gedimmt = OLED-Standard)
-  export let userId    = '';
-
-  let timeString = '', dateString = '';
+  let timeString = $state(''), dateString = $state('');
   let clockTick, moveTimer, firstMove, artTimer, firstArtTimeout;
   let destroyed = false;
 
@@ -29,7 +31,7 @@
   // häufiges Blinken zu stören (Pixel-Shift-Logik wie bei TV-eigenen Schonern).
   const CLOCK_FIRST_MOVE = 20000;   // erster Wechsel nach 20 s
   const CLOCK_INTERVAL   = 45000;   // danach alle 45 s
-  let posX = 30, posY = 35, clockOn = true;
+  let posX = $state(30), posY = $state(35), clockOn = $state(true);
   function moveClock() {
     clockOn = false;                          // ausblenden
     setTimeout(() => {
@@ -40,24 +42,24 @@
   }
 
   // ── ART-MODUS ──────────────────────────────────────────────────────────────
-  let artlist  = [];                          // [{ url, title }]
-  let slots    = [{ url: '', title: '' }, { url: '', title: '' }];  // zwei Crossfade-Ebenen
-  let front    = 0;                           // sichtbare Ebene
+  let artlist  = [];                          // [{ url, title }] — interne Daten (nicht im Template)
+  let slots    = $state([{ url: '', title: '' }, { url: '', title: '' }]);  // zwei Crossfade-Ebenen
+  let front    = $state(0);                   // sichtbare Ebene
   let artIdx   = 0;
-  let artReady = false;                       // true → Backdrops anzeigen statt Uhr-Fallback
+  let artReady = $state(false);               // true → Backdrops anzeigen statt Uhr-Fallback
 
   async function fetchBackdrops(filter) {
-    const url = `${$serverUrl}/Users/${userId}/Items?Recursive=true&IncludeItemTypes=Movie,Series`
+    const url = `${session.serverUrl}/Users/${userId}/Items?Recursive=true&IncludeItemTypes=Movie,Series`
               + `${filter}&SortBy=Random&Limit=80&Fields=BackdropImageTags&ImageTypeLimit=1`
               + `&EnableImageTypes=Backdrop&EnableTotalRecordCount=false`;
-    const res = await fetch(url, { headers: authHeaders($activeToken) });
+    const res = await fetch(url, { headers: authHeaders(session.token) });
     if (!res.ok) return [];
     const data = await res.json();
     return (data.Items || [])
       .filter(it => it.BackdropImageTags && it.BackdropImageTags.length)
       .map(it => ({
         id: it.Id,
-        url: `${$serverUrl}/Items/${it.Id}/Images/Backdrop/0?tag=${it.BackdropImageTags[0]}&maxWidth=1920&quality=85&ApiKey=${$activeToken}`,
+        url: `${session.serverUrl}/Items/${it.Id}/Images/Backdrop/0?tag=${it.BackdropImageTags[0]}&maxWidth=1920&quality=85&ApiKey=${session.token}`,
         title: it.Name || '',
       }));
   }
@@ -65,22 +67,22 @@
   // Next Up = nächste Folge laufender Serien → für "aktuell". Liefert Episoden; gezeigt wird das
   // SERIEN-Backdrop (über SeriesId + geerbte ParentBackdropImageTags) mit dem Serientitel.
   async function fetchNextUp() {
-    const url = `${$serverUrl}/Shows/NextUp?UserId=${userId}&Limit=40&Fields=ParentBackdropImageTags`
+    const url = `${session.serverUrl}/Shows/NextUp?UserId=${userId}&Limit=40&Fields=ParentBackdropImageTags`
               + `&ImageTypeLimit=1&EnableImageTypes=Backdrop&EnableTotalRecordCount=false`;
-    const res = await fetch(url, { headers: authHeaders($activeToken) });
+    const res = await fetch(url, { headers: authHeaders(session.token) });
     if (!res.ok) return [];
     const data = await res.json();
     return (data.Items || [])
       .filter(ep => ep.SeriesId && ep.ParentBackdropImageTags && ep.ParentBackdropImageTags.length)
       .map(ep => ({
         id: ep.SeriesId,
-        url: `${$serverUrl}/Items/${ep.SeriesId}/Images/Backdrop/0?tag=${ep.ParentBackdropImageTags[0]}&maxWidth=1920&quality=85&ApiKey=${$activeToken}`,
+        url: `${session.serverUrl}/Items/${ep.SeriesId}/Images/Backdrop/0?tag=${ep.ParentBackdropImageTags[0]}&maxWidth=1920&quality=85&ApiKey=${session.token}`,
         title: ep.SeriesName || ep.Name || '',
       }));
   }
 
   async function loadArt() {
-    if (!$serverUrl || !userId || !$activeToken) return;
+    if (!session.serverUrl || !userId || !session.token) return;
     try {
       let list;
       if (artSource === 'watched') {
@@ -117,8 +119,7 @@
     if (!artlist.length) return;
     const item = artlist[i % artlist.length];
     const back = front === 0 ? 1 : 0;
-    slots[back] = item;
-    slots = slots;
+    slots[back] = item;   // Deep Reactivity: Mutation reicht (kein "slots = slots" mehr nötig)
     front = back;
   }
 
@@ -171,13 +172,13 @@
     clearTimeout(firstArtTimeout);
   });
 
-  function dismiss() { dispatch('dismiss'); }
-  $: useArt = mode === 'art' && artReady;
+  function dismiss() { onDismiss?.(); }
+  let useArt = $derived(mode === 'art' && artReady);
 </script>
 
 <!-- Schwarzer Grund schont OLED; im Art-Modus stark abgedunkelte Backdrops im Crossfade. -->
 <div class="fixed inset-0 bg-black z-[500] cursor-none select-none overflow-hidden"
-     on:click={dismiss} on:keydown={dismiss} on:pointermove|self={dismiss} tabindex="-1">
+     onclick={dismiss} onkeydown={dismiss} onpointermove={(e) => { if (e.target === e.currentTarget) dismiss(); }} tabindex="-1">
 
   {#if useArt}
     <!-- Zwei Ebenen für sanftes Überblenden -->

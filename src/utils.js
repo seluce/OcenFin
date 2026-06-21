@@ -1,5 +1,4 @@
 // Gemeinsame Hilfsfunktionen (geteilt zwischen App und Komponenten)
-import { writable } from 'svelte/store';
 import { tick } from 'svelte';
 import { fade } from 'svelte/transition';
 import { dependencies as deps } from '../package.json';   // für Versions-Anzeige auf der Status-Seite
@@ -20,16 +19,6 @@ export function dropTrapOnOutro(e) {
   if (root.hasAttribute?.('data-focus-trap')) root.removeAttribute('data-focus-trap');
   root.querySelectorAll?.('[data-focus-trap]').forEach((el) => el.removeAttribute('data-focus-trap'));
 }
-
-// Verbindungsstatus: true, wenn ein API-Aufruf wegen Netzwerk-/Serverfehler scheitert.
-// App zeigt dann ein Hinweis-Banner. Wird bei Erfolg wieder zurückgesetzt.
-export const connectionLost = writable(false);
-
-// App-weite Quelle der Wahrheit für Server-URL und Zugangstoken. Ersetzt schrittweise das
-// Prop-Drilling durch ~9 Komponenten: App speist diese Stores, Komponenten lesen $serverUrl /
-// $activeToken direkt. Token ändert sich bei Login/Logout/Relaunch → Store propagiert automatisch.
-export const serverUrl = writable('');
-export const activeToken = writable('');
 
 // Fokus-Rückgabe nach dem Schließen eines Modals/Overlays: beim Öffnen den Auslöser merken,
 // beim Schließen dorthin zurückspringen. capture()/restore() (inkl. tick-Timing) sind hier
@@ -187,6 +176,26 @@ export function itemProgress(item) {
     return (item.UserData.PlaybackPositionTicks / item.RunTimeTicks) * 100;
   if (item.UserData?.PlayedPercentage) return item.UserData.PlayedPercentage;
   return 0;
+}
+
+// Karten-/Grid-Untertitel: Folge → "S1:E2 – Titel"; Serie → Jahresbereich
+// ("2016 – 2019" / "2024 – heute"); sonst das Produktionsjahr.
+// `todayLabel` = lokalisiertes "heute" ($t.today), da $t hier nicht verfügbar ist.
+export function getItemSubtitle(item, todayLabel = '') {
+  if (item.Type === 'Episode') {
+    const s = item.ParentIndexNumber ?? '?';
+    const e = item.IndexNumber ?? '?';
+    return `S${s}:E${e} – ${item.Name}`;
+  }
+  if (item.Type === 'Series') {
+    const start = item.ProductionYear || '';
+    const end   = item.Status === 'Continuing'
+      ? todayLabel
+      : (item.EndDate ? new Date(item.EndDate).getFullYear() : '');
+    if (start && end && start != end) return `${start} – ${end}`;
+    return start.toString();
+  }
+  return item.ProductionYear?.toString() ?? '';
 }
 
 // ============================================================
@@ -433,7 +442,7 @@ export function runtimeVersions() {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
   const m = ua.match(/Chrom(?:e|ium)\/(\d+(?:\.\d+)*)/);
   const dep = (name) => (deps?.[name] || '').replace(/^[\^~]/, '');
-  return { chromium: m ? m[1] : '', hls: dep('hls.js'), libbitsub: dep('libbitsub'), jassub: dep('jassub') };
+  return { chromium: m ? m[1] : '', hls: dep('hls.js'), libbitsub: dep('libbitsub'), assjs: dep('assjs') };
 }
 
 // --- TV-Fähigkeiten ----------------------------------------------------------------------------

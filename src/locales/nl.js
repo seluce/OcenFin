@@ -220,6 +220,9 @@ export default {
     spoilerProtection: "Spoilerbescherming voor afleveringen",
     groupHome: "Startscherm",
     groupInterface: "Interface",
+    groupDetails: "Details",
+    displayDetailsBackdrop: "Achtergrond (detailpagina)",
+    displayDetailsLogo: "Titel als logo i.p.v. tekst",
     clockFormat: "Tijdnotatie",
     clockAuto: "Automatisch",
     clock24h: "24-uurs",
@@ -326,7 +329,7 @@ export default {
     statusChromium: "Chromium / WebView",
     statusHls: "hls.js",
     statusLibbitsub: "libbitsub",
-    statusJassub: "jassub",
+    statusAssjs: "assjs",
     statusYes: "Ja",
     statusNo: "Nee",
 

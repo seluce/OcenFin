@@ -263,7 +263,7 @@ export function externalSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, 
   return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.vtt?ApiKey=${token}`;
 }
 
-// Liefert die Original-ASS/SSA-URL für JASSUB (clientseitiges Rendern mit vollem Styling).
+// Liefert die Original-ASS/SSA-URL für assjs (clientseitiges Rendern mit vollem Styling).
 // Bewusst IMMER Stream.ass: liefert das Originalformat samt Styles statt der VTT-Konvertierung,
 // die Positionierung/Typesetting verwirft (SSA wird vom Server nach ASS gewandelt).
 export function assSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, token }) {
