@@ -5,12 +5,10 @@
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady } from '../syncplay.js';
   import { PgsRenderer, VobSubRenderer } from 'libbitsub';
-  import JASSUB from 'jassub';
-  // Worker+WASM als echte Datei-URLs via Vite (?url) — dadurch läuft das ASS-Parsen/Rendern
-  // off-main-thread (der Vorteil, den libbitsub mit seinem Inline-Worker nicht bietet).
-  // Pfad: neuere jassub-Versionen legen die Dateien unter dist/wasm/ ab.
-  import jassubWorkerUrl from 'jassub/dist/wasm/jassub-worker.js?url';
-  import jassubWasmUrl from 'jassub/dist/wasm/jassub-worker.wasm?url';
+  // ASS/SSA mit Original-Layout via assjs — schlanker DOM/CSS-Renderer (kein WASM/Worker). Synchronisiert
+  // sich ans <video> (nur Zeit + Maße, KEINE Pixel → kein cross-origin-Taint, kein crossorigin am <video>).
+  // Font-Fallback macht der Browser. Deckt fast alle ASS-Tags ab (Rest: VTT-Fallback über den Schalter).
+  import ASS from 'assjs';
   import { onMount, onDestroy, tick } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
 
@@ -548,8 +546,9 @@
   let pendingRenderer = $state(null);      // beim Sprachwechsel: neuer Renderer, der noch lädt (Altbild bleibt)
   // Bild-Untertitel clientseitig rendern? Nur wenn aktiviert UND nicht ohnehin alles eingebrannt wird.
   let clientGraphicRender = $derived(playbackPrefs.pgsRendering && !playbackPrefs.burnSubtitles);
-  // ASS/SSA mit Original-Layout rendern (JASSUB)? Aus → schlichtes Text-Overlay, beides Direct Play.
+  // ASS/SSA mit Original-Layout rendern (assjs)? Aus → schlichtes Text-Overlay, beides Direct Play.
   let assRenderer = null;
+  let assContainer = $state(null);  // Host-<div>; assjs injiziert hier sein DOM-Overlay (über dem Video)
   let clientAssRender = $derived(playbackPrefs.assRendering && !playbackPrefs.burnSubtitles);
 
   // Textuntertitel-Styling (NUR fürs .subtitle-box-Overlay = WebVTT/SRT). PGS/VobSub sind Bitmaps
@@ -584,63 +583,50 @@
   function applySubtitleOverlay(index, ms) {
     subtitleFetchToken++;   // laufende VTT-Fetches invalidieren (sonst Text-Overlay neben Grafik/ASS)
     subtitleOffset = 0;     // neuer Spurwechsel → Versatz zurücksetzen (inhaltsspezifisch)
-    if (index === -1 || !ms) { disposeGraphic(); disposeAss(); subtitleCues = []; return; }
+    if (index === -1 || !ms) { disposeGraphic(); clearAss(); subtitleCues = []; return; }
     const stream = (ms.MediaStreams || []).find(s => s.Index === index && s.Type === 'Subtitle');
     const codec  = (stream?.Codec || '').toLowerCase();
     const isPgs = ['pgssub', 'pgs'].includes(codec);
     const isVob = ['dvdsub', 'vobsub', 'sub'].includes(codec);
     const isAss = ['ass', 'ssa'].includes(codec);
     if (stream && clientGraphicRender && (isPgs || (isVob && serverVobSub))) {
-      disposeAss();
+      clearAss();
       subtitleCues = [];                    // kein VTT-Overlay daneben
       applyGraphicSubtitle(stream, ms);     // weicher Wechsel ohne Lücke (siehe unten)
     } else if (stream && isAss && clientAssRender && (stream.DeliveryMethod || '').toLowerCase() !== 'encode') {
       disposeGraphic();
-      subtitleCues = [];                    // JASSUB rendert selbst → kein VTT-Overlay daneben
+      subtitleCues = [];                    // assjs rendert selbst → kein VTT-Overlay daneben
       applyAssSubtitle(stream, ms);         // Original-Layout (Positionen, Fonts, Typesetting)
     } else {
       disposeGraphic();                     // verlässt Grafik/ASS → Overlay sofort entfernen
-      disposeAss();
+      clearAss();
       applyExternalSubtitleIfNeeded(index, ms);   // Text → VTT (gebrannte Grafik → nichts zu tun)
     }
   }
-  // ASS/SSA clientseitig mit vollem Styling rendern (JASSUB = libass als WASM; nutzt Jellyfin-Web
-  // ebenso). Anders als libbitsub lädt JASSUB Worker+WASM als echte Datei-URLs → off-main-thread,
-  // Spurwechsel via setTrackByUrl ohne Renderer-Neuaufbau.
-  function applyAssSubtitle(stream, ms) {
-    if (!videoElement) return;
+  // ASS/SSA clientseitig mit vollem Styling rendern via assjs (DOM/CSS, kein WASM/Worker). assjs hängt sein
+  // Overlay in assContainer und synchronisiert Zeit + Größe selbst ans <video> (liest KEINE Pixel → kein
+  // cross-origin-Taint, kein crossorigin am <video>). Font-Fallback macht der Browser. resampling regelt das
+  // Verhalten bei Script-Auflösung (PlayResX/Y) ≠ Videoauflösung (Letterbox); Default 'video_height' passt meist.
+  // assjs kennt kein setTrack → Spurwechsel/Re-Apply per Neuaufbau (DOM-Overlay wird ent-/neu angehängt).
+  async function applyAssSubtitle(stream, ms) {
+    if (!videoElement || !assContainer) return;
     const url = assSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
     try {
-      if (assRenderer) {                       // weicher Spurwechsel (z.B. eng → deu)
-        assRenderer.setTrackByUrl(url);
-        dlog('[OcenFin] ASS track switch via JASSUB:', stream.Index);
-        return;
-      }
-      assRenderer = new JASSUB({
-        video: videoElement,
-        subUrl: url,
-        workerUrl: jassubWorkerUrl,
-        wasmUrl: jassubWasmUrl,
-        fonts: attachmentFontUrls(ms),         // eingebettete MKV-Schriften → Layout originalgetreu
-      });
-      dlog('[OcenFin] ASS subtitle via JASSUB:', stream.Index, stream.Codec);
-    } catch (e) { dlog('[OcenFin] JASSUB error:', e?.message); disposeAss(); }
+      const res = await fetch(url);            // ApiKey steckt in der URL → einfacher GET, kein Preflight
+      if (!res.ok) { console.warn('[OcenFin] ASS fetch failed:', res.status); return; }
+      const content = await res.text();
+      disposeAss();                            // kein setTrack → altes Overlay entfernen, frisch aufbauen
+      assRenderer = new ASS(content, videoElement, { container: assContainer });
+      dlog('[OcenFin] ASS subtitle via assjs:', stream.Index, stream.Codec);
+    } catch (e) { console.warn('[OcenFin] assjs error:', e?.message); }
   }
-  // Eingebettete Schriften (MKV-Attachments) als URLs fürs JASSUB-fonts-Array.
-  function attachmentFontUrls(ms) {
-    return (ms?.MediaAttachments || [])
-      .filter(a => /font|woff|ttf|otf|truetype|opentype/i.test(a.MimeType || '') || /\.(ttf|otf|woff2?)$/i.test(a.FileName || ''))
-      .map(a => {
-        const u = a.DeliveryUrl; if (!u) return null;
-        if (/^https?:/i.test(u)) return u;
-        return `${session.serverUrl}${u}${(u.includes('api_key') || u.includes('ApiKey')) ? '' : (u.includes('?') ? '&' : '?') + 'ApiKey=' + session.token}`;
-      })
-      .filter(Boolean);
-  }
+  // ASS ausblenden (Wechsel zu PGS/Text/aus): Overlay entfernen.
+  function clearAss() { disposeAss(); }
   function disposeAss() {
-    if (!assRenderer) return;
-    try { if (assRenderer.destroy) assRenderer.destroy(); else if (assRenderer.dispose) assRenderer.dispose(); } catch {}
-    assRenderer = null;
+    if (assRenderer) {
+      try { assRenderer.destroy(); } catch {}
+      assRenderer = null;
+    }
   }
   function applyGraphicSubtitle(stream, ms) {
     if (!videoElement) return;
@@ -1437,6 +1423,10 @@
     onended={onVideoEnded}
     onclick={togglePlay}
   />
+
+  <!-- ASS/SSA-Untertitel: assjs injiziert hier sein DOM-Overlay, synchron zum <video> (liest KEINE Pixel
+       → kein Taint). Container überlappt das Video (absolute inset-0); z unter Spinner/Controls. -->
+  <div bind:this={assContainer} class="absolute inset-0 pointer-events-none z-[20]"></div>
 
   <!-- LADEANIMATION — sichtbar solange Video puffert oder NAS aufwacht -->
   {#if isBuffering && !playbackError}
