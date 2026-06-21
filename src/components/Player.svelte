@@ -4,7 +4,7 @@
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady } from '../syncplay.js';
-  import { PgsRenderer, VobSubRenderer } from 'libbitsub';
+  import { PgsRenderer, VobSubRenderer, initWasm } from 'libbitsub';
   // ASS/SSA mit Original-Layout via assjs — schlanker DOM/CSS-Renderer (kein WASM/Worker). Synchronisiert
   // sich ans <video> (nur Zeit + Maße, KEINE Pixel → kein cross-origin-Taint, kein crossorigin am <video>).
   // Font-Fallback macht der Browser. Deckt fast alle ASS-Tags ab (Rest: VTT-Fallback über den Schalter).
@@ -542,8 +542,7 @@
     return (s > 0 ? '+' : '') + s.toFixed(1).replace('.', ',') + ' s';
   }
   let subtitleFetchToken = 0;      // ignoriert Antworten eines überholten Wechsels
-  let graphicRenderer = $state(null);      // libbitsub-Instanz für das AKTUELL sichtbare Bild-Untertitel-Overlay
-  let pendingRenderer = $state(null);      // beim Sprachwechsel: neuer Renderer, der noch lädt (Altbild bleibt)
+  let graphicRenderer = $state(null);      // libbitsub-Instanz für das aktuell sichtbare Bild-Untertitel-Overlay
   // Bild-Untertitel clientseitig rendern? Nur wenn aktiviert UND nicht ohnehin alles eingebrannt wird.
   let clientGraphicRender = $derived(playbackPrefs.pgsRendering && !playbackPrefs.burnSubtitles);
   // ASS/SSA mit Original-Layout rendern (assjs)? Aus → schlichtes Text-Overlay, beides Direct Play.
@@ -632,53 +631,39 @@
     if (!videoElement) return;
     const url = graphicSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
     if (!url) { disposeGraphic(); dlog('[OcenFin] image subtitle not available (server does not provide it externally):', stream.Index); return; }
-    // Wechsel ohne Lücke: den NEUEN Renderer aufbauen, aber den alten erst entsorgen, wenn der
-    // neue fertig geparst ist ('loaded'). So bleibt der bisherige Untertitel sichtbar, bis der
-    // nächste bereit ist – kein Leer-Loch während der ~1–2 s Parsezeit. Noch nicht fertige
-    // Vorgänger werden bei erneutem Wechsel verworfen (schnelles Hin-und-Her).
-    if (pendingRenderer) { try { pendingRenderer.dispose(); } catch {} pendingRenderer = null; }
+    // TV-freundlich: STRENG SEQUENZIELL. Erst den alten Renderer restlos zerstören (Worker/WASM freigeben),
+    // dann den neuen erzeugen. Auf WebOS sind zwei gleichzeitige WASM-Worker riskant (Limit → libbitsub
+    // flüchtet in den Main-Thread → 2–3 s Freeze). Eine kurze Lücke beim manuellen Wechsel ist akzeptabel.
+    disposeGraphic();
     const codec = (stream?.Codec || '').toLowerCase();
-    let created = null;
-    const swapIn = () => {
-      if (created !== pendingRenderer) return;                 // bereits überholt → ignorieren
-      if (graphicRenderer && graphicRenderer !== created) { try { graphicRenderer.dispose(); } catch {} }
-      graphicRenderer = created;
-      pendingRenderer = null;
-    };
     const opts = {
       video: videoElement, subUrl: url,
       displaySettings: { scale: graphicSubScale(), aspectMode: 'contain' },
-      // libbitsub-Warnungen (z. B. WORKER_FALLBACK: Worker kann das WASM im Inline-Setup nicht laden,
-      // Parsing läuft im Haupt-Thread) über unser gated dlog leiten → standardmäßig still im Log.
       onWarning: (w) => dlog('[OcenFin] libbitsub notice:', w?.code || w?.message || w),
-      onError: (e) => {
-        dlog('[OcenFin] libbitsub error:', e?.code || '', e?.message || e);
-        if (created && created === pendingRenderer) { try { created.dispose(); } catch {} pendingRenderer = null; }
-      },
+      onError: (e) => { dlog('[OcenFin] libbitsub error:', e?.code || '', e?.message || e); disposeGraphic(); },
       onEvent: (ev) => {
-        if (ev?.type === 'renderer-change') dlog('[OcenFin] libbitsub backend:', ev.renderer);
-        else if (ev?.type === 'loaded') { dlog('[OcenFin] libbitsub loaded:', ev.format, 'cues=' + (ev.metadata?.cueCount ?? '?')); swapIn(); }
+        // backend 'worker' = off-main-thread (gut); alles andere = Main-Thread-Fallback (Freeze-Ursache auf TV).
+        // Beides immer ins Protokoll (console.warn), damit der B4-Backend-Zustand auch ohne Debug sichtbar ist.
+        if (ev?.type === 'renderer-change') console.warn('[OcenFin] libbitsub backend:', ev.renderer);
+        else if (ev?.type === 'worker-state') console.warn('[OcenFin] libbitsub worker-state:', ev.state ?? ev);
+        else if (ev?.type === 'loaded') dlog('[OcenFin] libbitsub loaded:', ev.format, 'cues=' + (ev.metadata?.cueCount ?? '?'));
       },
     };
     try {
       // Codec ist bekannt → expliziten Renderer wählen (keine Format-Auto-Erkennung nötig).
-      created = ['pgssub', 'pgs'].includes(codec)
+      graphicRenderer = ['pgssub', 'pgs'].includes(codec)
         ? new PgsRenderer(opts)
         : new VobSubRenderer({ ...opts, fileName: graphicSubFileName(url, stream) });   // VobSub/DVD: .mks-Container
-      pendingRenderer = created;
-      // Gibt es kein Altbild, wird das neue Overlay schlicht sichtbar, sobald es geladen ist.
-      if (!graphicRenderer) { graphicRenderer = created; pendingRenderer = null; }
       dlog('[OcenFin] image subtitle via libbitsub:', stream.Index, stream.Codec);
-    } catch (e) { dlog('[OcenFin] libbitsub renderer error:', e?.message); pendingRenderer = null; }
+    } catch (e) { dlog('[OcenFin] libbitsub renderer error:', e?.message); disposeGraphic(); }
   }
   function disposeGraphic() {
-    if (pendingRenderer) { try { pendingRenderer.dispose(); } catch {} pendingRenderer = null; }
     if (graphicRenderer) { try { graphicRenderer.dispose(); } catch {} graphicRenderer = null; }
   }
-  // Größenänderung zur Laufzeit live auf den laufenden (und gerade ladenden) Renderer anwenden.
-  $effect(() => { if ((graphicRenderer || pendingRenderer) && (playbackPrefs.subtitleSize || 'normal')) {
+  // Größenänderung zur Laufzeit live auf den laufenden Renderer anwenden.
+  $effect(() => { if (graphicRenderer && (playbackPrefs.subtitleSize || 'normal')) {
     const sc = graphicSubScale();
-    for (const r of [graphicRenderer, pendingRenderer]) if (r) { try { r.setDisplaySettings({ scale: sc }); } catch {} }
+    try { graphicRenderer.setDisplaySettings({ scale: sc }); } catch {}
   } });
 
   // VTT-Zeitstempel "HH:MM:SS.mmm" oder "MM:SS.mmm" → Sekunden
@@ -895,6 +880,10 @@
   onMount(async () => {
     resetControlsTimeout();
     if (playerContainer) playerContainer.focus();
+
+    // libbitsub-WASM früh kompilieren (dedupliziert, non-blocking) → der erste PGS/VobSub-Sub muss nicht
+    // erst auf den WASM-Compile warten. Schlägt es fehl, fällt libbitsub später ohnehin sauber zurück.
+    initWasm().then(() => dlog('[OcenFin] libbitsub WASM ready')).catch((e) => dlog('[OcenFin] libbitsub WASM init failed:', e?.message));
 
     fetchMediaSources();
     fetchIntroTimestamps();
