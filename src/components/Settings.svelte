@@ -68,7 +68,7 @@
   }
 
   // Version: YYYYMMDD — bei Updates hier anpassen
-  const APP_VERSION = '20260616';
+  const APP_VERSION = '20260621';
 
   let isCurrentUserSaved = $derived(!!(
     selectedUser && selectedServer &&
@@ -466,6 +466,10 @@
     { key: 'clock',           label: $t.displayClock },
     { key: 'episodeCount',    label: $t.displayEpisodeCount },
     { key: 'backdropPreview', label: $t.displayBackdropPreview },
+  ]);
+  let detailToggles = $derived([
+    { key: 'detailsBackdrop',   label: $t.displayDetailsBackdrop },
+    { key: 'detailsLogo',       label: $t.displayDetailsLogo },
     { key: 'spoilerProtection', label: $t.spoilerProtection },
   ]);
 
@@ -604,8 +608,39 @@
         </button>
 
         {#if showDisplayOptions}
-          <!-- Gruppe: Startseite (Dashboard-Zeilen) -->
+          <!-- Gruppe: Oberfläche (allgemeine Elemente) -->
           <div class="pl-10 pr-6 pt-4 pb-2 bg-gray-900/50">
+            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{$t.groupInterface}</h3>
+          </div>
+          {#each uiToggles as tg}
+            <button onclick={() => toggleDisplay(tg.key)}
+              class="flex items-center justify-between w-full pl-10 pr-6 py-4 bg-gray-900/50 hover:bg-gray-700 focus:bg-gray-700
+                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+              <span class="text-lg text-gray-200">{tg.label}</span>
+              <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
+                          {displaySettings[tg.key] ? 'bg-blue-500' : 'bg-gray-600'}">
+                <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
+                            {displaySettings[tg.key] ? 'translate-x-7' : ''}"></div>
+              </div>
+            </button>
+          {/each}
+
+          <!-- Zeitformat (gilt für beide Uhren) -->
+          <div class="pl-10 pr-6 py-4 bg-gray-900/50">
+            <span class="text-lg text-gray-200 block mb-3">{$t.clockFormat}</span>
+            <div class="flex gap-2">
+              {#each [['auto', $t.clockAuto],['24h', $t.clock24h],['12h', $t.clock12h]] as [val, label]}
+                <button onclick={() => setClockFormat(val)}
+                  class="flex-1 py-2.5 rounded-lg font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {(displaySettings.clockFormat || 'auto') === val ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">
+                  {label}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <!-- Gruppe: Startseite (Dashboard-Zeilen) -->
+          <div class="pl-10 pr-6 pt-5 pb-2 bg-gray-900/50 border-t border-gray-700/40">
             <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{$t.groupHome}</h3>
           </div>
           {#each homeToggles as tg}
@@ -637,11 +672,11 @@
             </div>
           {/if}
 
-          <!-- Gruppe: Oberfläche (allgemeine Elemente) -->
+          <!-- Gruppe: Details (Detailseite eines Films/einer Serie) -->
           <div class="pl-10 pr-6 pt-5 pb-2 bg-gray-900/50 border-t border-gray-700/40">
-            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{$t.groupInterface}</h3>
+            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{$t.groupDetails}</h3>
           </div>
-          {#each uiToggles as tg}
+          {#each detailToggles as tg}
             <button onclick={() => toggleDisplay(tg.key)}
               class="flex items-center justify-between w-full pl-10 pr-6 py-4 bg-gray-900/50 hover:bg-gray-700 focus:bg-gray-700
                      focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -653,20 +688,6 @@
               </div>
             </button>
           {/each}
-
-          <!-- Zeitformat (gilt für beide Uhren) -->
-          <div class="pl-10 pr-6 py-4 bg-gray-900/50">
-            <span class="text-lg text-gray-200 block mb-3">{$t.clockFormat}</span>
-            <div class="flex gap-2">
-              {#each [['auto', $t.clockAuto],['24h', $t.clock24h],['12h', $t.clock12h]] as [val, label]}
-                <button onclick={() => setClockFormat(val)}
-                  class="flex-1 py-2.5 rounded-lg font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-all
-                         {(displaySettings.clockFormat || 'auto') === val ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">
-                  {label}
-                </button>
-              {/each}
-            </div>
-          </div>
         {/if}
 
       </div>

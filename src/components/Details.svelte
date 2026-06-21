@@ -8,11 +8,12 @@
   let {
     item,
     selectedUser,
-    reduceAnimations = false,   // Backdrop bei aktivem Sparmodus weglassen
     playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default' },
     use24h = true,              // Zeitformat für den „Endet um"-Chip (folgt der Einstellung)
     serverVobSub = false,       // Server liefert VobSub/DVD extern (.mks, Jellyfin 12.0+)?
     spoilerProtection = true,   // ungesehene Folgen-Thumbnails leicht verschleiern
+    detailsBackdrop = true,     // Hero-Backdrop auf der Detailseite zeigen (eigener Schalter, von reduceAnimations entkoppelt)
+    detailsLogo = false,        // Titel als Logo-Grafik statt Text (Rückfall auf Text, wenn kein Logo vorhanden)
     onClose, onLibChanged, onOpenItemById, onOpenPerson, onPlayVideo,   // Callback-Props (statt Events)
   } = $props();
 
@@ -399,6 +400,15 @@
     return null;
   }
 
+  // Titel-Logo (transparentes PNG) der Folge/Serie; bei Folgen die Serie. Null → Aufrufer fällt auf Text zurück.
+  function getItemLogoUrl(targetItem) {
+    if (targetItem.ImageTags?.Logo)
+      return `${session.serverUrl}/Items/${targetItem.Id}/Images/Logo?tag=${targetItem.ImageTags.Logo}&maxHeight=200&quality=90&format=webp`;
+    if (targetItem.ParentLogoImageTag)
+      return `${session.serverUrl}/Items/${targetItem.ParentLogoItemId}/Images/Logo?tag=${targetItem.ParentLogoImageTag}&maxHeight=200&quality=90&format=webp`;
+    return null;
+  }
+
   function getRuntimeMinutes(ticks) {
     return !ticks ? "" : Math.round(ticks / 10000000 / 60) + ` ${$t.mins}`;
   }
@@ -437,7 +447,7 @@
 
       <!-- ════ CINEMATIC HERO-BANNER — Backdrop scrollt mit, läuft unten/links ins App-Grau ════ -->
       <div class="relative">
-        {#if !reduceAnimations && getItemBackdropUrl(fullItem)}
+        {#if detailsBackdrop && getItemBackdropUrl(fullItem)}
           <div class="absolute inset-0 z-0">
             <img src={getItemBackdropUrl(fullItem)} use:blurUp={itemBlurHash(fullItem, 'Backdrop')} alt="" class="w-full h-full object-cover object-top" />
             <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/60 to-gray-900/20"></div>
@@ -474,7 +484,11 @@
         </div>
 
         <div class="flex-1 max-w-4xl" data-focus-group="details-hero">
-          <h1 class="text-6xl font-bold text-white mb-4 drop-shadow-lg">{fullItem.Name}</h1>
+          {#if detailsLogo && getItemLogoUrl(fullItem)}
+            <img src={getItemLogoUrl(fullItem)} alt={fullItem.Name} class="max-h-28 max-w-full w-auto object-contain object-left mb-4 drop-shadow-lg" />
+          {:else}
+            <h1 class="text-6xl font-bold text-white mb-4 drop-shadow-lg">{fullItem.Name}</h1>
+          {/if}
 
           <!-- META -->
           <div class="flex items-center flex-wrap gap-4 text-lg font-semibold text-gray-300 mb-6">
