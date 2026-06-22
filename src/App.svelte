@@ -266,6 +266,7 @@
   let navReordering              = $state(false);  // true während ein Sidebar-Eintrag „angehoben" ist
   let totalLibraryItems          = $state(0);
   let isFetchingMore     = $state(false);
+  let isFetchingPrev     = $state(false);
   let isLoading          = $state(false);
   const libraryItemLimit = 50;
 
@@ -277,6 +278,7 @@
   // A-Z
   let activeLetter    = $state('#');
   let currentLetter   = $state('');
+  let firstLoadedIndex = $state(0);   // Index von currentItems[0] in der (gefilterten) Gesamtliste – Basis fürs bidirektionale Nachladen
   const alphabet = ['#','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'];
   let libraryScrollContainer;
   let libraryGrid;
@@ -1459,14 +1461,25 @@
     loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, currentLetter || null);
   }
 
-  // Buchstabensprung als Server-Filter. Aufsteigend: ab Buchstabe aufwärts. Absteigend: ab
-  // Buchstabe abwärts → Namen unterhalb des nächsten Buchstabens (G→"H"), sodass alle G-Titel
-  // enthalten sind und die Liste absteigend bei G beginnt. (Vergleich ist case-insensitiv.)
-  function letterFilter() {
-    if (!currentLetter) return '';
-    if (currentSort.order === 'Ascending') return `&NameStartsWithOrGreater=${currentLetter}`;
-    const next = String.fromCharCode(currentLetter.charCodeAt(0) + 1);   // 'A'→'B' … 'Z'→'['
-    return `&NameLessThan=${encodeURIComponent(next)}`;
+  // Index des ersten Titels eines Buchstabens in der (gefilterten) Gesamtliste – per Count-Abfrage.
+  // Aufsteigend: Anzahl der Titel VOR dem Buchstaben (Name < Buchstabe). Absteigend: Anzahl der Titel,
+  // die in absteigender Anzeige davor liegen (Name >= nächster Buchstabe). So beginnt das geladene
+  // Fenster genau beim Buchstaben, und davor/danach lässt sich beidseitig nachladen.
+  async function letterStartIndex(libraryId, letter) {
+    if (!letter || letter === '#') return 0;
+    let q;
+    if (currentSort.order === 'Ascending') {
+      q = `&NameLessThan=${encodeURIComponent(letter)}`;
+    } else {
+      const next = String.fromCharCode(letter.charCodeAt(0) + 1);   // 'A'→'B' … 'Z'→'['
+      q = `&NameStartsWithOrGreater=${encodeURIComponent(next)}`;
+    }
+    const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${libraryId}&Limit=1&StartIndex=0${q}${getFilterQuery()}`;
+    try {
+      const res = await fetch(url, { headers: getAuthHeaders() });
+      if (res.ok) return (await res.json()).TotalRecordCount || 0;
+    } catch {}
+    return 0;
   }
 
   async function loadLibraryItems(library, letter = null) {
@@ -1497,14 +1510,19 @@
     if (isCacheableView() && apiCache.views[library.Id] && letter === null) {
       currentItems      = apiCache.views[library.Id].items;
       totalLibraryItems = apiCache.views[library.Id].total;
+      firstLoadedIndex  = 0;
       return;
     }
 
     isLoading    = true;
     currentItems = [];
 
-    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${library.Id}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=0`;
-    url += letterFilter();
+    // Sprung per Offset: das Fenster beginnt am Index des Buchstabens in der Gesamtliste (kein
+    // klebriger Filter mehr), sodass davor liegende Titel später nach oben nachgeladen werden können.
+    const startIndex = letter !== null ? await letterStartIndex(library.Id, letter) : 0;
+    firstLoadedIndex = startIndex;
+
+    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${library.Id}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
     url += getFilterQuery();
 
     try {
@@ -1776,10 +1794,10 @@
   ].filter(g => g.items.length > 0));
 
   async function loadMoreLibraryItems() {
-    if (isFetchingMore || currentItems.length >= totalLibraryItems || !currentLibraryId) return;
+    if (isFetchingMore || firstLoadedIndex + currentItems.length >= totalLibraryItems || !currentLibraryId) return;
     isFetchingMore = true;
-    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${currentItems.length}`;
-    url += letterFilter();
+    const start = firstLoadedIndex + currentItems.length;
+    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}`;
     url += getFilterQuery();
     try {
       const res = await fetch(url, { headers: getAuthHeaders() });
@@ -1789,6 +1807,28 @@
         if (isCacheableView()) cacheLibraryView(currentLibraryId, { items: currentItems, total: totalLibraryItems });
       }
     } catch { } finally { isFetchingMore = false; }
+  }
+
+  // Aufwärts nachladen: den Block VOR dem aktuellen Fenster holen und voranstellen. Damit der
+  // sichtbare Inhalt exakt stehen bleibt, wird die Scroll-Position um den Höhenzuwachs korrigiert
+  // (Karten haben feste Aspect-Ratio-Höhe → Messung ist auch vor dem Laden der Bilder korrekt).
+  async function loadPreviousLibraryItems() {
+    if (isFetchingPrev || firstLoadedIndex <= 0 || !currentLibraryId) return;
+    isFetchingPrev = true;
+    const newStart = Math.max(0, firstLoadedIndex - libraryItemLimit);
+    const count    = firstLoadedIndex - newStart;
+    const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}`;
+    try {
+      const res = await fetch(url, { headers: getAuthHeaders() });
+      if (res.ok) {
+        const items = (await res.json()).Items || [];
+        const before = libraryScrollContainer ? libraryScrollContainer.scrollHeight : 0;
+        currentItems     = [...items, ...currentItems];
+        firstLoadedIndex = newStart;
+        await tick();
+        if (libraryScrollContainer) libraryScrollContainer.scrollTop += libraryScrollContainer.scrollHeight - before;
+      }
+    } catch { } finally { isFetchingPrev = false; }
   }
 
   // Nach einer Auswahl in der Sidebar den Fokus in den Inhalt verschieben. Das
@@ -1949,6 +1989,16 @@
   function infiniteScroll(node) {
     const obs = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) loadMoreLibraryItems(); },
+      { rootMargin: '400px' }
+    );
+    obs.observe(node);
+    return () => obs.disconnect();
+  }
+
+  // Gegenstück nach oben: lädt den vorigen Block, sobald der obere Sentinel in Reichweite kommt.
+  function infiniteScrollUp(node) {
+    const obs = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) loadPreviousLibraryItems(); },
       { rootMargin: '400px' }
     );
     obs.observe(node);
@@ -2621,6 +2671,10 @@
                 {/each}
               </div>
 
+              {#if firstLoadedIndex > 0 && !isLoading}
+                <div {@attach infiniteScrollUp} class="h-2 w-full"></div>
+              {/if}
+
               <div bind:this={libraryGrid}
                 class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4">
                 {#if isLoading}
@@ -2671,7 +2725,7 @@
                 <div class="w-full flex justify-center py-12 mt-8">
                   <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                 </div>
-              {:else if currentItems.length > 0 && currentItems.length < totalLibraryItems}
+              {:else if currentItems.length > 0 && firstLoadedIndex + currentItems.length < totalLibraryItems}
                 <div {@attach infiniteScroll} class="h-24 w-full"></div>
               {/if}
             </div>
