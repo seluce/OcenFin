@@ -170,7 +170,7 @@
             {#each series as s}
               <button onclick={() => onOpenDetails?.(s)} class="shrink-0 w-48 group focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
-                  {#if getItemImageUrl(s, 'portrait')}<img src={getItemImageUrl(s, 'portrait')} use:blurUp={itemBlurHash(s)} alt={s.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
+                  {#if getItemImageUrl(s, 'portrait')}<img src={getItemImageUrl(s, 'portrait')} {@attach blurUp(itemBlurHash(s))} alt={s.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
                   <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate">{s.Name}</span>
@@ -189,7 +189,7 @@
             {#each movies as m}
               <button onclick={() => onOpenDetails?.(m)} class="shrink-0 w-48 group focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
-                  {#if getItemImageUrl(m, 'portrait')}<img src={getItemImageUrl(m, 'portrait')} use:blurUp={itemBlurHash(m)} alt={m.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
+                  {#if getItemImageUrl(m, 'portrait')}<img src={getItemImageUrl(m, 'portrait')} {@attach blurUp(itemBlurHash(m))} alt={m.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
                   <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate">{m.Name}</span>
@@ -208,7 +208,7 @@
             {#each episodes as ep}
               <button onclick={() => onOpenDetails?.(ep)} class="shrink-0 w-80 group focus:outline-none text-left">
                 <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
-                  {#if getItemImageUrl(ep, 'landscape')}<img src={getItemImageUrl(ep, 'landscape')} use:blurUp={itemBlurHash(ep)} alt={ep.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
+                  {#if getItemImageUrl(ep, 'landscape')}<img src={getItemImageUrl(ep, 'landscape')} {@attach blurUp(itemBlurHash(ep))} alt={ep.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
                   <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate">{ep.Name}</span>
@@ -231,7 +231,7 @@
               <button onclick={() => onOpenPerson?.(p)} class="shrink-0 w-40 group focus:outline-none text-center">
                 <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto">
                   {#if personImageUrl(session.serverUrl, p)}
-                    <img src={personImageUrl(session.serverUrl, p)} use:blurUp={itemBlurHash(p)} alt={p.Name} class="w-full h-full object-cover" loading="lazy" />
+                    <img src={personImageUrl(session.serverUrl, p)} {@attach blurUp(itemBlurHash(p))} alt={p.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}
                     <div class="w-full h-full flex items-center justify-center text-gray-600">
                       <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>

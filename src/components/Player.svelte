@@ -1437,7 +1437,7 @@
         <p class="text-white text-2xl font-bold">{$t.playbackError}</p>
         <p class="text-gray-400">{$t.playbackErrorHint}</p>
         <div class="flex gap-4 mt-2">
-          <button onclick={retryPlayback} use:focusOnMount
+          <button onclick={retryPlayback} {@attach focusOnMount()}
             class="bg-white text-black font-bold px-6 py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
             {$t.retry}
           </button>
@@ -1615,7 +1615,7 @@
             </svg>
           </button>
 
-          <button onclick={togglePlay} use:focusOnMount bind:this={playPauseBtn}
+          <button onclick={togglePlay} {@attach focusOnMount()} bind:this={playPauseBtn}
             class="p-4 bg-white text-black rounded-full hover:scale-110 focus:scale-110 transition-transform focus:outline-none shadow-xl">
             {#if isPlaying}
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
@@ -1785,7 +1785,7 @@
   <!-- INTRO ÜBERSPRINGEN — unten links -->
   {#if showSkipIntro}
     <div transition:uiFade class="absolute bottom-36 left-12 z-[70]">
-      <button onclick={skipIntro} use:focusOnMount
+      <button onclick={skipIntro} {@attach focusOnMount()}
         class="bg-white/10 backdrop-blur-md border-2 border-white text-white font-bold text-xl
                px-8 py-4 rounded-xl flex items-center gap-3 shadow-2xl
                hover:bg-white hover:text-black focus:bg-white focus:text-black
@@ -1812,7 +1812,7 @@
           <div class="h-full bg-blue-500" style="width: {countdownProgress * 100}%; transition: width 0.12s linear;"></div>
         </div>
         <div class="flex gap-3">
-          <button onclick={() => goToNextEpisode(true)} use:focusOnMount
+          <button onclick={() => goToNextEpisode(true)} {@attach focusOnMount()}
             class="flex-1 bg-white text-black font-bold py-2.5 rounded-lg flex items-center justify-center gap-2
                    focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -1835,7 +1835,7 @@
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{$t.nextEpisode}</span>
         <span class="text-lg font-bold text-white truncate">{nextEpisode.Name}</span>
         {#if nextEpisodeMeta}<span class="text-sm text-gray-400 truncate">{nextEpisodeMeta}</span>{/if}
-        <button onclick={() => goToNextEpisode(true)} use:focusOnMount
+        <button onclick={() => goToNextEpisode(true)} {@attach focusOnMount()}
           class="bg-white text-black font-bold py-2.5 rounded-lg flex items-center justify-center gap-2
                  focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
           <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -1854,7 +1854,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
         </svg>
         <h2 class="text-3xl font-bold text-white">{$t.stillWatching}</h2>
-        <button onclick={resumeFromStillWatching} use:focusOnMount
+        <button onclick={resumeFromStillWatching} {@attach focusOnMount()}
           class="bg-white text-black font-bold text-xl px-10 py-4 rounded-xl flex items-center gap-3
                  focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
           <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>

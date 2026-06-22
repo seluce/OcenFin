@@ -315,13 +315,13 @@
     {@const prog = itemProgress(item)}
     {@const rem = getRemainingMinutes(item)}
     {@const sub = getItemSubtitle(item, $t.today)}
-    <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
+    <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
       class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
       <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
                   border-4 border-transparent group-focus:border-white group-focus:scale-105
                   transition-all duration-200 shadow-xl relative">
         {#if img}
-          <img src={img} use:blurUp={itemBlurHash(item, 'Backdrop')} alt={item.Name}
+          <img src={img} {@attach blurUp(itemBlurHash(item, 'Backdrop'))} alt={item.Name}
             class="w-full h-full object-cover" loading="lazy" />
         {/if}
         {#if prog > 0}
@@ -347,13 +347,13 @@
   {#snippet portraitCard(item, img, blur)}
     {@const prog = itemProgress(item)}
     {@const sub = getItemSubtitle(item, $t.today)}
-    <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
+    <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
       class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                   border-4 border-transparent group-focus:border-white
                   transition-colors duration-200 shadow-xl">
         {#if img}
-          <img src={img} use:blurUp={blur} alt={item.Name}
+          <img src={img} {@attach blurUp(blur)} alt={item.Name}
             class="w-full h-full object-cover" loading="lazy" />
         {/if}
         {#if prog > 0}
@@ -379,7 +379,7 @@
                   border-4 border-transparent group-focus:border-white
                   transition-colors duration-200 shadow-xl">
         {#if img}
-          <img src={img} use:blurUp={itemBlurHash(col)} alt={col.Name}
+          <img src={img} {@attach blurUp(itemBlurHash(col))} alt={col.Name}
             class="w-full h-full object-cover" loading="lazy" />
         {:else}
           <div class="w-full h-full flex items-center justify-center text-gray-600">
@@ -413,7 +413,7 @@
         <!-- Backdrop mit Verläufen -->
         {#each heroItems as h, i (h.Id)}
           {#if i === heroIndex && getHeroBackdrop(h)}
-            <img src={getHeroBackdrop(h)} use:blurUp={itemBlurHash(h, 'Backdrop')} alt={h.Name} fetchpriority="high" loading="eager" decoding="async"
+            <img src={getHeroBackdrop(h)} {@attach blurUp(itemBlurHash(h, 'Backdrop'))} alt={h.Name} fetchpriority="high" loading="eager" decoding="async"
               class="absolute inset-0 w-full h-full object-cover hero-fade" />
           {/if}
         {/each}
@@ -475,7 +475,7 @@
                           border-4 border-transparent group-focus:border-white group-hover:border-gray-400
                           transition-all shadow-lg overflow-hidden">
                 {#if getItemImageUrl(library)}
-                  <img src={getItemImageUrl(library)} use:blurUp={itemBlurHash(library)} alt={library.Name}
+                  <img src={getItemImageUrl(library)} {@attach blurUp(itemBlurHash(library))} alt={library.Name}
                     class="w-full h-full object-cover opacity-80 group-focus:opacity-100" loading="lazy" />
                 {:else}
                   <span class="text-2xl text-gray-500 font-bold">{library.Name}</span>

@@ -93,7 +93,7 @@
 
     <!-- Aktionen -->
     <div class="p-3 flex flex-col gap-1">
-      <button onclick={toggleWatched} use:focusOnMount
+      <button onclick={toggleWatched} {@attach focusOnMount()}
         class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
                hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
         <svg class="w-6 h-6 shrink-0 {played ? 'text-green-400' : 'text-gray-400'}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">

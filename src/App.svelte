@@ -441,7 +441,7 @@
     } catch { /* weiterhin weg → Banner bleibt */ }
   }
   // Fokus zuverlässig auf den Button legen, wenn der Banner erscheint (er mountet durch ein
-  // Hintergrund-Ereignis; use:focusOnMount griff dort nicht — tick() nach dem Flush gewinnt).
+  // Hintergrund-Ereignis; focusOnMount griff dort nicht — tick() nach dem Flush gewinnt).
   $effect(() => { if (session.connectionLost) tick().then(() => retryBtnEl?.focus()); });
   async function syncCreate() { await createSyncGroup(session.serverUrl, session.token, selectedUser?.Name || 'OcenFin'); syncJoined = true; await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
   async function syncJoin(groupId) { await joinSyncGroup(session.serverUrl, session.token, groupId); syncJoined = true; syncMyGroupId = groupId; await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
@@ -1945,13 +1945,14 @@
     return null;
   }
 
+  // Attachment: lädt nach, sobald der Sentinel in den Viewport-Vorlauf (400px) kommt.
   function infiniteScroll(node) {
     const obs = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) loadMoreLibraryItems(); },
       { rootMargin: '400px' }
     );
     obs.observe(node);
-    return { destroy() { obs.disconnect(); } };
+    return () => obs.disconnect();
   }
 
   let scrollTimer;
@@ -2118,7 +2119,7 @@
           <p class="text-gray-400 mt-2">{$t.exitMessage}</p>
         </div>
         <div class="flex gap-3">
-          <button onclick={() => showExitConfirm = false} use:focusOnMount
+          <button onclick={() => showExitConfirm = false} {@attach focusOnMount()}
             class="flex-1 bg-gray-700 text-white font-bold py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-600 transition-colors">
             {$t.cancel}
           </button>
@@ -2151,7 +2152,7 @@
               <div class="flex items-center gap-3">
                 <button
                   onclick={() => connectToServer(server)}
-                  use:focusOnMount={i === 0}
+                  {@attach focusOnMount(i === 0)}
                   class="flex-1 flex items-center justify-between p-5 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700
                          border border-gray-600 hover:border-blue-500 focus:border-blue-500
                          rounded-xl text-left focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
@@ -2195,7 +2196,7 @@
             <div class="flex gap-3">
               <button
                 onclick={() => selectedServer && connectToServer(selectedServer)}
-                use:focusOnMount
+                {@attach focusOnMount()}
                 class="flex-1 bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white font-bold py-3 rounded-lg
                        focus:outline-none focus:ring-2 focus:ring-white transition-colors"
               >
@@ -2340,7 +2341,7 @@
               class="w-full bg-gray-900 text-white text-2xl p-5 rounded-xl mb-6 border border-gray-600 text-center
                      focus:outline-none focus:ring-4 focus:ring-blue-500"
               onkeydown={(e) => e.key === 'Enter' && authenticateUser(selectedUser.Name, password)}
-              use:focusOnMount
+              {@attach focusOnMount()}
             />
             <button onclick={() => authenticateUser(selectedUser.Name, password)}
               class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xl py-4 rounded-xl mb-4
@@ -2373,7 +2374,7 @@
               onkeydown={(e) => e.key === 'Enter' && authenticateUser(manualUsername, manualPassword)}
               class="w-full bg-gray-900 text-white text-xl p-5 rounded-xl mb-4 border border-gray-600
                      focus:outline-none focus:ring-4 focus:ring-blue-500"
-              use:focusOnMount
+              {@attach focusOnMount()}
             />
             <input
               type="password"
@@ -2404,7 +2405,7 @@
           {#if users.length > 0}
             <div class="flex flex-wrap justify-center gap-10">
               {#each users as user, i}
-                <button onclick={() => handleUserClick(user)} use:focusOnMount={i === 0} class="flex flex-col items-center group focus:outline-none">
+                <button onclick={() => handleUserClick(user)} {@attach focusOnMount(i === 0)} class="flex flex-col items-center group focus:outline-none">
                   <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl transition-all">
                     {#if user.PrimaryImageTag}
                       <img src="{session.serverUrl}/Users/{user.Id}/Images/Primary?tag={user.PrimaryImageTag}" alt={user.Name} class="w-full h-full object-cover"/>
@@ -2630,7 +2631,7 @@
                   {#each visibleLibraryItems as item (item.Id)}
                     <button onclick={() => showItemDetails(item)} data-item-id={item.Id}
                       onfocus={() => previewItem(item)} onblur={cancelPreview}
-                      use:longPress onlongpress={() => openContextMenu(item)}
+                      {@attach longPress()} onlongpress={() => openContextMenu(item)}
                       class="group focus:outline-none text-left cv-auto">
                       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
                         {#if item.Type === 'Playlist' && item.ChildCount === 0}
@@ -2639,7 +2640,7 @@
                             <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
                           </div>
                         {:else if getItemImageUrl(item)}
-                          <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
+                          <img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                         {/if}
                         <!-- Episodenanzahl bei Serien (abschaltbar in Einstellungen) -->
                         {#if displaySettings.episodeCount && item.Type === 'Series' && item.RecursiveItemCount}
@@ -2671,7 +2672,7 @@
                   <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                 </div>
               {:else if currentItems.length > 0 && currentItems.length < totalLibraryItems}
-                <div use:infiniteScroll class="h-24 w-full"></div>
+                <div {@attach infiniteScroll} class="h-24 w-full"></div>
               {/if}
             </div>
 
@@ -2742,7 +2743,7 @@
         {:else if viewState === 'person'}
           <div class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
             <div class="flex items-center gap-6 mb-8">
-              <button onclick={() => viewState = personReturnView} use:focusOnMount
+              <button onclick={() => viewState = personReturnView} {@attach focusOnMount()}
                 class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
                 {$t.back}
               </button>
@@ -2772,11 +2773,11 @@
                 <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-10">
                   {#each group.items as item}
                     <button onclick={() => showItemDetails(item)}
-                      use:longPress onlongpress={() => openContextMenu(item)}
+                      {@attach longPress()} onlongpress={() => openContextMenu(item)}
                       class="group focus:outline-none text-left cv-auto">
                       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
                         {#if getItemImageUrl(item)}
-                          <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
+                          <img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                         {/if}
                         {#if itemProgress(item) > 0}
                           <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
@@ -2824,11 +2825,11 @@
                     <div data-focus-group data-enter-first class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-12">
                       {#each group.items as item (item.Id)}
                         <button onclick={() => showItemDetails(item)}
-                          use:longPress onlongpress={() => openContextMenu(item)}
+                          {@attach longPress()} onlongpress={() => openContextMenu(item)}
                           class="group focus:outline-none text-left cv-auto">
                           <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
                             {#if getItemImageUrl(item)}
-                              <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
+                              <img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                             {/if}
                             {#if itemProgress(item) > 0}
                               <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
@@ -2853,11 +2854,11 @@
                   <div data-focus-group data-enter-first class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pr-4 mb-12">
                     {#each favEpisodes as item (item.Id)}
                       <button onclick={() => showItemDetails(item)}
-                        use:longPress onlongpress={() => openContextMenu(item)}
+                        {@attach longPress()} onlongpress={() => openContextMenu(item)}
                         class="group focus:outline-none text-left cv-auto">
                         <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
                           {#if getItemImageUrl(item, 'landscape')}
-                            <img src={getItemImageUrl(item, 'landscape')} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
+                            <img src={getItemImageUrl(item, 'landscape')} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                           {/if}
                           {#if itemProgress(item) > 0}
                             <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
@@ -2879,7 +2880,7 @@
                       <button onclick={() => openPerson(p)} class="group focus:outline-none text-center cv-auto">
                         <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
                           {#if personImageUrl(session.serverUrl, p)}
-                            <img src={personImageUrl(session.serverUrl, p)} use:blurUp={itemBlurHash(p)} alt={p.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
+                            <img src={personImageUrl(session.serverUrl, p)} {@attach blurUp(itemBlurHash(p))} alt={p.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                           {:else}
                             <div class="w-full h-full flex items-center justify-center text-gray-600">
                               <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
@@ -2901,7 +2902,7 @@
         {:else if viewState === 'collection'}
           <div class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
             <div class="flex items-center gap-6 mb-8">
-              <button onclick={() => viewState = collectionReturnView} use:focusOnMount
+              <button onclick={() => viewState = collectionReturnView} {@attach focusOnMount()}
                 class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
                 {$t.back}
               </button>
@@ -2930,7 +2931,7 @@
                   {#each collectionItems as item, i (item.PlaylistItemId)}
                     <div class="flex items-center gap-4 bg-gray-800/60 rounded-xl p-3">
                       <div class="w-14 h-20 shrink-0 bg-gray-900 rounded-lg overflow-hidden">
-                        {#if getItemImageUrl(item)}<img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover"/>{/if}
+                        {#if getItemImageUrl(item)}<img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover"/>{/if}
                       </div>
                       <div class="flex-1 min-w-0">
                         {#if item.Type === 'Episode'}
@@ -2966,7 +2967,7 @@
                       <div class="flex items-center gap-3 flex-wrap">
                         <input
                           bind:value={renameValue}
-                          use:focusOnMount
+                          {@attach focusOnMount()}
                           maxlength="100"
                           oninput={() => renameError = false}
                           onkeydown={(e) => { if (e.key === 'Enter') savePlaylistName(); }}
@@ -2993,7 +2994,7 @@
                         class="px-6 py-3 rounded-lg font-bold bg-red-600 hover:bg-red-500 focus:bg-red-500 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
                         {$t.deletePlaylist}
                       </button>
-                      <button onclick={() => confirmDeletePlaylist = false} use:focusOnMount
+                      <button onclick={() => confirmDeletePlaylist = false} {@attach focusOnMount()}
                         class="px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
                         {$t.cancel}
                       </button>
@@ -3030,11 +3031,11 @@
                     <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
                       {#each group.items as item}
                         <button onclick={() => showItemDetails(item)}
-                          use:longPress onlongpress={() => openContextMenu(item)}
+                          {@attach longPress()} onlongpress={() => openContextMenu(item)}
                           class="group focus:outline-none text-left cv-auto">
                           <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
                             {#if getItemImageUrl(item)}
-                              <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
+                              <img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                             {/if}
                             {#if itemProgress(item) > 0}
                               <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
@@ -3170,7 +3171,7 @@
     <div class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full max-w-xl flex flex-col gap-4 shadow-2xl">
       <div class="flex justify-between items-center mb-2">
         <h2 class="text-4xl text-white font-bold">{$t.sortBy}</h2>
-        <button onclick={() => showSortMenu = false} use:focusOnMount
+        <button onclick={() => showSortMenu = false} {@attach focusOnMount()}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
@@ -3213,7 +3214,7 @@
       <!-- Kopf (fix) -->
       <div class="flex justify-between items-center p-8 pb-4 shrink-0">
         <h2 class="text-4xl text-white font-bold">{$t.filter}</h2>
-        <button onclick={() => showFilterMenu = false} use:focusOnMount
+        <button onclick={() => showFilterMenu = false} {@attach focusOnMount()}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>

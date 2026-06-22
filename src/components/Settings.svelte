@@ -1619,7 +1619,7 @@
           <button bind:this={qrBtnEl} onclick={showLogQr}
             class="px-5 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.logQrButton}</button>
-          <button onclick={() => showLog = false} use:focusOnMount
+          <button onclick={() => showLog = false} {@attach focusOnMount()}
             class="px-5 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.close}</button>
         </div>
@@ -1630,7 +1630,7 @@
           <img src={qrDataUrl} alt="QR" class="rounded-xl bg-white p-3"
                style="width:320px;height:320px;max-width:40vh;max-height:40vh;" />
           <p class="text-gray-400 text-lg text-center max-w-md">{$t.logQrHint}</p>
-          <button onclick={hideQr} use:focusOnMount
+          <button onclick={hideQr} {@attach focusOnMount()}
             class="px-6 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.logBackToText}</button>
         </div>
@@ -1711,7 +1711,7 @@
         <h2 class="text-4xl text-white font-bold mb-2">{$t.changePassword}</h2>
         <div class="relative">
           <input type={showCurrentPw ? 'text' : 'password'} bind:value={currentPw} placeholder={$t.currentPassword}
-            use:tvKeyboard
+            {@attach tvKeyboard}
             onkeydown={(e) => e.key === 'Enter' && changePassword()}
             class="w-full bg-gray-900 text-white text-2xl p-6 pr-20 rounded-xl border border-gray-600
                    focus:outline-none focus:ring-4 focus:ring-blue-500" />
@@ -1728,7 +1728,7 @@
         </div>
         <div class="relative">
           <input type={showNewPw ? 'text' : 'password'} bind:value={newPw} placeholder={$t.newPassword}
-            use:tvKeyboard
+            {@attach tvKeyboard}
             onkeydown={(e) => e.key === 'Enter' && changePassword()}
             class="w-full bg-gray-900 text-white text-2xl p-6 pr-20 rounded-xl border border-gray-600
                    focus:outline-none focus:ring-4 focus:ring-blue-500" />
@@ -1779,7 +1779,7 @@
       {:else if activeModal === 'sharedPassword'}
         <h2 class="text-4xl text-white font-bold mb-2">{sharedPickerUser?.Name}</h2>
         <input type="password" bind:value={sharedPw} placeholder={$t.password}
-          use:tvKeyboard
+          {@attach tvKeyboard}
           onkeydown={(e) => e.key === 'Enter' && commitSharedUser(sharedPickerUser, sharedPw)}
           class="w-full bg-gray-900 text-white text-2xl p-6 rounded-xl border border-gray-600
                  focus:outline-none focus:ring-4 focus:ring-blue-500" />
