@@ -10,16 +10,21 @@
   import Dashboard   from './components/Dashboard.svelte';
   import Sidebar     from './components/Sidebar.svelte';
   import Details     from './components/Details.svelte';
-  import Player      from './components/Player.svelte';
   import ContextMenu from './components/ContextMenu.svelte';
   import AddToPicker from './components/AddToPicker.svelte';
   import Search      from './components/Search.svelte';
   import Favorites   from './components/Favorites.svelte';
   import Person      from './components/Person.svelte';
   import Collection  from './components/Collection.svelte';
-  import Settings    from './components/Settings.svelte';
-  import SyncPlayModal from './components/SyncPlay.svelte';
   import { registerSession, listSyncGroups, createSyncGroup, joinSyncGroup, leaveSyncGroup, syncSocketUrl, setSyncIgnoreWait } from './syncplay.js';
+
+  // Lazy-geladene Ansichten (Vite-Code-Splitting): erst beim ersten Öffnen geladen, danach gecacht.
+  // Hält das Kaltstart-Bundle klein — v.a. Player zieht die schweren Deps (hls.js, assjs) erst beim
+  // ersten Abspielen nach, statt sie bei jedem App-Start mitzuladen.
+  let _settingsP, _playerP, _syncP;
+  const lazySettings = () => (_settingsP ??= import('./components/Settings.svelte').then(m => m.default));
+  const lazyPlayer   = () => (_playerP   ??= import('./components/Player.svelte').then(m => m.default));
+  const lazySyncPlay = () => (_syncP     ??= import('./components/SyncPlay.svelte').then(m => m.default));
 
   // ============================================================
   // APP PHASE
@@ -1695,6 +1700,7 @@
     }
     currentDetailItem = item;
     viewState = 'details';
+    lazyPlayer();   // Player-Chunk im Hintergrund vorladen — von hier wird sehr wahrscheinlich abgespielt
   }
 
   // ============================================================
@@ -2573,6 +2579,9 @@
             onOpenPerson={(person) => openPerson(person)} />
 
         {:else if viewState === 'settings'}
+          {#await lazySettings()}
+            <div class="h-full flex items-center justify-center"><div class="w-14 h-14 border-4 border-white/25 border-t-white rounded-full animate-spin"></div></div>
+          {:then Settings}
           <Settings
             {selectedUser} {selectedServer} {savedTokens}
             {screensaverSettings} {reduceAnimations} {displaySettings} {playbackPrefs}
@@ -2593,7 +2602,7 @@
             onPlaybackPrefsChange={onPlaybackPrefsChange}
             onClearCache={clearCache}
           />
-
+          {/await}
         {:else if viewState === 'details' && currentDetailItem}
           <Details
             item={currentDetailItem}
@@ -2641,6 +2650,7 @@
   {#if appPhase === 'app' && viewState === 'player' && currentDetailItem}
     <div class="absolute inset-0 z-[100] bg-black w-full h-full">
       {#key currentDetailItem.Id}
+        {#await lazyPlayer() then Player}
         <Player
           item={currentDetailItem}
           {selectedUser} {playbackPrefs} {use24h} {serverVobSub}
@@ -2662,12 +2672,14 @@
           onPrev={(episode) => handlePrevEpisode(episode)}
           onSyncplay={openSyncPlay}
         />
+        {/await}
       {/key}
     </div>
   {/if}
 
   <!-- SYNCPLAY — Gruppen-Modal (über allem außer Screensaver) -->
   {#if showSyncPlay}
+    {#await lazySyncPlay() then SyncPlayModal}
     <SyncPlayModal
       group={syncMyGroup}
       groups={syncGroups}
@@ -2678,6 +2690,7 @@
       onRefresh={syncRefresh}
       onClose={closeSyncPlay}
     />
+    {/await}
   {/if}
 
   <!-- KONTEXTMENÜ — über allem außer Screensaver -->
