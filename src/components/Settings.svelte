@@ -68,7 +68,7 @@
   }
 
   // Version: YYYYMMDD — bei Updates hier anpassen
-  const APP_VERSION = '20260621';
+  const APP_VERSION = '20260623';
 
   let isCurrentUserSaved = $derived(!!(
     selectedUser && selectedServer &&
