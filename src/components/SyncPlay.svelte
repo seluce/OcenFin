@@ -39,14 +39,14 @@
           {/each}
         </div>
       </div>
-      <button onclick={() => onLeave?.()} use:focusOnMount
+      <button onclick={() => onLeave?.()} {@attach focusOnMount()}
         class="w-full bg-red-600 hover:bg-red-500 focus:bg-red-500 text-white font-bold text-xl py-4 rounded-xl
                focus:outline-none focus:ring-4 focus:ring-white transition-colors">
         {$t.leaveGroup}
       </button>
     {:else}
       <!-- Nicht in einer Gruppe: erstellen oder beitreten -->
-      <button onclick={() => onCreate?.()} use:focusOnMount
+      <button onclick={() => onCreate?.()} {@attach focusOnMount()}
         class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-xl py-4 rounded-xl
                focus:outline-none focus:ring-4 focus:ring-white transition-colors flex items-center justify-center gap-3">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">

@@ -449,7 +449,7 @@
       <div class="relative">
         {#if detailsBackdrop && getItemBackdropUrl(fullItem)}
           <div class="absolute inset-0 z-0">
-            <img src={getItemBackdropUrl(fullItem)} use:blurUp={itemBlurHash(fullItem, 'Backdrop')} alt="" class="w-full h-full object-cover object-top" />
+            <img src={getItemBackdropUrl(fullItem)} {@attach blurUp(itemBlurHash(fullItem, 'Backdrop'))} alt="" class="w-full h-full object-cover object-top" />
             <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/60 to-gray-900/20"></div>
             <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/40 to-transparent"></div>
           </div>
@@ -479,7 +479,7 @@
 
         <div class="w-64 shrink-0 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800">
           {#if getItemImageUrl(fullItem)}
-            <img src={getItemImageUrl(fullItem)} use:blurUp={itemBlurHash(fullItem)} alt={fullItem.Name} class="w-full h-full object-cover" />
+            <img src={getItemImageUrl(fullItem)} {@attach blurUp(itemBlurHash(fullItem))} alt={fullItem.Name} class="w-full h-full object-cover" />
           {/if}
         </div>
 
@@ -521,7 +521,7 @@
 
           <!-- AKTIONS-BUTTONS -->
           <div class="flex items-center gap-4 mb-12">
-            <button onclick={handlePlay} use:focusOnMount
+            <button onclick={handlePlay} {@attach focusOnMount()}
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-2xl px-12 py-4 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-3 shadow-lg">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
@@ -730,7 +730,7 @@
                 class="shrink-0 group flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
                 <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 transition-all shadow-xl relative">
                   {#if getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')}
-                    <img src={getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')} use:blurUp={itemBlurHash(ep)} alt={ep.Name} loading="lazy"
+                    <img src={getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')} {@attach blurUp(itemBlurHash(ep))} alt={ep.Name} loading="lazy"
                       class="w-full h-full object-cover transition-all duration-200 {epSpoiler(ep) ? 'blur-md scale-110' : ''}" />
                   {/if}
                   {#if itemProgress(ep) > 0}
@@ -764,7 +764,7 @@
               <button onclick={() => onOpenPerson?.(person)} class="shrink-0 w-36 group focus:outline-none text-center">
                 <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto">
                   {#if personImageUrl(session.serverUrl, person)}
-                    <img src={personImageUrl(session.serverUrl, person)} use:blurUp={itemBlurHash(person)} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
+                    <img src={personImageUrl(session.serverUrl, person)} {@attach blurUp(itemBlurHash(person))} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}
                     <div class="w-full h-full flex items-center justify-center text-gray-600">
                       <svg class="w-14 h-14" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
@@ -788,7 +788,7 @@
               <button onclick={() => navigateTo(si.Id)} class="shrink-0 w-48 group flex flex-col focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
                   {#if getItemImageUrl(si, 'portrait')}
-                    <img src={getItemImageUrl(si, 'portrait')} use:blurUp={itemBlurHash(si)} alt={si.Name} class="w-full h-full object-cover" loading="lazy" />
+                    <img src={getItemImageUrl(si, 'portrait')} {@attach blurUp(itemBlurHash(si))} alt={si.Name} class="w-full h-full object-cover" loading="lazy" />
                   {/if}
                 </div>
                 <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full">{si.Name}</span>
@@ -814,7 +814,7 @@
     <!-- Schließen-Button (oben rechts, über dem Video) -->
     <button
       onclick={closeTrailer}
-      use:focusOnMount
+      {@attach focusOnMount()}
       class="absolute top-6 right-8 z-10 text-white/80 hover:text-white focus:text-white
              bg-black/50 rounded-full p-3 focus:outline-none focus:ring-4 focus:ring-white transition-colors"
     >
@@ -855,7 +855,7 @@
     <div bind:this={mediaInfoScroll} class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl">
       <div class="flex justify-between items-center p-8 pb-4 sticky top-0 bg-gray-800 z-10">
         <h2 class="text-4xl text-white font-bold">{$t.mediaInfo}</h2>
-        <button onclick={() => showMediaInfo = false} use:focusOnMount
+        <button onclick={() => showMediaInfo = false} {@attach focusOnMount()}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
@@ -908,7 +908,7 @@
       class="bg-gray-800 border border-gray-700 rounded-2xl p-8 w-full max-w-lg flex flex-col items-center gap-5 shadow-2xl">
       <div class="flex items-center justify-between gap-4 w-full">
         <h2 class="text-3xl text-white font-bold">{$t.share}</h2>
-        <button onclick={() => showShare = false} use:focusOnMount
+        <button onclick={() => showShare = false} {@attach focusOnMount()}
           class="px-5 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
                  focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.close}</button>
       </div>

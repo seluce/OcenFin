@@ -49,11 +49,13 @@ export function isBackKey(e) {
   return false;
 }
 
-// Svelte-Action: fokussiert das Element beim Einblenden (für WebOS-D-Pad-Navigation)
-export function focusOnMount(node, enabled = true) { if (enabled) node.focus(); }
+// Svelte-Attachment (Factory): fokussiert das Element beim Einblenden (für WebOS-D-Pad-Navigation)
+export function focusOnMount(enabled = true) {
+  return (node) => { if (enabled) node.focus(); };
+}
 
-// Svelte-Action: Auf dem TV öffnet ein fokussiertes <input> SOFORT die Bildschirm-
-// tastatur — auch wenn man nur hin navigiert. Diese Action hält das Feld readonly
+// Svelte-Attachment: Auf dem TV öffnet ein fokussiertes <input> SOFORT die Bildschirm-
+// tastatur — auch wenn man nur hin navigiert. Dieses Attachment hält das Feld readonly
 // (Fokus öffnet keine Tastatur) und macht es erst bei OK/Enter beschreibbar; dann
 // öffnet die Tastatur. Verliert das Feld den Fokus, wird es wieder readonly.
 export function tvKeyboard(node) {
@@ -80,16 +82,14 @@ export function tvKeyboard(node) {
   node.addEventListener('keydown', onKeyDown);
   node.addEventListener('pointerdown', onPointerDown);
   node.addEventListener('blur', onBlur);
-  return {
-    destroy() {
-      node.removeEventListener('keydown', onKeyDown);
-      node.removeEventListener('pointerdown', onPointerDown);
-      node.removeEventListener('blur', onBlur);
-    }
+  return () => {
+    node.removeEventListener('keydown', onKeyDown);
+    node.removeEventListener('pointerdown', onPointerDown);
+    node.removeEventListener('blur', onBlur);
   };
 }
 
-// Svelte-Action: erkennt "langes Drücken" (OK halten bzw. Maus/Touch halten).
+// Svelte-Attachment (Factory): erkennt "langes Drücken" (OK halten bzw. Maus/Touch halten).
 // PROBLEM: Enter auf einem fokussierten <button> löst auf webOS SOFORT — und beim
 // Gedrückthalten WIEDERHOLT — einen Klick aus. Ein Timer kommt dagegen nie an.
 // LÖSUNG: den automatischen Klick per preventDefault unterbinden und die Aktion selbst
@@ -97,57 +97,57 @@ export function tvKeyboard(node) {
 // Verhalten). Damit die weiterhin gehaltene OK-Taste nicht sofort den ersten Menüeintrag
 // auslöst, "schärft" das Kontextmenü sich erst nach dem Loslassen/kurzer Zeit.
 // Verlässt das Element den Fokus (Menü öffnet), wird der Druckzustand zurückgesetzt.
-export function longPress(node, duration = 500) {
-  let pressing = false;
-  let fired = false;
-  let timer = null;
-  let suppressClick = false;
+export function longPress(duration = 500) {
+  return (node) => {
+    let pressing = false;
+    let fired = false;
+    let timer = null;
+    let suppressClick = false;
 
-  function startTimer() {
-    clearTimeout(timer);
-    timer = setTimeout(() => { fired = true; node.dispatchEvent(new CustomEvent('longpress')); }, duration);
-  }
-  function reset() { pressing = false; fired = false; clearTimeout(timer); timer = null; }
+    function startTimer() {
+      clearTimeout(timer);
+      timer = setTimeout(() => { fired = true; node.dispatchEvent(new CustomEvent('longpress')); }, duration);
+    }
+    function reset() { pressing = false; fired = false; clearTimeout(timer); timer = null; }
 
-  // ── Tastatur (OK im 5-Wege-Modus) ──────────────────────────
-  function onKeyDown(e) {
-    if (e.key !== 'Enter' && e.keyCode !== 13) return;
-    e.preventDefault();          // unterbindet den automatischen / wiederholten Klick
-    if (pressing) return;        // Auto-Repeat ignorieren
-    pressing = true; fired = false;
-    startTimer();
-  }
-  function onKeyUp(e) {
-    if (e.key !== 'Enter' && e.keyCode !== 13) return;
-    if (!pressing) return;
-    clearTimeout(timer);
-    const wasLong = fired;
-    pressing = false; fired = false;
-    if (!wasLong) node.click();  // kurzer Druck → normale Aktion (langer hat schon 'longpress')
-  }
+    // ── Tastatur (OK im 5-Wege-Modus) ──────────────────────────
+    function onKeyDown(e) {
+      if (e.key !== 'Enter' && e.keyCode !== 13) return;
+      e.preventDefault();          // unterbindet den automatischen / wiederholten Klick
+      if (pressing) return;        // Auto-Repeat ignorieren
+      pressing = true; fired = false;
+      startTimer();
+    }
+    function onKeyUp(e) {
+      if (e.key !== 'Enter' && e.keyCode !== 13) return;
+      if (!pressing) return;
+      clearTimeout(timer);
+      const wasLong = fired;
+      pressing = false; fired = false;
+      if (!wasLong) node.click();  // kurzer Druck → normale Aktion (langer hat schon 'longpress')
+    }
 
-  // ── Zeiger (Magic-Remote-Cursor / Maus) ────────────────────
-  function onPointerDown() { pressing = true; fired = false; suppressClick = false; startTimer(); }
-  function onPointerUp() {
-    if (!pressing) return;
-    clearTimeout(timer);
-    if (fired) suppressClick = true;   // langer Zeiger-Druck → folgenden Klick schlucken
-    pressing = false; fired = false;
-  }
-  function onClickCapture(e) {
-    if (suppressClick) { e.preventDefault(); e.stopImmediatePropagation(); suppressClick = false; }
-  }
+    // ── Zeiger (Magic-Remote-Cursor / Maus) ────────────────────
+    function onPointerDown() { pressing = true; fired = false; suppressClick = false; startTimer(); }
+    function onPointerUp() {
+      if (!pressing) return;
+      clearTimeout(timer);
+      if (fired) suppressClick = true;   // langer Zeiger-Druck → folgenden Klick schlucken
+      pressing = false; fired = false;
+    }
+    function onClickCapture(e) {
+      if (suppressClick) { e.preventDefault(); e.stopImmediatePropagation(); suppressClick = false; }
+    }
 
-  node.addEventListener('keydown', onKeyDown);
-  node.addEventListener('keyup', onKeyUp);
-  node.addEventListener('pointerdown', onPointerDown);
-  node.addEventListener('pointerup', onPointerUp);
-  node.addEventListener('pointerleave', reset);
-  node.addEventListener('blur', reset);                    // Fokus weg (Menü öffnet) → Zustand klären
-  node.addEventListener('click', onClickCapture, true);    // Capture-Phase: vor dem normalen Klick
+    node.addEventListener('keydown', onKeyDown);
+    node.addEventListener('keyup', onKeyUp);
+    node.addEventListener('pointerdown', onPointerDown);
+    node.addEventListener('pointerup', onPointerUp);
+    node.addEventListener('pointerleave', reset);
+    node.addEventListener('blur', reset);                    // Fokus weg (Menü öffnet) → Zustand klären
+    node.addEventListener('click', onClickCapture, true);    // Capture-Phase: vor dem normalen Klick
 
-  return {
-    destroy() {
+    return () => {
       clearTimeout(timer);
       node.removeEventListener('keydown', onKeyDown);
       node.removeEventListener('keyup', onKeyUp);
@@ -156,7 +156,7 @@ export function longPress(node, duration = 500) {
       node.removeEventListener('pointerleave', reset);
       node.removeEventListener('blur', reset);
       node.removeEventListener('click', onClickCapture, true);
-    }
+    };
   };
 }
 
@@ -550,15 +550,14 @@ export function itemBlurHash(item, type = 'Primary') {
   return tag ? (item.ImageBlurHashes[type]?.[tag] || null) : null;
 }
 
-// Svelte-Action: dekodierten BlurHash als Hintergrund eines <img> setzen (Cache je Hash).
+// Svelte-Attachment (Factory): dekodierten BlurHash als Hintergrund eines <img> setzen (Cache je Hash).
+// Kein update mehr nötig — bei Hash-Wechsel läuft das Attachment automatisch neu (reaktiver Effect).
 const _blurCache = new Map();
-export function blurUp(node, hash) {
-  const apply = (h) => {
-    if (!h) { node.style.backgroundImage = ''; return; }
-    let url = _blurCache.get(h);
-    if (url === undefined) { url = decodeBlurHash(h); _blurCache.set(h, url); }
+export function blurUp(hash) {
+  return (node) => {
+    if (!hash) { node.style.backgroundImage = ''; return; }
+    let url = _blurCache.get(hash);
+    if (url === undefined) { url = decodeBlurHash(hash); _blurCache.set(hash, url); }
     if (url) { node.style.backgroundImage = `url(${url})`; node.style.backgroundSize = 'cover'; node.style.backgroundPosition = 'center'; }
   };
-  apply(hash);
-  return { update: apply };
 }

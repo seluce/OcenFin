@@ -4,7 +4,7 @@
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady } from '../syncplay.js';
-  import { PgsRenderer, VobSubRenderer } from 'libbitsub';
+  import { PgsRenderer, VobSubRenderer, initWasm } from 'libbitsub';
   // ASS/SSA mit Original-Layout via assjs — schlanker DOM/CSS-Renderer (kein WASM/Worker). Synchronisiert
   // sich ans <video> (nur Zeit + Maße, KEINE Pixel → kein cross-origin-Taint, kein crossorigin am <video>).
   // Font-Fallback macht der Browser. Deckt fast alle ASS-Tags ab (Rest: VTT-Fallback über den Schalter).
@@ -542,8 +542,7 @@
     return (s > 0 ? '+' : '') + s.toFixed(1).replace('.', ',') + ' s';
   }
   let subtitleFetchToken = 0;      // ignoriert Antworten eines überholten Wechsels
-  let graphicRenderer = $state(null);      // libbitsub-Instanz für das AKTUELL sichtbare Bild-Untertitel-Overlay
-  let pendingRenderer = $state(null);      // beim Sprachwechsel: neuer Renderer, der noch lädt (Altbild bleibt)
+  let graphicRenderer = $state(null);      // libbitsub-Instanz für das aktuell sichtbare Bild-Untertitel-Overlay
   // Bild-Untertitel clientseitig rendern? Nur wenn aktiviert UND nicht ohnehin alles eingebrannt wird.
   let clientGraphicRender = $derived(playbackPrefs.pgsRendering && !playbackPrefs.burnSubtitles);
   // ASS/SSA mit Original-Layout rendern (assjs)? Aus → schlichtes Text-Overlay, beides Direct Play.
@@ -632,53 +631,39 @@
     if (!videoElement) return;
     const url = graphicSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
     if (!url) { disposeGraphic(); dlog('[OcenFin] image subtitle not available (server does not provide it externally):', stream.Index); return; }
-    // Wechsel ohne Lücke: den NEUEN Renderer aufbauen, aber den alten erst entsorgen, wenn der
-    // neue fertig geparst ist ('loaded'). So bleibt der bisherige Untertitel sichtbar, bis der
-    // nächste bereit ist – kein Leer-Loch während der ~1–2 s Parsezeit. Noch nicht fertige
-    // Vorgänger werden bei erneutem Wechsel verworfen (schnelles Hin-und-Her).
-    if (pendingRenderer) { try { pendingRenderer.dispose(); } catch {} pendingRenderer = null; }
+    // TV-freundlich: STRENG SEQUENZIELL. Erst den alten Renderer restlos zerstören (Worker/WASM freigeben),
+    // dann den neuen erzeugen. Auf WebOS sind zwei gleichzeitige WASM-Worker riskant (Limit → libbitsub
+    // flüchtet in den Main-Thread → 2–3 s Freeze). Eine kurze Lücke beim manuellen Wechsel ist akzeptabel.
+    disposeGraphic();
     const codec = (stream?.Codec || '').toLowerCase();
-    let created = null;
-    const swapIn = () => {
-      if (created !== pendingRenderer) return;                 // bereits überholt → ignorieren
-      if (graphicRenderer && graphicRenderer !== created) { try { graphicRenderer.dispose(); } catch {} }
-      graphicRenderer = created;
-      pendingRenderer = null;
-    };
     const opts = {
       video: videoElement, subUrl: url,
       displaySettings: { scale: graphicSubScale(), aspectMode: 'contain' },
-      // libbitsub-Warnungen (z. B. WORKER_FALLBACK: Worker kann das WASM im Inline-Setup nicht laden,
-      // Parsing läuft im Haupt-Thread) über unser gated dlog leiten → standardmäßig still im Log.
       onWarning: (w) => dlog('[OcenFin] libbitsub notice:', w?.code || w?.message || w),
-      onError: (e) => {
-        dlog('[OcenFin] libbitsub error:', e?.code || '', e?.message || e);
-        if (created && created === pendingRenderer) { try { created.dispose(); } catch {} pendingRenderer = null; }
-      },
+      onError: (e) => { dlog('[OcenFin] libbitsub error:', e?.code || '', e?.message || e); disposeGraphic(); },
       onEvent: (ev) => {
-        if (ev?.type === 'renderer-change') dlog('[OcenFin] libbitsub backend:', ev.renderer);
-        else if (ev?.type === 'loaded') { dlog('[OcenFin] libbitsub loaded:', ev.format, 'cues=' + (ev.metadata?.cueCount ?? '?')); swapIn(); }
+        // backend 'worker' = off-main-thread (gut); alles andere = Main-Thread-Fallback (Freeze-Ursache auf TV).
+        // Beides immer ins Protokoll (console.warn), damit der B4-Backend-Zustand auch ohne Debug sichtbar ist.
+        if (ev?.type === 'renderer-change') console.warn('[OcenFin] libbitsub backend:', ev.renderer);
+        else if (ev?.type === 'worker-state') console.warn('[OcenFin] libbitsub worker-state:', ev.state ?? ev);
+        else if (ev?.type === 'loaded') dlog('[OcenFin] libbitsub loaded:', ev.format, 'cues=' + (ev.metadata?.cueCount ?? '?'));
       },
     };
     try {
       // Codec ist bekannt → expliziten Renderer wählen (keine Format-Auto-Erkennung nötig).
-      created = ['pgssub', 'pgs'].includes(codec)
+      graphicRenderer = ['pgssub', 'pgs'].includes(codec)
         ? new PgsRenderer(opts)
         : new VobSubRenderer({ ...opts, fileName: graphicSubFileName(url, stream) });   // VobSub/DVD: .mks-Container
-      pendingRenderer = created;
-      // Gibt es kein Altbild, wird das neue Overlay schlicht sichtbar, sobald es geladen ist.
-      if (!graphicRenderer) { graphicRenderer = created; pendingRenderer = null; }
       dlog('[OcenFin] image subtitle via libbitsub:', stream.Index, stream.Codec);
-    } catch (e) { dlog('[OcenFin] libbitsub renderer error:', e?.message); pendingRenderer = null; }
+    } catch (e) { dlog('[OcenFin] libbitsub renderer error:', e?.message); disposeGraphic(); }
   }
   function disposeGraphic() {
-    if (pendingRenderer) { try { pendingRenderer.dispose(); } catch {} pendingRenderer = null; }
     if (graphicRenderer) { try { graphicRenderer.dispose(); } catch {} graphicRenderer = null; }
   }
-  // Größenänderung zur Laufzeit live auf den laufenden (und gerade ladenden) Renderer anwenden.
-  $effect(() => { if ((graphicRenderer || pendingRenderer) && (playbackPrefs.subtitleSize || 'normal')) {
+  // Größenänderung zur Laufzeit live auf den laufenden Renderer anwenden.
+  $effect(() => { if (graphicRenderer && (playbackPrefs.subtitleSize || 'normal')) {
     const sc = graphicSubScale();
-    for (const r of [graphicRenderer, pendingRenderer]) if (r) { try { r.setDisplaySettings({ scale: sc }); } catch {} }
+    try { graphicRenderer.setDisplaySettings({ scale: sc }); } catch {}
   } });
 
   // VTT-Zeitstempel "HH:MM:SS.mmm" oder "MM:SS.mmm" → Sekunden
@@ -895,6 +880,10 @@
   onMount(async () => {
     resetControlsTimeout();
     if (playerContainer) playerContainer.focus();
+
+    // libbitsub-WASM früh kompilieren (dedupliziert, non-blocking) → der erste PGS/VobSub-Sub muss nicht
+    // erst auf den WASM-Compile warten. Schlägt es fehl, fällt libbitsub später ohnehin sauber zurück.
+    initWasm().then(() => dlog('[OcenFin] libbitsub WASM ready')).catch((e) => dlog('[OcenFin] libbitsub WASM init failed:', e?.message));
 
     fetchMediaSources();
     fetchIntroTimestamps();
@@ -1448,7 +1437,7 @@
         <p class="text-white text-2xl font-bold">{$t.playbackError}</p>
         <p class="text-gray-400">{$t.playbackErrorHint}</p>
         <div class="flex gap-4 mt-2">
-          <button onclick={retryPlayback} use:focusOnMount
+          <button onclick={retryPlayback} {@attach focusOnMount()}
             class="bg-white text-black font-bold px-6 py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
             {$t.retry}
           </button>
@@ -1626,7 +1615,7 @@
             </svg>
           </button>
 
-          <button onclick={togglePlay} use:focusOnMount bind:this={playPauseBtn}
+          <button onclick={togglePlay} {@attach focusOnMount()} bind:this={playPauseBtn}
             class="p-4 bg-white text-black rounded-full hover:scale-110 focus:scale-110 transition-transform focus:outline-none shadow-xl">
             {#if isPlaying}
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
@@ -1796,7 +1785,7 @@
   <!-- INTRO ÜBERSPRINGEN — unten links -->
   {#if showSkipIntro}
     <div transition:uiFade class="absolute bottom-36 left-12 z-[70]">
-      <button onclick={skipIntro} use:focusOnMount
+      <button onclick={skipIntro} {@attach focusOnMount()}
         class="bg-white/10 backdrop-blur-md border-2 border-white text-white font-bold text-xl
                px-8 py-4 rounded-xl flex items-center gap-3 shadow-2xl
                hover:bg-white hover:text-black focus:bg-white focus:text-black
@@ -1823,7 +1812,7 @@
           <div class="h-full bg-blue-500" style="width: {countdownProgress * 100}%; transition: width 0.12s linear;"></div>
         </div>
         <div class="flex gap-3">
-          <button onclick={() => goToNextEpisode(true)} use:focusOnMount
+          <button onclick={() => goToNextEpisode(true)} {@attach focusOnMount()}
             class="flex-1 bg-white text-black font-bold py-2.5 rounded-lg flex items-center justify-center gap-2
                    focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -1846,7 +1835,7 @@
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{$t.nextEpisode}</span>
         <span class="text-lg font-bold text-white truncate">{nextEpisode.Name}</span>
         {#if nextEpisodeMeta}<span class="text-sm text-gray-400 truncate">{nextEpisodeMeta}</span>{/if}
-        <button onclick={() => goToNextEpisode(true)} use:focusOnMount
+        <button onclick={() => goToNextEpisode(true)} {@attach focusOnMount()}
           class="bg-white text-black font-bold py-2.5 rounded-lg flex items-center justify-center gap-2
                  focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
           <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -1865,7 +1854,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
         </svg>
         <h2 class="text-3xl font-bold text-white">{$t.stillWatching}</h2>
-        <button onclick={resumeFromStillWatching} use:focusOnMount
+        <button onclick={resumeFromStillWatching} {@attach focusOnMount()}
           class="bg-white text-black font-bold text-xl px-10 py-4 rounded-xl flex items-center gap-3
                  focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
           <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>

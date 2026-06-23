@@ -117,7 +117,7 @@
     <div data-focus-trap class="absolute top-24 left-20 bg-gray-800 border border-gray-700 shadow-2xl
                 rounded-xl p-2 flex flex-col gap-1 z-[60] min-w-[220px]">
       <button
-        use:focusOnMount
+        {@attach focusOnMount()}
         onclick={(e) => { e.stopPropagation(); showProfileMenu = false; onSwitchUser?.(); }}
         class="text-left px-5 py-4 rounded-lg text-white font-semibold text-lg
                hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white

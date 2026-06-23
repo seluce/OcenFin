@@ -43,15 +43,18 @@
 
   // ── ART-MODUS ──────────────────────────────────────────────────────────────
   let artlist  = [];                          // [{ url, title }] — interne Daten (nicht im Template)
-  let slots    = $state([{ url: '', title: '' }, { url: '', title: '' }]);  // zwei Crossfade-Ebenen
+  let slots    = $state([{ url: '', title: '', logo: null }, { url: '', title: '', logo: null }]);  // zwei Crossfade-Ebenen
   let front    = $state(0);                   // sichtbare Ebene
   let artIdx   = 0;
   let artReady = $state(false);               // true → Backdrops anzeigen statt Uhr-Fallback
 
+  // Titel-Logo (Schriftzug) des Films/der Serie — wie im Hero-Banner. maxHeight fürs Vollbild etwas größer.
+  const logoUrl = (id, tag) => `${session.serverUrl}/Items/${id}/Images/Logo?tag=${tag}&maxHeight=240&quality=90&format=webp&ApiKey=${session.token}`;
+
   async function fetchBackdrops(filter) {
     const url = `${session.serverUrl}/Users/${userId}/Items?Recursive=true&IncludeItemTypes=Movie,Series`
               + `${filter}&SortBy=Random&Limit=80&Fields=BackdropImageTags&ImageTypeLimit=1`
-              + `&EnableImageTypes=Backdrop&EnableTotalRecordCount=false`;
+              + `&EnableImageTypes=Backdrop,Logo&EnableTotalRecordCount=false`;
     const res = await fetch(url, { headers: authHeaders(session.token) });
     if (!res.ok) return [];
     const data = await res.json();
@@ -61,6 +64,7 @@
         id: it.Id,
         url: `${session.serverUrl}/Items/${it.Id}/Images/Backdrop/0?tag=${it.BackdropImageTags[0]}&maxWidth=1920&quality=85&ApiKey=${session.token}`,
         title: it.Name || '',
+        logo: it.ImageTags?.Logo ? logoUrl(it.Id, it.ImageTags.Logo) : null,
       }));
   }
 
@@ -68,7 +72,7 @@
   // SERIEN-Backdrop (über SeriesId + geerbte ParentBackdropImageTags) mit dem Serientitel.
   async function fetchNextUp() {
     const url = `${session.serverUrl}/Shows/NextUp?UserId=${userId}&Limit=40&Fields=ParentBackdropImageTags`
-              + `&ImageTypeLimit=1&EnableImageTypes=Backdrop&EnableTotalRecordCount=false`;
+              + `&ImageTypeLimit=1&EnableImageTypes=Backdrop,Logo&EnableTotalRecordCount=false`;
     const res = await fetch(url, { headers: authHeaders(session.token) });
     if (!res.ok) return [];
     const data = await res.json();
@@ -78,6 +82,7 @@
         id: ep.SeriesId,
         url: `${session.serverUrl}/Items/${ep.SeriesId}/Images/Backdrop/0?tag=${ep.ParentBackdropImageTags[0]}&maxWidth=1920&quality=85&ApiKey=${session.token}`,
         title: ep.SeriesName || ep.Name || '',
+        logo: ep.ParentLogoImageTag ? logoUrl(ep.ParentLogoItemId || ep.SeriesId, ep.ParentLogoImageTag) : null,
       }));
   }
 
@@ -194,7 +199,11 @@
          style="background: linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.3) 38%, rgba(0,0,0,0.55) 100%)"></div>
     <!-- Titel + Uhr unten -->
     <div class="absolute bottom-0 left-0 right-0 p-12 pointer-events-none ss-fade">
-      <p class="text-white/90 font-semibold drop-shadow-lg" style="font-size: clamp(2rem, 4.5vw, 4rem)">{slots[front].title}</p>
+      {#if slots[front].logo}
+        <img src={slots[front].logo} alt={slots[front].title} class="max-h-[18vh] max-w-[55%] object-contain object-left drop-shadow-lg" />
+      {:else}
+        <p class="text-white/90 font-semibold drop-shadow-lg" style="font-size: clamp(2rem, 4.5vw, 4rem)">{slots[front].title}</p>
+      {/if}
       <p class="text-white/55 tabular-nums mt-2" style="font-size: clamp(1.2rem, 2vw, 2rem); letter-spacing:0.1em">{timeString} · {dateString}</p>
     </div>
 

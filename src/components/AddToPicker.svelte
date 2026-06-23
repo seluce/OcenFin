@@ -107,7 +107,7 @@
     <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl p-8 flex flex-col gap-5">
       <div class="flex justify-between items-center">
         <h2 class="text-3xl text-white font-bold">{mode === 'collection' ? $t.addToCollection : $t.addToPlaylist}</h2>
-        <button onclick={close} use:focusOnMount
+        <button onclick={close} {@attach focusOnMount()}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>

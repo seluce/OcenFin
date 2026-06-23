@@ -44,7 +44,8 @@
   let heroItems  = $state([]);
   let heroIndex  = $state(0);
   let heroTimer;
-  let heroReady  = $state(false);   // erst true, wenn das erste Backdrop dekodiert ist → kein Aufploppen
+  let heroBuilt  = false;   // pro Laden: true, sobald der Hero einmal gebaut ist (verhindert Neu-Mischen beim zweiten Latest-Fetch)
+  let heroLoading = $state(false);   // true, solange die Featured-Daten noch laden → Platz reservieren (kein Nachrücken)
   let heroCurrent = $derived(heroItems[heroIndex] || null);
 
   const skeletons = Array(6).fill(0);
@@ -62,26 +63,20 @@
   }
 
   function buildHero() {
+    if (heroBuilt) return;   // bereits gebaut → nicht neu mischen (zweiter Latest-Fetch speist nur seine Reihe)
     // Titel ausschließen, die bereits in "Weiterschauen" laufen (keine Dopplung).
     // Bei Serien auch über SeriesId, falls eine Folge der Serie angefangen wurde.
     const inProgress = new Set();
     continueWatching.forEach(i => { inProgress.add(i.Id); if (i.SeriesId) inProgress.add(i.SeriesId); });
     const pool = [...latestMovies, ...latestSeries]
       .filter(i => i.BackdropImageTags?.length > 0 && !inProgress.has(i.Id));
+    if (pool.length === 0) return;   // noch keine brauchbaren Items → nächster Aufruf versucht es erneut
     // Maximal 5, gemischt
     heroItems = pool.sort(() => Math.random() - 0.5).slice(0, 5);
     heroIndex = 0;
-    heroReady = false;
+    heroBuilt = true;
+    heroLoading = false;   // Hero steht → Skelett sofort weg (unabhängig vom langsameren Latest-Fetch)
     clearInterval(heroTimer);
-    // Erstes Backdrop vorladen → Hero erst einblenden, wenn es fertig ist (kein leeres Aufploppen).
-    const firstUrl = getHeroBackdrop(heroItems[0]);
-    if (firstUrl) {
-      const img = new Image();
-      img.onload = img.onerror = () => { heroReady = true; };
-      img.src = firstUrl;
-    } else {
-      heroReady = true;
-    }
     // Nur automatisch rotieren wenn Animationen erlaubt sind
     if (!reduceAnimations && heroItems.length > 1) {
       preloadHero(1);   // nächstes Bild schon laden
@@ -119,6 +114,7 @@
   }
 
   async function loadDashboardData() {
+    heroBuilt = false;   // pro Laden neu bauen
     // Cache-Hit: sofort aus Cache laden, kein Netzwerk
     if (apiCache.dashboard) {
       ({ libraries, continueWatching, nextUp, latestMovies, latestSeries, recentlyWatched, recommendations } = apiCache.dashboard);
@@ -129,7 +125,8 @@
       return;
     }
 
-    isLoading = true;
+    isLoading   = true;
+    heroLoading = true;   // Hero-Platz ab dem ersten Paint reservieren, bis die Featured-Daten da sind
     try {
       const uId   = selectedUser.Id;
       const opts  = { headers: getAuthHeaders() };
@@ -201,21 +198,28 @@
         apiCache.dashboard.nextUp = nextUp;
       }).catch(() => {});
 
-      // Beide Latest-Fetches zusammen abwarten → Hero nur EINMAL bauen (statt zweimal)
-      Promise.all([
-        pLatestMovies.then(r => r.json()).catch(() => []),
-        pLatestSeries.then(r => r.json()).catch(() => [])
-      ]).then(([dm, ds]) => {
-        latestMovies = Array.isArray(dm) ? dm : (dm.Items || []);
-        latestSeries = Array.isArray(ds) ? ds : (ds.Items || []);
+      // Latest-Fetches UNABHÄNGIG verarbeiten: jede Reihe füllt sich sofort, und der Hero wird
+      // gebaut, sobald die ERSTEN brauchbaren Daten da sind — nicht erst, wenn der langsamere
+      // der beiden Fetches zurück ist (das war der eigentliche Skelett-Engpass).
+      const pm = pLatestMovies.then(r => r.json()).catch(() => []);
+      const ps = pLatestSeries.then(r => r.json()).catch(() => []);
+      pm.then(d => {
+        latestMovies = Array.isArray(d) ? d : (d.Items || []);
         apiCache.dashboard.latestMovies = latestMovies;
+        buildHero();
+      });
+      ps.then(d => {
+        latestSeries = Array.isArray(d) ? d : (d.Items || []);
         apiCache.dashboard.latestSeries = latestSeries;
         buildHero();
       });
+      // Sicherheitsnetz: spätestens wenn beide da sind, Skelett beenden (falls gar kein Hero baubar war)
+      Promise.all([pm, ps]).then(() => { heroLoading = false; });
 
     } catch (err) {
       console.error("Dashboard load failed:", err);
-      isLoading = false;
+      isLoading   = false;
+      heroLoading = false;
       session.connectionLost = true;   // Server nicht erreichbar → Banner
     }
   }
@@ -315,13 +319,13 @@
     {@const prog = itemProgress(item)}
     {@const rem = getRemainingMinutes(item)}
     {@const sub = getItemSubtitle(item, $t.today)}
-    <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
+    <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
       class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
       <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
                   border-4 border-transparent group-focus:border-white group-focus:scale-105
                   transition-all duration-200 shadow-xl relative">
         {#if img}
-          <img src={img} use:blurUp={itemBlurHash(item, 'Backdrop')} alt={item.Name}
+          <img src={img} {@attach blurUp(itemBlurHash(item, 'Backdrop'))} alt={item.Name}
             class="w-full h-full object-cover" loading="lazy" />
         {/if}
         {#if prog > 0}
@@ -347,13 +351,13 @@
   {#snippet portraitCard(item, img, blur)}
     {@const prog = itemProgress(item)}
     {@const sub = getItemSubtitle(item, $t.today)}
-    <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} use:longPress onlongpress={() => onOpenContext?.(item)}
+    <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
       class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                   border-4 border-transparent group-focus:border-white
                   transition-colors duration-200 shadow-xl">
         {#if img}
-          <img src={img} use:blurUp={blur} alt={item.Name}
+          <img src={img} {@attach blurUp(blur)} alt={item.Name}
             class="w-full h-full object-cover" loading="lazy" />
         {/if}
         {#if prog > 0}
@@ -379,7 +383,7 @@
                   border-4 border-transparent group-focus:border-white
                   transition-colors duration-200 shadow-xl">
         {#if img}
-          <img src={img} use:blurUp={itemBlurHash(col)} alt={col.Name}
+          <img src={img} {@attach blurUp(itemBlurHash(col))} alt={col.Name}
             class="w-full h-full object-cover" loading="lazy" />
         {:else}
           <div class="w-full h-full flex items-center justify-center text-gray-600">
@@ -408,17 +412,18 @@
   {:else}
 
     <!-- HERO-BANNER — rotierendes Featured-Item -->
-    {#if showHero && heroCurrent && heroReady}
-      <div transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden">
-        <!-- Backdrop mit Verläufen -->
+    {#if showHero && heroCurrent}
+      <div transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gray-900">
+        <!-- Vollflächiger Backdrop (Netflix-Stil): Inhalt steht sofort, Bild blendet ein (Blurhash → scharf), dunkler Grund als Sicherheitsnetz -->
         {#each heroItems as h, i (h.Id)}
           {#if i === heroIndex && getHeroBackdrop(h)}
-            <img src={getHeroBackdrop(h)} use:blurUp={itemBlurHash(h, 'Backdrop')} alt={h.Name} fetchpriority="high" loading="eager" decoding="async"
-              class="absolute inset-0 w-full h-full object-cover hero-fade" />
+            <img src={getHeroBackdrop(h)} {@attach blurUp(itemBlurHash(h, 'Backdrop'))} alt={h.Name} fetchpriority="high" loading="eager" decoding="async"
+              class="absolute inset-0 w-full h-full object-cover object-center hero-fade" />
           {/if}
         {/each}
-        <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/40 to-transparent"></div>
-        <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/30 to-transparent"></div>
+        <!-- Verläufe: links für Textlesbarkeit, unten für nahtlosen Übergang in die Reihen darunter -->
+        <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/50 to-transparent"></div>
+        <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/50 to-transparent"></div>
 
         <!-- Inhalt -->
         <div class="absolute bottom-0 left-0 p-10 pb-8 max-w-3xl flex flex-col gap-3">
@@ -461,6 +466,18 @@
           </div>
         </div>
       </div>
+    {:else if showHero && heroLoading}
+      <!-- Skelett: reserviert die Hero-Höhe und deutet Titel/Text/Button an (gleiche Position wie der echte Inhalt) → sauberer, nahtloser Übergang -->
+      <div class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gradient-to-br from-gray-800/40 via-gray-900/70 to-gray-900">
+        <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/40 to-transparent"></div>
+        <div class="absolute bottom-0 left-0 p-10 pb-8 max-w-3xl flex flex-col gap-3 {reduceAnimations ? '' : 'animate-pulse'}">
+          <div class="h-14 w-80 max-w-[60%] bg-white/10 rounded-lg"></div>
+          <div class="h-4 w-44 bg-white/10 rounded"></div>
+          <div class="h-3.5 w-full max-w-xl bg-white/10 rounded"></div>
+          <div class="h-3.5 w-2/3 max-w-md bg-white/10 rounded"></div>
+          <div class="h-12 w-44 bg-white/10 rounded-xl mt-2"></div>
+        </div>
+      </div>
     {/if}
 
     <!-- MEDIATHEKEN -->
@@ -475,7 +492,7 @@
                           border-4 border-transparent group-focus:border-white group-hover:border-gray-400
                           transition-all shadow-lg overflow-hidden">
                 {#if getItemImageUrl(library)}
-                  <img src={getItemImageUrl(library)} use:blurUp={itemBlurHash(library)} alt={library.Name}
+                  <img src={getItemImageUrl(library)} {@attach blurUp(itemBlurHash(library))} alt={library.Name}
                     class="w-full h-full object-cover opacity-80 group-focus:opacity-100" loading="lazy" />
                 {:else}
                   <span class="text-2xl text-gray-500 font-bold">{library.Name}</span>

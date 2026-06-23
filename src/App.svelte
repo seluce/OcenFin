@@ -10,13 +10,21 @@
   import Dashboard   from './components/Dashboard.svelte';
   import Sidebar     from './components/Sidebar.svelte';
   import Details     from './components/Details.svelte';
-  import Player      from './components/Player.svelte';
   import ContextMenu from './components/ContextMenu.svelte';
   import AddToPicker from './components/AddToPicker.svelte';
   import Search      from './components/Search.svelte';
-  import Settings    from './components/Settings.svelte';
-  import SyncPlayModal from './components/SyncPlay.svelte';
+  import Favorites   from './components/Favorites.svelte';
+  import Person      from './components/Person.svelte';
+  import Collection  from './components/Collection.svelte';
   import { registerSession, listSyncGroups, createSyncGroup, joinSyncGroup, leaveSyncGroup, syncSocketUrl, setSyncIgnoreWait } from './syncplay.js';
+
+  // Lazy-geladene Ansichten (Vite-Code-Splitting): erst beim ersten Öffnen geladen, danach gecacht.
+  // Hält das Kaltstart-Bundle klein — v.a. Player zieht die schweren Deps (hls.js, assjs) erst beim
+  // ersten Abspielen nach, statt sie bei jedem App-Start mitzuladen.
+  let _settingsP, _playerP, _syncP;
+  const lazySettings = () => (_settingsP ??= import('./components/Settings.svelte').then(m => m.default));
+  const lazyPlayer   = () => (_playerP   ??= import('./components/Player.svelte').then(m => m.default));
+  const lazySyncPlay = () => (_syncP     ??= import('./components/SyncPlay.svelte').then(m => m.default));
 
   // ============================================================
   // APP PHASE
@@ -266,6 +274,7 @@
   let navReordering              = $state(false);  // true während ein Sidebar-Eintrag „angehoben" ist
   let totalLibraryItems          = $state(0);
   let isFetchingMore     = $state(false);
+  let isFetchingPrev     = $state(false);
   let isLoading          = $state(false);
   const libraryItemLimit = 50;
 
@@ -277,6 +286,7 @@
   // A-Z
   let activeLetter    = $state('#');
   let currentLetter   = $state('');
+  let firstLoadedIndex = $state(0);   // Index von currentItems[0] in der (gefilterten) Gesamtliste – Basis fürs bidirektionale Nachladen
   const alphabet = ['#','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'];
   let libraryScrollContainer;
   let libraryGrid;
@@ -441,7 +451,7 @@
     } catch { /* weiterhin weg → Banner bleibt */ }
   }
   // Fokus zuverlässig auf den Button legen, wenn der Banner erscheint (er mountet durch ein
-  // Hintergrund-Ereignis; use:focusOnMount griff dort nicht — tick() nach dem Flush gewinnt).
+  // Hintergrund-Ereignis; focusOnMount griff dort nicht — tick() nach dem Flush gewinnt).
   $effect(() => { if (session.connectionLost) tick().then(() => retryBtnEl?.focus()); });
   async function syncCreate() { await createSyncGroup(session.serverUrl, session.token, selectedUser?.Name || 'OcenFin'); syncJoined = true; await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
   async function syncJoin(groupId) { await joinSyncGroup(session.serverUrl, session.token, groupId); syncJoined = true; syncMyGroupId = groupId; await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
@@ -1364,7 +1374,7 @@
     if      (viewState === 'player')   { viewState = 'details';        e.preventDefault(); }
     else if (viewState === 'details')  { returnFromDetails();          e.preventDefault(); }
     else if (viewState === 'person')   { viewState = personReturnView; e.preventDefault(); }
-    else if (viewState === 'collection') { if (renamingPlaylist) renamingPlaylist = false; else if (confirmDeletePlaylist) confirmDeletePlaylist = false; else if (playlistEditMode) playlistEditMode = false; else viewState = collectionReturnView; e.preventDefault(); }
+    else if (viewState === 'collection') { if (!collectionRef?.handleBackKey()) viewState = collectionReturnView; e.preventDefault(); }
     else if (viewState === 'library')  { viewState = 'dashboard';      e.preventDefault(); }
     else if (viewState === 'settings') { viewState = 'dashboard';      e.preventDefault(); }
     else if (viewState === 'search')   { viewState = 'dashboard';      e.preventDefault(); }
@@ -1459,14 +1469,25 @@
     loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, currentLetter || null);
   }
 
-  // Buchstabensprung als Server-Filter. Aufsteigend: ab Buchstabe aufwärts. Absteigend: ab
-  // Buchstabe abwärts → Namen unterhalb des nächsten Buchstabens (G→"H"), sodass alle G-Titel
-  // enthalten sind und die Liste absteigend bei G beginnt. (Vergleich ist case-insensitiv.)
-  function letterFilter() {
-    if (!currentLetter) return '';
-    if (currentSort.order === 'Ascending') return `&NameStartsWithOrGreater=${currentLetter}`;
-    const next = String.fromCharCode(currentLetter.charCodeAt(0) + 1);   // 'A'→'B' … 'Z'→'['
-    return `&NameLessThan=${encodeURIComponent(next)}`;
+  // Index des ersten Titels eines Buchstabens in der (gefilterten) Gesamtliste – per Count-Abfrage.
+  // Aufsteigend: Anzahl der Titel VOR dem Buchstaben (Name < Buchstabe). Absteigend: Anzahl der Titel,
+  // die in absteigender Anzeige davor liegen (Name >= nächster Buchstabe). So beginnt das geladene
+  // Fenster genau beim Buchstaben, und davor/danach lässt sich beidseitig nachladen.
+  async function letterStartIndex(libraryId, letter) {
+    if (!letter || letter === '#') return 0;
+    let q;
+    if (currentSort.order === 'Ascending') {
+      q = `&NameLessThan=${encodeURIComponent(letter)}`;
+    } else {
+      const next = String.fromCharCode(letter.charCodeAt(0) + 1);   // 'A'→'B' … 'Z'→'['
+      q = `&NameStartsWithOrGreater=${encodeURIComponent(next)}`;
+    }
+    const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${libraryId}&Limit=1&StartIndex=0${q}${getFilterQuery()}`;
+    try {
+      const res = await fetch(url, { headers: getAuthHeaders() });
+      if (res.ok) return (await res.json()).TotalRecordCount || 0;
+    } catch {}
+    return 0;
   }
 
   async function loadLibraryItems(library, letter = null) {
@@ -1497,14 +1518,19 @@
     if (isCacheableView() && apiCache.views[library.Id] && letter === null) {
       currentItems      = apiCache.views[library.Id].items;
       totalLibraryItems = apiCache.views[library.Id].total;
+      firstLoadedIndex  = 0;
       return;
     }
 
     isLoading    = true;
     currentItems = [];
 
-    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${library.Id}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=0`;
-    url += letterFilter();
+    // Sprung per Offset: das Fenster beginnt am Index des Buchstabens in der Gesamtliste (kein
+    // klebriger Filter mehr), sodass davor liegende Titel später nach oben nachgeladen werden können.
+    const startIndex = letter !== null ? await letterStartIndex(library.Id, letter) : 0;
+    firstLoadedIndex = startIndex;
+
+    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${library.Id}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
     url += getFilterQuery();
 
     try {
@@ -1537,46 +1563,38 @@
   }
 
   // ── Personen-Ansicht (Filmografie) ──────────────────────────
-  let currentPersonName  = $state('');
-  let currentPerson      = $state(null);
-  let currentPersonFav   = $state(false);
-  let currentPersonItems = $state([]);
+  let currentPerson      = $state(null);       // Seed-Person für die Personen-Ansicht (Person.svelte lädt selbst)
   let personReturnView   = $state('search');   // wohin "Zurück" führt
-  let isLoadingPerson    = $state(false);
 
   // Sammlungen (BoxSets) — eigene Grid-Ansicht, gespiegelt von der Personen-Ansicht
-  let collectionItems      = $state([]);
-  let currentCollectionName = $state('');
-  let currentCollection     = $state(null);
-  let collectionReturnView = $state('dashboard');
-  let isLoadingCollection  = $state(false);
-  let playlistEditMode     = $state(false);   // Bearbeiten-Modus der Wiedergabelisten-Ansicht (Entfernen/Umsortieren)
+  // Sammlungen/Wiedergabelisten — eigene Ansicht (Collection.svelte lädt selbst).
+  let currentCollection    = $state(null);          // Seed-BoxSet/Playlist
+  let collectionReturnView = $state('dashboard');   // wohin "Zurück" führt
+  let collectionRef;                                // bind:this → für Zurück-Taste (handleBackKey)
 
-  async function openCollection(boxSet) {
-    collectionReturnView  = viewState;
-    currentCollectionName = boxSet.Name;
-    currentCollection     = boxSet;
-    collectionItems       = [];
-    isLoadingCollection   = true;
-    playlistEditMode      = false;
-    viewState             = 'collection';
-    // Wiedergabelisten über ihren eigenen Endpunkt laden (zuverlässig + in Listen-Reihenfolge),
-    // Sammlungen/BoxSets über ParentId.
-    const url = boxSet.Type === 'Playlist'
-      ? `${session.serverUrl}/Playlists/${boxSet.Id}/Items?UserId=${selectedUser.Id}&Fields=PrimaryImageAspectRatio&Limit=300`
-      : `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${boxSet.Id}&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=100`;
-    try {
-      const res = await fetch(url, { headers: getAuthHeaders() });
-      if (res.ok) collectionItems = (await res.json()).Items || [];
-    } catch { /* ignorieren */ }
-    finally { isLoadingCollection = false; }
+  function openCollection(boxSet) {
+    collectionReturnView = viewState;
+    currentCollection    = boxSet;
+    viewState            = 'collection';
   }
 
-  // Beschriftung für eine Folge in der Sammlungs-/Wiedergabelisten-Ansicht: "S1 · E5 · Titel"
-  function episodeLabel(item) {
-    const s = item.ParentIndexNumber, e = item.IndexNumber;
-    const code = (s != null && e != null) ? `S${s} · E${e}` : (e != null ? `E${e}` : '');
-    return [code, item.Name].filter(Boolean).join(' · ');
+  // Cross-Effekte aus der Collection-Ansicht auf Bibliotheks-Grid / Sidebar:
+  function onCollectionChildCount(id, count) {
+    const gi = currentItems.find(x => x.Id === id);
+    if (gi) { gi.ChildCount = count; currentItems = [...currentItems]; }
+  }
+  function onCollectionRenamed(id, name) {
+    const gi = currentItems.find(x => x.Id === id);
+    if (gi) { gi.Name = name; currentItems = [...currentItems]; }
+    refreshLibraries();
+  }
+  async function onCollectionDeleted(id) {
+    currentItems = currentItems.filter(i => i.Id !== id);   // sofort aus dem Grid
+    await refreshLibraries();   // Sidebar/Menü neu laden (Playlist verschwindet)
+    // War es die letzte Playlist, entfernt Jellyfin die ganze "Playlists"-Bibliothek → zurück aufs Dashboard.
+    const playlistsLibGone = !navLibraries.some(l => l.CollectionType === 'playlists');
+    if (collectionReturnView === 'library' && playlistsLibGone) { currentLibraryId = null; viewState = 'dashboard'; }
+    else viewState = collectionReturnView;
   }
 
   // Nach dem Anlegen einer Wiedergabeliste/Sammlung erscheint serverseitig ggf. eine neue
@@ -1588,198 +1606,23 @@
     } catch { }
   }
 
-  // --- Wiedergabelisten-Verwaltung (nur in der Wiedergabelisten-Inhaltsansicht) -----------------
-  // Umsortieren: optimistisch lokal, dann serverseitig bestätigen.
-  async function movePlaylistItem(fromIndex, toIndex) {
-    if (!currentCollection || toIndex < 0 || toIndex >= collectionItems.length) return;
-    const item = collectionItems[fromIndex];
-    if (!item?.PlaylistItemId) return;
-    const arr = [...collectionItems];
-    const [moved] = arr.splice(fromIndex, 1);
-    arr.splice(toIndex, 0, moved);
-    collectionItems = arr;
-    try {
-      const res = await fetch(`${session.serverUrl}/Playlists/${currentCollection.Id}/Items/${item.PlaylistItemId}/Move/${toIndex}`,
-        { method: 'POST', headers: getAuthHeaders() });
-      if (!res.ok) console.warn('[OcenFin] move failed', res.status);
-    } catch (e) { console.warn('[OcenFin] move error', e); }
+  // Favoriten — eigene Ansicht (Komponente Favorites.svelte). Lädt selbst beim Mounten; dieser
+  // Schlüssel wird hochgezählt, um nach einer Änderung (z.B. Favorit in Details entfernt) neu zu laden.
+  let favReloadKey = $state(0);
+
+  // Öffnet die Filmografie einer Person (aus Suche, Besetzung in den Details oder Favoriten).
+  // Setzt nur Rückkehr-Ansicht + Seed-Person; Person.svelte lädt Person-Details + Filmografie selbst.
+  function openPerson(person) {
+    personReturnView = viewState;
+    currentPerson    = person;
+    viewState        = 'person';
   }
-  async function removePlaylistItem(item) {
-    if (!currentCollection || !item?.PlaylistItemId) return;
-    collectionItems = collectionItems.filter(i => i.PlaylistItemId !== item.PlaylistItemId);
-    // Kinderzahl der Übersichts-Kachel mitziehen (für Platzhalter bei leerer Liste, ohne Reload)
-    const gi = currentItems.find(x => x.Id === currentCollection.Id);
-    if (gi) { gi.ChildCount = collectionItems.length; currentItems = [...currentItems]; }
-    try {
-      const res = await fetch(`${session.serverUrl}/Playlists/${currentCollection.Id}/Items?EntryIds=${item.PlaylistItemId}`,
-        { method: 'DELETE', headers: getAuthHeaders() });
-      if (!res.ok) console.warn('[OcenFin] remove failed', res.status);
-    } catch (e) { console.warn('[OcenFin] remove error', e); }
-  }
-  // Ganze Wiedergabeliste löschen (Inline-Sicherheitsabfrage im Bearbeiten-Modus).
-  let confirmDeletePlaylist = $state(false);
-  async function deletePlaylist() {
-    if (!currentCollection || currentCollection.Type !== 'Playlist') return;
-    const id = currentCollection.Id;
-    try {
-      const res = await fetch(`${session.serverUrl}/Items/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
-      if (!res.ok) { console.warn('[OcenFin] playlist delete failed', res.status); return; }
-    } catch (e) { console.warn('[OcenFin] playlist delete error', e); return; }
-    currentItems          = currentItems.filter(i => i.Id !== id);   // sofort aus dem Grid
-    confirmDeletePlaylist = false;
-    playlistEditMode      = false;
-
-    await refreshLibraries();   // Sidebar/Menü neu laden (Playlist verschwindet)
-
-    // War es die letzte Playlist, entfernt Jellyfin die ganze "Playlists"-Bibliothek.
-    // Dann existiert die Rück-Ansicht nicht mehr → zurück aufs Dashboard.
-    const playlistsLibGone = !navLibraries.some(l => l.CollectionType === 'playlists');
-    if (collectionReturnView === 'library' && playlistsLibGone) {
-      currentLibraryId = null;
-      viewState        = 'dashboard';
-    } else {
-      viewState = collectionReturnView;
-    }
-  }
-
-  // Playlist umbenennen (Inline-Eingabe im Bearbeiten-Modus).
-  let renamingPlaylist = $state(false);
-  let renameValue      = $state('');
-  let renameError      = $state(false);
-  function startRename() {
-    renameValue           = currentCollectionName;
-    confirmDeletePlaylist = false;
-    renameError           = false;
-    renamingPlaylist      = true;
-  }
-  async function savePlaylistName() {
-    const name = renameValue.trim();
-    if (!currentCollection || !name) { renameError = true; return; }
-    if (name === currentCollectionName) { renamingPlaylist = false; return; }
-    const id = currentCollection.Id;
-    renameError = false;
-    try {
-      // Playlist-eigener Update-Endpunkt: nutzt die Besitzrechte des Nutzers (kein Admin-Recht nötig).
-      // POST /Items/{id} wäre Metadaten-Bearbeitung und verlangt Adminrechte — daher hier bewusst nicht.
-      const res = await fetch(`${session.serverUrl}/Playlists/${id}`, {
-        method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ Name: name })
-      });
-      if (!res.ok) { console.warn('[OcenFin] rename failed', res.status); renameError = true; return; }
-    } catch (e) { console.warn('[OcenFin] rename error', e); renameError = true; return; }
-    // Lokal sofort spiegeln (Titel, Übersichts-Kachel, Sidebar)
-    currentCollectionName = name;
-    currentCollection     = { ...currentCollection, Name: name };
-    const gi = currentItems.find(x => x.Id === id);
-    if (gi) { gi.Name = name; currentItems = [...currentItems]; }
-    renamingPlaylist = false;
-    refreshLibraries();
-  }
-
-  // Favoriten — eigene Ansicht (Filme, Serien, Sammlungen), aus dem Menü erreichbar.
-  // Wird bei jedem Aufruf frisch geladen, da sich Favoriten jederzeit ändern können.
-  let favoriteItems      = $state([]);
-  let isLoadingFavorites = $state(false);
-  let favoritesGrid;
-
-  // Gruppierung wie in der Suche: Filme / Serien / Staffeln / Sammlungen (leere Gruppen entfallen im Template)
-  let favGroups = $derived([
-    { key: 'movies',      label: $t.movies,      items: favoriteItems.filter(i => i.Type === 'Movie'  && i.UserData?.IsFavorite) },
-    { key: 'series',      label: $t.series,      items: favoriteItems.filter(i => i.Type === 'Series' && i.UserData?.IsFavorite) },
-    { key: 'seasons',     label: $t.seasons,     items: favoriteItems.filter(i => i.Type === 'Season' && i.UserData?.IsFavorite) },
-    { key: 'collections', label: $t.collections, items: favoriteItems.filter(i => i.Type === 'BoxSet' && i.UserData?.IsFavorite) },
-  ]);
-  // Personen separat (runde Karten, eigene Sektion)
-  let favPersons = $derived(favoriteItems.filter(i => i.Type === 'Person'));
-  // Episoden separat (Landscape-Karten, eigene Sektion) — nach Serie → Staffel → Folge sortiert,
-  // damit Folgen derselben Serie beieinanderstehen.
-  let favEpisodes = $derived(
-    favoriteItems
-      .filter(i => i.Type === 'Episode' && i.UserData?.IsFavorite)
-      .sort((a, b) =>
-        (a.SeriesName || '').localeCompare(b.SeriesName || '') ||
-        ((a.ParentIndexNumber ?? 0) - (b.ParentIndexNumber ?? 0)) ||
-        ((a.IndexNumber ?? 0) - (b.IndexNumber ?? 0))
-      )
-  );
-
-  async function loadFavorites() {
-    isLoadingFavorites = true;
-    favoriteItems = [];
-    try {
-      // Personen sind KEINE Bibliothekselemente → die /Items-Abfrage (Recursive) liefert sie nie.
-      // Stattdessen der dedizierte /Persons-Endpunkt mit IsFavorite-Filter (UserId für den Kontext).
-      const [contentRes, personRes] = await Promise.all([
-        fetch(
-          `${session.serverUrl}/Users/${selectedUser.Id}/Items?Filters=IsFavorite&Recursive=true` +
-          `&IncludeItemTypes=Movie,Series,BoxSet,Season,Episode&SortBy=SortName&SortOrder=Ascending` +
-          `&Fields=PrimaryImageAspectRatio,ProductionYear,UserData,SeriesName,ParentIndexNumber,IndexNumber,SeriesId&EnableImageTypes=Primary,Backdrop,Thumb`,
-          { headers: getAuthHeaders() }
-        ),
-        fetch(
-          `${session.serverUrl}/Persons?UserId=${selectedUser.Id}&IsFavorite=true&SortBy=SortName&SortOrder=Ascending&Fields=PrimaryImageAspectRatio`,
-          { headers: getAuthHeaders() }
-        ),
-      ]);
-      const content = contentRes.ok ? ((await contentRes.json()).Items || []) : [];
-      const persons = personRes.ok  ? ((await personRes.json()).Items  || []).map(p => ({ ...p, Type: 'Person' })) : [];
-      dlog('[OcenFin] favorites:', content.length, 'titles,', persons.length, 'persons');
-      favoriteItems = [...content, ...persons];
-    } catch (e) { dlog('[OcenFin] favorites error:', e?.message); }
-    finally { isLoadingFavorites = false; }
-    await tick();
-    const card = favoritesGrid?.querySelector('button');
-    if (card) card.focus(); else focusMain();
-  }
-
-  // Öffnet die Filmografie einer Person (aus Suche oder Besetzung in den Details)
-  async function openPerson(person) {
-    personReturnView   = viewState;
-    currentPersonName  = person.Name;
-    currentPerson      = person;
-    currentPersonFav   = !!person.UserData?.IsFavorite;
-    currentPersonItems = [];
-    isLoadingPerson    = true;
-    viewState          = 'person';
-    // Person-Item separat holen → korrekter Favoritenstatus (aus Suche/Besetzung fehlt UserData oft)
-    fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${person.Id}`, { headers: getAuthHeaders() })
-      .then(r => r.ok ? r.json() : null)
-      .then(p => { if (p) { currentPerson = p; currentPersonFav = !!p.UserData?.IsFavorite; } })
-      .catch(() => {});
-    try {
-      const res = await fetch(
-        `${session.serverUrl}/Users/${selectedUser.Id}/Items?PersonIds=${person.Id}` +
-        `&Recursive=true&IncludeItemTypes=Movie,Series&SortBy=PremiereDate&SortOrder=Descending` +
-        `&Limit=100&Fields=PrimaryImageAspectRatio,SeriesName`,
-        { headers: getAuthHeaders() }
-      );
-      if (res.ok) currentPersonItems = (await res.json()).Items || [];
-    } catch { /* ignorieren */ }
-    finally { isLoadingPerson = false; }
-  }
-
-  // Person als Favorit setzen/entfernen (optimistisch; bei Fehler zurückrollen)
-  async function togglePersonFavorite() {
-    if (!currentPerson) return;
-    const next = !currentPersonFav;
-    currentPersonFav = next;
-    try {
-      await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${currentPerson.Id}`,
-        { method: next ? 'POST' : 'DELETE', headers: getAuthHeaders() });
-    } catch (e) { console.warn('[OcenFin] person favorite failed, rolled back:', e); currentPersonFav = !next; }
-  }
-
-  // Filmografie nach Typ gruppieren (nur Filme / Serien). Folgen werden bewusst weggelassen –
-  // wer in Serie X mitspielt, taucht sonst in dutzenden Folgen auf und überlagert alles.
-  let personGroups = $derived([
-    { label: $t.movies,   items: currentPersonItems.filter(i => i.Type === 'Movie') },
-    { label: $t.series,   items: currentPersonItems.filter(i => i.Type === 'Series') },
-  ].filter(g => g.items.length > 0));
 
   async function loadMoreLibraryItems() {
-    if (isFetchingMore || currentItems.length >= totalLibraryItems || !currentLibraryId) return;
+    if (isFetchingMore || firstLoadedIndex + currentItems.length >= totalLibraryItems || !currentLibraryId) return;
     isFetchingMore = true;
-    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${currentItems.length}`;
-    url += letterFilter();
+    const start = firstLoadedIndex + currentItems.length;
+    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}`;
     url += getFilterQuery();
     try {
       const res = await fetch(url, { headers: getAuthHeaders() });
@@ -1789,6 +1632,28 @@
         if (isCacheableView()) cacheLibraryView(currentLibraryId, { items: currentItems, total: totalLibraryItems });
       }
     } catch { } finally { isFetchingMore = false; }
+  }
+
+  // Aufwärts nachladen: den Block VOR dem aktuellen Fenster holen und voranstellen. Damit der
+  // sichtbare Inhalt exakt stehen bleibt, wird die Scroll-Position um den Höhenzuwachs korrigiert
+  // (Karten haben feste Aspect-Ratio-Höhe → Messung ist auch vor dem Laden der Bilder korrekt).
+  async function loadPreviousLibraryItems() {
+    if (isFetchingPrev || firstLoadedIndex <= 0 || !currentLibraryId) return;
+    isFetchingPrev = true;
+    const newStart = Math.max(0, firstLoadedIndex - libraryItemLimit);
+    const count    = firstLoadedIndex - newStart;
+    const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}`;
+    try {
+      const res = await fetch(url, { headers: getAuthHeaders() });
+      if (res.ok) {
+        const items = (await res.json()).Items || [];
+        const before = libraryScrollContainer ? libraryScrollContainer.scrollHeight : 0;
+        currentItems     = [...items, ...currentItems];
+        firstLoadedIndex = newStart;
+        await tick();
+        if (libraryScrollContainer) libraryScrollContainer.scrollTop += libraryScrollContainer.scrollHeight - before;
+      }
+    } catch { } finally { isFetchingPrev = false; }
   }
 
   // Nach einer Auswahl in der Sidebar den Fokus in den Inhalt verschieben. Das
@@ -1835,6 +1700,7 @@
     }
     currentDetailItem = item;
     viewState = 'details';
+    lazyPlayer();   // Player-Chunk im Hintergrund vorladen — von hier wird sehr wahrscheinlich abgespielt
   }
 
   // ============================================================
@@ -1913,8 +1779,8 @@
       }
     } else if (detailsOrigin === 'favorites') {
       // Favoriten neu laden — z.B. wenn in den Details ein Favorit entfernt wurde, war er sonst
-      // noch in der Übersicht gelistet, bis man die Ansicht wechselte.
-      loadFavorites();
+      // noch in der Übersicht gelistet, bis man die Ansicht wechselte. Schlüssel hochzählen → Favorites lädt neu.
+      favReloadKey++;
     }
   }
 
@@ -1945,13 +1811,24 @@
     return null;
   }
 
+  // Attachment: lädt nach, sobald der Sentinel in den Viewport-Vorlauf (400px) kommt.
   function infiniteScroll(node) {
     const obs = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) loadMoreLibraryItems(); },
       { rootMargin: '400px' }
     );
     obs.observe(node);
-    return { destroy() { obs.disconnect(); } };
+    return () => obs.disconnect();
+  }
+
+  // Gegenstück nach oben: lädt den vorigen Block, sobald der obere Sentinel in Reichweite kommt.
+  function infiniteScrollUp(node) {
+    const obs = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) loadPreviousLibraryItems(); },
+      { rootMargin: '400px' }
+    );
+    obs.observe(node);
+    return () => obs.disconnect();
   }
 
   let scrollTimer;
@@ -2118,7 +1995,7 @@
           <p class="text-gray-400 mt-2">{$t.exitMessage}</p>
         </div>
         <div class="flex gap-3">
-          <button onclick={() => showExitConfirm = false} use:focusOnMount
+          <button onclick={() => showExitConfirm = false} {@attach focusOnMount()}
             class="flex-1 bg-gray-700 text-white font-bold py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-600 transition-colors">
             {$t.cancel}
           </button>
@@ -2151,7 +2028,7 @@
               <div class="flex items-center gap-3">
                 <button
                   onclick={() => connectToServer(server)}
-                  use:focusOnMount={i === 0}
+                  {@attach focusOnMount(i === 0)}
                   class="flex-1 flex items-center justify-between p-5 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700
                          border border-gray-600 hover:border-blue-500 focus:border-blue-500
                          rounded-xl text-left focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
@@ -2195,7 +2072,7 @@
             <div class="flex gap-3">
               <button
                 onclick={() => selectedServer && connectToServer(selectedServer)}
-                use:focusOnMount
+                {@attach focusOnMount()}
                 class="flex-1 bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white font-bold py-3 rounded-lg
                        focus:outline-none focus:ring-2 focus:ring-white transition-colors"
               >
@@ -2340,7 +2217,7 @@
               class="w-full bg-gray-900 text-white text-2xl p-5 rounded-xl mb-6 border border-gray-600 text-center
                      focus:outline-none focus:ring-4 focus:ring-blue-500"
               onkeydown={(e) => e.key === 'Enter' && authenticateUser(selectedUser.Name, password)}
-              use:focusOnMount
+              {@attach focusOnMount()}
             />
             <button onclick={() => authenticateUser(selectedUser.Name, password)}
               class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xl py-4 rounded-xl mb-4
@@ -2373,7 +2250,7 @@
               onkeydown={(e) => e.key === 'Enter' && authenticateUser(manualUsername, manualPassword)}
               class="w-full bg-gray-900 text-white text-xl p-5 rounded-xl mb-4 border border-gray-600
                      focus:outline-none focus:ring-4 focus:ring-blue-500"
-              use:focusOnMount
+              {@attach focusOnMount()}
             />
             <input
               type="password"
@@ -2404,7 +2281,7 @@
           {#if users.length > 0}
             <div class="flex flex-wrap justify-center gap-10">
               {#each users as user, i}
-                <button onclick={() => handleUserClick(user)} use:focusOnMount={i === 0} class="flex flex-col items-center group focus:outline-none">
+                <button onclick={() => handleUserClick(user)} {@attach focusOnMount(i === 0)} class="flex flex-col items-center group focus:outline-none">
                   <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl transition-all">
                     {#if user.PrimaryImageTag}
                       <img src="{session.serverUrl}/Users/{user.Id}/Images/Primary?tag={user.PrimaryImageTag}" alt={user.Name} class="w-full h-full object-cover"/>
@@ -2483,7 +2360,7 @@
         navHidden={displaySettings.navHidden}
         navIcons={displaySettings.navIcons}
         activeLibraryId={currentLibraryId}
-        onNavigate={(target) => { if (target === 'syncplay') { openSyncPlay(); } else { viewState = target; if (target === 'favorites') loadFavorites(); else focusMain(); } }}
+        onNavigate={(target) => { if (target === 'syncplay') { openSyncPlay(); } else { viewState = target; if (target !== 'favorites') focusMain(); } }}
         onNavigateLibrary={(lib) => navigateToLibrary(lib, true)}
         onSwitchUser={handleSwitchUser}
         onLogOutServer={handleLogout}
@@ -2620,6 +2497,10 @@
                 {/each}
               </div>
 
+              {#if firstLoadedIndex > 0 && !isLoading}
+                <div {@attach infiniteScrollUp} class="h-2 w-full"></div>
+              {/if}
+
               <div bind:this={libraryGrid}
                 class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4">
                 {#if isLoading}
@@ -2630,7 +2511,7 @@
                   {#each visibleLibraryItems as item (item.Id)}
                     <button onclick={() => showItemDetails(item)} data-item-id={item.Id}
                       onfocus={() => previewItem(item)} onblur={cancelPreview}
-                      use:longPress onlongpress={() => openContextMenu(item)}
+                      {@attach longPress()} onlongpress={() => openContextMenu(item)}
                       class="group focus:outline-none text-left cv-auto">
                       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
                         {#if item.Type === 'Playlist' && item.ChildCount === 0}
@@ -2639,7 +2520,7 @@
                             <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
                           </div>
                         {:else if getItemImageUrl(item)}
-                          <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
+                          <img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                         {/if}
                         <!-- Episodenanzahl bei Serien (abschaltbar in Einstellungen) -->
                         {#if displaySettings.episodeCount && item.Type === 'Series' && item.RecursiveItemCount}
@@ -2670,8 +2551,8 @@
                 <div class="w-full flex justify-center py-12 mt-8">
                   <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                 </div>
-              {:else if currentItems.length > 0 && currentItems.length < totalLibraryItems}
-                <div use:infiniteScroll class="h-24 w-full"></div>
+              {:else if currentItems.length > 0 && firstLoadedIndex + currentItems.length < totalLibraryItems}
+                <div {@attach infiniteScroll} class="h-24 w-full"></div>
               {/if}
             </div>
 
@@ -2698,6 +2579,9 @@
             onOpenPerson={(person) => openPerson(person)} />
 
         {:else if viewState === 'settings'}
+          {#await lazySettings()}
+            <div class="h-full flex items-center justify-center"><div class="w-14 h-14 border-4 border-white/25 border-t-white rounded-full animate-spin"></div></div>
+          {:then Settings}
           <Settings
             {selectedUser} {selectedServer} {savedTokens}
             {screensaverSettings} {reduceAnimations} {displaySettings} {playbackPrefs}
@@ -2718,7 +2602,7 @@
             onPlaybackPrefsChange={onPlaybackPrefsChange}
             onClearCache={clearCache}
           />
-
+          {/await}
         {:else if viewState === 'details' && currentDetailItem}
           <Details
             item={currentDetailItem}
@@ -2740,327 +2624,20 @@
           />
 
         {:else if viewState === 'person'}
-          <div class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
-            <div class="flex items-center gap-6 mb-8">
-              <button onclick={() => viewState = personReturnView} use:focusOnMount
-                class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
-                {$t.back}
-              </button>
-              <button onclick={togglePersonFavorite} aria-label={$t.favorites}
-                class="w-12 h-12 rounded-lg focus:outline-none focus:ring-4 focus:ring-white transition-colors flex items-center justify-center
-                       {currentPersonFav ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700 focus:bg-gray-700'}">
-                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0z"/></svg>
-              </button>
-            </div>
-            <div class="flex items-center gap-4 mb-10">
-              <svg class="w-10 h-10 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-              <div>
-                <h1 class="text-4xl font-bold text-white">{currentPersonName}</h1>
-                <p class="text-gray-400 mt-1">{$t.appearsIn}</p>
-              </div>
-            </div>
-
-            {#if isLoadingPerson}
-              <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4">
-                {#each Array(12).fill(0) as _}
-                  <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg animate-pulse"></div>
-                {/each}
-              </div>
-            {:else if personGroups.length > 0}
-              {#each personGroups as group}
-                <h2 class="text-2xl font-bold text-white mb-4 mt-2">{group.label}</h2>
-                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-10">
-                  {#each group.items as item}
-                    <button onclick={() => showItemDetails(item)}
-                      use:longPress onlongpress={() => openContextMenu(item)}
-                      class="group focus:outline-none text-left cv-auto">
-                      <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
-                        {#if getItemImageUrl(item)}
-                          <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
-                        {/if}
-                        {#if itemProgress(item) > 0}
-                          <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                            <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                          </div>
-                        {/if}
-                      </div>
-                      <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">
-                        {item.Type === 'Episode' && item.SeriesName ? item.SeriesName : item.Name}
-                      </span>
-                      {#if item.Type === 'Episode'}
-                        <span class="text-xs text-gray-500 block truncate w-full">{item.Name}</span>
-                      {:else if item.ProductionYear}
-                        <span class="text-xs text-gray-500 block truncate w-full">{item.ProductionYear}</span>
-                      {/if}
-                    </button>
-                  {/each}
-                </div>
-              {/each}
-            {:else}
-              <div class="flex items-center justify-center h-64">
-                <p class="text-2xl text-gray-500 font-bold">{$t.noItems}</p>
-              </div>
-            {/if}
-          </div>
-
+          <Person person={currentPerson} {selectedUser}
+            onBack={() => viewState = personReturnView}
+            onOpenDetails={showItemDetails} onContextMenu={openContextMenu} />
         {:else if viewState === 'favorites'}
-          <div class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
-            <div class="flex items-center gap-4 mb-10">
-              <svg class="w-10 h-10 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0z"/></svg>
-              <h1 class="text-4xl font-bold text-white">{$t.favorites}</h1>
-            </div>
-
-            {#if isLoadingFavorites}
-              <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4">
-                {#each Array(12).fill(0) as _}
-                  <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg animate-pulse"></div>
-                {/each}
-              </div>
-            {:else if favoriteItems.length > 0}
-              <div bind:this={favoritesGrid}>
-                {#each favGroups as group (group.key)}
-                  {#if group.items.length > 0}
-                    <h2 class="text-3xl font-bold text-white mb-6 px-2">{group.label}</h2>
-                    <div data-focus-group data-enter-first class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-12">
-                      {#each group.items as item (item.Id)}
-                        <button onclick={() => showItemDetails(item)}
-                          use:longPress onlongpress={() => openContextMenu(item)}
-                          class="group focus:outline-none text-left cv-auto">
-                          <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
-                            {#if getItemImageUrl(item)}
-                              <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
-                            {/if}
-                            {#if itemProgress(item) > 0}
-                              <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                                <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                              </div>
-                            {/if}
-                          </div>
-                          <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Type === 'Season' ? (item.SeriesName || item.Name) : item.Name}</span>
-                          {#if item.Type === 'Season'}
-                            <span class="text-xs text-gray-500 block truncate w-full">{item.Name}</span>
-                          {:else if item.ProductionYear}
-                            <span class="text-xs text-gray-500 block truncate w-full">{item.ProductionYear}</span>
-                          {/if}
-                        </button>
-                      {/each}
-                    </div>
-                  {/if}
-                {/each}
-
-                {#if favEpisodes.length > 0}
-                  <h2 class="text-3xl font-bold text-white mb-6 px-2">{$t.episodes}</h2>
-                  <div data-focus-group data-enter-first class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pr-4 mb-12">
-                    {#each favEpisodes as item (item.Id)}
-                      <button onclick={() => showItemDetails(item)}
-                        use:longPress onlongpress={() => openContextMenu(item)}
-                        class="group focus:outline-none text-left cv-auto">
-                        <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
-                          {#if getItemImageUrl(item, 'landscape')}
-                            <img src={getItemImageUrl(item, 'landscape')} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
-                          {/if}
-                          {#if itemProgress(item) > 0}
-                            <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                              <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                            </div>
-                          {/if}
-                        </div>
-                        <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.SeriesName || item.Name}</span>
-                        <span class="text-xs text-gray-500 block truncate w-full">{getItemSubtitle(item, $t.today)}</span>
-                      </button>
-                    {/each}
-                  </div>
-                {/if}
-
-                {#if favPersons.length > 0}
-                  <h2 class="text-3xl font-bold text-white mb-6 px-2">{$t.people}</h2>
-                  <div data-focus-group data-enter-first class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-6 pr-4 mb-12">
-                    {#each favPersons as p (p.Id)}
-                      <button onclick={() => openPerson(p)} class="group focus:outline-none text-center cv-auto">
-                        <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
-                          {#if personImageUrl(session.serverUrl, p)}
-                            <img src={personImageUrl(session.serverUrl, p)} use:blurUp={itemBlurHash(p)} alt={p.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
-                          {:else}
-                            <div class="w-full h-full flex items-center justify-center text-gray-600">
-                              <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-                            </div>
-                          {/if}
-                        </div>
-                        <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full block">{p.Name}</span>
-                      </button>
-                    {/each}
-                  </div>
-                {/if}
-              </div>
-            {:else}
-              <div class="flex items-center justify-center h-64">
-                <p class="text-2xl text-gray-500 font-bold">{$t.noItems}</p>
-              </div>
-            {/if}
-          </div>
+          <Favorites {selectedUser} reloadKey={favReloadKey}
+            onOpenDetails={showItemDetails} onContextMenu={openContextMenu}
+            onOpenPerson={openPerson} onFocusFallback={focusMain} />
         {:else if viewState === 'collection'}
-          <div class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
-            <div class="flex items-center gap-6 mb-8">
-              <button onclick={() => viewState = collectionReturnView} use:focusOnMount
-                class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
-                {$t.back}
-              </button>
-              {#if currentCollection?.Type === 'Playlist'}
-                <button onclick={() => { playlistEditMode = !playlistEditMode; confirmDeletePlaylist = false; renamingPlaylist = false; }}
-                  class="ml-auto px-6 py-2 rounded-lg font-bold focus:outline-none focus:ring-4 focus:ring-white transition-colors
-                         {playlistEditMode ? 'bg-blue-600 text-white' : 'bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white'}">
-                  {playlistEditMode ? $t.done : $t.edit}
-                </button>
-              {/if}
-            </div>
-            <div class="flex items-center gap-4 mb-10">
-              <svg class="w-10 h-10 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
-              <h1 class="text-4xl font-bold text-white">{currentCollectionName}</h1>
-            </div>
-
-            {#if isLoadingCollection}
-              <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4">
-                {#each Array(12).fill(0) as _}
-                  <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg animate-pulse"></div>
-                {/each}
-              </div>
-            {:else if playlistEditMode}
-              <div class="flex flex-col gap-2 pr-4 max-w-4xl">
-                {#if collectionItems.length > 0}
-                  {#each collectionItems as item, i (item.PlaylistItemId)}
-                    <div class="flex items-center gap-4 bg-gray-800/60 rounded-xl p-3">
-                      <div class="w-14 h-20 shrink-0 bg-gray-900 rounded-lg overflow-hidden">
-                        {#if getItemImageUrl(item)}<img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover"/>{/if}
-                      </div>
-                      <div class="flex-1 min-w-0">
-                        {#if item.Type === 'Episode'}
-                          <div class="text-lg font-bold text-white truncate">{item.SeriesName || item.Name}</div>
-                          <div class="text-sm text-gray-400 truncate">{episodeLabel(item)}</div>
-                        {:else}
-                          <div class="text-lg font-bold text-white truncate">{item.Name}</div>
-                          {#if item.ProductionYear}<div class="text-sm text-gray-400">{item.ProductionYear}</div>{/if}
-                        {/if}
-                      </div>
-                      <button onclick={() => movePlaylistItem(i, i - 1)} disabled={i === 0} title={$t.moveUp} aria-label={$t.moveUp}
-                        class="p-3 rounded-lg text-gray-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white disabled:opacity-30 disabled:cursor-not-allowed">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
-                      </button>
-                      <button onclick={() => movePlaylistItem(i, i + 1)} disabled={i === collectionItems.length - 1} title={$t.moveDown} aria-label={$t.moveDown}
-                        class="p-3 rounded-lg text-gray-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white disabled:opacity-30 disabled:cursor-not-allowed">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
-                      </button>
-                      <button onclick={() => removePlaylistItem(item)} title={$t.remove} aria-label={$t.remove}
-                        class="p-3 rounded-lg text-red-400 hover:bg-red-900/40 focus:bg-red-900/40 focus:outline-none focus:ring-2 focus:ring-red-500">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-7 0v12a1 1 0 001 1h6a1 1 0 001-1V7"/></svg>
-                      </button>
-                    </div>
-                  {/each}
-                {:else}
-                  <p class="text-gray-500 font-bold py-6 text-center">{$t.noItems}</p>
-                {/if}
-
-                <!-- Playlist verwalten: Umbenennen / Löschen (auch bei leerer Liste erreichbar) -->
-                <div class="mt-4 border-t border-gray-700/70 pt-4">
-                  {#if renamingPlaylist}
-                    <div class="flex flex-col gap-2">
-                      <div class="flex items-center gap-3 flex-wrap">
-                        <input
-                          bind:value={renameValue}
-                          use:focusOnMount
-                          maxlength="100"
-                          oninput={() => renameError = false}
-                          onkeydown={(e) => { if (e.key === 'Enter') savePlaylistName(); }}
-                          class="flex-1 min-w-[220px] bg-gray-900 text-white text-lg px-4 py-3 rounded-lg border border-gray-600
-                                 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                        <button onclick={savePlaylistName}
-                          class="px-6 py-3 rounded-lg font-bold bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-                          {$t.save}
-                        </button>
-                        <button onclick={() => renamingPlaylist = false}
-                          class="px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-                          {$t.cancel}
-                        </button>
-                      </div>
-                      {#if renameError}
-                        <p class="text-red-400 text-sm font-semibold">{$t.actionFailed}</p>
-                      {/if}
-                    </div>
-                  {:else if confirmDeletePlaylist}
-                    <div class="flex items-center gap-4 flex-wrap">
-                      <span class="text-gray-200 font-semibold">{$t.deletePlaylistConfirm}</span>
-                      <button onclick={deletePlaylist}
-                        class="px-6 py-3 rounded-lg font-bold bg-red-600 hover:bg-red-500 focus:bg-red-500 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-                        {$t.deletePlaylist}
-                      </button>
-                      <button onclick={() => confirmDeletePlaylist = false} use:focusOnMount
-                        class="px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-                        {$t.cancel}
-                      </button>
-                    </div>
-                  {:else}
-                    <div class="flex items-center gap-3 flex-wrap">
-                      <button onclick={startRename}
-                        class="flex items-center gap-3 px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                        {$t.renamePlaylist}
-                      </button>
-                      <button onclick={() => confirmDeletePlaylist = true}
-                        class="flex items-center gap-3 px-6 py-3 rounded-lg font-bold bg-red-900/40 hover:bg-red-900/60 focus:bg-red-900/60 text-red-300 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-red-500 transition-colors">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-7 0v12a1 1 0 001 1h6a1 1 0 001-1V7"/></svg>
-                        {$t.deletePlaylist}
-                      </button>
-                    </div>
-                  {/if}
-                </div>
-              </div>
-            {:else if collectionItems.length > 0}
-              {@const groups = [
-                { label: $t.movies,   items: collectionItems.filter(i => i.Type === 'Movie') },
-                { label: $t.series,   items: collectionItems.filter(i => i.Type === 'Series') },
-                { label: $t.episodes, items: collectionItems.filter(i => i.Type === 'Episode') },
-                { label: '',          items: collectionItems.filter(i => !['Movie', 'Series', 'Episode'].includes(i.Type)) }
-              ].filter(g => g.items.length)}
-              <div class="flex flex-col gap-10 pr-4">
-                {#each groups as group}
-                  <div>
-                    {#if groups.length > 1 && group.label}
-                      <h2 class="text-2xl font-bold text-gray-400 mb-4">{group.label}</h2>
-                    {/if}
-                    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
-                      {#each group.items as item}
-                        <button onclick={() => showItemDetails(item)}
-                          use:longPress onlongpress={() => openContextMenu(item)}
-                          class="group focus:outline-none text-left cv-auto">
-                          <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
-                            {#if getItemImageUrl(item)}
-                              <img src={getItemImageUrl(item)} use:blurUp={itemBlurHash(item)} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
-                            {/if}
-                            {#if itemProgress(item) > 0}
-                              <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                                <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                              </div>
-                            {/if}
-                          </div>
-                          {#if item.Type === 'Episode'}
-                            <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.SeriesName || item.Name}</span>
-                            <span class="text-xs text-gray-500 block truncate w-full">{episodeLabel(item)}</span>
-                          {:else}
-                            <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Name}</span>
-                            {#if item.ProductionYear}<span class="text-xs text-gray-500 block truncate w-full">{item.ProductionYear}</span>{/if}
-                          {/if}
-                        </button>
-                      {/each}
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            {:else}
-              <div class="flex items-center justify-center h-64">
-                <p class="text-2xl text-gray-500 font-bold">{$t.noItems}</p>
-              </div>
-            {/if}
-          </div>
+          <Collection bind:this={collectionRef} collection={currentCollection} {selectedUser}
+            onBack={() => viewState = collectionReturnView}
+            onOpenDetails={showItemDetails} onContextMenu={openContextMenu}
+            onChildCountChanged={onCollectionChildCount}
+            onPlaylistRenamed={onCollectionRenamed}
+            onPlaylistDeleted={onCollectionDeleted} />
         {/if}
 
       </div>
@@ -3073,6 +2650,7 @@
   {#if appPhase === 'app' && viewState === 'player' && currentDetailItem}
     <div class="absolute inset-0 z-[100] bg-black w-full h-full">
       {#key currentDetailItem.Id}
+        {#await lazyPlayer() then Player}
         <Player
           item={currentDetailItem}
           {selectedUser} {playbackPrefs} {use24h} {serverVobSub}
@@ -3094,12 +2672,14 @@
           onPrev={(episode) => handlePrevEpisode(episode)}
           onSyncplay={openSyncPlay}
         />
+        {/await}
       {/key}
     </div>
   {/if}
 
   <!-- SYNCPLAY — Gruppen-Modal (über allem außer Screensaver) -->
   {#if showSyncPlay}
+    {#await lazySyncPlay() then SyncPlayModal}
     <SyncPlayModal
       group={syncMyGroup}
       groups={syncGroups}
@@ -3110,6 +2690,7 @@
       onRefresh={syncRefresh}
       onClose={closeSyncPlay}
     />
+    {/await}
   {/if}
 
   <!-- KONTEXTMENÜ — über allem außer Screensaver -->
@@ -3170,7 +2751,7 @@
     <div class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full max-w-xl flex flex-col gap-4 shadow-2xl">
       <div class="flex justify-between items-center mb-2">
         <h2 class="text-4xl text-white font-bold">{$t.sortBy}</h2>
-        <button onclick={() => showSortMenu = false} use:focusOnMount
+        <button onclick={() => showSortMenu = false} {@attach focusOnMount()}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
@@ -3213,7 +2794,7 @@
       <!-- Kopf (fix) -->
       <div class="flex justify-between items-center p-8 pb-4 shrink-0">
         <h2 class="text-4xl text-white font-bold">{$t.filter}</h2>
-        <button onclick={() => showFilterMenu = false} use:focusOnMount
+        <button onclick={() => showFilterMenu = false} {@attach focusOnMount()}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
