@@ -40,6 +40,10 @@ OcenFin is made for WebOS and focuses on speed for older devices.
 
 You can install OcenFin via an `.ipk` file. **No root is required.**
 
+First, choose the right `.ipk` version for your TV from the Releases page:
+* **Modern:** For newer LG TVs running **WebOS 22+** (2022 models and above). This version delivers highly optimized, modern code for maximum performance on all recent chipsets.
+* **Legacy:** For older LG TVs running **WebOS 5 or WebOS 6**. Choose this if the modern version gives you a black screen.
+
 1. **Prepare the TV:** Install the official "Developer Mode" app from the LG Content Store on your TV and enable it.
 2. **Sideload from PC:** To install the app from your computer to the TV, I highly recommend using **[dev-manager-desktop](https://github.com/webosbrew/dev-manager-desktop)**. It provides a very easy-to-use graphical interface.
 3. **Bypass the 50-Hour Limit:** LG restricts developer apps to a 50-hour lifespan. To keep OcenFin working permanently, use `dev-manager-desktop` to also install the **"Auto Dev Token Refresh"** app on your TV. It automatically resets the timer in the background so your apps never expire.
