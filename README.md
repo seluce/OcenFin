@@ -57,6 +57,12 @@ First, choose the right `.ipk` version for your TV from the Releases page:
 
 ---
 
+## Documentation & FAQ
+
+I have gathered a few more common questions into an FAQ and addressed them in the Wiki. I will continue to expand the Wiki and the FAQ over time: [Check out the OcenFin FAQ](https://github.com/seluce/OcenFin/wiki/FAQ)
+
+---
+
 ## Screenshots
 
 <p align="center">
@@ -87,13 +93,3 @@ First, choose the right `.ipk` version for your TV from the Releases page:
 </p>
 
 > **Note:** The images in the screenshots are just examples and demos. They do not show any real content.
-
-## Star History
-
-<a href="https://star-history.com/#seluce/OcenFin&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=seluce/OcenFin&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=seluce/OcenFin&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=seluce/OcenFin&type=Date" />
- </picture>
-</a>
