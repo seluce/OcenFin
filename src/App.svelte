@@ -1591,8 +1591,14 @@
   async function onCollectionDeleted(id) {
     currentItems = currentItems.filter(i => i.Id !== id);   // sofort aus dem Grid
     await refreshLibraries();   // Sidebar/Menü neu laden (Playlist verschwindet)
-    // War es die letzte Playlist, entfernt Jellyfin die ganze "Playlists"-Bibliothek → zurück aufs Dashboard.
+    // War es die letzte Playlist, entfernt Jellyfin die ganze "Playlists"-Bibliothek.
     const playlistsLibGone = !navLibraries.some(l => l.CollectionType === 'playlists');
+    if (playlistsLibGone) {
+      // Das Dashboard hält seine Bibliotheksliste gecacht — sonst bliebe der "Playlists"-Ordner
+      // im "Meine Medien"-Bereich stehen, bis man das Dashboard neu öffnet. Cache verwerfen + Remount.
+      apiCache.dashboard = null;
+      dashboardReloadKey++;
+    }
     if (collectionReturnView === 'library' && playlistsLibGone) { currentLibraryId = null; viewState = 'dashboard'; }
     else viewState = collectionReturnView;
   }
