@@ -236,25 +236,36 @@
   let screensaverSettings = $state({ enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45 });
   let showScreensaver     = $state(false);
   let screensaverTimer    = null;
+  let playerPlaying       = $state(false);   // vom Player gemeldet; true NUR bei aktiver Wiedergabe
 
-  // Screensaver nur im App-Betrieb und nicht während der Wiedergabe
-  $effect(() => {
-    if (appPhase !== 'app' || viewState === 'player') {
-      if (screensaverTimer) { clearTimeout(screensaverTimer); screensaverTimer = null; }
-      showScreensaver = false;
-    }
-  });
-
+  // Plant den Screensaver: nach `timeout` s Inaktivität einblenden. Geblockt nur, wenn aus, nicht im
+  // App-Betrieb, oder das Video GERADE LÄUFT. Pausierter Player, Details, Dashboard usw. → erlaubt
+  // (gerade auf OLED wichtig: Standbilder dürfen nicht einbrennen).
   function scheduleScreensaver() {
-    if (screensaverTimer) clearTimeout(screensaverTimer);
-    if (!screensaverSettings.enabled || appPhase !== 'app' || viewState === 'player') return;
+    if (screensaverTimer) { clearTimeout(screensaverTimer); screensaverTimer = null; }
+    if (!screensaverSettings.enabled || appPhase !== 'app' || playerPlaying) { showScreensaver = false; return; }
     screensaverTimer = setTimeout(() => { showScreensaver = true; }, screensaverSettings.timeout * 1000);
   }
 
+  // Reaktiv neu planen, sobald sich Ein/Aus, App-Phase oder der Wiedergabe-Status ändern — so greift der
+  // Screensaver auch OHNE Tastendruck (z. B. wenn der Player pausiert oder per SyncPlay angehalten wird).
+  $effect(() => { scheduleScreensaver(); });
+
+  // Jede Eingabe = Aktivität: Screensaver weg, Timer neu.
   function resetActivity() {
     if (showScreensaver) showScreensaver = false;
     scheduleScreensaver();
   }
+
+  // Solange der Screensaver läuft, den ersten Tastendruck NUR zum Aufwecken nutzen und schlucken
+  // (Capture-Phase + stopImmediatePropagation), damit er nicht zugleich z. B. die pausierte Wiedergabe
+  // umschaltet oder unter dem Schoner etwas auslöst.
+  $effect(() => {
+    if (!showScreensaver) return;
+    const swallow = (e) => { e.preventDefault(); e.stopImmediatePropagation(); resetActivity(); };
+    window.addEventListener('keydown', swallow, true);
+    return () => window.removeEventListener('keydown', swallow, true);
+  });
 
   function onScreensaverSettingsChange(v) {
     screensaverSettings = v;
@@ -2687,6 +2698,7 @@
           {remoteCommand}
           {syncQueue}
           onExit={() => viewState = 'details'}
+          onPlayState={(p) => playerPlaying = p}
           onLibChanged={refreshLibraries}
           onNext={(payload) => handleNextEpisode(payload)}
           onPrev={(episode) => handlePrevEpisode(episode)}

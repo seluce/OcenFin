@@ -31,6 +31,7 @@
     remoteCommand = null, // Admin-Fernsteuerung (Dashboard) (von App)
     serverVobSub = false, // Server liefert VobSub/DVD extern (.mks, Jellyfin 12.0+)?
     onExit, onPrev, onNext, onSyncplay, onLibChanged,   // Callback-Props (statt Events)
+    onPlayState,          // meldet App den Wiedergabe-Status (für den Screensaver: pausiert → erlaubt)
   } = $props();
 
   let videoElement;
@@ -39,6 +40,12 @@
   let playPauseBtn;        // bind: damit ▼ von der Leiste direkt hierher springt
   let seekBarEl;           // bind: damit Links/Rechts bei verborgenem HUD direkt hierher springt
   let isPlaying  = $state(false);
+  // Wiedergabe-Status nach außen melden (App unterdrückt den Screensaver nur bei AKTIVER Wiedergabe);
+  // beim Unmount/Verlassen des Players sicher false melden, egal über welchen Weg ausgestiegen wird.
+  $effect(() => {
+    onPlayState?.(isPlaying);
+    return () => onPlayState?.(false);
+  });
   let currentTime = $state(0);
   let duration    = $state(0);
 
