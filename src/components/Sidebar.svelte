@@ -1,5 +1,5 @@
 <script>
-  import { t } from '../i18n.js';
+  import { i18n } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, buildNavEntries, applyNavConfig } from '../utils.js';
   import { session } from '../session.svelte.js';
 
@@ -31,7 +31,7 @@
   // Einträge aus der gemeinsamen Quelle (utils): feste Ansichten + echte Mediatheken,
   // in Profil-Reihenfolge, ausgeblendete entfernt. Klick je nach Art (Ansicht/Mediathek).
   let navItems = $derived(
-    applyNavConfig(buildNavEntries(libraries, $t, navIcons), navOrder, navHidden).filter(e => !e.hidden)
+    applyNavConfig(buildNavEntries(libraries, i18n.t, navIcons), navOrder, navHidden).filter(e => !e.hidden)
   );
   function activate(entry) {
     if (entry.kind === 'library') onNavigateLibrary?.(entry.lib);
@@ -99,7 +99,7 @@
     <div class="w-14 h-14 shrink-0 rounded-full overflow-hidden border-4 border-transparent
                 group-focus:border-blue-500 shadow-md transition-all">
       {#if getAvatarUrl(selectedUser)}
-        <img src={getAvatarUrl(selectedUser)} alt={$t.profile} class="w-full h-full object-cover" />
+        <img src={getAvatarUrl(selectedUser)} alt={i18n.t.profile} class="w-full h-full object-cover" />
       {:else}
         <div class="w-full h-full bg-gray-700 flex items-center justify-center">
           <span class="text-xl font-bold">{selectedUser.Name[0]}</span>
@@ -126,7 +126,7 @@
         <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7"/>
         </svg>
-        {$t.switchUser}
+        {i18n.t.switchUser}
       </button>
       <button
         onclick={(e) => { e.stopPropagation(); showProfileMenu = false; onLogOutServer?.(); }}
@@ -137,7 +137,7 @@
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
         </svg>
-        {$t.logout}
+        {i18n.t.logout}
       </button>
     </div>
   {/if}

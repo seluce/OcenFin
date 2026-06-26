@@ -1,5 +1,5 @@
 <script>
-  import { t } from '../i18n.js';
+  import { i18n } from '../i18n.svelte.js';
   import { itemProgress, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy } from 'svelte';
@@ -318,7 +318,7 @@
     {@const img = getItemImageUrl(item, 'landscape')}
     {@const prog = itemProgress(item)}
     {@const rem = getRemainingMinutes(item)}
-    {@const sub = getItemSubtitle(item, $t.today)}
+    {@const sub = getItemSubtitle(item, i18n.t.today)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
       class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
       <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
@@ -335,7 +335,7 @@
         {/if}
         {#if rem}
           <div class="absolute top-2 right-2 bg-black/80 text-white text-xs font-bold px-2 py-1 rounded-md">
-            {rem} {$t.mins} {$t.remaining}
+            {rem} {i18n.t.mins} {i18n.t.remaining}
           </div>
         {/if}
       </div>
@@ -350,7 +350,7 @@
 
   {#snippet portraitCard(item, img, blur)}
     {@const prog = itemProgress(item)}
-    {@const sub = getItemSubtitle(item, $t.today)}
+    {@const sub = getItemSubtitle(item, i18n.t.today)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
       class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
@@ -453,7 +453,7 @@
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-lg px-8 py-3 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-2 shadow-lg">
               <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
-              {$t.play}
+              {i18n.t.play}
             </button>
             <!-- Punkt-Indikatoren -->
             {#if heroItems.length > 1}
@@ -483,7 +483,7 @@
     <!-- MEDIATHEKEN -->
     {#if showLibraries && libraries.length > 0}
       <div>
-        <h2 class="text-2xl font-bold text-gray-400 mb-4 px-2">{$t.myMedia}</h2>
+        <h2 class="text-2xl font-bold text-gray-400 mb-4 px-2">{i18n.t.myMedia}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each libraries as library (library.Id)}
             <button onclick={() => onOpenLibrary?.(library)}
@@ -508,7 +508,7 @@
     <!-- WEITERSCHAUEN -->
     {#if resumeRow.length > 0}
       <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.continueWatchingRow}</h2>
+        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.continueWatchingRow}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each resumeRow as item (item.Id)}
             {@render landscapeCard(item)}
@@ -520,7 +520,7 @@
     <!-- ALS NÄCHSTES -->
     {#if showNextUp && nextUp.length > 0}
       <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.nextUp}</h2>
+        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.nextUp}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each nextUp as item (item.Id)}
             {@render landscapeCard(item)}
@@ -532,7 +532,7 @@
     <!-- ZULETZT GESEHEN (Verlauf) -->
     {#if showHistory && recentlyWatched.length > 0}
       <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.recentlyWatched}</h2>
+        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.recentlyWatched}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each recentlyWatched as item (item.Id)}
             {@render portraitCard(item, getHistoryImageUrl(item), itemBlurHash(item, 'Backdrop'))}
@@ -544,7 +544,7 @@
     <!-- GEMEINSAME VORSCHLÄGE ("Für euch beide") — nur bei eingerichtetem gemeinsamen Profil -->
     {#if showSharedSuggestions && sharedSuggestions.length > 0}
       <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.sharedSuggestions}</h2>
+        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.sharedSuggestions}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each sharedSuggestions as item (item.Id)}
             {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
@@ -556,7 +556,7 @@
     <!-- EMPFEHLUNGEN: "Weil du X gesehen hast" — personalisiert, daher weit oben -->
     {#each (showRecommendations ? recommendations.slice(0, recommendationRows) : []) as rec}
       <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
+        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each rec.items as item (item.Id)}
             {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
@@ -568,7 +568,7 @@
     <!-- ZULETZT HINZUGEFÜGTE FILME -->
     {#if showLatest && latestMovies.length > 0}
       <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.latestMovies}</h2>
+        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestMovies}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each latestMovies as item (item.Id)}
             {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
@@ -580,7 +580,7 @@
     <!-- ZULETZT HINZUGEFÜGTE SERIEN -->
     {#if showLatest && latestSeries.length > 0}
       <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.latestSeries}</h2>
+        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestSeries}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each latestSeries as item (item.Id)}
             {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
@@ -592,7 +592,7 @@
     <!-- SAMMLUNGEN (BoxSets) — browse-orientiert, daher unten -->
     {#if showCollections && collections.length > 0}
       <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{$t.collections}</h2>
+        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.collections}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each collections as col (col.Id)}
             {@render collectionCard(col)}

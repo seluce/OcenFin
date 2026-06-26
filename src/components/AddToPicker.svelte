@@ -2,7 +2,7 @@
   // Gemeinsamer Dialog: Titel zu einer Sammlung oder Wiedergabeliste hinzufügen.
   // Wird von Details und Player verwendet. Steuerung über die Prop `mode`
   // (null = geschlossen). Schließen meldet sich per 'close'-Event beim Eltern.
-  import { t } from '../i18n.js';
+  import { i18n } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, dlog, uiFade, dropTrapOnOutro } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { SvelteSet } from 'svelte/reactivity';
@@ -59,14 +59,14 @@
     try {
       const res = await fetch(url, { method: 'POST', headers: getAuthHeaders() });
       if (res.ok) {
-        msg = `${$t.added}: ${target.Name}`; msgError = false;
+        msg = `${i18n.t.added}: ${target.Name}`; msgError = false;
         alreadyIn.add(target.Id);
         childrenOf[target.Id] = [...(childrenOf[target.Id] || []), { Id: item.Id, Name: item.Name }];
       } else {
         console.warn('[OcenFin] add failed', mode, res.status, await res.text().catch(() => ''));
-        msg = (mode === 'collection' && res.status === 403) ? $t.collectionPermissionDenied : $t.actionFailed; msgError = true;
+        msg = (mode === 'collection' && res.status === 403) ? i18n.t.collectionPermissionDenied : i18n.t.actionFailed; msgError = true;
       }
-    } catch (e) { console.warn('[OcenFin] add error', mode, e); msg = $t.actionFailed; msgError = true; }
+    } catch (e) { console.warn('[OcenFin] add error', mode, e); msg = i18n.t.actionFailed; msgError = true; }
     busy = false;
   }
 
@@ -80,7 +80,7 @@
     try {
       const res = await fetch(url, { method: 'POST', headers: getAuthHeaders() });
       if (res.ok) {
-        msg = `${$t.created}: ${name}`; msgError = false;
+        msg = `${i18n.t.created}: ${name}`; msgError = false;
         const created = await res.json().catch(() => null);
         const newTarget = { Id: created?.Id, Name: name };
         items = [newTarget, ...items];
@@ -92,9 +92,9 @@
         onCreated?.();   // Eltern können Mediatheken/Sidebar auffrischen
       } else {
         console.warn('[OcenFin] create failed', mode, res.status, await res.text().catch(() => ''));
-        msg = (mode === 'collection' && res.status === 403) ? $t.collectionPermissionDenied : $t.actionFailed; msgError = true;
+        msg = (mode === 'collection' && res.status === 403) ? i18n.t.collectionPermissionDenied : i18n.t.actionFailed; msgError = true;
       }
-    } catch (e) { console.warn('[OcenFin] create error', mode, e); msg = $t.actionFailed; msgError = true; }
+    } catch (e) { console.warn('[OcenFin] create error', mode, e); msg = i18n.t.actionFailed; msgError = true; }
     busy = false;
   }
 
@@ -106,7 +106,7 @@
     onkeydown={onKeydown}>
     <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl p-8 flex flex-col gap-5">
       <div class="flex justify-between items-center">
-        <h2 class="text-3xl text-white font-bold">{mode === 'collection' ? $t.addToCollection : $t.addToPlaylist}</h2>
+        <h2 class="text-3xl text-white font-bold">{mode === 'collection' ? i18n.t.addToCollection : i18n.t.addToPlaylist}</h2>
         <button onclick={close} {@attach focusOnMount()}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -120,11 +120,11 @@
 
       <!-- Neu erstellen -->
       <div class="flex gap-2">
-        <input bind:value={newName} placeholder={$t.createNew} maxlength="100"
+        <input bind:value={newName} placeholder={i18n.t.createNew} maxlength="100"
           class="flex-1 bg-gray-900 text-white text-lg px-4 py-3 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white placeholder-gray-500"/>
         <button onclick={createNew} disabled={!newName.trim() || busy}
           class="bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold px-6 py-3 rounded-lg focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-          {$t.create}
+          {i18n.t.create}
         </button>
       </div>
 
@@ -146,13 +146,13 @@
                 {#if childrenOf[target.Id]?.length}
                   <div class="text-sm text-gray-500 truncate">{childrenOf[target.Id].map(c => c.Name).join(', ')}</div>
                 {/if}
-                {#if has}<div class="text-sm text-green-400">{$t.alreadyAdded}</div>{/if}
+                {#if has}<div class="text-sm text-green-400">{i18n.t.alreadyAdded}</div>{/if}
               </div>
             </button>
           {/each}
         </div>
       {:else}
-        <div class="text-gray-500 py-2">{$t.noItems}</div>
+        <div class="text-gray-500 py-2">{i18n.t.noItems}</div>
       {/if}
     </div>
   </div>

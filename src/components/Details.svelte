@@ -1,5 +1,5 @@
 <script>
-  import { t, LANGUAGES } from '../i18n.js';
+  import { i18n, LANGUAGES } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
@@ -410,7 +410,7 @@
   }
 
   function getRuntimeMinutes(ticks) {
-    return !ticks ? "" : Math.round(ticks / 10000000 / 60) + ` ${$t.mins}`;
+    return !ticks ? "" : Math.round(ticks / 10000000 / 60) + ` ${i18n.t.mins}`;
   }
 
   // Spoilerschutz: ungesehene Folgen leicht verschleiern. Ausgenommen sind Staffeln (Poster),
@@ -461,7 +461,7 @@
       <div class="flex items-center gap-6 mb-10" data-focus-group="details-top">
         <button onclick={() => onClose?.()}
           class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
-          {$t.back}
+          {i18n.t.back}
         </button>
         {#if fullItem.Type === 'Episode'}
           <div class="flex items-center text-xl font-semibold text-gray-400 gap-2">
@@ -517,7 +517,7 @@
             {/if}
           </div>
 
-          <p class="text-xl text-gray-300 mb-10 line-clamp-4 leading-relaxed">{fullItem.Overview || $t.noDescription}</p>
+          <p class="text-xl text-gray-300 mb-10 line-clamp-4 leading-relaxed">{fullItem.Overview || i18n.t.noDescription}</p>
 
           <!-- AKTIONS-BUTTONS -->
           <div class="flex items-center gap-4 mb-12">
@@ -525,7 +525,7 @@
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-2xl px-12 py-4 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-3 shadow-lg">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
-              {#if fullItem.UserData?.PlaybackPositionTicks > 0}{$t.resumePlay}{:else}{$t.play}{/if}
+              {#if fullItem.UserData?.PlaybackPositionTicks > 0}{i18n.t.resumePlay}{:else}{i18n.t.play}{/if}
             </button>
 
             {#if fullItem.UserData?.PlaybackPositionTicks > 0 && fullItem.Type !== 'Series' && fullItem.Type !== 'Season'}
@@ -535,7 +535,7 @@
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"/>
                 </svg>
-                {$t.playFromStart}
+                {i18n.t.playFromStart}
               </button>
             {/if}
 
@@ -544,7 +544,7 @@
                 class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold text-lg px-8 py-4 rounded-xl
                        focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg flex items-center gap-2">
                 <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                {$t.trailer}
+                {i18n.t.trailer}
               </button>
             {/if}
 
@@ -566,7 +566,7 @@
 
             {#if fullItem.MediaSources?.length > 0 || fullItem.Type === 'Series' || fullItem.Type === 'Season'}
               <div class="relative" data-dropdown data-focus-trap={openDropdown === 'kebab' || undefined}>
-                <button bind:this={kebabBtnEl} onclick={(e) => toggleDropdown('kebab', e)} aria-label={$t.more} title={$t.more}
+                <button bind:this={kebabBtnEl} onclick={(e) => toggleDropdown('kebab', e)} aria-label={i18n.t.more} title={i18n.t.more}
                   class="p-4 rounded-xl bg-gray-800 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg">
                   <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
                 </button>
@@ -576,23 +576,23 @@
                       <button onclick={() => { closeDropdown(false); showMediaInfo = true; }}
                         class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                         <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                        {$t.mediaInfo}
+                        {i18n.t.mediaInfo}
                       </button>
                     {/if}
                     <button onclick={() => { closeDropdown(false); pickerMode = 'playlist'; }}
                       class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h13M3 12h9m-9 6h9m4-3v6m3-3h-6"/></svg>
-                      {$t.addToPlaylist}
+                      {i18n.t.addToPlaylist}
                     </button>
                     <button onclick={() => { closeDropdown(false); pickerMode = 'collection'; }}
                       class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
-                      {$t.addToCollection}
+                      {i18n.t.addToCollection}
                     </button>
                     <button onclick={() => { closeDropdown(false); openShare(); }}
                       class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
-                      {$t.share}
+                      {i18n.t.share}
                     </button>
                   </div>
                 {/if}
@@ -681,14 +681,14 @@
                   <div class="flex-1" data-dropdown data-focus-trap={openDropdown === 'subtitle' || undefined}>
                     <button onclick={(e) => toggleDropdown('subtitle', e)}
                       class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
-                      <span>{selectedSubtitleIndex === -1 ? $t.subtitleOff : subtitleLabel(getMediaStreams('Subtitle').find(s => s.Index === selectedSubtitleIndex))}</span>
+                      <span>{selectedSubtitleIndex === -1 ? i18n.t.subtitleOff : subtitleLabel(getMediaStreams('Subtitle').find(s => s.Index === selectedSubtitleIndex))}</span>
                       <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'subtitle' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                     </button>
                     {#if openDropdown === 'subtitle'}
                       <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
                         <button onclick={() => { selectedSubtitleIndex = -1; closeDropdown(); }} data-opt data-active={selectedSubtitleIndex === -1 || undefined}
                           class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {selectedSubtitleIndex === -1 ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
-                          {$t.subtitleOff}
+                          {i18n.t.subtitleOff}
                         </button>
                         {#each getMediaStreams('Subtitle') as stream}
                           <button onclick={() => { selectedSubtitleIndex = stream.Index; closeDropdown(); }} data-opt data-active={stream.Index === selectedSubtitleIndex || undefined}
@@ -719,9 +719,9 @@
       {#if relatedItems.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-episodes">
           <h2 class="text-3xl font-bold text-white mb-6">
-            {#if fullItem.Type === 'Series'}{$t.seasons}
-            {:else if fullItem.Type === 'Season'}{$t.episodes}
-            {:else}{$t.moreFromSeason} {fullItem.SeasonName || ''}
+            {#if fullItem.Type === 'Series'}{i18n.t.seasons}
+            {:else if fullItem.Type === 'Season'}{i18n.t.episodes}
+            {:else}{i18n.t.moreFromSeason} {fullItem.SeasonName || ''}
             {/if}
           </h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-8 px-2 snap-row">
@@ -758,7 +758,7 @@
       <!-- BESETZUNG (antippbar → Filmografie der Person) — gehört zum Titel, daher über Ähnliches -->
       {#if castMembers.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-cast">
-          <h2 class="text-3xl font-bold text-white mb-6">{$t.cast}</h2>
+          <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.cast}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-8 px-2 snap-row">
             {#each castMembers as person}
               <button onclick={() => onOpenPerson?.(person)} class="shrink-0 w-36 group focus:outline-none text-center">
@@ -782,7 +782,7 @@
       <!-- ÄHNLICHES -->
       {#if similarItems.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-similar">
-          <h2 class="text-3xl font-bold text-white mb-6">{$t.similar}</h2>
+          <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.similar}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-8 px-2 snap-row">
             {#each similarItems as si}
               <button onclick={() => navigateTo(si.Id)} class="shrink-0 w-48 group flex flex-col focus:outline-none text-left">
@@ -830,7 +830,7 @@
         class="w-full h-full"
         allow="autoplay; fullscreen"
         allowfullscreen
-        title={$t.trailer}
+        title={i18n.t.trailer}
       ></iframe>
     {:else}
       <!-- svelte-ignore a11y-media-has-caption -->
@@ -854,7 +854,7 @@
     }}>
     <div bind:this={mediaInfoScroll} class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl">
       <div class="flex justify-between items-center p-8 pb-4 sticky top-0 bg-gray-800 z-10">
-        <h2 class="text-4xl text-white font-bold">{$t.mediaInfo}</h2>
+        <h2 class="text-4xl text-white font-bold">{i18n.t.mediaInfo}</h2>
         <button onclick={() => showMediaInfo = false} {@attach focusOnMount()}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -868,7 +868,7 @@
               <div><div class="text-gray-500 text-xs uppercase tracking-wider">Container</div><div class="text-white font-semibold uppercase">{src.Container}</div></div>
             {/if}
             {#if formatBytes(src.Size)}
-              <div><div class="text-gray-500 text-xs uppercase tracking-wider">{$t.miSize}</div><div class="text-white font-semibold">{formatBytes(src.Size)}</div></div>
+              <div><div class="text-gray-500 text-xs uppercase tracking-wider">{i18n.t.miSize}</div><div class="text-white font-semibold">{formatBytes(src.Size)}</div></div>
             {/if}
             {#if formatBitrate(src.Bitrate)}
               <div><div class="text-gray-500 text-xs uppercase tracking-wider">Bitrate</div><div class="text-white font-semibold">{formatBitrate(src.Bitrate)}</div></div>
@@ -879,16 +879,16 @@
           {#each (src.MediaStreams || []) as s}
             <div class="bg-gray-900 rounded-xl p-4 border border-gray-700/50">
               <div class="flex items-center gap-3 mb-2">
-                <span class="text-xs uppercase font-bold px-2 py-1 rounded bg-blue-600 text-white shrink-0">{s.Type === 'Subtitle' ? $t.miSubtitle : s.Type}</span>
+                <span class="text-xs uppercase font-bold px-2 py-1 rounded bg-blue-600 text-white shrink-0">{s.Type === 'Subtitle' ? i18n.t.miSubtitle : s.Type}</span>
                 <span class="text-white font-semibold truncate">{s.DisplayTitle || s.Codec || '—'}</span>
               </div>
               <div class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-gray-300">
                 {#if s.Codec}<div><span class="text-gray-500">Codec:&nbsp;</span>{s.Codec.toUpperCase()}</div>{/if}
-                {#if s.Type === 'Video' && s.Width}<div><span class="text-gray-500">{$t.miResolution}:&nbsp;</span>{s.Width}×{s.Height}</div>{/if}
+                {#if s.Type === 'Video' && s.Width}<div><span class="text-gray-500">{i18n.t.miResolution}:&nbsp;</span>{s.Width}×{s.Height}</div>{/if}
                 {#if s.Type === 'Video' && s.VideoRange}<div><span class="text-gray-500">HDR:&nbsp;</span>{s.VideoRange}</div>{/if}
-                {#if s.Type === 'Video' && s.AverageFrameRate}<div><span class="text-gray-500">{$t.miFramerate}:&nbsp;</span>{s.AverageFrameRate.toFixed(0)} fps</div>{/if}
-                {#if s.Type === 'Audio' && s.ChannelLayout}<div><span class="text-gray-500">{$t.miChannels}:&nbsp;</span>{s.ChannelLayout}</div>{/if}
-                {#if s.Language}<div><span class="text-gray-500">{$t.miLanguage}:&nbsp;</span>{s.Language}</div>{/if}
+                {#if s.Type === 'Video' && s.AverageFrameRate}<div><span class="text-gray-500">{i18n.t.miFramerate}:&nbsp;</span>{s.AverageFrameRate.toFixed(0)} fps</div>{/if}
+                {#if s.Type === 'Audio' && s.ChannelLayout}<div><span class="text-gray-500">{i18n.t.miChannels}:&nbsp;</span>{s.ChannelLayout}</div>{/if}
+                {#if s.Language}<div><span class="text-gray-500">{i18n.t.miLanguage}:&nbsp;</span>{s.Language}</div>{/if}
                 {#if formatBitrate(s.BitRate)}<div><span class="text-gray-500">Bitrate:&nbsp;</span>{formatBitrate(s.BitRate)}</div>{/if}
               </div>
             </div>
@@ -907,17 +907,17 @@
     <div data-modal data-focus-trap
       class="bg-gray-800 border border-gray-700 rounded-2xl p-8 w-full max-w-lg flex flex-col items-center gap-5 shadow-2xl">
       <div class="flex items-center justify-between gap-4 w-full">
-        <h2 class="text-3xl text-white font-bold">{$t.share}</h2>
+        <h2 class="text-3xl text-white font-bold">{i18n.t.share}</h2>
         <button onclick={() => showShare = false} {@attach focusOnMount()}
           class="px-5 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
-                 focus:outline-none focus:ring-4 focus:ring-white transition-colors">{$t.close}</button>
+                 focus:outline-none focus:ring-4 focus:ring-white transition-colors">{i18n.t.close}</button>
       </div>
       {#if shareQrUrl}
         <img src={shareQrUrl} alt="QR" class="rounded-xl bg-white p-3"
              style="width:320px;height:320px;max-width:40vh;max-height:40vh;" />
       {/if}
       <p class="text-white font-bold text-center break-words">{fullItem?.Name}</p>
-      <p class="text-gray-400 text-base text-center max-w-md">{$t.shareHint}</p>
+      <p class="text-gray-400 text-base text-center max-w-md">{i18n.t.shareHint}</p>
     </div>
   </div>
 {/if}

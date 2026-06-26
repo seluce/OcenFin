@@ -1,5 +1,5 @@
 <script>
-  import { currentLang } from '../i18n.js';
+  import { i18n } from '../i18n.svelte.js';
   import { authHeaders } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy } from 'svelte';
@@ -19,7 +19,7 @@
 
   function updateClock() {
     const now = new Date();
-    const loc = $currentLang === 'de' ? 'de-DE' : 'en-US';
+    const loc = i18n.lang === 'de' ? 'de-DE' : 'en-US';
     timeString = now.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit', hour12: !use24h });
     dateString = now.toLocaleDateString(loc, { weekday: 'long', day: 'numeric', month: 'long' });
   }

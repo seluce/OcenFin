@@ -4,7 +4,7 @@
   import { isBackKey, focusOnMount, itemProgress, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, getItemSubtitle } from './utils.js';
   import { session } from './session.svelte.js';
   import { createFocusManager } from './spatialnav.js';
-  import { currentLang, t, detectUiLang } from './i18n.js';
+  import { i18n, setLang, detectUiLang } from './i18n.svelte.js';
   import Clock       from './components/Clock.svelte';
   import Screensaver from './components/Screensaver.svelte';
   import Dashboard   from './components/Dashboard.svelte';
@@ -128,13 +128,13 @@
   // die zuletzt gewählte Gerätesprache ('app_language'). Der Bildschirmschoner
   // bleibt geräteweit (schützt das physische OLED-Panel, benutzerunabhängig).
   let activeUserId = $state(null);
-  let langValue    = $state('de');
   let prefsReady   = false;   // verhindert Speichern während des initialen Ladens
   let applyingPrefs = false;  // verhindert Speichern WÄHREND applyUserPrefs (sonst halb-fertiger Zustand)
 
-  // Sprachänderungen (auch aus den Einstellungen) zentral persistieren
-  currentLang.subscribe(v => {
-    langValue = v;
+  // Sprachänderungen (auch aus den Einstellungen) zentral persistieren. Verfolgt i18n.lang reaktiv
+  // und ersetzt das frühere currentLang.subscribe.
+  $effect(() => {
+    const v = i18n.lang;
     if (!prefsReady || applyingPrefs) return;
     localStorage.setItem('app_language', v);   // Gerätesprache für Vor-Login-Screens
     saveUserPrefs();                            // + im aktiven Profil sichern
@@ -144,7 +144,7 @@
   // "auto" folgt der Sprache: Deutsch → 24h, Englisch → 12h. Überschreibbar.
   let use24h = $derived(displaySettings.clockFormat === '24h' ? true
             : displaySettings.clockFormat === '12h' ? false
-            : langValue !== 'en');
+            : i18n.lang !== 'en');
 
   // Sicherheitsnetz: Greifen-Sperre nie über die Einstellungen hinaus aktiv lassen.
   $effect(() => { if (viewState !== 'settings' && navReordering) navReordering = false; });
@@ -158,7 +158,7 @@
   function saveUserPrefs() {
     if (!activeUserId || applyingPrefs) return;
     localStorage.setItem(userPrefsKey(activeUserId), JSON.stringify({
-      language: langValue,
+      language: i18n.lang,
       displaySettings,
       playbackPrefs,
       reduceAnimations,
@@ -173,7 +173,7 @@
     activeUserId = userId;
     const p = loadUserPrefs(userId);
     if (p.language) {
-      currentLang.set(p.language);
+      setLang(p.language);
       localStorage.setItem('app_language', p.language);   // "zuletzt genutzt" aktualisieren
     }
     displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
@@ -391,7 +391,7 @@
     // Jellyfins Standard-Header ("Message from Server") oder leerer Header → lokalisieren.
     // Einen eigenen Header des Admins unverändert übernehmen.
     const h = (header || '').trim();
-    const localized = (!h || h.toLowerCase() === 'message from server') ? $t.messageFromServer : h;
+    const localized = (!h || h.toLowerCase() === 'message from server') ? i18n.t.messageFromServer : h;
     remoteMessage = { header: localized, text: text || '' };
     if (remoteMessageTimer) clearTimeout(remoteMessageTimer);
     const ms = timeoutMs && timeoutMs > 0 ? Math.min(timeoutMs, 30000) : 7000;
@@ -726,7 +726,7 @@
     // Gerätesprache für Vor-Login-Screens (Server-/Benutzerauswahl): zuletzt gewählte Sprache →
     // sonst Gerätesprache → sonst Englisch. Validiert gegen vorhandene Übersetzungen.
     // Profil-spezifische Einstellungen werden erst beim Login via applyUserPrefs geladen.
-    currentLang.set(detectUiLang());
+    setLang(detectUiLang());
     prefsReady = true;   // ab jetzt werden Änderungen persistiert
 
     // Globale Back-Taste (WebOS Fernbedienung)
@@ -916,11 +916,11 @@
         appPhase     = 'users';
         showAddServer = false;
       } else {
-        serverConnectError = $t.errInvalid;
+        serverConnectError = i18n.t.errInvalid;
       }
     } catch (e) {
       console.warn('[Server] connection failed:', e);
-      serverConnectError = $t.errOffline;
+      serverConnectError = i18n.t.errOffline;
     } finally {
       isConnecting = false;
     }
@@ -951,11 +951,11 @@
         await connectToServer(server);
         newServerUrl = '';
       } else {
-        serverConnectError = $t.errInvalid;
+        serverConnectError = i18n.t.errInvalid;
       }
     } catch (e) {
       console.warn('[Server] connection failed:', e);
-      serverConnectError = $t.errOffline;
+      serverConnectError = i18n.t.errOffline;
     } finally {
       isConnecting = false;
     }
@@ -1203,9 +1203,9 @@
         }
         finishLogin(data.User, data.AccessToken);
       } else {
-        loginError = $t.errLogin;
+        loginError = i18n.t.errLogin;
       }
-    } catch { loginError = $t.errOffline; }
+    } catch { loginError = i18n.t.errOffline; }
   }
 
   function finishLogin(user, token) {
@@ -1289,9 +1289,9 @@
           } catch { }
         }, 3000);
       } else {
-        loginError = $t.qcError;
+        loginError = i18n.t.qcError;
       }
-    } catch { loginError = $t.networkError; }
+    } catch { loginError = i18n.t.networkError; }
   }
 
   function cancelQuickConnect() {
@@ -1973,14 +1973,14 @@
     <div class="fixed inset-0 z-[500] bg-black/60 flex flex-col items-stretch" data-focus-trap transition:uiFade={{ duration: 200 }} onoutrostart={dropTrapOnOutro}>
       <div class="bg-red-600/95 text-white px-6 py-4 flex flex-wrap items-center justify-center gap-4 shadow-lg">
         <svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 010 12.728m-3.536-3.536a4 4 0 010-5.656M12 12h.01M5.636 5.636a9 9 0 000 12.728"/></svg>
-        <span class="font-bold text-lg">{$t.connectionLostMsg}</span>
+        <span class="font-bold text-lg">{i18n.t.connectionLostMsg}</span>
         <button onclick={retryNow} bind:this={retryBtnEl}
           class="bg-white text-red-700 font-bold px-5 py-2 rounded-lg focus:outline-none focus:ring-4 focus:ring-white/70 hover:bg-gray-100 transition-colors">
-          {$t.retry}
+          {i18n.t.retry}
         </button>
         <button onclick={() => { session.connectionLost = false; handleLogout(); }}
           class="bg-red-800 text-white font-bold px-5 py-2 rounded-lg focus:outline-none focus:ring-4 focus:ring-white/70 hover:bg-red-900 transition-colors">
-          {$t.switchServer}
+          {i18n.t.switchServer}
         </button>
       </div>
     </div>
@@ -1991,17 +1991,17 @@
     <div class="fixed inset-0 z-[600] flex items-center justify-center bg-black/70 backdrop-blur-sm" data-focus-trap transition:uiFade={{ duration: 150 }} onoutrostart={dropTrapOnOutro}>
       <div class="bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl p-8 w-full max-w-md mx-6 flex flex-col gap-6">
         <div>
-          <h2 class="text-2xl font-bold text-white">{$t.exitTitle}</h2>
-          <p class="text-gray-400 mt-2">{$t.exitMessage}</p>
+          <h2 class="text-2xl font-bold text-white">{i18n.t.exitTitle}</h2>
+          <p class="text-gray-400 mt-2">{i18n.t.exitMessage}</p>
         </div>
         <div class="flex gap-3">
           <button onclick={() => showExitConfirm = false} {@attach focusOnMount()}
             class="flex-1 bg-gray-700 text-white font-bold py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-600 transition-colors">
-            {$t.cancel}
+            {i18n.t.cancel}
           </button>
           <button onclick={exitApp}
             class="flex-1 bg-red-600 text-white font-bold py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-red-500 transition-colors">
-            {$t.exitConfirm}
+            {i18n.t.exitConfirm}
           </button>
         </div>
       </div>
@@ -2016,14 +2016,14 @@
       <div data-focus-group="servers" class="w-full max-w-2xl flex flex-col gap-6">
 
         <div class="text-center mb-2">
-          <h1 class="text-4xl font-bold text-blue-500 mb-1">{$t.title}</h1>
-          <p class="text-gray-400">{$t.serverSelectPrompt}</p>
+          <h1 class="text-4xl font-bold text-blue-500 mb-1">{i18n.t.title}</h1>
+          <p class="text-gray-400">{i18n.t.serverSelectPrompt}</p>
         </div>
 
         <!-- Gespeicherte Server -->
         {#if savedServers.length > 0}
           <div class="flex flex-col gap-3">
-            <p class="text-sm text-gray-400 uppercase tracking-wider font-bold ml-1">{$t.savedServers}</p>
+            <p class="text-sm text-gray-400 uppercase tracking-wider font-bold ml-1">{i18n.t.savedServers}</p>
             {#each savedServers as server, i}
               <div class="flex items-center gap-3">
                 <button
@@ -2049,7 +2049,7 @@
                 <button
                   onclick={() => removeServer(server.id)}
                   class="p-3 text-gray-600 hover:text-red-400 focus:text-red-400 focus:outline-none focus:ring-2 focus:ring-red-500 rounded-lg transition-colors"
-                  title={$t.backToServers}
+                  title={i18n.t.backToServers}
                 >
                   <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
@@ -2076,14 +2076,14 @@
                 class="flex-1 bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white font-bold py-3 rounded-lg
                        focus:outline-none focus:ring-2 focus:ring-white transition-colors"
               >
-                {$t.serverRetry}
+                {i18n.t.serverRetry}
               </button>
               <button
                 onclick={() => { serverConnectError = ''; selectedServer = null; }}
                 class="flex-1 bg-transparent border border-gray-600 hover:bg-gray-800 focus:bg-gray-800 text-gray-300 font-bold py-3 rounded-lg
                        focus:outline-none focus:ring-2 focus:ring-white transition-colors"
               >
-                {$t.backToServers}
+                {i18n.t.backToServers}
               </button>
             </div>
           </div>
@@ -2099,7 +2099,7 @@
           <svg class="w-6 h-6 transition-transform {showAddServer ? 'rotate-45' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
           </svg>
-          {showAddServer ? $t.qcCancel : $t.addServer}
+          {showAddServer ? i18n.t.qcCancel : i18n.t.addServer}
         </button>
 
         {#if showAddServer}
@@ -2114,19 +2114,19 @@
             >
               {#if isDiscovering}
                 <div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                {$t.discovering}
+                {i18n.t.discovering}
               {:else}
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/>
                 </svg>
-                {$t.discoverServers}
+                {i18n.t.discoverServers}
               {/if}
             </button>
 
             <!-- Gefundene (neue) Server -->
             {#if discoveredServers.length > 0}
               <div class="flex flex-col gap-2">
-                <p class="text-xs text-gray-400 uppercase tracking-wider font-bold">{$t.serverFound}</p>
+                <p class="text-xs text-gray-400 uppercase tracking-wider font-bold">{i18n.t.serverFound}</p>
                 {#each discoveredServers as d}
                   <button
                     onclick={() => addAndConnectServer(d.url)}
@@ -2148,7 +2148,7 @@
             <!-- Trennlinie -->
             <div class="flex items-center gap-3">
               <div class="flex-1 h-px bg-gray-700"></div>
-              <span class="text-gray-500 text-sm">{$t.serverManualEntry}</span>
+              <span class="text-gray-500 text-sm">{i18n.t.serverManualEntry}</span>
               <div class="flex-1 h-px bg-gray-700"></div>
             </div>
 
@@ -2195,22 +2195,22 @@
         <!-- QC-Login: Code anzeigen -->
         {#if qcCode}
           <div class="bg-gray-800 p-10 rounded-2xl shadow-xl max-w-xl w-full text-center border border-gray-700">
-            <h2 class="text-3xl font-bold text-white mb-4">{$t.quickConnect}</h2>
-            <p class="text-gray-400 mb-6 text-xl">{$t.qcInstruction}</p>
+            <h2 class="text-3xl font-bold text-white mb-4">{i18n.t.quickConnect}</h2>
+            <p class="text-gray-400 mb-6 text-xl">{i18n.t.qcInstruction}</p>
             <div class="bg-gray-900 border-2 border-blue-500 rounded-lg py-6 mb-6">
               <span class="text-6xl font-mono font-bold text-white tracking-widest">{qcCode}</span>
             </div>
             <button onclick={cancelQuickConnect}
               class="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-4 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-              {$t.qcCancel}
+              {i18n.t.qcCancel}
             </button>
           </div>
 
         <!-- Passwort-Eingabe für ausgewähltes Profil -->
         {:else if showPasswordForm && selectedUser}
           <div class="bg-gray-800 p-10 rounded-2xl shadow-xl max-w-xl w-full text-center border border-gray-700">
-            <h2 class="text-3xl font-bold text-white mb-6">{$t.passwordPrompt} {selectedUser.Name}</h2>
+            <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.passwordPrompt} {selectedUser.Name}</h2>
             <input
               type="password"
               bind:value={password}
@@ -2222,19 +2222,19 @@
             <button onclick={() => authenticateUser(selectedUser.Name, password)}
               class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xl py-4 rounded-xl mb-4
                      focus:outline-none focus:ring-4 focus:ring-white">
-              {$t.loginText}
+              {i18n.t.loginText}
             </button>
             <!-- Alternative: Quick Connect (falls Kennwort nicht gespeichert/getippt werden soll) -->
             <button onclick={startQuickConnect}
               class="w-full flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold text-lg py-3.5 rounded-xl mb-4
                      focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-              {$t.quickConnect}
+              {i18n.t.quickConnect}
             </button>
             <button onclick={() => { showPasswordForm = false; selectedUser = null; }}
               class="w-full bg-gray-700/50 hover:bg-gray-600 text-gray-300 hover:text-white font-bold text-lg py-3.5 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-              {$t.back}
+              {i18n.t.back}
             </button>
             {#if loginError}<p class="text-red-400 mt-4 font-semibold">{loginError}</p>{/if}
           </div>
@@ -2242,11 +2242,11 @@
         <!-- Manuelle Anmeldung -->
         {:else if showManualLogin}
           <div class="bg-gray-800 p-10 rounded-2xl shadow-xl max-w-xl w-full text-center border border-gray-700">
-            <h2 class="text-3xl font-bold text-white mb-6">{$t.manualLogin}</h2>
+            <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.manualLogin}</h2>
             <input
               type="text"
               bind:value={manualUsername}
-              placeholder={$t.username}
+              placeholder={i18n.t.username}
               onkeydown={(e) => e.key === 'Enter' && authenticateUser(manualUsername, manualPassword)}
               class="w-full bg-gray-900 text-white text-xl p-5 rounded-xl mb-4 border border-gray-600
                      focus:outline-none focus:ring-4 focus:ring-blue-500"
@@ -2263,19 +2263,19 @@
             <button onclick={() => authenticateUser(manualUsername, manualPassword)}
               class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xl py-4 rounded-xl mb-4
                      focus:outline-none focus:ring-4 focus:ring-white">
-              {$t.loginText}
+              {i18n.t.loginText}
             </button>
             <button onclick={() => showManualLogin = false}
               class="w-full bg-gray-700/50 hover:bg-gray-600 text-gray-300 hover:text-white font-bold text-lg py-3.5 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-              {$t.back}
+              {i18n.t.back}
             </button>
             {#if loginError}<p class="text-red-400 mt-4 font-semibold">{loginError}</p>{/if}
           </div>
 
         <!-- Profilauswahl -->
         {:else}
-          <h1 class="text-5xl font-bold text-white">{$t.selectUser}</h1>
+          <h1 class="text-5xl font-bold text-white">{i18n.t.selectUser}</h1>
 
           <!-- Profile -->
           {#if users.length > 0}
@@ -2315,7 +2315,7 @@
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
               </svg>
-              {$t.manualLogin}
+              {i18n.t.manualLogin}
             </button>
 
             <button
@@ -2327,7 +2327,7 @@
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
               </svg>
-              {$t.quickConnect}
+              {i18n.t.quickConnect}
             </button>
           </div>
 
@@ -2336,7 +2336,7 @@
             onclick={handleLogout}
             class="text-gray-600 hover:text-gray-400 focus:text-gray-400 focus:outline-none text-sm font-medium mt-2"
           >
-            ← {$t.switchServer}
+            ← {i18n.t.switchServer}
           </button>
 
           {#if loginError}<p class="text-red-400 font-semibold">{loginError}</p>{/if}
@@ -2426,21 +2426,21 @@
                   <button onclick={playRandomItem}
                     class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
                            focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105"
-                    title={$t.shuffle}>
+                    title={i18n.t.shuffle}>
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M4 4h4l12 16h4M4 20h4l3-4m4-9l2-3h3M20 4v4m0 12v-4"/>
                     </svg>
-                    {$t.shuffle}
+                    {i18n.t.shuffle}
                   </button>
                   <!-- Sortierung -->
                   <button onclick={(e) => { sortFilterFocus.capture(e.currentTarget); showSortMenu = true; }}
                     class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
                            focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105"
-                    title={$t.sortBy}>
+                    title={i18n.t.sortBy}>
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M3 4h13M3 8h9M3 12h5m4 4l4 4m0 0l4-4m-4 4V8"/>
                     </svg>
-                    {$t.sortBy}
+                    {i18n.t.sortBy}
                   </button>
                   <!-- Filter -->
                   <button onclick={(e) => { sortFilterFocus.capture(e.currentTarget); showFilterMenu = true; }}
@@ -2449,19 +2449,19 @@
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
                     </svg>
-                    {$t.filter}
-                    {#if hasFilters}<span class="bg-blue-600 text-white text-xs px-2 py-1 rounded-full ml-1 font-bold">{$t.filterActive}</span>{/if}
+                    {i18n.t.filter}
+                    {#if hasFilters}<span class="bg-blue-600 text-white text-xs px-2 py-1 rounded-full ml-1 font-bold">{i18n.t.filterActive}</span>{/if}
                   </button>
                   <!-- Gemeinsam schauen: blendet aus, was beide Profile schon gesehen haben -->
                   {#if sharedReady}
                     <button onclick={toggleSharedWatch}
                       class="flex items-center gap-3 px-6 py-3 rounded-xl font-bold focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border focus:scale-105
                              {sharedWatchMode ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-white'}"
-                      title={$t.watchTogether}>
+                      title={i18n.t.watchTogether}>
                       <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-2.5-1.34M5 11a3 3 0 102.5-1.34"/>
                       </svg>
-                      {$t.watchTogether}
+                      {i18n.t.watchTogether}
                     </button>
                   {/if}
                 </div>
@@ -2475,7 +2475,7 @@
                          focus:outline-none focus:ring-4 focus:ring-white transition-all focus:scale-105
                          {activeFilters.isFavorite ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">
                   <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-                  {$t.filterFavorites}
+                  {i18n.t.filterFavorites}
                 </button>
                 <!-- Sortier-Chips -->
                 {#each sortOptions as opt}
@@ -2483,7 +2483,7 @@
                     class="shrink-0 flex items-center gap-1.5 px-5 py-2.5 rounded-full font-bold text-sm whitespace-nowrap
                            focus:outline-none focus:ring-4 focus:ring-white transition-all focus:scale-105
                            {currentSort.by === opt.by ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">
-                    {$t[opt.key]}
+                    {i18n.t[opt.key]}
                     {#if currentSort.by === opt.by && opt.by !== 'Random'}
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
                         {#if currentSort.order === 'Ascending'}
@@ -2525,7 +2525,7 @@
                         <!-- Episodenanzahl bei Serien (abschaltbar in Einstellungen) -->
                         {#if displaySettings.episodeCount && item.Type === 'Series' && item.RecursiveItemCount}
                           <div class="absolute top-2 right-2 bg-black/80 text-white text-xs font-bold px-2 py-1 rounded-md">
-                            {item.RecursiveItemCount} {$t.episodes}
+                            {item.RecursiveItemCount} {i18n.t.episodes}
                           </div>
                         {/if}
                         {#if itemProgress(item) > 0}
@@ -2536,7 +2536,7 @@
                       </div>
                       <div class="mt-3 flex flex-col items-start w-full overflow-hidden">
                         <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate block w-full">{item.Name}</span>
-                        <span class="text-xs text-gray-500 group-focus:text-gray-400 block truncate w-full mt-0.5">{getItemSubtitle(item, $t.today)}</span>
+                        <span class="text-xs text-gray-500 group-focus:text-gray-400 block truncate w-full mt-0.5">{getItemSubtitle(item, i18n.t.today)}</span>
                       </div>
                     </button>
                   {/each}
@@ -2544,7 +2544,7 @@
               </div>
 
               {#if sharedWatchMode && !isLoading && currentItems.length > 0 && visibleLibraryItems.length === 0}
-                <div class="text-center text-gray-400 py-24 text-lg">{$t.watchTogetherEmpty}</div>
+                <div class="text-center text-gray-400 py-24 text-lg">{i18n.t.watchTogetherEmpty}</div>
               {/if}
 
               {#if isFetchingMore}
@@ -2750,7 +2750,7 @@
     onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showSortMenu = false; } }}>
     <div class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full max-w-xl flex flex-col gap-4 shadow-2xl">
       <div class="flex justify-between items-center mb-2">
-        <h2 class="text-4xl text-white font-bold">{$t.sortBy}</h2>
+        <h2 class="text-4xl text-white font-bold">{i18n.t.sortBy}</h2>
         <button onclick={() => showSortMenu = false} {@attach focusOnMount()}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -2763,14 +2763,14 @@
           class="w-full text-left p-5 text-xl font-bold rounded-xl transition-colors flex items-center justify-between
                  focus:outline-none focus:ring-4 focus:ring-white
                  {currentSort.by === opt.by ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-200 hover:bg-blue-600 focus:bg-blue-600'}">
-          <span>{$t[opt.key]}</span>
+          <span>{i18n.t[opt.key]}</span>
           {#if currentSort.by === opt.by}
             {#if opt.by === 'Random'}
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
             {:else}
               <!-- Pfeil zeigt aktuelle Richtung; erneutes Tippen kehrt um -->
               <span class="flex items-center gap-1 text-sm">
-                {currentSort.order === 'Ascending' ? $t.sortAsc : $t.sortDesc}
+                {currentSort.order === 'Ascending' ? i18n.t.sortAsc : i18n.t.sortDesc}
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                   {#if currentSort.order === 'Ascending'}
                     <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/>
@@ -2793,7 +2793,7 @@
 
       <!-- Kopf (fix) -->
       <div class="flex justify-between items-center p-8 pb-4 shrink-0">
-        <h2 class="text-4xl text-white font-bold">{$t.filter}</h2>
+        <h2 class="text-4xl text-white font-bold">{i18n.t.filter}</h2>
         <button onclick={() => showFilterMenu = false} {@attach focusOnMount()}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -2807,9 +2807,9 @@
 
         <!-- Status als kompakte Chips -->
         <div class="flex flex-col gap-3">
-          <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{$t.status}</h3>
+          <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{i18n.t.status}</h3>
           <div class="flex flex-wrap gap-3">
-            {#each [['isFavorite', $t.filterFavorites],['isNotPlayed', $t.filterUnplayed],['isPlayed', $t.filterPlayed]] as [key, label]}
+            {#each [['isFavorite', i18n.t.filterFavorites],['isNotPlayed', i18n.t.filterUnplayed],['isPlayed', i18n.t.filterPlayed]] as [key, label]}
               <button onclick={() => toggleFilter(key)}
                 class="px-5 py-2 rounded-full font-bold text-lg border-2 transition-all focus:outline-none focus:ring-4 focus:ring-white
                        {activeFilters[key] ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-white'}">
@@ -2821,7 +2821,7 @@
 
         <!-- Altersfreigabe -->
         <div class="flex flex-col gap-3">
-          <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{$t.ageRating}</h3>
+          <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{i18n.t.ageRating}</h3>
           <div class="flex flex-wrap gap-3">
             {#each fskOptions as age}
               <button onclick={() => toggleFsk(age)}
@@ -2836,7 +2836,7 @@
         <!-- Genres: fließen im scrollbaren Inhalt, kein eigenes Mini-Scrollfeld -->
         {#if availableGenres.length > 0}
           <div class="flex flex-col gap-3 pb-2">
-            <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{$t.genres}</h3>
+            <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{i18n.t.genres}</h3>
             <div class="flex flex-wrap gap-3">
               {#each availableGenres as genre}
                 <button onclick={() => toggleGenre(genre.Name)}
@@ -2856,7 +2856,7 @@
         <button onclick={() => showFilterMenu = false}
           class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold text-xl py-5 rounded-xl
                  focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-          {$t.filterClose}
+          {i18n.t.filterClose}
         </button>
       </div>
 
