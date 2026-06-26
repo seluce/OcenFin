@@ -1530,7 +1530,7 @@
     const startIndex = letter !== null ? await letterStartIndex(library.Id, letter) : 0;
     firstLoadedIndex = startIndex;
 
-    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${library.Id}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
+    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${library.Id}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
     url += getFilterQuery();
 
     try {
@@ -1628,7 +1628,7 @@
     if (isFetchingMore || firstLoadedIndex + currentItems.length >= totalLibraryItems || !currentLibraryId) return;
     isFetchingMore = true;
     const start = firstLoadedIndex + currentItems.length;
-    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}`;
+    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}`;
     url += getFilterQuery();
     try {
       const res = await fetch(url, { headers: getAuthHeaders() });
@@ -1648,7 +1648,7 @@
     isFetchingPrev = true;
     const newStart = Math.max(0, firstLoadedIndex - libraryItemLimit);
     const count    = firstLoadedIndex - newStart;
-    const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=Overview,PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}`;
+    const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}`;
     try {
       const res = await fetch(url, { headers: getAuthHeaders() });
       if (res.ok) {
@@ -1817,21 +1817,22 @@
     return null;
   }
 
-  // Attachment: lädt nach, sobald der Sentinel in den Viewport-Vorlauf (400px) kommt.
+  // Attachment: lädt nach, sobald der Sentinel in den Viewport-Vorlauf kommt. 2000px (~2 TV-Bildschirme)
+  // geben dem langsameren TV genug Zeit, den nächsten Block zu holen+rendern, BEVOR der Nutzer unten ankommt.
   function infiniteScroll(node) {
     const obs = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) loadMoreLibraryItems(); },
-      { rootMargin: '400px' }
+      { rootMargin: '2000px' }
     );
     obs.observe(node);
     return () => obs.disconnect();
   }
 
-  // Gegenstück nach oben: lädt den vorigen Block, sobald der obere Sentinel in Reichweite kommt.
+  // Gegenstück nach oben: lädt den vorigen Block früh genug (1000px Vorlauf).
   function infiniteScrollUp(node) {
     const obs = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) loadPreviousLibraryItems(); },
-      { rootMargin: '400px' }
+      { rootMargin: '1000px' }
     );
     obs.observe(node);
     return () => obs.disconnect();
@@ -2564,12 +2565,14 @@
                 <div class="text-center text-gray-400 py-24 text-lg">{i18n.t.watchTogetherEmpty}</div>
               {/if}
 
-              {#if isFetchingMore}
-                <div class="w-full flex justify-center py-12 mt-8">
-                  <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+              {#if currentItems.length > 0 && firstLoadedIndex + currentItems.length < totalLibraryItems}
+                <!-- Sentinel bleibt dauerhaft gemountet → Observer wird beim Nachladen nicht ab-/neu
+                     aufgebaut und kann beim Weiterscrollen sofort wieder feuern. Spinner liegt darin. -->
+                <div {@attach infiniteScroll} class="w-full flex justify-center items-center py-12 mt-8" style="min-height:6rem">
+                  {#if isFetchingMore}
+                    <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  {/if}
                 </div>
-              {:else if currentItems.length > 0 && firstLoadedIndex + currentItems.length < totalLibraryItems}
-                <div {@attach infiniteScroll} class="h-24 w-full"></div>
               {/if}
             </div>
 
