@@ -2019,12 +2019,15 @@
   ============================================================ -->
   {#if appPhase === 'servers'}
     <div class="h-full flex items-center justify-center p-8">
-      <div data-focus-group="servers" class="w-full max-w-2xl flex flex-col gap-6">
+      <div class="w-full max-w-2xl flex flex-col gap-6">
 
         <div class="text-center mb-2">
           <h1 class="text-4xl font-bold text-blue-500 mb-1">{i18n.t.title}</h1>
           <p class="text-gray-400">{i18n.t.serverSelectPrompt}</p>
         </div>
+
+        <!-- Gespeicherte Server + Fehlermeldung: eigene Fokus-Gruppe -->
+        <div data-focus-group="servers" class="flex flex-col gap-6">
 
         <!-- Gespeicherte Server -->
         {#if savedServers.length > 0}
@@ -2094,6 +2097,13 @@
             </div>
           </div>
         {/if}
+
+        </div><!-- Ende Fokus-Gruppe "servers" -->
+
+        <!-- "Server hinzufügen"-Flow (Toggle + Panel): eigene Gruppe; Eintritt immer auf den Toggle,
+             damit Hoch/Runter sauber Toggle → Suche → Manuell durchläuft (nicht das vollbreite Toggle
+             gegen das eingerückte Panel ausspielt). -->
+        <div data-focus-group="addserver" data-enter-first class="flex flex-col gap-6">
 
         <!-- Neuen Server hinzufügen (Toggle-Panel) -->
         <button
@@ -2180,6 +2190,7 @@
 
           </div>
         {/if}
+        </div><!-- Ende Fokus-Gruppe "addserver" -->
 
       </div>
     </div>
