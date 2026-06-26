@@ -118,7 +118,7 @@
   const shareFocus = makeFocusReturn();   // Fokus-Rückgabe nach Schließen des Teilen-Modals
   // Nach dem Schließen des Teilen-Modals den Fokus zurück auf die drei Punkte legen.
   $effect(() => { if (!showShare && shareFocus.pending) shareFocus.restore(); });
-  let shareQrUrl = $state(null);
+  let shareQrSvg = $state(null);
   // Öffentlicher Link (IMDb/TMDb) eines Items — oder null, wenn keine eigene ID vorhanden.
   function buildShareUrl(item) {
     const p = item?.ProviderIds || {};
@@ -134,7 +134,7 @@
   async function openShare() {
     shareFocus.capture(kebabBtnEl);
     showShare = true;
-    shareQrUrl = null;
+    shareQrSvg = null;
     try {
       let target = buildShareUrl(fullItem);
       // Kein eigener öffentlicher Link (z.B. Staffel/Episode ohne ID) → auf den Serien-Link ausweichen.
@@ -145,9 +145,8 @@
         } catch { /* Serie nicht erreichbar → Titel-Fallback unten */ }
       }
       target = target || shareTitleText(fullItem);
-      const mod = await import('qrcode');   // bereits vorhandene Abhängigkeit, dynamisch geladen
-      const toDataURL = (mod.default && mod.default.toDataURL) ? mod.default.toDataURL : mod.toDataURL;
-      shareQrUrl = await toDataURL(target || ' ', { margin: 1, width: 360, errorCorrectionLevel: 'M' });
+      const { renderSVG } = await import('uqr');   // dynamisch geladen, zero-dependency
+      shareQrSvg = renderSVG(target || ' ', { ecc: 'M', border: 1 });   // Vektor statt PNG → gestochen scharf
     } catch (e) { console.warn('[OcenFin] share QR failed', e); }
   }
 
@@ -912,9 +911,9 @@
           class="px-5 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
                  focus:outline-none focus:ring-4 focus:ring-white transition-colors">{i18n.t.close}</button>
       </div>
-      {#if shareQrUrl}
-        <img src={shareQrUrl} alt="QR" class="rounded-xl bg-white p-3"
-             style="width:320px;height:320px;max-width:40vh;max-height:40vh;" />
+      {#if shareQrSvg}
+        <div class="rounded-xl bg-white p-3 [&>svg]:block [&>svg]:w-full [&>svg]:h-full"
+             style="width:320px;height:320px;max-width:40vh;max-height:40vh;">{@html shareQrSvg}</div>
       {/if}
       <p class="text-white font-bold text-center break-words">{fullItem?.Name}</p>
       <p class="text-gray-400 text-base text-center max-w-md">{i18n.t.shareHint}</p>

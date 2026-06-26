@@ -215,22 +215,21 @@
   // Abfotografieren sind die sinnvollen Wege.
   let showLog = $state(false);
   let logText = $state('');
-  let qrDataUrl = $state(null);
+  let qrSvg = $state(null);
   let qrBtnEl;   // für Fokus-Rückgabe beim Verlassen der QR-Ansicht
   let logEl = $state(null);   // <pre> mit den Log-Zeilen (für Auto-Scroll + Blättern)
   // Neueste Einträge stehen unten → beim Öffnen ans Ende springen.
   function scrollLogToBottom() { if (logEl) logEl.scrollTop = logEl.scrollHeight; }
   // D-Pad-Blättern: ~85 % der sichtbaren Höhe pro Druck, Fokus bleibt auf dem Button.
   function scrollLog(dir) { logEl?.scrollBy({ top: dir * logEl.clientHeight * 0.85, behavior: 'smooth' }); }
-  async function openLog()  { modalFocus.capture(); logText = formatLog(); qrDataUrl = null; showLog = true; await tick(); scrollLogToBottom(); }
-  function clearLog() { clearLogBuffer(); logText = formatLog(); qrDataUrl = null; }
-  function hideQr()   { qrDataUrl = null; tick().then(() => { qrBtnEl?.focus(); scrollLogToBottom(); }); }
+  async function openLog()  { modalFocus.capture(); logText = formatLog(); qrSvg = null; showLog = true; await tick(); scrollLogToBottom(); }
+  function clearLog() { clearLogBuffer(); logText = formatLog(); qrSvg = null; }
+  function hideQr()   { qrSvg = null; tick().then(() => { qrBtnEl?.focus(); scrollLogToBottom(); }); }
   async function showLogQr() {
     try {
-      const mod = await import('qrcode');   // dynamisch → nicht im Start-Bundle
-      const toDataURL = (mod.default && mod.default.toDataURL) ? mod.default.toDataURL : mod.toDataURL;
-      const tail = formatLog(1200);         // nur die jüngsten ~1200 Zeichen (QR-Kapazität)
-      qrDataUrl = await toDataURL(tail || ' ', { margin: 1, width: 360, errorCorrectionLevel: 'L' });
+      const { renderSVG } = await import('uqr');   // dynamisch → nicht im Start-Bundle, zero-dependency
+      const tail = formatLog(1200);                 // nur die jüngsten ~1200 Zeichen (QR-Kapazität)
+      qrSvg = renderSVG(tail || ' ', { ecc: 'L', border: 1 });   // Vektor statt PNG → gestochen scharf
     } catch (e) { console.warn('[OcenFin] QR generation failed', e); }
   }
 
@@ -1608,7 +1607,7 @@
 {#if showLog}
   <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
     transition:uiFade onoutrostart={dropTrapOnOutro}
-    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); if (qrDataUrl) hideQr(); else showLog = false; } }}>
+    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); if (qrSvg) hideQr(); else showLog = false; } }}>
 
     <div data-modal data-focus-trap
       class="bg-gray-800 border border-gray-700 p-8 rounded-2xl w-full max-w-4xl max-h-[88vh] flex flex-col gap-5 shadow-2xl">
@@ -1625,10 +1624,10 @@
         </div>
       </div>
 
-      {#if qrDataUrl}
+      {#if qrSvg}
         <div class="flex flex-col items-center justify-center gap-5 flex-1 min-h-0">
-          <img src={qrDataUrl} alt="QR" class="rounded-xl bg-white p-3"
-               style="width:320px;height:320px;max-width:40vh;max-height:40vh;" />
+          <div class="rounded-xl bg-white p-3 [&>svg]:block [&>svg]:w-full [&>svg]:h-full"
+               style="width:320px;height:320px;max-width:40vh;max-height:40vh;">{@html qrSvg}</div>
           <p class="text-gray-400 text-lg text-center max-w-md">{i18n.t.logQrHint}</p>
           <button onclick={hideQr} {@attach focusOnMount()}
             class="px-6 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
