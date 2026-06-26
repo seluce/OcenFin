@@ -455,8 +455,8 @@
               <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
               {i18n.t.play}
             </button>
-            <!-- Punkt-Indikatoren -->
-            {#if heroItems.length > 1}
+            <!-- Punkt-Indikatoren — nur wenn auch rotiert wird (bei reduzierter Bewegung: statischer Hero ohne Punkte) -->
+            {#if !reduceAnimations && heroItems.length > 1}
               <div class="flex gap-2 ml-2">
                 {#each heroItems as _, i}
                   <div class="h-2 rounded-full transition-all {i === heroIndex ? 'w-6 bg-white' : 'w-2 bg-white/40'}"></div>
