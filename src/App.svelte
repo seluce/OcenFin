@@ -82,7 +82,31 @@
   let qcSecret  = $state(null);
   let qcPolling = null;
 
-  const BASE_DEVICE_ID = 'oceonfin-tv-001';
+  // Geräte-Basis-ID: einmalig pro Installation zufällig erzeugt und in localStorage gehalten, damit
+  // dasselbe Profil auf zwei TVs NICHT dieselbe DeviceId bekommt (Jellyfin erlaubt nur einen Token je
+  // DeviceId → der zweite TV würde sonst den ersten ausloggen). Bestehende Installationen, die schon
+  // Tokens haben, behalten die alte feste Basis, damit ihre Tokens nach dem Update gültig bleiben.
+  function randomDeviceBase() {
+    try {
+      const a = new Uint8Array(16); crypto.getRandomValues(a);   // braucht KEINEN secure context
+      return 'ocenfin-' + Array.from(a, (b) => b.toString(16).padStart(2, '0')).join('');
+    } catch {
+      return 'ocenfin-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    }
+  }
+  function loadDeviceBase() {
+    try {
+      const existing = localStorage.getItem('ocenfin_device_base');
+      if (existing) return existing;
+      const hasTokens = !!localStorage.getItem('jellyfin_tokens_v2')
+                     || !!localStorage.getItem('jellyfin_tokens')
+                     || !!localStorage.getItem('session_token');
+      const base = hasTokens ? 'oceonfin-tv-001' : randomDeviceBase();
+      localStorage.setItem('ocenfin_device_base', base);
+      return base;
+    } catch { return 'oceonfin-tv-001'; }
+  }
+  const BASE_DEVICE_ID = loadDeviceBase();
   // Eindeutige DeviceId pro Nutzer: Jellyfin erlaubt nur EINEN Token je DeviceId. Ohne diese Trennung
   // macht das Anmelden eines zweiten Profils (z.B. fürs gemeinsame Schauen) den Token des ersten
   // ungültig. Der gehashte Benutzername ist der nutzerspezifische Teil — er sanitisiert zugleich
