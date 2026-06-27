@@ -743,7 +743,8 @@
   let countdownTimer    = null;
   let countdownEnd      = 0;
   let countdownDismissed = false; // pro Folge: nach Abbruch nicht erneut starten
-  const COUNTDOWN_FROM  = 12;
+  let outroDismissed = $state(false); // manueller Outro-Prompt für DIESE Folge weggeklickt → dranbleiben
+  const COUNTDOWN_FROM  = 20;
   const OUTRO_FALLBACK  = 45;     // ohne Kapitel/Segment-Daten: "Nächste Folge"-Karte in den letzten X s zeigen
 
   // Kapitel-Fallback für Intro/Abspann: greift reaktiv, sobald die Plugin-APIs nichts lieferten
@@ -758,12 +759,14 @@
   ));
   // "Nächste Folge"-Karte (manuell) zeigen: bei echten Abspann-Daten ab Abspannbeginn, sonst
   // als zuverlässiger Fallback in den letzten OUTRO_FALLBACK Sekunden (auch ohne Kapitel/Segmente).
-  // Der Auto-Play-Countdown (nearEnd, 12 s) bleibt davon unberührt, damit nie Inhalt abgeschnitten wird.
+  // Der Auto-Play-Countdown (nearEnd, 20 s) bleibt davon unberührt, damit nie Inhalt abgeschnitten wird.
   let outroPromptActive = $derived(duration > 0 && currentTime > 0 && (
     showSkipCredits || (duration - currentTime) <= OUTRO_FALLBACK
   ));
   // Ein interaktives Overlay ist offen → OK soll dessen fokussierten Button auslösen, nicht pausieren.
   let overlayActive = $derived(showSkipIntro || showStillWatching || (outroPromptActive && !!nextEpisode));
+  // Genau dann ist EIN Outro-Entscheidungsprompt sichtbar (Timer ODER manuell) → Fokus dort einsperren.
+  let outroPromptShowing = $derived(!!nextEpisode && (nextCountdown !== null || (outroPromptActive && !outroDismissed)));
   $effect(() => { if (playbackPrefs.autoPlayNext && nextEpisode && !playbackPrefs.autoSkipCredits
          && nearEnd && nextCountdown === null && !countdownDismissed) {
     startCountdown();
@@ -1167,7 +1170,9 @@
   function skipIntro() {
     if (!videoElement || !introData?.Introduction?.IntroEnd) return;
     videoElement.currentTime = introData.Introduction.IntroEnd;
-    resetControlsTimeout();
+    // Beim Überspringen NICHT die Steuerung einblenden — man will direkt weiterschauen. Fokus auf den
+    // Player legen, da der Skip-Button gleich verschwindet → Tastendrücke greifen weiterhin.
+    playerContainer?.focus();
   }
 
   // manual=true → vom Nutzer ausgelöst (Button/Prompt); manual=false → Auto-Play (Countdown/Ende/Credits).
@@ -1350,6 +1355,12 @@
       e.preventDefault();
       e.stopPropagation();
       onExit?.();
+      return;
+    }
+    // Outro-Entscheidungsprompt offen: Pfeile bewegen NUR zwischen dessen Buttons (Spatial-Nav im
+    // data-focus-trap des Prompts) — nicht zur Wiedergabeleiste, und ohne das HUD einzublenden.
+    if (outroPromptShowing && (e.key === 'ArrowLeft' || e.key === 'ArrowRight'
+                            || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
       return;
     }
     // HUD verborgen (man schaut gerade) → OK pausiert/spielt direkt und fokussiert Play/Pause,
@@ -1810,7 +1821,7 @@
   <!-- NÄCHSTE FOLGE — unten rechts -->
   <!-- AUTO-PLAY COUNTDOWN — Netflix-Stil, mit "Jetzt abspielen" / "Abbrechen" -->
   {#if nextCountdown !== null && nextEpisode}
-    <div transition:uiFade class="absolute bottom-36 right-12 z-[70]">
+    <div transition:uiFade data-focus-trap class="absolute bottom-36 right-12 z-[70]">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-5 w-80 flex flex-col gap-3">
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{i18n.t.nextEpisodeIn} {nextCountdown} {nextCountdown === 1 ? i18n.t.secondOne : i18n.t.secondsMany}</span>
         <span class="text-lg font-bold text-white truncate">{nextEpisode.Name}</span>
@@ -1835,19 +1846,27 @@
     </div>
   {/if}
 
-  <!-- Manueller "Nächste Folge"-Hinweis (kein Countdown; auch Fallback ohne Kapitel via OUTRO_FALLBACK) -->
-  {#if outroPromptActive && nextEpisode && nextCountdown === null}
-    <div transition:uiFade class="absolute bottom-36 right-12 z-[70]">
+  <!-- Manueller "Nächste Folge"-Prompt (kein Countdown): erscheint bei deaktiviertem Auto-Play ODER nach
+       Abbruch des Timers. Der Nutzer entscheidet selbst — "Abbrechen" bleibt bei der aktuellen Folge (Outro). -->
+  {#if outroPromptActive && nextEpisode && nextCountdown === null && !outroDismissed}
+    <div transition:uiFade data-focus-trap class="absolute bottom-36 right-12 z-[70]">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-5 w-80 flex flex-col gap-3">
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{i18n.t.nextEpisode}</span>
         <span class="text-lg font-bold text-white truncate">{nextEpisode.Name}</span>
         {#if nextEpisodeMeta}<span class="text-sm text-gray-400 truncate">{nextEpisodeMeta}</span>{/if}
-        <button onclick={() => goToNextEpisode(true)} {@attach focusOnMount()}
-          class="bg-white text-black font-bold py-2.5 rounded-lg flex items-center justify-center gap-2
-                 focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
-          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-          {i18n.t.playNow}
-        </button>
+        <div class="flex gap-3">
+          <button onclick={() => goToNextEpisode(true)} {@attach focusOnMount()}
+            class="flex-1 bg-white text-black font-bold py-2.5 rounded-lg flex items-center justify-center gap-2
+                   focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            {i18n.t.playNow}
+          </button>
+          <button onclick={() => outroDismissed = true}
+            class="px-4 bg-gray-700 text-white font-bold py-2.5 rounded-lg
+                   focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-600 transition-colors">
+            {i18n.t.cancel}
+          </button>
+        </div>
       </div>
     </div>
   {/if}
