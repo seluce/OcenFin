@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, itemProgress, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, getItemSubtitle } from './utils.js';
+  import { isBackKey, focusOnMount, itemProgress, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, uiFade, dropTrapOnOutro, getItemSubtitle, getItemImageUrl } from './utils.js';
   import { session } from './session.svelte.js';
   import { createFocusManager } from './spatialnav.js';
   import { i18n, setLang, detectUiLang } from './i18n.svelte.js';
@@ -15,6 +15,7 @@
   import Search      from './components/Search.svelte';
   import Favorites   from './components/Favorites.svelte';
   import Person      from './components/Person.svelte';
+  import Library     from './components/Library.svelte';
   import Collection  from './components/Collection.svelte';
   import { registerSession, listSyncGroups, createSyncGroup, joinSyncGroup, leaveSyncGroup, syncSocketUrl, setSyncIgnoreWait } from './syncplay.js';
 
@@ -33,11 +34,17 @@
   let appPhase = $state('servers');   // aktueller Schritt im Onboarding-Flow
   let initializing = $state(true);    // Splashscreen, bis Auto-Login/Start abgeschlossen ist
   let dashboardReloadKey = $state(0); // erhöhen erzwingt frisches Neuladen des Dashboards
+  let currentLibrary     = $state(null);  // { Id, Name } — aktive Bibliothek (an Library.svelte)
+  let libraryReloadKey   = $state(0);     // erhöhen → Library verwirft View-Cache + lädt neu
+  let libraryFocusFirst  = $state(false); // beim Öffnen aus dem Menü erste Karte fokussieren
+  let librarySharedOn    = $state(false); // "Gemeinsam schauen" aktiv (von Library gemeldet)
+  let libraryMounted     = $state(false); // ab erstem Bibliotheksbesuch dauerhaft gemountet (State bleibt)
+  let libraryRef;                         // bind:this → restoreView / Grid-Mutationen
 
   // Cache leeren (Einstellungen): In-Memory-Cache verwerfen und Dashboard frisch laden.
   function clearCache() {
     apiCache.dashboard = null;
-    apiCache.views = {};
+    libraryReloadKey++;        // Library verwirft ihren eigenen View-Cache + lädt neu
     dashboardReloadKey++;
     viewState = 'dashboard';
   }
@@ -222,7 +229,7 @@
       }
       if (_changed) { sharedTokens = { ...sharedTokens }; persistSharedTokens(); }
     }
-    sharedWatchMode  = false;   // Filter startet pro Sitzung aus
+    librarySharedOn  = false;   // Filter startet pro Sitzung aus
     partnersPlayedIds = null;
     applyingPrefs = false;
   }
@@ -301,79 +308,22 @@
   // NAVIGATION (App-intern)
   // ============================================================
   let viewState          = $state('dashboard');
-  let currentItems       = $state([]);
   let currentDetailItem  = $state(null);
-  let currentLibraryName         = $state('');
-  let currentLibraryId           = $state(null);
   let navLibraries               = $state([]);    // echte Mediatheken fürs Menü (vom Dashboard gemeldet)
   let navReordering              = $state(false);  // true während ein Sidebar-Eintrag „angehoben" ist
-  let totalLibraryItems          = $state(0);
-  let isFetchingMore     = $state(false);
-  let isFetchingPrev     = $state(false);
-  let isLoading          = $state(false);
-  const libraryItemLimit = 50;
 
   let activeAudioIndex    = $state(-1);
   let activeSubtitleIndex = $state(-1);
   let activeMediaSourceId = $state(null);   // gewählte Version (FullHD/4K), aus Details
   let autoPlayStreak = $state(0);           // "Schaust du noch?": automatisch abgespielte Folgen in Folge ohne Interaktion
 
-  // A-Z
-  let activeLetter    = $state('#');
-  let currentLetter   = $state('');
-  let firstLoadedIndex = $state(0);   // Index von currentItems[0] in der (gefilterten) Gesamtliste – Basis fürs bidirektionale Nachladen
-  const alphabet = ['#','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'];
-  let libraryScrollContainer;
-  let libraryGrid;
-
-  // A-Z Sprung-Vorschau (großes Buchstaben-Overlay, iOS-Kontakte-Stil)
-  let jumpLetterOverlay = $state('');
-  let jumpOverlayTimer;
-  function showJumpLetter(letter) {
-    jumpLetterOverlay = letter;
-    clearTimeout(jumpOverlayTimer);
-    jumpOverlayTimer = setTimeout(() => { jumpLetterOverlay = ''; }, 800);
-  }
-
-  // Backdrop-Vorschau: blendet nach 700ms Fokus auf einer Karte das Backdrop ein.
-  // 700ms ist der Sweet Spot — löst beim schnellen Durchscrollen nicht aus,
-  // bleibt aber reaktiv. Eine einzige geteilte <img>-Ebene, moderate Auflösung.
-  let previewBackdrop = $state('');
-  let previewTimer;
-  function previewItem(item) {
-    if (!displaySettings.backdropPreview) return;   // eigene Einstellung (nicht an "Animationen reduzieren" gekoppelt)
-    clearTimeout(previewTimer);
-    previewTimer = setTimeout(() => {
-      const tag = item.BackdropImageTags?.[0];
-      const pTag = item.ParentBackdropImageTags?.[0];
-      if (tag)       previewBackdrop = `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${tag}&maxWidth=1280&quality=70&format=webp`;
-      else if (pTag) previewBackdrop = `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${pTag}&maxWidth=1280&quality=70&format=webp`;
-    }, 700);
-  }
-  function cancelPreview() {
-    clearTimeout(previewTimer);
-  }
-
-  // Position merken: woher wurde Details geöffnet + Scroll/Fokus in der Bibliothek
+  // Position merken: woher wurde Details geöffnet (Scroll/Fokus liegen jetzt in Library.svelte)
   let detailsOrigin      = $state('dashboard');   // 'dashboard' | 'library' | 'search'
-  let savedLibraryScroll = $state(0);
-  let lastFocusedItemId  = $state(null);
-
-  // Filter
-  let showFilterMenu  = $state(false);
-  let activeFilters   = $state({ isFavorite: false, isPlayed: false, isNotPlayed: false });
-  let availableGenres = $state([]);
-  let selectedGenres  = $state([]);
-  let selectedFsk     = $state([]);
-  const fskOptions    = ['0','6','12','16','18'];
-  let hasFilters = $derived(activeFilters.isFavorite || activeFilters.isPlayed || activeFilters.isNotPlayed
-                  || selectedGenres.length > 0 || selectedFsk.length > 0);
 
   // ── Gemeinsames Schauen ────────────────────────────────────────────────────
   // Das eingeloggte (Gemeinsam-)Profil referenziert zwei andere Profile. Deren Tokens
   // liegen in savedTokens (gekoppelt an "Token speichern"); hier nur ID + Name gemerkt.
   let sharedProfile     = $state({ enabled: false, members: [] });  // members: [{ id, name }]
-  let sharedWatchMode   = $state(false);   // Bibliotheks-Filter "Gemeinsam schauen" aktiv
   let partnersPlayedIds = $state(null);    // Set: von BEIDEN komplett gesehene Item-IDs (aktuelle Bibliothek)
   let sharedReady = $derived(sharedProfile.enabled
                    && sharedProfile.members.filter(m => m && m.id).length >= 1);
@@ -389,10 +339,6 @@
     const sid = selectedServer?.id;
     return m && (sharedTokens[sid]?.[m.id] || savedTokens[sid]?.[m.id]);
   }
-  // Bibliotheks-Grid: im "Gemeinsam schauen"-Modus alles ausblenden, was beide gesehen haben
-  let visibleLibraryItems = $derived((sharedWatchMode && partnersPlayedIds)
-                           ? currentItems.filter(i => !partnersPlayedIds.has(i.Id))
-                           : currentItems);
   // Profil-Liste für die Einrichtung bereitstellen, falls noch nicht geladen
   $effect(() => { if (viewState === 'settings' && users.length === 0 && session.serverUrl) fetchUsers(); });
 
@@ -603,71 +549,9 @@
     connectSyncSocket();                        // SyncPlay-Echtzeitkanal öffnen
   } });
 
-  // Sortierung
-  let showSortMenu = $state(false);
-  const sortFilterFocus = makeFocusReturn();   // Auslöser-Button für Fokus-Rückgabe nach Schließen
-  // Fokus nach dem Schließen von Sortieren/Filtern zurück auf den auslösenden Button.
-  $effect(() => { if (!showSortMenu && !showFilterMenu && sortFilterFocus.pending) sortFilterFocus.restore(); });
-
   let showExitConfirm = $state(false);   // Bestätigungsdialog "App verlassen?" (Zurück am Dashboard)
-  let currentSort  = $state({ by: 'SortName', order: 'Ascending' });
   let librarySorts = $state({});   // pro Bibliothek gemerkte Sortierung (im Profil gespeichert)
-  const sortOptions = [
-    { by: 'SortName',        order: 'Ascending',  key: 'sortName' },
-    { by: 'DateCreated',     order: 'Descending', key: 'sortDateAdded' },
-    { by: 'PremiereDate',    order: 'Descending', key: 'sortReleaseYear' },
-    { by: 'CommunityRating', order: 'Descending', key: 'sortRating' },
-    { by: 'Random',          order: 'Ascending',  key: 'sortRandom' },
-  ];
-  // Cache nur für die Standardansicht (Name aufsteigend) — andere Sortierungen
-  // bypassen den Cache wie Filter. A-Z-Leiste ergibt nur bei Namenssortierung Sinn.
-  let showLetterBar = $derived(currentSort.by === 'SortName');   // A-Z-Leiste: bei Namenssortierung in beiden Richtungen sinnvoll
-
-  // Synchrone Variante für loadLibraryItems: die reaktive `hasFilters` wird erst
-  // im nächsten Tick aktualisiert — beim sofortigen Aufruf nach toggleFilter wäre
-  // sie noch veraltet und der Cache (ungefiltert) würde fälschlich zurückgegeben.
-  function currentlyHasFilters() {
-    return activeFilters.isFavorite || activeFilters.isPlayed || activeFilters.isNotPlayed
-           || selectedGenres.length > 0 || selectedFsk.length > 0;
-  }
-
-  // Synchron (gleicher Tick-Grund wie currentlyHasFilters)
-  function currentlyDefaultSort() {
-    return currentSort.by === 'SortName' && currentSort.order === 'Ascending';
-  }
-
-  // Nur Standardansicht (Name aufsteigend, keine Filter, kein Buchstabe) wird gecacht
-  function isCacheableView() {
-    return !currentLetter && !currentlyHasFilters() && currentlyDefaultSort();
-  }
-
-  function setSort(option) {
-    if (currentSort.by === option.by && option.by !== 'Random') {
-      // Gleiche Sortierung erneut → Richtung umkehren (auf-/absteigend)
-      currentSort = { by: option.by, order: currentSort.order === 'Ascending' ? 'Descending' : 'Ascending' };
-    } else {
-      currentSort = { by: option.by, order: option.order };
-    }
-    showSortMenu = false;
-    // Bei Sortierwechsel A-Z zurücksetzen (Leiste ergibt nur bei Namenssortierung Sinn)
-    if (currentSort.by !== 'SortName') { currentLetter = ''; activeLetter = '#'; }
-    // Sortierung für diese Bibliothek im Profil merken
-    if (currentLibraryId) { librarySorts[currentLibraryId] = { ...currentSort }; saveUserPrefs(); }
-    loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, null);
-  }
-
-  // Bibliotheks-Cache mit Größenbegrenzung (LRU): höchstens 5 Bibliotheken halten,
-  // damit der Speicher bei vielen besuchten Bibliotheken nicht unbegrenzt wächst.
-  const MAX_CACHED_VIEWS = 5;
-  function cacheLibraryView(libraryId, data) {
-    // Bereits vorhandenen Eintrag entfernen, dann neu ans Ende setzen (= zuletzt genutzt)
-    delete apiCache.views[libraryId];
-    const keys = Object.keys(apiCache.views);
-    if (keys.length >= MAX_CACHED_VIEWS) delete apiCache.views[keys[0]];  // ältesten verwerfen
-    apiCache.views[libraryId] = data;
-  }
-
-  let apiCache = { dashboard: null, views: {} };
+  let apiCache = { dashboard: null };   // nur noch Dashboard; Bibliotheks-Cache liegt in Library.svelte
 
   // ============================================================
   // STORAGE HELPERS
@@ -1024,7 +908,7 @@
   // ── Gemeinsames Schauen: Mitglieder & Datenbasis ───────────────────────────
   function toggleSharedEnabled() {
     sharedProfile = { ...sharedProfile, enabled: !sharedProfile.enabled };
-    if (!sharedProfile.enabled) { sharedWatchMode = false; partnersPlayedIds = null; }
+    if (!sharedProfile.enabled) { librarySharedOn = false; partnersPlayedIds = null; }
     saveUserPrefs();
   }
 
@@ -1060,7 +944,7 @@
     sharedProfile = { ...sharedProfile, members };
     _loadedSugKey = null;   // Vorschläge neu berechnen
     saveUserPrefs();
-    if (sharedWatchMode) loadPartnersPlayedIds(currentLibraryId);
+    if (librarySharedOn) loadPartnersPlayedIds(currentLibrary?.Id);
     return 'ok';
   }
 
@@ -1078,7 +962,7 @@
     }
     _loadedSugKey = null;   // Vorschläge neu berechnen
     saveUserPrefs();
-    if (sharedWatchMode) loadPartnersPlayedIds(currentLibraryId);
+    if (librarySharedOn) loadPartnersPlayedIds(currentLibrary?.Id);
   }
 
   // Vereinigung der von den Mitgliedern komplett gesehenen Top-Level-Titel der Bibliothek.
@@ -1086,7 +970,7 @@
   // selbst auf Played=true — zuverlässiger als Filters=IsPlayed, das bei Serien nicht immer greift.
   async function loadPartnersPlayedIds(libraryId) {
     partnersPlayedIds = null;
-    if (!sharedWatchMode || !sharedReady || !libraryId) return;
+    if (!librarySharedOn || !sharedReady || !libraryId) return;
     const ids = new Set();
     for (const m of sharedProfile.members) {
       if (!m || !m.id) continue;
@@ -1109,11 +993,12 @@
     partnersPlayedIds = ids;
   }
 
-  function toggleSharedWatch() {
-    sharedWatchMode = !sharedWatchMode;
-    if (sharedWatchMode) loadPartnersPlayedIds(currentLibraryId);
+  // Partner-IDs für "Gemeinsam schauen" laden/verwerfen, sobald sich Bibliothek oder Schalter ändern.
+  $effect(() => {
+    const lib = currentLibrary;
+    if (lib && librarySharedOn) loadPartnersPlayedIds(lib.Id);
     else partnersPlayedIds = null;
-  }
+  });
 
   // Vorschläge, die zur GEMEINSAMEN Vorliebe passen und die noch keiner gesehen hat.
   // Pro Mitglied einmal Katalog (mit Genres) holen → Genre-Gewichte (nur Genres, die ALLE mögen)
@@ -1402,8 +1287,6 @@
     // Offene Overlays zuerst schließen (gilt auch für Fernbedienungs-Zurück)
     if (showSyncPlay)   { closeSyncPlay();         e.preventDefault(); return; }
     if (contextItem)    { contextItem = null;     e.preventDefault(); return; }
-    if (showSortMenu)   { showSortMenu = false;   e.preventDefault(); return; }
-    if (showFilterMenu) { showFilterMenu = false; e.preventDefault(); return; }
     // Innerhalb der App navigieren; preventDefault verhindert, dass webOS die App schließt.
     // Am Dashboard (oberste Ebene) Bestätigung zeigen statt die App direkt zu schließen.
     if      (viewState === 'player')   { viewState = 'details';        e.preventDefault(); }
@@ -1447,156 +1330,6 @@
     currentDetailItem = episodeItem;
   }
 
-  // ============================================================
-  // BIBLIOTHEK / LIBRARY
-  // ============================================================
-
-  async function loadGenres(libraryId) {
-    try {
-      const res = await fetch(`${session.serverUrl}/Genres?ParentId=${libraryId}&UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
-      if (res.ok) { const d = await res.json(); availableGenres = d.Items || []; }
-    } catch { }
-  }
-
-  function getFilterQuery() {
-    let q = '';
-    const f = [];
-    if (activeFilters.isFavorite)  f.push('IsFavorite');
-    if (activeFilters.isPlayed)    f.push('IsPlayed');
-    if (activeFilters.isNotPlayed) f.push('IsNotPlayed');
-    if (f.length) q += `&Filters=${f.join(',')}`;
-
-    // Genres: separate Parameter für OR-Logik in Jellyfin
-    for (const g of selectedGenres) {
-      q += `&Genres=${encodeURIComponent(g)}`;
-    }
-
-    // FSK: ein einziger Parameter mit pipe-separierten Werten = OR in Jellyfin.
-    // Früher wurden zwei separate &OfficialRatings-Parameter übergeben
-    // (FSK X und X) was in manchen Jellyfin-Versionen AND-Logik erzeugt → leeres Ergebnis.
-    if (selectedFsk.length) {
-      const ratings = selectedFsk.map(f => `FSK ${f}`).join('|');
-      q += `&OfficialRatings=${encodeURIComponent(ratings)}`;
-    }
-
-    return q;
-  }
-
-  function toggleFilter(key) {
-    activeFilters[key] = !activeFilters[key];
-    if (key === 'isPlayed'    && activeFilters.isPlayed)    activeFilters.isNotPlayed = false;
-    if (key === 'isNotPlayed' && activeFilters.isNotPlayed) activeFilters.isPlayed    = false;
-    activeFilters = { ...activeFilters };
-    loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, currentLetter || null);
-  }
-
-  function toggleGenre(name) {
-    selectedGenres = selectedGenres.includes(name)
-      ? selectedGenres.filter(g => g !== name)
-      : [...selectedGenres, name];
-    loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, currentLetter || null);
-  }
-
-  function toggleFsk(age) {
-    selectedFsk = selectedFsk.includes(age)
-      ? selectedFsk.filter(f => f !== age)
-      : [...selectedFsk, age];
-    loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, currentLetter || null);
-  }
-
-  // Index des ersten Titels eines Buchstabens in der (gefilterten) Gesamtliste – per Count-Abfrage.
-  // Aufsteigend: Anzahl der Titel VOR dem Buchstaben (Name < Buchstabe). Absteigend: Anzahl der Titel,
-  // die in absteigender Anzeige davor liegen (Name >= nächster Buchstabe). So beginnt das geladene
-  // Fenster genau beim Buchstaben, und davor/danach lässt sich beidseitig nachladen.
-  async function letterStartIndex(libraryId, letter) {
-    if (!letter || letter === '#') return 0;
-    let q;
-    if (currentSort.order === 'Ascending') {
-      q = `&NameLessThan=${encodeURIComponent(letter)}`;
-    } else {
-      const next = String.fromCharCode(letter.charCodeAt(0) + 1);   // 'A'→'B' … 'Z'→'['
-      q = `&NameStartsWithOrGreater=${encodeURIComponent(next)}`;
-    }
-    const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${libraryId}&Limit=1&StartIndex=0${q}${getFilterQuery()}`;
-    try {
-      const res = await fetch(url, { headers: getAuthHeaders() });
-      if (res.ok) return (await res.json()).TotalRecordCount || 0;
-    } catch {}
-    return 0;
-  }
-
-  async function loadLibraryItems(library, letter = null) {
-    if (currentLibraryId !== library.Id) {
-      activeFilters  = { isFavorite: false, isPlayed: false, isNotPlayed: false };
-      selectedGenres = [];
-      selectedFsk    = [];
-      // Gemerkte Sortierung dieser Bibliothek wiederherstellen (sonst Standard)
-      currentSort    = librarySorts[library.Id] ? { ...librarySorts[library.Id] } : { by: 'SortName', order: 'Ascending' };
-      previewBackdrop = '';                                       // Backdrop-Vorschau zurücksetzen
-      clearTimeout(previewTimer);
-      loadGenres(library.Id);
-    }
-    currentLibraryName           = library.Name;
-    currentLibraryId             = library.Id;
-    viewState                    = 'library';
-    if (sharedWatchMode) loadPartnersPlayedIds(library.Id);   // gesehene Titel beider Profile für diese Bibliothek
-
-    if (letter !== null) {
-      currentLetter = letter === '#' ? '' : letter;
-      activeLetter  = letter;
-      if (libraryScrollContainer) libraryScrollContainer.scrollTop = 0;
-    } else {
-      currentLetter = '';
-      activeLetter  = '#';
-    }
-
-    if (isCacheableView() && apiCache.views[library.Id] && letter === null) {
-      currentItems      = apiCache.views[library.Id].items;
-      totalLibraryItems = apiCache.views[library.Id].total;
-      firstLoadedIndex  = 0;
-      return;
-    }
-
-    isLoading    = true;
-    currentItems = [];
-
-    // Sprung per Offset: das Fenster beginnt am Index des Buchstabens in der Gesamtliste (kein
-    // klebriger Filter mehr), sodass davor liegende Titel später nach oben nachgeladen werden können.
-    const startIndex = letter !== null ? await letterStartIndex(library.Id, letter) : 0;
-    firstLoadedIndex = startIndex;
-
-    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${library.Id}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
-    url += getFilterQuery();
-
-    try {
-      const res = await fetch(url, { headers: getAuthHeaders() });
-      if (res.ok) {
-        const data    = await res.json();
-        currentItems      = data.Items || [];
-        totalLibraryItems = data.TotalRecordCount || 0;
-        if (isCacheableView()) cacheLibraryView(library.Id, { items: currentItems, total: totalLibraryItems });
-      }
-      session.connectionLost = false;
-    } catch { session.connectionLost = true; } finally { isLoading = false; }
-  }
-
-  // Zufälliges Item aus der aktuellen Bibliothek holen und dessen Details öffnen.
-  // Best Practice "irgendwas schauen": ein Klick → Detailseite mit Play/Fortsetzen.
-  async function playRandomItem() {
-    if (!currentLibraryId) return;
-    try {
-      const res = await fetch(
-        `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}` +
-        `&SortBy=Random&Limit=1&Recursive=true&IncludeItemTypes=Movie,Series&Fields=Overview`,
-        { headers: getAuthHeaders() }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (data.Items?.length) showItemDetails(data.Items[0]);
-      }
-    } catch { /* ignorieren */ }
-  }
-
   // ── Personen-Ansicht (Filmografie) ──────────────────────────
   let currentPerson      = $state(null);       // Seed-Person für die Personen-Ansicht (Person.svelte lädt selbst)
   let personReturnView   = $state('search');   // wohin "Zurück" führt
@@ -1614,17 +1347,10 @@
   }
 
   // Cross-Effekte aus der Collection-Ansicht auf Bibliotheks-Grid / Sidebar:
-  function onCollectionChildCount(id, count) {
-    const gi = currentItems.find(x => x.Id === id);
-    if (gi) { gi.ChildCount = count; currentItems = [...currentItems]; }
-  }
-  function onCollectionRenamed(id, name) {
-    const gi = currentItems.find(x => x.Id === id);
-    if (gi) { gi.Name = name; currentItems = [...currentItems]; }
-    refreshLibraries();
-  }
+  function onCollectionChildCount(id, count) { libraryRef?.updateChildCount(id, count); }
+  function onCollectionRenamed(id, name) { libraryRef?.renamePlaylist(id, name); refreshLibraries(); }
   async function onCollectionDeleted(id) {
-    currentItems = currentItems.filter(i => i.Id !== id);   // sofort aus dem Grid
+    libraryRef?.removeItem(id);   // sofort aus dem Grid
     await refreshLibraries();   // Sidebar/Menü neu laden (Playlist verschwindet)
     // War es die letzte Playlist, entfernt Jellyfin die ganze "Playlists"-Bibliothek.
     const playlistsLibGone = !navLibraries.some(l => l.CollectionType === 'playlists');
@@ -1634,7 +1360,7 @@
       apiCache.dashboard = null;
       dashboardReloadKey++;
     }
-    if (collectionReturnView === 'library' && playlistsLibGone) { currentLibraryId = null; viewState = 'dashboard'; }
+    if (collectionReturnView === 'library' && playlistsLibGone) { currentLibrary = null; viewState = 'dashboard'; }
     else viewState = collectionReturnView;
   }
 
@@ -1659,44 +1385,6 @@
     viewState        = 'person';
   }
 
-  async function loadMoreLibraryItems() {
-    if (isFetchingMore || firstLoadedIndex + currentItems.length >= totalLibraryItems || !currentLibraryId) return;
-    isFetchingMore = true;
-    const start = firstLoadedIndex + currentItems.length;
-    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}`;
-    url += getFilterQuery();
-    try {
-      const res = await fetch(url, { headers: getAuthHeaders() });
-      if (res.ok) {
-        const data   = await res.json();
-        currentItems = [...currentItems, ...(data.Items || [])];
-        if (isCacheableView()) cacheLibraryView(currentLibraryId, { items: currentItems, total: totalLibraryItems });
-      }
-    } catch { } finally { isFetchingMore = false; }
-  }
-
-  // Aufwärts nachladen: den Block VOR dem aktuellen Fenster holen und voranstellen. Damit der
-  // sichtbare Inhalt exakt stehen bleibt, wird die Scroll-Position um den Höhenzuwachs korrigiert
-  // (Karten haben feste Aspect-Ratio-Höhe → Messung ist auch vor dem Laden der Bilder korrekt).
-  async function loadPreviousLibraryItems() {
-    if (isFetchingPrev || firstLoadedIndex <= 0 || !currentLibraryId) return;
-    isFetchingPrev = true;
-    const newStart = Math.max(0, firstLoadedIndex - libraryItemLimit);
-    const count    = firstLoadedIndex - newStart;
-    const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}`;
-    try {
-      const res = await fetch(url, { headers: getAuthHeaders() });
-      if (res.ok) {
-        const items = (await res.json()).Items || [];
-        const before = libraryScrollContainer ? libraryScrollContainer.scrollHeight : 0;
-        currentItems     = [...items, ...currentItems];
-        firstLoadedIndex = newStart;
-        await tick();
-        if (libraryScrollContainer) libraryScrollContainer.scrollTop += libraryScrollContainer.scrollHeight - before;
-      }
-    } catch { } finally { isFetchingPrev = false; }
-  }
-
   // Nach einer Auswahl in der Sidebar den Fokus in den Inhalt verschieben. Das
   // Verlassen der Sidebar klappt sie automatisch wieder ein (ihr focusout-Handler).
   // So liegt der Fokus direkt dort, wo es weitergeht, statt in der offenen Leiste.
@@ -1718,16 +1406,12 @@
     } catch { /* ignorieren */ }
   }
 
-  async function navigateToLibrary(lib, focusFirstCard = false) {
+  function navigateToLibrary(lib, focusFirstCard = false) {
     if (!lib) return;
-    await loadLibraryItems(lib);
-    // Beim Öffnen aus dem Menü den Fokus auf die erste Karte legen (nicht auf "Zufällig").
-    // Das Verschieben des Fokus klappt zugleich die Sidebar wieder ein.
-    if (focusFirstCard) {
-      await tick();
-      const card = libraryGrid?.querySelector('button');
-      if (card) card.focus(); else focusMain();
-    }
+    libraryMounted = true;                  // ab jetzt bleibt Library gemountet (Scroll/Items überleben Details)
+    libraryFocusFirst = focusFirstCard;     // Library fokussiert nach dem Laden selbst die erste Karte
+    currentLibrary = { Id: lib.Id, Name: lib.Name };
+    viewState = 'library';
   }
 
   function showItemDetails(item) {
@@ -1735,10 +1419,6 @@
     if (item?.Type === 'BoxSet' || item?.Type === 'Playlist') { openCollection(item); return; }
     // Herkunft merken, damit "Zurück" wieder dorthin führt (nicht immer Dashboard)
     detailsOrigin = viewState;
-    if (viewState === 'library') {
-      savedLibraryScroll = libraryScrollContainer?.scrollTop ?? 0;
-      lastFocusedItemId  = item.Id;
-    }
     currentDetailItem = item;
     viewState = 'details';
     lazyPlayer();   // Player-Chunk im Hintergrund vorladen — von hier wird sehr wahrscheinlich abgespielt
@@ -1776,26 +1456,14 @@
   }
   $effect(() => { if (!contextItem && !contextPickerMode && (contextReturnId || contextReturnEl)) restoreContextFocus(); });
 
-  // Nach einer Aktion (gesehen/Favorit/zurückgesetzt) die aktuelle Ansicht auffrischen,
-  // damit Badges/Fortschritt/"Weiterschauen" den neuen Stand zeigen.
-  // Passt ein Item (noch) zu den aktiven Status-Server-Filtern? (Genre/FSK sind statisch und
-  // ändern sich durch Kontextaktionen nicht, daher hier nicht geprüft.)
-  function matchesStatusFilters(item) {
-    if (activeFilters.isFavorite  && !item.UserData?.IsFavorite) return false;
-    if (activeFilters.isPlayed    && !item.UserData?.Played)     return false;
-    if (activeFilters.isNotPlayed &&  item.UserData?.Played)     return false;
-    return true;
-  }
-
   function onContextChanged() {
     // ContextMenu hat item.UserData bereits in-place mutiert → Deep Reactivity aktualisiert
     // Badges/Fortschritt sofort, ohne Full-Reload (kein Reshuffle, kein Fokusverlust).
     // Bibliothek: passt das geänderte Item nicht mehr zum aktiven Status-Filter, fliegt es gezielt
     // aus der Liste (die servergeladene Liste bleibt sonst unberührt → kein Mismatch-Risiko).
     // Dashboard/Sammlung brauchen keine Aktion (kein membership-relevanter Status-Filter).
-    if (viewState === 'library' && contextItem && !matchesStatusFilters(contextItem)) {
-      const idx = currentItems.findIndex(i => i.Id === contextItem.Id);
-      if (idx >= 0) currentItems.splice(idx, 1);
+    if (viewState === 'library' && contextItem && libraryRef && !libraryRef.matchesStatusFilters(contextItem)) {
+      libraryRef.removeItem(contextItem.Id);
     }
   }
   function contextOpenDetails(item) {
@@ -1811,13 +1479,7 @@
   async function returnFromDetails() {
     viewState = detailsOrigin;
     if (detailsOrigin === 'library') {
-      await tick();
-      if (libraryScrollContainer) libraryScrollContainer.scrollTop = savedLibraryScroll;
-      // Fokus auf das zuletzt geöffnete Item zurücksetzen (WebOS D-Pad)
-      if (lastFocusedItemId && libraryGrid) {
-        const btn = libraryGrid.querySelector(`[data-item-id="${lastFocusedItemId}"]`);
-        if (btn) btn.focus();
-      }
+      libraryRef?.restoreView();
     } else if (detailsOrigin === 'favorites') {
       // Favoriten neu laden — z.B. wenn in den Details ein Favorit entfernt wurde, war er sonst
       // noch in der Übersicht gelistet, bis man die Ansicht wechselte. Schlüssel hochzählen → Favorites lädt neu.
@@ -1830,67 +1492,6 @@
       const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${itemId}`, { headers: getAuthHeaders() });
       if (res.ok) { currentDetailItem = await res.json(); viewState = 'details'; }
     } catch { }
-  }
-
-  function getItemImageUrl(item, format = 'portrait') {
-    if (format === 'landscape') {
-      // Episoden-Favoriten: 16:9-Still der Folge (Primary), sonst Serien-Thumb als Rückfall.
-      if (item.ImageTags?.Primary)
-        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
-      if (item.SeriesId && item.SeriesThumbImageTag)
-        return `${session.serverUrl}/Items/${item.SeriesId}/Images/Thumb?tag=${item.SeriesThumbImageTag}&maxWidth=600&quality=80&format=webp`;
-      return null;
-    }
-    if (item.ImageTags?.Primary)
-      return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
-    return null;
-  }
-  // 16:9-Variante für Episoden-Thumbs (deren Primary IST querformat). Portrait-Helfer würde sie beschneiden.
-  function getItemThumbUrl(item) {
-    if (item.ImageTags?.Primary)
-      return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillWidth=480&fillHeight=270&quality=80&format=webp`;
-    return null;
-  }
-
-  // Attachment: lädt nach, sobald der Sentinel in den Viewport-Vorlauf kommt. 2000px (~2 TV-Bildschirme)
-  // geben dem langsameren TV genug Zeit, den nächsten Block zu holen+rendern, BEVOR der Nutzer unten ankommt.
-  function infiniteScroll(node) {
-    const obs = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) loadMoreLibraryItems(); },
-      { rootMargin: '2000px' }
-    );
-    obs.observe(node);
-    return () => obs.disconnect();
-  }
-
-  // Gegenstück nach oben: lädt den vorigen Block früh genug (1000px Vorlauf).
-  function infiniteScrollUp(node) {
-    const obs = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) loadPreviousLibraryItems(); },
-      { rootMargin: '1000px' }
-    );
-    obs.observe(node);
-    return () => obs.disconnect();
-  }
-
-  let scrollTimer;
-  function handleLibraryScroll() {
-    if (scrollTimer) clearTimeout(scrollTimer);
-    scrollTimer = setTimeout(() => {
-      if (!libraryGrid || !currentItems.length) return;
-      for (const child of libraryGrid.children) {
-        const rect = child.getBoundingClientRect();
-        if (rect.bottom > 150) {
-          const idx  = [...libraryGrid.children].indexOf(child);
-          const item = currentItems[idx];
-          if (item) {
-            const char = (item.SortName || item.Name)[0].toUpperCase();
-            activeLetter = /[A-Z]/.test(char) ? char : '#';
-          }
-          break;
-        }
-      }
-    }, 150);
   }
 
 </script>
@@ -2412,7 +2013,7 @@
         navOrder={displaySettings.navOrder}
         navHidden={displaySettings.navHidden}
         navIcons={displaySettings.navIcons}
-        activeLibraryId={currentLibraryId}
+        activeLibraryId={currentLibrary?.Id}
         onNavigate={(target) => { if (target === 'syncplay') { openSyncPlay(); } else { viewState = target; if (target !== 'favorites') focusMain(); } }}
         onNavigateLibrary={(lib) => navigateToLibrary(lib, true)}
         onSwitchUser={handleSwitchUser}
@@ -2435,198 +2036,13 @@
             showCollections={displaySettings.collections}
             {sharedSuggestions}
             showSharedSuggestions={sharedReady && displaySettings.sharedSuggestions}
-            onOpenLibrary={(lib) => loadLibraryItems(lib)}
+            onOpenLibrary={(lib) => navigateToLibrary(lib, false)}
             onLibrariesLoaded={(libs) => navLibraries = libs}
             onOpenDetails={(item) => showItemDetails(item)}
             onOpenCollection={(col) => openCollection(col)}
             onOpenContext={(item) => openContextMenu(item)}
           />
           {/key}
-
-        {:else if viewState === 'library'}
-          <div class="flex h-full w-full relative">
-
-            <!-- Backdrop-Vorschau (blendet beim Fokussieren einer Karte sanft ein) -->
-            {#if previewBackdrop}
-              <div class="absolute inset-0 z-0 pointer-events-none">
-                {#key previewBackdrop}
-                  <img src={previewBackdrop} alt="" class="w-full h-full object-cover preview-fade" />
-                {/key}
-                <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/85 to-gray-900/40"></div>
-                <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-gray-900/60"></div>
-              </div>
-            {/if}
-
-            <!-- A-Z Sprung-Vorschau (großes Buchstaben-Overlay) -->
-            {#if jumpLetterOverlay}
-              <div class="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
-                <div class="bg-black/70 backdrop-blur-md rounded-3xl w-40 h-40 flex items-center justify-center jump-overlay">
-                  <span class="text-8xl font-bold text-white">{jumpLetterOverlay}</span>
-                </div>
-              </div>
-            {/if}
-
-            <div bind:this={libraryScrollContainer} onscroll={handleLibraryScroll}
-              class="flex-1 p-10 pt-16 overflow-y-auto hide-scrollbar relative z-10">
-
-              <div class="flex justify-between items-center mb-10 pr-6">
-                <h1 class="text-4xl font-bold text-white">
-                  {currentLibraryName}
-                  <span class="text-xl text-gray-500 font-normal">({totalLibraryItems})</span>
-                </h1>
-                <div class="flex items-center gap-3">
-                  <!-- Zufällig abspielen -->
-                  <button onclick={playRandomItem}
-                    class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
-                           focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105"
-                    title={i18n.t.shuffle}>
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M4 4h4l12 16h4M4 20h4l3-4m4-9l2-3h3M20 4v4m0 12v-4"/>
-                    </svg>
-                    {i18n.t.shuffle}
-                  </button>
-                  <!-- Sortierung -->
-                  <button onclick={(e) => { sortFilterFocus.capture(e.currentTarget); showSortMenu = true; }}
-                    class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
-                           focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105"
-                    title={i18n.t.sortBy}>
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M3 4h13M3 8h9M3 12h5m4 4l4 4m0 0l4-4m-4 4V8"/>
-                    </svg>
-                    {i18n.t.sortBy}
-                  </button>
-                  <!-- Filter -->
-                  <button onclick={(e) => { sortFilterFocus.capture(e.currentTarget); showFilterMenu = true; }}
-                    class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
-                           focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
-                    </svg>
-                    {i18n.t.filter}
-                    {#if hasFilters}<span class="bg-blue-600 text-white text-xs px-2 py-1 rounded-full ml-1 font-bold">{i18n.t.filterActive}</span>{/if}
-                  </button>
-                  <!-- Gemeinsam schauen: blendet aus, was beide Profile schon gesehen haben -->
-                  {#if sharedReady}
-                    <button onclick={toggleSharedWatch}
-                      class="flex items-center gap-3 px-6 py-3 rounded-xl font-bold focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border focus:scale-105
-                             {sharedWatchMode ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-white'}"
-                      title={i18n.t.watchTogether}>
-                      <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-2.5-1.34M5 11a3 3 0 102.5-1.34"/>
-                      </svg>
-                      {i18n.t.watchTogether}
-                    </button>
-                  {/if}
-                </div>
-              </div>
-
-              <!-- SCHNELLFILTER-CHIPS: Favoriten + Sortierung (Genre/FSK über den Filter-Button) -->
-              <div class="flex gap-3 mb-6 px-2 py-3 overflow-x-auto hide-scrollbar">
-                <!-- Favoriten-Chip (immer zuerst) -->
-                <button onclick={() => toggleFilter('isFavorite')}
-                  class="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm whitespace-nowrap
-                         focus:outline-none focus:ring-4 focus:ring-white transition-all focus:scale-105
-                         {activeFilters.isFavorite ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">
-                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-                  {i18n.t.filterFavorites}
-                </button>
-                <!-- Sortier-Chips -->
-                {#each sortOptions as opt}
-                  <button onclick={() => setSort(opt)}
-                    class="shrink-0 flex items-center gap-1.5 px-5 py-2.5 rounded-full font-bold text-sm whitespace-nowrap
-                           focus:outline-none focus:ring-4 focus:ring-white transition-all focus:scale-105
-                           {currentSort.by === opt.by ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">
-                    {i18n.t[opt.key]}
-                    {#if currentSort.by === opt.by && opt.by !== 'Random'}
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
-                        {#if currentSort.order === 'Ascending'}
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/>
-                        {:else}
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                        {/if}
-                      </svg>
-                    {/if}
-                  </button>
-                {/each}
-              </div>
-
-              {#if firstLoadedIndex > 0 && !isLoading}
-                <div {@attach infiniteScrollUp} class="h-2 w-full"></div>
-              {/if}
-
-              <div bind:this={libraryGrid}
-                class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4">
-                {#if isLoading}
-                  {#each Array(14).fill(0) as _}
-                    <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg animate-pulse"></div>
-                  {/each}
-                {:else}
-                  {#each visibleLibraryItems as item (item.Id)}
-                    <button onclick={() => showItemDetails(item)} data-item-id={item.Id}
-                      onfocus={() => previewItem(item)} onblur={cancelPreview}
-                      {@attach longPress()} onlongpress={() => openContextMenu(item)}
-                      class="group focus:outline-none text-left cv-auto">
-                      <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
-                        {#if item.Type === 'Playlist' && item.ChildCount === 0}
-                          <!-- Leere Wiedergabeliste: neutraler Platzhalter statt veraltetem Jellyfin-Collage-Bild -->
-                          <div class="w-full h-full flex items-center justify-center text-gray-600">
-                            <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
-                          </div>
-                        {:else if getItemImageUrl(item)}
-                          <img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
-                        {/if}
-                        <!-- Episodenanzahl bei Serien (abschaltbar in Einstellungen) -->
-                        {#if displaySettings.episodeCount && item.Type === 'Series' && item.RecursiveItemCount}
-                          <div class="absolute top-2 right-2 bg-black/80 text-white text-xs font-bold px-2 py-1 rounded-md">
-                            {item.RecursiveItemCount} {i18n.t.episodes}
-                          </div>
-                        {/if}
-                        {#if itemProgress(item) > 0}
-                          <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                            <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                          </div>
-                        {/if}
-                      </div>
-                      <div class="mt-3 flex flex-col items-start w-full overflow-hidden">
-                        <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate block w-full">{item.Name}</span>
-                        <span class="text-xs text-gray-500 group-focus:text-gray-400 block truncate w-full mt-0.5">{getItemSubtitle(item, i18n.t.today)}</span>
-                      </div>
-                    </button>
-                  {/each}
-                {/if}
-              </div>
-
-              {#if sharedWatchMode && !isLoading && currentItems.length > 0 && visibleLibraryItems.length === 0}
-                <div class="text-center text-gray-400 py-24 text-lg">{i18n.t.watchTogetherEmpty}</div>
-              {/if}
-
-              {#if currentItems.length > 0 && firstLoadedIndex + currentItems.length < totalLibraryItems}
-                <!-- Sentinel bleibt dauerhaft gemountet → Observer wird beim Nachladen nicht ab-/neu
-                     aufgebaut und kann beim Weiterscrollen sofort wieder feuern. Spinner liegt darin. -->
-                <div {@attach infiniteScroll} class="w-full flex justify-center items-center py-12 mt-8" style="min-height:6rem">
-                  {#if isFetchingMore}
-                    <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                  {/if}
-                </div>
-              {/if}
-            </div>
-
-            <!-- A-Z (nur bei Namenssortierung sinnvoll) -->
-            {#if showLetterBar}
-            <div data-hbar class="w-16 shrink-0 bg-gradient-to-l from-gray-950/85 via-gray-950/55 to-transparent backdrop-blur-sm flex flex-col items-center justify-between py-6 overflow-y-auto hide-scrollbar z-10">
-              {#each alphabet as letter}
-                <button
-                  onclick={() => { showJumpLetter(letter); loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, letter); }}
-                  onfocus={() => showJumpLetter(letter)}
-                  data-hbar-current={activeLetter === letter ? '' : null}
-                  class="w-10 h-10 flex items-center justify-center rounded-full text-sm font-bold drop-shadow
-                         focus:outline-none focus:ring-4 focus:ring-white transition-all transform focus:scale-125
-                         {activeLetter === letter ? 'text-white bg-blue-600 shadow-lg scale-110' : 'text-gray-300/80 hover:text-white hover:bg-white/10'}"
-                >{letter}</button>
-              {/each}
-            </div>
-            {/if}
-          </div>
 
         {:else if viewState === 'search'}
           <Search {selectedUser}
@@ -2693,6 +2109,22 @@
             onChildCountChanged={onCollectionChildCount}
             onPlaylistRenamed={onCollectionRenamed}
             onPlaylistDeleted={onCollectionDeleted} />
+        {/if}
+
+        <!-- MEDIATHEK bleibt dauerhaft gemountet (versteckt, wenn inaktiv), damit Scroll/Items/das
+             geladene Fenster beim Öffnen der Details erhalten bleiben — wie früher, als der State in App lag. -->
+        {#if libraryMounted}
+          <div class="h-full w-full" class:hidden={viewState !== 'library'}>
+            <Library bind:this={libraryRef}
+              {selectedUser} library={currentLibrary} reloadKey={libraryReloadKey}
+              focusFirstOnLoad={libraryFocusFirst}
+              sharedReady={sharedReady} partnerPlayedIds={partnersPlayedIds}
+              {librarySorts} {displaySettings}
+              onOpenDetails={(item) => showItemDetails(item)}
+              onContextMenu={(item) => openContextMenu(item)}
+              onSortPersist={(libId, sort) => { librarySorts[libId] = sort; saveUserPrefs(); }}
+              onSharedWatchToggle={(on) => librarySharedOn = on} />
+          </div>
         {/if}
 
       </div>
@@ -2798,124 +2230,3 @@
 
 </main>
 
-<!-- ============================================================
-     FILTER-MENÜ
-============================================================ -->
-{#if showSortMenu}
-  <div data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
-    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showSortMenu = false; } }}>
-    <div class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full max-w-xl flex flex-col gap-4 shadow-2xl">
-      <div class="flex justify-between items-center mb-2">
-        <h2 class="text-4xl text-white font-bold">{i18n.t.sortBy}</h2>
-        <button onclick={() => showSortMenu = false} {@attach focusOnMount()}
-          class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
-          <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-          </svg>
-        </button>
-      </div>
-      {#each sortOptions as opt}
-        <button onclick={() => setSort(opt)}
-          class="w-full text-left p-5 text-xl font-bold rounded-xl transition-colors flex items-center justify-between
-                 focus:outline-none focus:ring-4 focus:ring-white
-                 {currentSort.by === opt.by ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-200 hover:bg-blue-600 focus:bg-blue-600'}">
-          <span>{i18n.t[opt.key]}</span>
-          {#if currentSort.by === opt.by}
-            {#if opt.by === 'Random'}
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-            {:else}
-              <!-- Pfeil zeigt aktuelle Richtung; erneutes Tippen kehrt um -->
-              <span class="flex items-center gap-1 text-sm">
-                {currentSort.order === 'Ascending' ? i18n.t.sortAsc : i18n.t.sortDesc}
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  {#if currentSort.order === 'Ascending'}
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/>
-                  {:else}
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                  {/if}
-                </svg>
-              </span>
-            {/if}
-          {/if}
-        </button>
-      {/each}
-    </div>
-  </div>
-{/if}
-
-{#if showFilterMenu}
-  <div data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8">
-    <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
-
-      <!-- Kopf (fix) -->
-      <div class="flex justify-between items-center p-8 pb-4 shrink-0">
-        <h2 class="text-4xl text-white font-bold">{i18n.t.filter}</h2>
-        <button onclick={() => showFilterMenu = false} {@attach focusOnMount()}
-          class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
-          <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-          </svg>
-        </button>
-      </div>
-
-      <!-- Inhalt: scrollt als ein Bereich (kein verschachteltes Chip-Scrollen) -->
-      <div class="flex-1 overflow-y-auto hide-scrollbar px-8 flex flex-col gap-6">
-
-        <!-- Status als kompakte Chips -->
-        <div class="flex flex-col gap-3">
-          <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{i18n.t.status}</h3>
-          <div class="flex flex-wrap gap-3">
-            {#each [['isFavorite', i18n.t.filterFavorites],['isNotPlayed', i18n.t.filterUnplayed],['isPlayed', i18n.t.filterPlayed]] as [key, label]}
-              <button onclick={() => toggleFilter(key)}
-                class="px-5 py-2 rounded-full font-bold text-lg border-2 transition-all focus:outline-none focus:ring-4 focus:ring-white
-                       {activeFilters[key] ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-white'}">
-                {label}
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <!-- Altersfreigabe -->
-        <div class="flex flex-col gap-3">
-          <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{i18n.t.ageRating}</h3>
-          <div class="flex flex-wrap gap-3">
-            {#each fskOptions as age}
-              <button onclick={() => toggleFsk(age)}
-                class="px-5 py-2 rounded-full font-bold text-lg border-2 transition-all focus:outline-none focus:ring-4 focus:ring-white
-                       {selectedFsk.includes(age) ? 'bg-red-700 border-red-500 text-white' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-white'}">
-                FSK {age}
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <!-- Genres: fließen im scrollbaren Inhalt, kein eigenes Mini-Scrollfeld -->
-        {#if availableGenres.length > 0}
-          <div class="flex flex-col gap-3 pb-2">
-            <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{i18n.t.genres}</h3>
-            <div class="flex flex-wrap gap-3">
-              {#each availableGenres as genre}
-                <button onclick={() => toggleGenre(genre.Name)}
-                  class="px-5 py-2 rounded-full font-bold text-lg border-2 transition-all focus:outline-none focus:ring-4 focus:ring-white
-                         {selectedGenres.includes(genre.Name) ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-white'}">
-                  {genre.Name}
-                </button>
-              {/each}
-            </div>
-          </div>
-        {/if}
-
-      </div>
-
-      <!-- Fußzeile (fix) -->
-      <div class="p-8 pt-4 shrink-0">
-        <button onclick={() => showFilterMenu = false}
-          class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold text-xl py-5 rounded-xl
-                 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-          {i18n.t.filterClose}
-        </button>
-      </div>
-
-    </div>
-  </div>
-{/if}

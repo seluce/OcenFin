@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, getItemSubtitle, personImageUrl, itemBlurHash, blurUp, longPress, authHeaders, dlog } from '../utils.js';
+  import { itemProgress, getItemSubtitle, personImageUrl, itemBlurHash, blurUp, longPress, authHeaders, dlog, getItemImageUrl } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { tick } from 'svelte';
 
@@ -32,20 +32,6 @@
   );
 
   const getAuthHeaders = () => authHeaders(session.token);
-
-  // Eigener Bild-Helfer (Apps Variante): Episoden-Still 16:9 (Primary) → Serien-Thumb; sonst Portrait 2:3.
-  function getItemImageUrl(item, format = 'portrait') {
-    if (format === 'landscape') {
-      if (item.ImageTags?.Primary)
-        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
-      if (item.SeriesId && item.SeriesThumbImageTag)
-        return `${session.serverUrl}/Items/${item.SeriesId}/Images/Thumb?tag=${item.SeriesThumbImageTag}&maxWidth=600&quality=80&format=webp`;
-      return null;
-    }
-    if (item.ImageTags?.Primary)
-      return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
-    return null;
-  }
 
   async function loadFavorites() {
     isLoadingFavorites = true;

@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, itemBlurHash, blurUp, longPress, authHeaders, focusOnMount } from '../utils.js';
+  import { itemProgress, itemBlurHash, blurUp, longPress, authHeaders, focusOnMount, getItemImageUrl } from '../utils.js';
   import { session } from '../session.svelte.js';
 
   let {
@@ -21,20 +21,6 @@
   let renameError          = $state(false);
 
   const getAuthHeaders = () => authHeaders(session.token);
-
-  // Eigener Bild-Helfer (Apps Variante): Portrait 2:3.
-  function getItemImageUrl(item, format = 'portrait') {
-    if (format === 'landscape') {
-      if (item.ImageTags?.Primary)
-        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
-      if (item.SeriesId && item.SeriesThumbImageTag)
-        return `${session.serverUrl}/Items/${item.SeriesId}/Images/Thumb?tag=${item.SeriesThumbImageTag}&maxWidth=600&quality=80&format=webp`;
-      return null;
-    }
-    if (item.ImageTags?.Primary)
-      return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
-    return null;
-  }
 
   // Beschriftung für eine Folge: "S1 · E5 · Titel"
   function episodeLabel(item) {
