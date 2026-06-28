@@ -1,4 +1,7 @@
-import { writable, derived } from 'svelte/store';
+// Runes-native i18n (ersetzt die frühere Svelte-Store-Variante). `lang` ist $state, `i18n.t` ein
+// reaktiver Getter auf die Übersetzungstabelle — Komponenten lesen `i18n.t.key` bzw. `i18n.lang`
+// und re-rendern bei Sprachwechsel automatisch, genau nach dem Muster von session.svelte.js.
+// Kein Svelte-Store mehr im Projekt.
 
 // Übersetzungen liegen pro Sprache in /locales. en ist die Referenz (vollständige Key-Liste);
 // jede andere Sprache fällt PRO KEY auf en zurück, falls dort mal ein String fehlt.
@@ -61,6 +64,17 @@ export function detectUiLang() {
   return supported.includes('en') ? 'en' : supported[0];          // Fallback: Englisch
 }
 
-export const currentLang = writable(detectUiLang());
-// Faellt eine (noch) nicht uebersetzte Sprache auf Englisch zurueck, statt undefined zu liefern.
-export const t = derived(currentLang, ($currentLang) => translations[$currentLang] || translations.en);
+// --- Reaktiver Zustand (Runes) ---
+let lang = $state(detectUiLang());
+
+// Reaktiver Zugriff für Komponenten: i18n.t.key (Übersetzung) und i18n.lang (aktueller Code).
+// Beide Getter lesen `lang` ($state) → Lesezugriffe in Templates/$effects sind automatisch reaktiv.
+export const i18n = {
+  get lang() { return lang; },
+  get t()    { return translations[lang] || translations.en; },
+};
+
+// Sprache wechseln (validiert gegen vorhandene Übersetzungen; Persistenz erfolgt im Aufrufer).
+export function setLang(code) {
+  if (translations[code]) lang = code;
+}

@@ -1,5 +1,5 @@
 <script>
-  import { currentLang } from '../i18n.js';
+  import { i18n } from '../i18n.svelte.js';
   import { onMount, onDestroy } from 'svelte';
 
   // viewState wird übergeben um bei Bibliothek-Ansicht (A-Z-Leiste) nach links zu rücken
@@ -11,12 +11,12 @@
   function updateTime() {
     const now = new Date();
     timeString = now.toLocaleTimeString(
-      $currentLang === 'de' ? 'de-DE' : 'en-US',
+      i18n.lang === 'de' ? 'de-DE' : 'en-US',
       { hour: '2-digit', minute: '2-digit', hour12: !use24h }
     );
   }
 
-  // Sprache + Format reaktiv: $effect verfolgt die Lesezugriffe in updateTime ($currentLang, use24h)
+  // Sprache + Format reaktiv: $effect verfolgt die Lesezugriffe in updateTime (i18n.lang, use24h)
   // und formatiert die Zeit bei jeder Änderung neu.
   $effect(() => { updateTime(); });
 

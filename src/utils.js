@@ -2,6 +2,7 @@
 import { tick } from 'svelte';
 import { fade } from 'svelte/transition';
 import { dependencies as deps } from '../package.json';   // für Versions-Anzeige auf der Status-Seite
+import { session } from './session.svelte.js';   // Server-URL zentral für getItemImageUrl
 
 // Ein-/Ausblenden für Overlays, das den "Animationen reduzieren"-Schalter respektiert (App pflegt
 // body.dataset.reduceMotion). Bei reduzierter Bewegung: Dauer 0 → sofort sichtbar/weg, keine Animation.
@@ -167,6 +168,22 @@ export function personImageUrl(serverUrl, person) {
   return tag
     ? `${serverUrl}/Items/${person.Id}/Images/Primary?tag=${tag}&fillHeight=300&quality=80&format=webp`
     : null;
+}
+
+// Karten-Bild-URL für Grid-Items (Mediathek, Favoriten, Person, Collection). 'portrait' = 2:3-Poster,
+// 'landscape' = 16:9-Still (Folgen-Primary, sonst Serien-Thumb als Rückfall). Zentral, weil in mehreren
+// Grids zuvor identisch dupliziert. (Die Suche nutzt bewusst eine eigene Variante mit Backdrop-Fallback.)
+export function getItemImageUrl(item, format = 'portrait') {
+  if (format === 'landscape') {
+    if (item.ImageTags?.Primary)
+      return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
+    if (item.SeriesId && item.SeriesThumbImageTag)
+      return `${session.serverUrl}/Items/${item.SeriesId}/Images/Thumb?tag=${item.SeriesThumbImageTag}&maxWidth=600&quality=80&format=webp`;
+    return null;
+  }
+  if (item.ImageTags?.Primary)
+    return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
+  return null;
 }
 
 // Fortschritt 0–100: Resume-Position (Filme/Folgen) oder Anteil gesehener Folgen

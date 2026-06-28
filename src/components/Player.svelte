@@ -1,5 +1,5 @@
 <script>
-  import { t, currentLang } from '../i18n.js';
+  import { i18n } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
@@ -31,6 +31,7 @@
     remoteCommand = null, // Admin-Fernsteuerung (Dashboard) (von App)
     serverVobSub = false, // Server liefert VobSub/DVD extern (.mks, Jellyfin 12.0+)?
     onExit, onPrev, onNext, onSyncplay, onLibChanged,   // Callback-Props (statt Events)
+    onPlayState,          // meldet App den Wiedergabe-Status (für den Screensaver: pausiert → erlaubt)
   } = $props();
 
   let videoElement;
@@ -39,6 +40,12 @@
   let playPauseBtn;        // bind: damit ▼ von der Leiste direkt hierher springt
   let seekBarEl;           // bind: damit Links/Rechts bei verborgenem HUD direkt hierher springt
   let isPlaying  = $state(false);
+  // Wiedergabe-Status nach außen melden (App unterdrückt den Screensaver nur bei AKTIVER Wiedergabe);
+  // beim Unmount/Verlassen des Players sicher false melden, egal über welchen Weg ausgestiegen wird.
+  $effect(() => {
+    onPlayState?.(isPlaying);
+    return () => onPlayState?.(false);
+  });
   let currentTime = $state(0);
   let duration    = $state(0);
 
@@ -60,7 +67,7 @@
     if (timeMode === 'remaining') return '-' + formatTime(Math.max(0, duration - displayTime));
     if (timeMode === 'end') {
       const end = new Date(Date.now() + Math.max(0, duration - currentTime) * 1000);
-      return end.toLocaleTimeString($currentLang === 'de' ? 'de-DE' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: !use24h });
+      return end.toLocaleTimeString(i18n.lang === 'de' ? 'de-DE' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: !use24h });
     }
     return formatTime(duration);
   });
@@ -69,10 +76,10 @@
   let clockNow = $state('');
   let clockTimer;
   function updateClock() {
-    clockNow = new Date().toLocaleTimeString($currentLang === 'de' ? 'de-DE' : 'en-US',
+    clockNow = new Date().toLocaleTimeString(i18n.lang === 'de' ? 'de-DE' : 'en-US',
       { hour: '2-digit', minute: '2-digit', hour12: !use24h });
   }
-  $effect(() => { $currentLang; use24h; updateClock(); });
+  $effect(() => { i18n.lang; use24h; updateClock(); });
 
   // Ladeanimation + Fehlerzustand
   let isBuffering = $state(true);
@@ -614,8 +621,19 @@
       const res = await fetch(url);            // ApiKey steckt in der URL → einfacher GET, kein Preflight
       if (!res.ok) { console.warn('[OcenFin] ASS fetch failed:', res.status); return; }
       const content = await res.text();
+      ensureVideoFrameCallback();               // webOS: rVFC-Polyfill aktiv, BEVOR assjs sie liest
       disposeAss();                            // kein setTrack → altes Overlay entfernen, frisch aufbauen
       assRenderer = new ASS(content, videoElement, { container: assContainer });
+      // assjs treibt seine Render-Schleife per requestAnimationFrame, gestartet übers 'play'/'playing'-
+      // Event des Videos. Bei einem Spurwechsel MITTEN in der Wiedergabe läuft das Video schon → es feuert
+      // kein erneutes Event → die Schleife liefe nie an und der Untertitel bliebe auf dem Stand vom Umschalten
+      // stehen. Darum einmalig anstoßen, wenn bereits abgespielt wird. ('playing' statt 'play': onplaying ist
+      // nebenwirkungsfrei, onplay würde an SyncPlay melden.)
+      if (!videoElement.paused) videoElement.dispatchEvent(new Event('playing'));
+      // Das Overlay wird ASYNCHRON aufgebaut — also NACH changeTrack, das den Fokus schon gesetzt hatte.
+      // Das Einhängen des assjs-DOM kann den Fokus verlieren; daher hier erneut sichern. Auf denselben
+      // Auslöser-Button wie changeTrack (sichtbar + konsistent), nicht auf den unsichtbaren Container.
+      if (!showSettings) restoreControlFocus();
       dlog('[OcenFin] ASS subtitle via assjs:', stream.Index, stream.Codec);
     } catch (e) { console.warn('[OcenFin] assjs error:', e?.message); }
   }
@@ -626,6 +644,27 @@
       try { assRenderer.destroy(); } catch {}
       assRenderer = null;
     }
+  }
+  // webOS meldet requestVideoFrameCallback als vorhanden (Feature-Detection wahr), ruft den Callback aber
+  // NIE auf. Der Bug sitzt in LGs Media-Anbindung, nicht im Chromium → versionsunabhängig (am Desktop tritt
+  // er nicht auf). assjs treibt damit seine Render-Schleife → ASS-Untertitel laufen am Desktop, frieren auf
+  // dem TV aber auf dem Bild beim Aufbau ein. Darum auf webOS rVFC am <video> durch ein rAF-Polyfill
+  // ersetzen, das wirklich zurückruft (60 fps reichen fürs Untertitel-Timing locker). Nur webOS — Desktop
+  // behält seine native, bildgenaue rVFC. Idempotent.
+  let rvfcPatched = false;
+  function ensureVideoFrameCallback() {
+    if (rvfcPatched || !videoElement) return;
+    if (!window.webOSSystem && !window.webOS) { rvfcPatched = true; return; }  // kein webOS → native rVFC behalten
+    videoElement.requestVideoFrameCallback = function (cb) {
+      return requestAnimationFrame((now) => cb(now, {
+        presentationTime: now, expectedDisplayTime: now,
+        width: videoElement?.videoWidth || 0, height: videoElement?.videoHeight || 0,
+        mediaTime: videoElement?.currentTime || 0, presentedFrames: 0, processingDuration: 0,
+      }));
+    };
+    videoElement.cancelVideoFrameCallback = function (id) { cancelAnimationFrame(id); };
+    rvfcPatched = true;
+    dlog('[OcenFin] requestVideoFrameCallback per rAF-Polyfill ersetzt (webOS)');
   }
   function applyGraphicSubtitle(stream, ms) {
     if (!videoElement) return;
@@ -736,7 +775,8 @@
   let countdownTimer    = null;
   let countdownEnd      = 0;
   let countdownDismissed = false; // pro Folge: nach Abbruch nicht erneut starten
-  const COUNTDOWN_FROM  = 12;
+  let outroDismissed = $state(false); // manueller Outro-Prompt für DIESE Folge weggeklickt → dranbleiben
+  const COUNTDOWN_FROM  = 20;
   const OUTRO_FALLBACK  = 45;     // ohne Kapitel/Segment-Daten: "Nächste Folge"-Karte in den letzten X s zeigen
 
   // Kapitel-Fallback für Intro/Abspann: greift reaktiv, sobald die Plugin-APIs nichts lieferten
@@ -751,12 +791,14 @@
   ));
   // "Nächste Folge"-Karte (manuell) zeigen: bei echten Abspann-Daten ab Abspannbeginn, sonst
   // als zuverlässiger Fallback in den letzten OUTRO_FALLBACK Sekunden (auch ohne Kapitel/Segmente).
-  // Der Auto-Play-Countdown (nearEnd, 12 s) bleibt davon unberührt, damit nie Inhalt abgeschnitten wird.
+  // Der Auto-Play-Countdown (nearEnd, 20 s) bleibt davon unberührt, damit nie Inhalt abgeschnitten wird.
   let outroPromptActive = $derived(duration > 0 && currentTime > 0 && (
     showSkipCredits || (duration - currentTime) <= OUTRO_FALLBACK
   ));
   // Ein interaktives Overlay ist offen → OK soll dessen fokussierten Button auslösen, nicht pausieren.
   let overlayActive = $derived(showSkipIntro || showStillWatching || (outroPromptActive && !!nextEpisode));
+  // Genau dann ist EIN Outro-Entscheidungsprompt sichtbar (Timer ODER manuell) → Fokus dort einsperren.
+  let outroPromptShowing = $derived(!!nextEpisode && (nextCountdown !== null || (outroPromptActive && !outroDismissed)));
   $effect(() => { if (playbackPrefs.autoPlayNext && nextEpisode && !playbackPrefs.autoSkipCredits
          && nearEnd && nextCountdown === null && !countdownDismissed) {
     startCountdown();
@@ -816,7 +858,7 @@
       || /^\(?\d+\)?[\s:.]*\d{1,2}[:.]\d{2}([:.]\d{2})?([:.]\d{1,3})?$/.test(raw)   // (01)00:00:00:000 u. ä.
       || /^(chapter|kapitel|chapitre|capitolo|cap[ií]tulo)\b/i.test(raw)
       || /^\d{1,3}$/.test(raw);
-    return junk ? `${$t.chapter} ${idx + 1}` : raw;
+    return junk ? `${i18n.t.chapter} ${idx + 1}` : raw;
   });
 
   // Auto-Skip (abhängig von Einstellung + installiertem Intro-Skipper-Plugin).
@@ -843,7 +885,7 @@
   let seasonTotal = $derived((item?.Type === 'Episode' && item.ParentIndexNumber != null)
                    ? seriesEpisodes.filter(e => e.ParentIndexNumber === item.ParentIndexNumber).length : 0);
   let episodePosition = $derived((item?.Type === 'Episode' && item.IndexNumber != null && seasonTotal > 0)
-                   ? `${$t.episode} ${item.IndexNumber} ${$t.of} ${seasonTotal}` : '');
+                   ? `${i18n.t.episode} ${item.IndexNumber} ${i18n.t.of} ${seasonTotal}` : '');
 
   // Infozeile zur nächsten Folge: "S2 · E1 · 52 Min · endet um 11:59"
   let nextEpisodeMeta = $derived.by(() => {
@@ -853,9 +895,9 @@
       parts.push(`S${nextEpisode.ParentIndexNumber} · E${nextEpisode.IndexNumber}`);
     const mins = nextEpisode.RunTimeTicks ? Math.round(nextEpisode.RunTimeTicks / 600000000) : 0;
     if (mins) {
-      parts.push(`${mins} ${$t.minShort}`);
+      parts.push(`${mins} ${i18n.t.minShort}`);
       const end = new Date(Date.now() + mins * 60000);
-      parts.push(`${$t.endsAt} ${end.toLocaleTimeString($currentLang === 'de' ? 'de-DE' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`);
+      parts.push(`${i18n.t.endsAt} ${end.toLocaleTimeString(i18n.lang === 'de' ? 'de-DE' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`);
     }
     return parts.join(' · ');
   });
@@ -1110,9 +1152,13 @@
   // ============================================================
 
   async function changeTrack(type, index) {
+    // Panel-Trap SOFORT lösen, bevor Zustand mutiert und der Fokus zurückkehrt. Sonst zieht onFocusIn der
+    // Spatial-Nav den Fokus zurück in das noch ausblendende Panel (transition:uiFade → erst nach dem Outro
+    // weg), das gleich darauf unmountet → Fokus landet im Nichts. Beim Schließen tritt das nicht auf, weil
+    // dort kein panel-interner Zustand mehr mutiert und dropTrapOnOutro den Trap rechtzeitig entfernt.
+    settingsPanel?.removeAttribute('data-focus-trap');
     showSettings = false;
     resetControlsTimeout();
-    if (playerContainer) playerContainer.focus();
 
     if (type === 'subtitle') {
       const oldStream = mediaStreams.find(s => s.Index === selectedSubtitleIndex && s.Type === 'Subtitle');
@@ -1139,6 +1185,12 @@
       // (Text, PGS-clientseitig oder "Aus"), tauschen wir nur das Overlay aus – ohne Neuladen.
       if (oldIsExternal && newIsExternal && currentMediaSource) {
         applySubtitleOverlay(index, currentMediaSource);
+        // Fokus ERST NACH allen reaktiven Änderungen (selectedSubtitleIndex, subtitleCues, Panel-Outro)
+        // zurückgeben — sonst wirft der nachgelagerte Re-Render ihn wieder weg. Exakt wie der Schließen-Pfad,
+        // der nach restoreControlFocus() nichts mehr mutiert. (ASS sichert den Fokus zusätzlich nach dem
+        // assjs-Einhängen in applyAssSubtitle erneut.)
+        await tick();
+        restoreControlFocus();
         return;
       }
     } else {
@@ -1151,6 +1203,8 @@
     startTicks    = Math.round(savedPosition * 10000000);
     resumeApplied = false;
     await setupPlayback(selectedAudioIndex, selectedSubtitleIndex);
+    await tick();
+    restoreControlFocus();   // auch nach Hard-Reload (Audiowechsel / gebrannter Untertitel) auf den Auslöser
   }
 
   // ============================================================
@@ -1160,7 +1214,9 @@
   function skipIntro() {
     if (!videoElement || !introData?.Introduction?.IntroEnd) return;
     videoElement.currentTime = introData.Introduction.IntroEnd;
-    resetControlsTimeout();
+    // Beim Überspringen NICHT die Steuerung einblenden — man will direkt weiterschauen. Fokus auf den
+    // Player legen, da der Skip-Button gleich verschwindet → Tastendrücke greifen weiterhin.
+    playerContainer?.focus();
   }
 
   // manual=true → vom Nutzer ausgelöst (Button/Prompt); manual=false → Auto-Play (Countdown/Ende/Credits).
@@ -1270,6 +1326,14 @@
     resetControlsTimeout();
   }
 
+  // Fokus nach Panel-Schließen/Spurwechsel zurück auf den auslösenden Button (Untertitel/Audio/Zahnrad),
+  // damit ein SICHTBARES Steuerelement fokussiert ist — nicht der unsichtbare Container. Fällt auf den
+  // Player-Container zurück, falls der Button nicht (mehr) existiert (Erststart, Hard-Reload).
+  function restoreControlFocus() {
+    if (controlOpener && document.contains(controlOpener)) controlOpener.focus();
+    else playerContainer?.focus();
+  }
+
   // FIX: Settings Panel auto-fokussieren für WebOS D-Pad
   async function toggleSettings() {
     if (!showSettings) {
@@ -1288,8 +1352,7 @@
       resetControlsTimeout();
       await tick();
       // Fokus zurück auf den auslösenden Button (Audio/Untertitel/Zahnrad), sonst auf den Player
-      if (controlOpener && document.contains(controlOpener)) controlOpener.focus();
-      else if (playerContainer) playerContainer.focus();
+      restoreControlFocus();
       controlOpener = null;
     }
   }
@@ -1343,6 +1406,12 @@
       e.preventDefault();
       e.stopPropagation();
       onExit?.();
+      return;
+    }
+    // Outro-Entscheidungsprompt offen: Pfeile bewegen NUR zwischen dessen Buttons (Spatial-Nav im
+    // data-focus-trap des Prompts) — nicht zur Wiedergabeleiste, und ohne das HUD einzublenden.
+    if (outroPromptShowing && (e.key === 'ArrowLeft' || e.key === 'ArrowRight'
+                            || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
       return;
     }
     // HUD verborgen (man schaut gerade) → OK pausiert/spielt direkt und fokussiert Play/Pause,
@@ -1422,7 +1491,7 @@
     <div class="absolute inset-0 flex items-center justify-center z-[30] pointer-events-none">
       <div class="flex flex-col items-center gap-5">
         <div class="w-20 h-20 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
-        <p class="text-white/50 text-lg font-medium tracking-wider">{$t.loading}</p>
+        <p class="text-white/50 text-lg font-medium tracking-wider">{i18n.t.loading}</p>
       </div>
     </div>
   {/if}
@@ -1434,16 +1503,16 @@
         <svg class="w-16 h-16 text-red-500" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m0 3.75h.008M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
         </svg>
-        <p class="text-white text-2xl font-bold">{$t.playbackError}</p>
-        <p class="text-gray-400">{$t.playbackErrorHint}</p>
+        <p class="text-white text-2xl font-bold">{i18n.t.playbackError}</p>
+        <p class="text-gray-400">{i18n.t.playbackErrorHint}</p>
         <div class="flex gap-4 mt-2">
           <button onclick={retryPlayback} {@attach focusOnMount()}
             class="bg-white text-black font-bold px-6 py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
-            {$t.retry}
+            {i18n.t.retry}
           </button>
           <button onclick={() => onExit?.()}
             class="bg-gray-700 text-white font-bold px-6 py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-600 transition-colors">
-            {$t.back}
+            {i18n.t.back}
           </button>
         </div>
       </div>
@@ -1453,15 +1522,15 @@
   <!-- WIEDERGABEINFO-OVERLAY (opt-in, vom Info-Button getoggelt) -->
   {#if showInfoOverlay}
     <div transition:uiFade class="absolute top-8 left-8 z-[55] bg-black/75 backdrop-blur-md border border-gray-700 rounded-xl px-6 py-5 text-lg shadow-2xl pointer-events-none max-w-md">
-      <div class="text-gray-400 uppercase tracking-wider text-sm font-bold mb-3">{$t.playbackInfo}</div>
+      <div class="text-gray-400 uppercase tracking-wider text-sm font-bold mb-3">{i18n.t.playbackInfo}</div>
       <div class="flex flex-col gap-2">
         <div class="flex justify-between gap-8">
-          <span class="text-gray-500">{$t.infoMethod}</span>
+          <span class="text-gray-500">{i18n.t.infoMethod}</span>
           <span class="font-bold {playMethodColor}">{playMethodLabel}</span>
         </div>
         {#if infoVideoStream}
           <div class="flex justify-between gap-8">
-            <span class="text-gray-500">{$t.infoVideo}</span>
+            <span class="text-gray-500">{i18n.t.infoVideo}</span>
             <span class="text-white font-mono text-right">{[
               infoVideoStream.Codec ? infoVideoStream.Codec.toUpperCase() : null,
               (liveStats.width && liveStats.height) ? `${liveStats.width}×${liveStats.height}` : (infoVideoStream.Width ? `${infoVideoStream.Width}×${infoVideoStream.Height}` : null),
@@ -1472,7 +1541,7 @@
         {/if}
         {#if infoAudioStream}
           <div class="flex justify-between gap-8">
-            <span class="text-gray-500">{$t.audio}</span>
+            <span class="text-gray-500">{i18n.t.audio}</span>
             <span class="text-white font-mono text-right">{[
               infoAudioStream.Codec ? infoAudioStream.Codec.toUpperCase() : null,
               infoAudioStream.ChannelLayout,
@@ -1481,12 +1550,12 @@
           </div>
         {/if}
         <div class="flex justify-between gap-8">
-          <span class="text-gray-500">{$t.infoBuffer}</span>
+          <span class="text-gray-500">{i18n.t.infoBuffer}</span>
           <span class="text-white font-mono">{liveStats.bufferAhead}s</span>
         </div>
         {#if liveStats.total > 0}
           <div class="flex justify-between gap-8">
-            <span class="text-gray-500">{$t.infoDropped}</span>
+            <span class="text-gray-500">{i18n.t.infoDropped}</span>
             <span class="text-white font-mono">{liveStats.dropped} / {liveStats.total}</span>
           </div>
         {/if}
@@ -1512,7 +1581,7 @@
       </div>
       <div class="flex items-center gap-4 shrink-0">
         <button onclick={(e) => { e.stopPropagation(); onSyncplay?.(); }}
-          aria-label={$t.syncPlay} title={$t.syncPlay}
+          aria-label={i18n.t.syncPlay} title={i18n.t.syncPlay}
           class="text-white/90 hover:text-blue-300 focus:text-white focus:bg-blue-600 rounded-lg p-2
                  focus:outline-none focus:ring-2 focus:ring-white transition-colors">
           <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1572,7 +1641,7 @@
         </div>
         <div class="relative shrink-0">
           {#if timeMode === 'end'}
-            <span class="absolute bottom-full right-2 mb-1 text-sm font-medium text-gray-400 whitespace-nowrap pointer-events-none">{$t.endsAt}</span>
+            <span class="absolute bottom-full right-2 mb-1 text-sm font-medium text-gray-400 whitespace-nowrap pointer-events-none">{i18n.t.endsAt}</span>
           {/if}
           <button onclick={(e) => { e.stopPropagation(); cycleTimeMode(); }}
             class="text-xl font-mono text-right tabular-nums cursor-pointer rounded-md px-2 py-1
@@ -1591,7 +1660,7 @@
           <button onclick={() => prevEpisode && onPrev?.(prevEpisode)}
             disabled={!prevEpisode}
             class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none disabled:opacity-30"
-            title={$t.prevEpisode}>
+            title={i18n.t.prevEpisode}>
             <!-- |◄ : bar links + Dreieck zeigt LINKS -->
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/>
@@ -1601,7 +1670,7 @@
           <!-- Kapitel zurück — nur wenn aktiviert UND Kapitelmarken vorhanden.
                Icon bewusst ANDERS als Folgen-Skip: Chevron auf einen Punkt (= Kapitelmarke). -->
           {#if hasChapterNav}
-            <button onclick={chapterPrev} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={$t.chapterPrev}>
+            <button onclick={chapterPrev} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={i18n.t.chapterPrev}>
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 7l-5 5 5 5"/>
                 <circle cx="8" cy="12" r="1.6" fill="currentColor" stroke="none"/>
@@ -1633,7 +1702,7 @@
           <!-- Kapitel vor — nur wenn aktiviert UND Kapitelmarken vorhanden.
                Icon bewusst ANDERS als Folgen-Skip: Chevron auf einen Punkt (= Kapitelmarke). -->
           {#if hasChapterNav}
-            <button onclick={chapterNext} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={$t.chapterNext}>
+            <button onclick={chapterNext} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={i18n.t.chapterNext}>
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 7l5 5-5 5"/>
                 <circle cx="16" cy="12" r="1.6" fill="currentColor" stroke="none"/>
@@ -1645,7 +1714,7 @@
           <button onclick={() => goToNextEpisode(true)}
             disabled={!nextByIndex}
             class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none disabled:opacity-30"
-            title={$t.nextEpisode}>
+            title={i18n.t.nextEpisode}>
             <!-- ►| : Dreieck zeigt RECHTS + bar rechts -->
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M16 6h2v12h-2zm-10 0l9 6-9 6V6z"/>
@@ -1664,19 +1733,19 @@
           </button>
 
           <!-- Zur Wiedergabeliste hinzufügen -->
-          <button onclick={(e) => { e.stopPropagation(); openPicker('playlist'); }} title={$t.addToPlaylist} aria-label={$t.addToPlaylist}
+          <button onclick={(e) => { e.stopPropagation(); openPicker('playlist'); }} title={i18n.t.addToPlaylist} aria-label={i18n.t.addToPlaylist}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors text-gray-400 hover:text-white focus:text-white">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h13M3 12h9m-9 6h9m4-3v6m3-3h-6"/></svg>
           </button>
 
           <!-- Zur Sammlung hinzufügen -->
-          <button onclick={(e) => { e.stopPropagation(); openPicker('collection'); }} title={$t.addToCollection} aria-label={$t.addToCollection}
+          <button onclick={(e) => { e.stopPropagation(); openPicker('collection'); }} title={i18n.t.addToCollection} aria-label={i18n.t.addToCollection}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors text-gray-400 hover:text-white focus:text-white">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
           </button>
 
           <!-- AUDIO — nur Icon (ersetzt das Zahnrad) -->
-          <button onclick={(e) => { e.stopPropagation(); openSettings('audio'); }} title={$t.audio} aria-label={$t.audio}
+          <button onclick={(e) => { e.stopPropagation(); openSettings('audio'); }} title={i18n.t.audio} aria-label={i18n.t.audio}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                    {showSettings && settingsTab === 'audio' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1685,7 +1754,7 @@
           </button>
 
           <!-- UNTERTITEL — nur Icon -->
-          <button onclick={(e) => { e.stopPropagation(); openSettings('subtitle'); }} title={$t.subtitles} aria-label={$t.subtitles}
+          <button onclick={(e) => { e.stopPropagation(); openSettings('subtitle'); }} title={i18n.t.subtitles} aria-label={i18n.t.subtitles}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                    {showSettings && settingsTab === 'subtitle' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1696,7 +1765,7 @@
 
           <!-- WIEDERGABEINFOS — nur wenn in den Einstellungen freigeschaltet -->
           {#if playbackPrefs.showPlaybackInfo}
-            <button onclick={(e) => { e.stopPropagation(); toggleInfoOverlay(); }} title={$t.playbackInfo} aria-label={$t.playbackInfo}
+            <button onclick={(e) => { e.stopPropagation(); toggleInfoOverlay(); }} title={i18n.t.playbackInfo} aria-label={i18n.t.playbackInfo}
               class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                      {showInfoOverlay ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1716,7 +1785,7 @@
         class="absolute bottom-32 right-12 bg-gray-900/95 backdrop-blur-md border border-gray-700 rounded-2xl shadow-2xl z-[60] p-6 flex flex-col gap-6 w-96 max-h-[60vh]">
 
         <div class="flex justify-between items-center">
-          <h2 class="text-2xl font-bold text-white">{settingsTab === 'audio' ? $t.audio : $t.subtitles}</h2>
+          <h2 class="text-2xl font-bold text-white">{settingsTab === 'audio' ? i18n.t.audio : i18n.t.subtitles}</h2>
           <button onclick={toggleSettings} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -1740,7 +1809,7 @@
             <button onclick={() => changeTrack('subtitle', -1)}
               class="text-left p-3 rounded-lg font-medium text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors
                      {selectedSubtitleIndex === -1 ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
-              {$t.subtitleOff}
+              {i18n.t.subtitleOff}
             </button>
             {#each subtitleStreams as stream}
               <button onclick={() => changeTrack('subtitle', stream.Index)}
@@ -1753,7 +1822,7 @@
 
           {#if subtitleCues.length > 0}
             <div class="mt-3 pt-3 border-t border-gray-700/60 flex items-center justify-between gap-3 px-1">
-              <span class="text-sm text-gray-300 font-medium">{$t.subtitleOffset}</span>
+              <span class="text-sm text-gray-300 font-medium">{i18n.t.subtitleOffset}</span>
               <div class="flex items-center gap-2">
                 <button onclick={() => adjustSubtitleOffset(-0.5)} aria-label="-0,5 s"
                   class="w-9 h-9 rounded-lg bg-gray-800 text-white text-xl font-bold leading-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white hover:bg-gray-700 focus:bg-gray-700 transition-colors">−</button>
@@ -1794,7 +1863,7 @@
         <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
           <path d="M5.59 7.41L10.18 12l-4.59 4.59L7 18l6-6-6-6zM16 6h2v12h-2z"/>
         </svg>
-        {$t.skipIntro}
+        {i18n.t.skipIntro}
       </button>
     </div>
   {/if}
@@ -1803,9 +1872,9 @@
   <!-- NÄCHSTE FOLGE — unten rechts -->
   <!-- AUTO-PLAY COUNTDOWN — Netflix-Stil, mit "Jetzt abspielen" / "Abbrechen" -->
   {#if nextCountdown !== null && nextEpisode}
-    <div transition:uiFade class="absolute bottom-36 right-12 z-[70]">
+    <div transition:uiFade data-focus-trap class="absolute bottom-36 right-12 z-[70]">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-5 w-80 flex flex-col gap-3">
-        <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{$t.nextEpisodeIn} {nextCountdown} {nextCountdown === 1 ? $t.secondOne : $t.secondsMany}</span>
+        <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{i18n.t.nextEpisodeIn} {nextCountdown} {nextCountdown === 1 ? i18n.t.secondOne : i18n.t.secondsMany}</span>
         <span class="text-lg font-bold text-white truncate">{nextEpisode.Name}</span>
         {#if nextEpisodeMeta}<span class="text-sm text-gray-400 truncate">{nextEpisodeMeta}</span>{/if}
         <div class="h-1 bg-gray-700 rounded-full overflow-hidden">
@@ -1816,31 +1885,39 @@
             class="flex-1 bg-white text-black font-bold py-2.5 rounded-lg flex items-center justify-center gap-2
                    focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-            {$t.playNow}
+            {i18n.t.playNow}
           </button>
           <button onclick={cancelCountdown}
             class="px-4 bg-gray-700 text-white font-bold py-2.5 rounded-lg
                    focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-600 transition-colors">
-            {$t.cancel}
+            {i18n.t.cancel}
           </button>
         </div>
       </div>
     </div>
   {/if}
 
-  <!-- Manueller "Nächste Folge"-Hinweis (kein Countdown; auch Fallback ohne Kapitel via OUTRO_FALLBACK) -->
-  {#if outroPromptActive && nextEpisode && nextCountdown === null}
-    <div transition:uiFade class="absolute bottom-36 right-12 z-[70]">
+  <!-- Manueller "Nächste Folge"-Prompt (kein Countdown): erscheint bei deaktiviertem Auto-Play ODER nach
+       Abbruch des Timers. Der Nutzer entscheidet selbst — "Abbrechen" bleibt bei der aktuellen Folge (Outro). -->
+  {#if outroPromptActive && nextEpisode && nextCountdown === null && !outroDismissed}
+    <div transition:uiFade data-focus-trap class="absolute bottom-36 right-12 z-[70]">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-5 w-80 flex flex-col gap-3">
-        <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{$t.nextEpisode}</span>
+        <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{i18n.t.nextEpisode}</span>
         <span class="text-lg font-bold text-white truncate">{nextEpisode.Name}</span>
         {#if nextEpisodeMeta}<span class="text-sm text-gray-400 truncate">{nextEpisodeMeta}</span>{/if}
-        <button onclick={() => goToNextEpisode(true)} {@attach focusOnMount()}
-          class="bg-white text-black font-bold py-2.5 rounded-lg flex items-center justify-center gap-2
-                 focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
-          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-          {$t.playNow}
-        </button>
+        <div class="flex gap-3">
+          <button onclick={() => goToNextEpisode(true)} {@attach focusOnMount()}
+            class="flex-1 bg-white text-black font-bold py-2.5 rounded-lg flex items-center justify-center gap-2
+                   focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            {i18n.t.playNow}
+          </button>
+          <button onclick={() => outroDismissed = true}
+            class="px-4 bg-gray-700 text-white font-bold py-2.5 rounded-lg
+                   focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-600 transition-colors">
+            {i18n.t.cancel}
+          </button>
+        </div>
       </div>
     </div>
   {/if}
@@ -1853,12 +1930,12 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1 1 0 010-.644C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178a1 1 0 010 .644C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178z"/>
           <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
         </svg>
-        <h2 class="text-3xl font-bold text-white">{$t.stillWatching}</h2>
+        <h2 class="text-3xl font-bold text-white">{i18n.t.stillWatching}</h2>
         <button onclick={resumeFromStillWatching} {@attach focusOnMount()}
           class="bg-white text-black font-bold text-xl px-10 py-4 rounded-xl flex items-center gap-3
                  focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
           <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-          {$t.continueWatching}
+          {i18n.t.continueWatching}
         </button>
       </div>
     </div>

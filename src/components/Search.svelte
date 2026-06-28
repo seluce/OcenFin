@@ -1,5 +1,5 @@
 <script>
-  import { t } from '../i18n.js';
+  import { i18n } from '../i18n.svelte.js';
   import { personImageUrl, authHeaders, blurUp, itemBlurHash } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy } from 'svelte';
@@ -122,7 +122,7 @@
       bind:value={query}
       oninput={onSearchInput}
       type="text"
-      placeholder={$t.searchPlaceholder}
+      placeholder={i18n.t.searchPlaceholder}
       class="w-full bg-gray-800 text-white text-3xl pl-20 pr-6 py-6 rounded-2xl border-2 border-transparent
              focus:outline-none focus:border-white shadow-xl placeholder-gray-500 transition-colors"
     />
@@ -132,14 +132,14 @@
   {#if query.trim().length < 2 && searchHistory.length > 0}
     <div class="mb-8 flex flex-col gap-4">
       <div class="flex justify-between items-center px-2">
-        <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider">{$t.searchHistory}</h2>
+        <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider">{i18n.t.searchHistory}</h2>
         <button onclick={clearHistory}
           class="flex items-center gap-2 bg-gray-800 hover:bg-red-900/80 focus:bg-red-900/80 text-gray-400 hover:text-red-200 focus:text-red-200
                  px-4 py-2 rounded-lg text-sm font-bold transition-all focus:outline-none focus:ring-2 focus:ring-red-500">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
           </svg>
-          {$t.clearHistory}
+          {i18n.t.clearHistory}
         </button>
       </div>
       <div class="flex flex-wrap gap-4 px-2">
@@ -165,7 +165,7 @@
 
       {#if series.length > 0}
         <div>
-          <h2 class="text-3xl font-bold text-white mb-6 px-2">{$t.series}</h2>
+          <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.series}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-4 px-2">
             {#each series as s}
               <button onclick={() => onOpenDetails?.(s)} class="shrink-0 w-48 group focus:outline-none text-left">
@@ -184,7 +184,7 @@
 
       {#if movies.length > 0}
         <div>
-          <h2 class="text-3xl font-bold text-white mb-6 px-2">{$t.movies}</h2>
+          <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.movies}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-4 px-2">
             {#each movies as m}
               <button onclick={() => onOpenDetails?.(m)} class="shrink-0 w-48 group focus:outline-none text-left">
@@ -203,7 +203,7 @@
 
       {#if episodes.length > 0}
         <div>
-          <h2 class="text-3xl font-bold text-white mb-6 px-2">{$t.episodes}</h2>
+          <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.episodes}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-4 px-2">
             {#each episodes as ep}
               <button onclick={() => onOpenDetails?.(ep)} class="shrink-0 w-80 group focus:outline-none text-left">
@@ -225,7 +225,7 @@
       <!-- PERSONEN (ganz unten) -->
       {#if people.length > 0}
         <div>
-          <h2 class="text-3xl font-bold text-white mb-6 px-2">{$t.people}</h2>
+          <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.people}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-4 px-2">
             {#each people as p}
               <button onclick={() => onOpenPerson?.(p)} class="shrink-0 w-40 group focus:outline-none text-center">
@@ -249,7 +249,7 @@
 
   {:else if query.trim().length >= 2}
     <div class="flex-1 flex items-center justify-center">
-      <p class="text-3xl text-gray-500 font-bold">{$t.noResults}</p>
+      <p class="text-3xl text-gray-500 font-bold">{i18n.t.noResults}</p>
     </div>
   {/if}
 

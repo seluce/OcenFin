@@ -1,6 +1,6 @@
 <script>
-  import { t } from '../i18n.js';
-  import { itemProgress, itemBlurHash, blurUp, longPress, authHeaders, focusOnMount } from '../utils.js';
+  import { i18n } from '../i18n.svelte.js';
+  import { itemProgress, itemBlurHash, blurUp, longPress, authHeaders, focusOnMount, getItemImageUrl } from '../utils.js';
   import { session } from '../session.svelte.js';
 
   let {
@@ -21,20 +21,6 @@
   let renameError          = $state(false);
 
   const getAuthHeaders = () => authHeaders(session.token);
-
-  // Eigener Bild-Helfer (Apps Variante): Portrait 2:3.
-  function getItemImageUrl(item, format = 'portrait') {
-    if (format === 'landscape') {
-      if (item.ImageTags?.Primary)
-        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
-      if (item.SeriesId && item.SeriesThumbImageTag)
-        return `${session.serverUrl}/Items/${item.SeriesId}/Images/Thumb?tag=${item.SeriesThumbImageTag}&maxWidth=600&quality=80&format=webp`;
-      return null;
-    }
-    if (item.ImageTags?.Primary)
-      return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
-    return null;
-  }
 
   // Beschriftung für eine Folge: "S1 · E5 · Titel"
   function episodeLabel(item) {
@@ -141,13 +127,13 @@
   <div class="flex items-center gap-6 mb-8">
     <button onclick={onBack} {@attach focusOnMount()}
       class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
-      {$t.back}
+      {i18n.t.back}
     </button>
     {#if collection?.Type === 'Playlist'}
       <button onclick={() => { playlistEditMode = !playlistEditMode; confirmDeletePlaylist = false; renamingPlaylist = false; }}
         class="ml-auto px-6 py-2 rounded-lg font-bold focus:outline-none focus:ring-4 focus:ring-white transition-colors
                {playlistEditMode ? 'bg-blue-600 text-white' : 'bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white'}">
-        {playlistEditMode ? $t.done : $t.edit}
+        {playlistEditMode ? i18n.t.done : i18n.t.edit}
       </button>
     {/if}
   </div>
@@ -179,22 +165,22 @@
                 {#if item.ProductionYear}<div class="text-sm text-gray-400">{item.ProductionYear}</div>{/if}
               {/if}
             </div>
-            <button onclick={() => movePlaylistItem(i, i - 1)} disabled={i === 0} title={$t.moveUp} aria-label={$t.moveUp}
+            <button onclick={() => movePlaylistItem(i, i - 1)} disabled={i === 0} title={i18n.t.moveUp} aria-label={i18n.t.moveUp}
               class="p-3 rounded-lg text-gray-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white disabled:opacity-30 disabled:cursor-not-allowed">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
             </button>
-            <button onclick={() => movePlaylistItem(i, i + 1)} disabled={i === items.length - 1} title={$t.moveDown} aria-label={$t.moveDown}
+            <button onclick={() => movePlaylistItem(i, i + 1)} disabled={i === items.length - 1} title={i18n.t.moveDown} aria-label={i18n.t.moveDown}
               class="p-3 rounded-lg text-gray-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white disabled:opacity-30 disabled:cursor-not-allowed">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
             </button>
-            <button onclick={() => removePlaylistItem(item)} title={$t.remove} aria-label={$t.remove}
+            <button onclick={() => removePlaylistItem(item)} title={i18n.t.remove} aria-label={i18n.t.remove}
               class="p-3 rounded-lg text-red-400 hover:bg-red-900/40 focus:bg-red-900/40 focus:outline-none focus:ring-2 focus:ring-red-500">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-7 0v12a1 1 0 001 1h6a1 1 0 001-1V7"/></svg>
             </button>
           </div>
         {/each}
       {:else}
-        <p class="text-gray-500 font-bold py-6 text-center">{$t.noItems}</p>
+        <p class="text-gray-500 font-bold py-6 text-center">{i18n.t.noItems}</p>
       {/if}
 
       <!-- Playlist verwalten: Umbenennen / Löschen (auch bei leerer Liste erreichbar) -->
@@ -213,27 +199,27 @@
               />
               <button onclick={savePlaylistName}
                 class="px-6 py-3 rounded-lg font-bold bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-                {$t.save}
+                {i18n.t.save}
               </button>
               <button onclick={() => renamingPlaylist = false}
                 class="px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-                {$t.cancel}
+                {i18n.t.cancel}
               </button>
             </div>
             {#if renameError}
-              <p class="text-red-400 text-sm font-semibold">{$t.actionFailed}</p>
+              <p class="text-red-400 text-sm font-semibold">{i18n.t.actionFailed}</p>
             {/if}
           </div>
         {:else if confirmDeletePlaylist}
           <div class="flex items-center gap-4 flex-wrap">
-            <span class="text-gray-200 font-semibold">{$t.deletePlaylistConfirm}</span>
+            <span class="text-gray-200 font-semibold">{i18n.t.deletePlaylistConfirm}</span>
             <button onclick={deletePlaylist}
               class="px-6 py-3 rounded-lg font-bold bg-red-600 hover:bg-red-500 focus:bg-red-500 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-              {$t.deletePlaylist}
+              {i18n.t.deletePlaylist}
             </button>
             <button onclick={() => confirmDeletePlaylist = false} {@attach focusOnMount()}
               class="px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-              {$t.cancel}
+              {i18n.t.cancel}
             </button>
           </div>
         {:else}
@@ -241,12 +227,12 @@
             <button onclick={startRename}
               class="flex items-center gap-3 px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-              {$t.renamePlaylist}
+              {i18n.t.renamePlaylist}
             </button>
             <button onclick={() => confirmDeletePlaylist = true}
               class="flex items-center gap-3 px-6 py-3 rounded-lg font-bold bg-red-900/40 hover:bg-red-900/60 focus:bg-red-900/60 text-red-300 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-red-500 transition-colors">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-7 0v12a1 1 0 001 1h6a1 1 0 001-1V7"/></svg>
-              {$t.deletePlaylist}
+              {i18n.t.deletePlaylist}
             </button>
           </div>
         {/if}
@@ -254,9 +240,9 @@
     </div>
   {:else if items.length > 0}
     {@const groups = [
-      { label: $t.movies,   items: items.filter(i => i.Type === 'Movie') },
-      { label: $t.series,   items: items.filter(i => i.Type === 'Series') },
-      { label: $t.episodes, items: items.filter(i => i.Type === 'Episode') },
+      { label: i18n.t.movies,   items: items.filter(i => i.Type === 'Movie') },
+      { label: i18n.t.series,   items: items.filter(i => i.Type === 'Series') },
+      { label: i18n.t.episodes, items: items.filter(i => i.Type === 'Episode') },
       { label: '',          items: items.filter(i => !['Movie', 'Series', 'Episode'].includes(i.Type)) }
     ].filter(g => g.items.length)}
     <div class="flex flex-col gap-10 pr-4">
@@ -295,7 +281,7 @@
     </div>
   {:else}
     <div class="flex items-center justify-center h-64">
-      <p class="text-2xl text-gray-500 font-bold">{$t.noItems}</p>
+      <p class="text-2xl text-gray-500 font-bold">{i18n.t.noItems}</p>
     </div>
   {/if}
 </div>

@@ -1,7 +1,7 @@
 {
   "name": "OcenFin",
   "private": true,
-  "version": "2026.6.23",
+  "version": "2026.6.28",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,15 +10,15 @@
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
-    "@tailwindcss/vite": "^4.3.0",
-    "svelte": "^5.56.3",
+    "@tailwindcss/vite": "^4.3.1",
+    "svelte": "^5.56.4",
     "tailwindcss": "^4.3.1",
-    "vite": "^8.0.16"
+    "vite": "^8.1.0"
   },
   "dependencies": {
     "assjs": "^0.1.8",
     "hls.js": "^1.6.16",
     "libbitsub": "^1.10.1",
-    "qrcode": "^1.5.4"
+    "uqr": "^0.1.3"
   }
 }
