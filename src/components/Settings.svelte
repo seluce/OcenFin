@@ -3,6 +3,7 @@
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
            AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn, uiFade, dropTrapOnOutro } from '../utils.js';
   import { session } from '../session.svelte.js';
+  import { APP_VERSION } from '../version.js';
   import { tick, onDestroy, onMount } from 'svelte';
 
   let {
@@ -68,7 +69,7 @@
   }
 
   // Version: YYYYMMDD — bei Updates hier anpassen
-  const APP_VERSION = '20260623';
+  // APP_VERSION kommt jetzt zentral aus version.js (Quelle: appinfo.json)
 
   let isCurrentUserSaved = $derived(!!(
     selectedUser && selectedServer &&

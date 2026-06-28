@@ -3,6 +3,7 @@
   import { fade } from 'svelte/transition';
   import { isBackKey, focusOnMount, itemProgress, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, uiFade, dropTrapOnOutro, getItemSubtitle, getItemImageUrl } from './utils.js';
   import { session } from './session.svelte.js';
+  import { APP_VERSION } from './version.js';
   import { createFocusManager } from './spatialnav.js';
   import { i18n, setLang, detectUiLang } from './i18n.svelte.js';
   import Clock       from './components/Clock.svelte';
@@ -125,11 +126,11 @@
   }
   function deviceIdFor(name) { return `${BASE_DEVICE_ID}-${deviceIdHash(name)}`; }
   function authHeaderFor(name) {
-    return `MediaBrowser Client="OcenFin-TV", Device="LG Smart TV", DeviceId="${deviceIdFor(name)}", Version="1.0.0"`;
+    return `MediaBrowser Client="OcenFin-TV", Device="LG Smart TV", DeviceId="${deviceIdFor(name)}", Version="${APP_VERSION}"`;
   }
   // Basis-Header ohne Nutzerbezug — nur für Quick Connect, weil der Nutzer beim Initiate noch unbekannt ist.
   const CLIENT_AUTH_HEADER =
-    `MediaBrowser Client="OcenFin-TV", Device="LG Smart TV", DeviceId="${BASE_DEVICE_ID}", Version="1.0.0"`;
+    `MediaBrowser Client="OcenFin-TV", Device="LG Smart TV", DeviceId="${BASE_DEVICE_ID}", Version="${APP_VERSION}"`;
 
   // Hilfreich: auf welchen User der aktuelle Server-Token zeigt
   // App-weite Stores speisen (parallel zu den bestehenden Props; Komponenten werden schrittweise umgestellt).
