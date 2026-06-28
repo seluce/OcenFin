@@ -1505,6 +1505,29 @@
 />
 
 <style>
+  /* ── ASS-Untertitel-Schriften ────────────────────────────────────────────────
+     assjs nutzt die Browser-Schriften. ASS-Skripte geben fast immer die Windows-Namen
+     an (Arial / Times New Roman / Courier New), die auf dem TV nicht installiert sind →
+     System-Fallback. Wir hinterlegen metrisch kompatible offene Ersatzschriften UNTER
+     genau diesen Namen: Arimo→Arial, Tinos→Times New Roman, Cousine→Courier New. Damit
+     greift assjs sie automatisch, ohne dass am ASS-Skript etwas geändert werden muss.
+     Die Dateien (Latin-woff2, je 4 Schnitte) liegen in src/fonts/ und werden von Vite
+     gebündelt (basis-/pfadkorrekt, gehasht). Die UI selbst nutzt keinen dieser Namen,
+     also keine Nebenwirkung. font-display: swap → erste Zeile evtl. kurz im Fallback,
+     danach gecacht. @font-face wird von Svelte ohnehin global ausgegeben (nicht gescoped). */
+  @font-face { font-family: 'Arial'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/arimo-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Arial'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/arimo-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Arial'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/arimo-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Arial'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/arimo-bolditalic.woff2') format('woff2'); }
+  @font-face { font-family: 'Times New Roman'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/tinos-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Times New Roman'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/tinos-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Times New Roman'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/tinos-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Times New Roman'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/tinos-bolditalic.woff2') format('woff2'); }
+  @font-face { font-family: 'Courier New'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/cousine-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Courier New'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/cousine-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Courier New'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/cousine-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Courier New'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/cousine-bolditalic.woff2') format('woff2'); }
+
   /* TV-Skalierung (10-Fuß-UI): hebt die rem-basierte Basisgröße an, damit Texte und
      Abstände aus Sofa-Entfernung größer wirken. Standard-Browser sind 16px; 20px = +25%.
      Bei Bedarf weiter anpassen, falls auf dem TV noch zu klein/zu groß. */
