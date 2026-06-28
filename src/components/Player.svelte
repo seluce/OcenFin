@@ -630,10 +630,10 @@
       // stehen. Darum einmalig anstoßen, wenn bereits abgespielt wird. ('playing' statt 'play': onplaying ist
       // nebenwirkungsfrei, onplay würde an SyncPlay melden.)
       if (!videoElement.paused) videoElement.dispatchEvent(new Event('playing'));
-      // Das Overlay wird ASYNCHRON aufgebaut — also NACH changeTrack, das den Player-Container schon
-      // fokussiert hatte. Das Einhängen des assjs-DOM kann den Fokus verlieren, sodass die Steuerung nach
-      // dem Ausblenden nicht mehr auf Tasten reagiert. Fokus daher hier erneut auf den Container sichern.
-      if (!showSettings) playerContainer?.focus();
+      // Das Overlay wird ASYNCHRON aufgebaut — also NACH changeTrack, das den Fokus schon gesetzt hatte.
+      // Das Einhängen des assjs-DOM kann den Fokus verlieren; daher hier erneut sichern. Auf denselben
+      // Auslöser-Button wie changeTrack (sichtbar + konsistent), nicht auf den unsichtbaren Container.
+      if (!showSettings) restoreControlFocus();
       dlog('[OcenFin] ASS subtitle via assjs:', stream.Index, stream.Codec);
     } catch (e) { console.warn('[OcenFin] assjs error:', e?.message); }
   }
@@ -1152,9 +1152,13 @@
   // ============================================================
 
   async function changeTrack(type, index) {
+    // Panel-Trap SOFORT lösen, bevor Zustand mutiert und der Fokus zurückkehrt. Sonst zieht onFocusIn der
+    // Spatial-Nav den Fokus zurück in das noch ausblendende Panel (transition:uiFade → erst nach dem Outro
+    // weg), das gleich darauf unmountet → Fokus landet im Nichts. Beim Schließen tritt das nicht auf, weil
+    // dort kein panel-interner Zustand mehr mutiert und dropTrapOnOutro den Trap rechtzeitig entfernt.
+    settingsPanel?.removeAttribute('data-focus-trap');
     showSettings = false;
     resetControlsTimeout();
-    if (playerContainer) playerContainer.focus();
 
     if (type === 'subtitle') {
       const oldStream = mediaStreams.find(s => s.Index === selectedSubtitleIndex && s.Type === 'Subtitle');
@@ -1181,6 +1185,12 @@
       // (Text, PGS-clientseitig oder "Aus"), tauschen wir nur das Overlay aus – ohne Neuladen.
       if (oldIsExternal && newIsExternal && currentMediaSource) {
         applySubtitleOverlay(index, currentMediaSource);
+        // Fokus ERST NACH allen reaktiven Änderungen (selectedSubtitleIndex, subtitleCues, Panel-Outro)
+        // zurückgeben — sonst wirft der nachgelagerte Re-Render ihn wieder weg. Exakt wie der Schließen-Pfad,
+        // der nach restoreControlFocus() nichts mehr mutiert. (ASS sichert den Fokus zusätzlich nach dem
+        // assjs-Einhängen in applyAssSubtitle erneut.)
+        await tick();
+        restoreControlFocus();
         return;
       }
     } else {
@@ -1193,6 +1203,8 @@
     startTicks    = Math.round(savedPosition * 10000000);
     resumeApplied = false;
     await setupPlayback(selectedAudioIndex, selectedSubtitleIndex);
+    await tick();
+    restoreControlFocus();   // auch nach Hard-Reload (Audiowechsel / gebrannter Untertitel) auf den Auslöser
   }
 
   // ============================================================
@@ -1314,6 +1326,14 @@
     resetControlsTimeout();
   }
 
+  // Fokus nach Panel-Schließen/Spurwechsel zurück auf den auslösenden Button (Untertitel/Audio/Zahnrad),
+  // damit ein SICHTBARES Steuerelement fokussiert ist — nicht der unsichtbare Container. Fällt auf den
+  // Player-Container zurück, falls der Button nicht (mehr) existiert (Erststart, Hard-Reload).
+  function restoreControlFocus() {
+    if (controlOpener && document.contains(controlOpener)) controlOpener.focus();
+    else playerContainer?.focus();
+  }
+
   // FIX: Settings Panel auto-fokussieren für WebOS D-Pad
   async function toggleSettings() {
     if (!showSettings) {
@@ -1332,8 +1352,7 @@
       resetControlsTimeout();
       await tick();
       // Fokus zurück auf den auslösenden Button (Audio/Untertitel/Zahnrad), sonst auf den Player
-      if (controlOpener && document.contains(controlOpener)) controlOpener.focus();
-      else if (playerContainer) playerContainer.focus();
+      restoreControlFocus();
       controlOpener = null;
     }
   }
