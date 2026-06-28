@@ -645,11 +645,12 @@
       assRenderer = null;
     }
   }
-  // webOS 24 meldet requestVideoFrameCallback als vorhanden (Feature-Detection wahr), ruft den Callback
-  // aber NIE auf (bestätigter Plattform-Bug, LG-Entwicklerforum). assjs treibt damit seine Render-Schleife →
-  // ASS-Untertitel aktualisieren am Desktop, frieren auf dem TV aber auf dem Bild beim Aufbau ein. Darum auf
-  // webOS rVFC am <video> durch ein rAF-Polyfill ersetzen, das wirklich zurückruft (60 fps reichen für
-  // Untertitel-Timing locker). Nur webOS — Desktop behält seine native, bildgenaue rVFC. Idempotent.
+  // webOS meldet requestVideoFrameCallback als vorhanden (Feature-Detection wahr), ruft den Callback aber
+  // NIE auf. Der Bug sitzt in LGs Media-Anbindung, nicht im Chromium → versionsunabhängig (am Desktop tritt
+  // er nicht auf). assjs treibt damit seine Render-Schleife → ASS-Untertitel laufen am Desktop, frieren auf
+  // dem TV aber auf dem Bild beim Aufbau ein. Darum auf webOS rVFC am <video> durch ein rAF-Polyfill
+  // ersetzen, das wirklich zurückruft (60 fps reichen fürs Untertitel-Timing locker). Nur webOS — Desktop
+  // behält seine native, bildgenaue rVFC. Idempotent.
   let rvfcPatched = false;
   function ensureVideoFrameCallback() {
     if (rvfcPatched || !videoElement) return;
