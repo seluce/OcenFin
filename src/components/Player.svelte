@@ -621,8 +621,19 @@
       const res = await fetch(url);            // ApiKey steckt in der URL → einfacher GET, kein Preflight
       if (!res.ok) { console.warn('[OcenFin] ASS fetch failed:', res.status); return; }
       const content = await res.text();
+      ensureVideoFrameCallback();               // webOS: rVFC-Polyfill aktiv, BEVOR assjs sie liest
       disposeAss();                            // kein setTrack → altes Overlay entfernen, frisch aufbauen
       assRenderer = new ASS(content, videoElement, { container: assContainer });
+      // assjs treibt seine Render-Schleife per requestAnimationFrame, gestartet übers 'play'/'playing'-
+      // Event des Videos. Bei einem Spurwechsel MITTEN in der Wiedergabe läuft das Video schon → es feuert
+      // kein erneutes Event → die Schleife liefe nie an und der Untertitel bliebe auf dem Stand vom Umschalten
+      // stehen. Darum einmalig anstoßen, wenn bereits abgespielt wird. ('playing' statt 'play': onplaying ist
+      // nebenwirkungsfrei, onplay würde an SyncPlay melden.)
+      if (!videoElement.paused) videoElement.dispatchEvent(new Event('playing'));
+      // Das Overlay wird ASYNCHRON aufgebaut — also NACH changeTrack, das den Player-Container schon
+      // fokussiert hatte. Das Einhängen des assjs-DOM kann den Fokus verlieren, sodass die Steuerung nach
+      // dem Ausblenden nicht mehr auf Tasten reagiert. Fokus daher hier erneut auf den Container sichern.
+      if (!showSettings) playerContainer?.focus();
       dlog('[OcenFin] ASS subtitle via assjs:', stream.Index, stream.Codec);
     } catch (e) { console.warn('[OcenFin] assjs error:', e?.message); }
   }
@@ -633,6 +644,26 @@
       try { assRenderer.destroy(); } catch {}
       assRenderer = null;
     }
+  }
+  // webOS 24 meldet requestVideoFrameCallback als vorhanden (Feature-Detection wahr), ruft den Callback
+  // aber NIE auf (bestätigter Plattform-Bug, LG-Entwicklerforum). assjs treibt damit seine Render-Schleife →
+  // ASS-Untertitel aktualisieren am Desktop, frieren auf dem TV aber auf dem Bild beim Aufbau ein. Darum auf
+  // webOS rVFC am <video> durch ein rAF-Polyfill ersetzen, das wirklich zurückruft (60 fps reichen für
+  // Untertitel-Timing locker). Nur webOS — Desktop behält seine native, bildgenaue rVFC. Idempotent.
+  let rvfcPatched = false;
+  function ensureVideoFrameCallback() {
+    if (rvfcPatched || !videoElement) return;
+    if (!window.webOSSystem && !window.webOS) { rvfcPatched = true; return; }  // kein webOS → native rVFC behalten
+    videoElement.requestVideoFrameCallback = function (cb) {
+      return requestAnimationFrame((now) => cb(now, {
+        presentationTime: now, expectedDisplayTime: now,
+        width: videoElement?.videoWidth || 0, height: videoElement?.videoHeight || 0,
+        mediaTime: videoElement?.currentTime || 0, presentedFrames: 0, processingDuration: 0,
+      }));
+    };
+    videoElement.cancelVideoFrameCallback = function (id) { cancelAnimationFrame(id); };
+    rvfcPatched = true;
+    dlog('[OcenFin] requestVideoFrameCallback per rAF-Polyfill ersetzt (webOS)');
   }
   function applyGraphicSubtitle(stream, ms) {
     if (!videoElement) return;
