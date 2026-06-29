@@ -563,14 +563,17 @@
   let subEdgeCss = $derived((playbackPrefs.subtitleEdge === 'outline')
         ? '-webkit-text-stroke:0.35vh #000;paint-order:stroke fill;text-shadow:0 0 3px rgba(0,0,0,.55);'
         : (playbackPrefs.subtitleEdge === 'none')
-        ? '-webkit-text-stroke:0;text-shadow:none;'
-        : '-webkit-text-stroke:0;text-shadow:0 1px 2px #000,0 2px 8px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.9);');
+        ? 'text-shadow:none;'
+        : 'text-shadow:0 1px 2px #000,0 2px 8px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.9);');
   let subBgCss = $derived((playbackPrefs.subtitleBackground === 'solid')
         ? 'background:#000;padding:0.05em 0.5em;border-radius:0.5vh;'
         : (playbackPrefs.subtitleBackground === 'semi')
         ? 'background:rgba(0,0,0,.6);padding:0.05em 0.5em;border-radius:0.5vh;'
         : 'background:transparent;');
-  let subStyle = $derived(`color:${subColor};${subEdgeCss}${subBgCss}`);
+  // -webkit-text-fill-color zusätzlich zu color: bei gesetztem -webkit-text-stroke bestimmt auf webOS die
+  // FILL-Farbe das Rendering und fällt dort fälschlich auf Schwarz zurück, statt color zu erben → Untertitel
+  // sonst schwarz trotz Farbwahl. Explizit setzen erzwingt die gewählte Farbe (am Desktop ohnehin no-op).
+  let subStyle = $derived(`color:${subColor};-webkit-text-fill-color:${subColor};${subEdgeCss}${subBgCss}`);
 
   // Untertitelgröße → libbitsub-Skalierung (Variante B: gilt für PGS UND VobSub, nicht nur VTT).
   function graphicSubScale() {
