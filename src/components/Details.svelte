@@ -926,8 +926,6 @@
   onCreated={() => onLibChanged?.()} onClose={() => pickerMode = null} />
 
 <style>
-  .hide-scrollbar::-webkit-scrollbar { display: none; }
-  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
   .snap-row { scroll-snap-type: x proximity; scroll-padding-inline-start: 0.5rem; }
   .snap-row > * { scroll-snap-align: start; }
 </style>

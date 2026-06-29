@@ -1949,9 +1949,6 @@
   onClose={async () => { pickerMode = null; if (wasPlayingBeforePicker) videoElement?.play().catch(() => {}); wasPlayingBeforePicker = false; await tick(); if (controlOpener && document.contains(controlOpener)) controlOpener.focus(); else playerContainer?.focus(); controlOpener = null; }} />
 
 <style>
-  .hide-scrollbar::-webkit-scrollbar { display: none; }
-  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
   /* Wiedergabeleiste — gesehener Teil blau, Rest hell (konsistent in allen Browsern),
      weißer Griff, dezente Fokus-Aura statt kräftigem Ring (moderner Player-Stil). */
   :global(.seekbar) { -webkit-appearance: none; appearance: none; }

@@ -1586,9 +1586,6 @@
     --color-blue-300:#fdba74; --color-blue-400:#fb923c; --color-blue-500:#f97316; --color-blue-600:#ea580c; --color-blue-900:#7c2d12;
   }
 
-  .hide-scrollbar::-webkit-scrollbar { display: none; }
-  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
   /* Splashscreen: Logo pulsiert sanft, Overlay blendet aus */
   .splash-logo { animation: splashPulse 1.6s ease-in-out infinite; }
   @keyframes splashPulse {
