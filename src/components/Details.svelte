@@ -110,11 +110,11 @@
   // Trailer-Modal
   let trailerEmbedUrl = $state(null);
   let showMediaInfo   = $state(false);   // Medieninformationen-Modal
-  let mediaInfoScroll;           // Scroll-Container des Modals (bind:this, für D-Pad-Scrollen)
+  let mediaInfoScroll = $state();           // Scroll-Container des Modals (bind:this, für D-Pad-Scrollen)
 
   // Teilen: QR-Code mit öffentlichem Titel-Link (IMDb/TMDb) — jeder kann ihn scannen, kein Serverzugang nötig.
   let showShare = $state(false);
-  let kebabBtnEl;                 // Drei-Punkte-Button (bind:this, immer im DOM)
+  let kebabBtnEl = $state();                 // Drei-Punkte-Button (bind:this, immer im DOM)
   const shareFocus = makeFocusReturn();   // Fokus-Rückgabe nach Schließen des Teilen-Modals
   // Nach dem Schließen des Teilen-Modals den Fokus zurück auf die drei Punkte legen.
   $effect(() => { if (!showShare && shareFocus.pending) shareFocus.restore(); });

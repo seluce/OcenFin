@@ -217,7 +217,7 @@
   let showLog = $state(false);
   let logText = $state('');
   let qrSvg = $state(null);
-  let qrBtnEl;   // für Fokus-Rückgabe beim Verlassen der QR-Ansicht
+  let qrBtnEl = $state();   // für Fokus-Rückgabe beim Verlassen der QR-Ansicht
   let logEl = $state(null);   // <pre> mit den Log-Zeilen (für Auto-Scroll + Blättern)
   // Neueste Einträge stehen unten → beim Öffnen ans Ende springen.
   function scrollLogToBottom() { if (logEl) logEl.scrollTop = logEl.scrollHeight; }
@@ -291,10 +291,10 @@
   // Gemeinsame Quelle wie die Sidebar; zeigt hier ALLE Einträge inkl. ausgeblendeter.
   let navEntries = $derived(applyNavConfig(buildNavEntries(libraries, i18n.t, displaySettings.navIcons || {}), displaySettings.navOrder || [], displaySettings.navHidden || []));
   let grabbedId = $state(null);   // angehobener Eintrag (Greifen-Modus) – null = keiner
-  let navListEl;          // bind: zum Refokussieren nach dem Verschieben
+  let navListEl = $state();          // bind: zum Refokussieren nach dem Verschieben
   let lastGrabToggle = 0; // gegen Auto-Repeat: gehaltene OK-Taste = ein Umschalten
   let iconPickerFor = $state(null);   // Eintrags-Id, für die gerade ein Icon gewählt wird (null = zu)
-  let iconGridEl;             // bind: Auto-Fokus im Icon-Wähler
+  let iconGridEl = $state();             // bind: Auto-Fokus im Icon-Wähler
 
   // grabbedId zentral setzen + App melden, damit der Fokus-Manager die Sidebar währenddessen sperrt.
   function setGrabbed(id) {

@@ -36,7 +36,7 @@
 
   let videoElement;
   let playerContainer;
-  let settingsPanel;       // bind für Auto-Fokus auf WebOS
+  let settingsPanel = $state();       // bind für Auto-Fokus auf WebOS
   let playPauseBtn;        // bind: damit ▼ von der Leiste direkt hierher springt
   let seekBarEl;           // bind: damit Links/Rechts bei verborgenem HUD direkt hierher springt
   let isPlaying  = $state(false);
@@ -1480,7 +1480,7 @@
     }}
     onended={onVideoEnded}
     onclick={togglePlay}
-  />
+  ></video>
 
   <!-- ASS/SSA-Untertitel: assjs injiziert hier sein DOM-Overlay, synchron zum <video> (liest KEINE Pixel
        → kein Taint). Container überlappt das Video (absolute inset-0); z unter Spinner/Controls. -->

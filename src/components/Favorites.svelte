@@ -8,7 +8,7 @@
 
   let favoriteItems      = $state([]);
   let isLoadingFavorites = $state(false);
-  let favoritesGrid;
+  let favoritesGrid = $state();
 
   // Gruppierung wie in der Suche: Filme / Serien / Staffeln / Sammlungen (leere Gruppen entfallen im Template)
   let favGroups = $derived([

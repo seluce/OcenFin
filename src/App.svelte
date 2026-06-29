@@ -40,7 +40,7 @@
   let libraryFocusFirst  = $state(false); // beim Öffnen aus dem Menü erste Karte fokussieren
   let librarySharedOn    = $state(false); // "Gemeinsam schauen" aktiv (von Library gemeldet)
   let libraryMounted     = $state(false); // ab erstem Bibliotheksbesuch dauerhaft gemountet (State bleibt)
-  let libraryRef;                         // bind:this → restoreView / Grid-Mutationen
+  let libraryRef = $state();              // bind:this → restoreView / Grid-Mutationen
 
   // Cache leeren (Einstellungen): In-Memory-Cache verwerfen und Dashboard frisch laden.
   function clearCache() {
@@ -425,7 +425,7 @@
 
   // Banner-Buttons. "Erneut versuchen" prüft SOFORT, ohne Reload → dein Platz bleibt erhalten:
   // ist der Server zurück, schließt der Banner; sonst bleibt er (Auto-Reconnect läuft weiter).
-  let retryBtnEl;
+  let retryBtnEl = $state();
   async function retryNow() {
     try {
       const r = await fetch(`${session.serverUrl}/System/Info/Public`, { cache: 'no-store' });
@@ -1248,7 +1248,7 @@
     closeSyncPlay(); syncMyGroup = null; syncGroups = []; syncQueue = null; syncCommand = null; _lastSyncQueueItem = null; syncJoined = false; syncMyGroupId = null;   // Gruppenstatus zurücksetzen
     remoteCommand = null; dismissRemoteMessage();   // Admin-Fernsteuerung/Nachricht verwerfen
     viewState = 'dashboard';
-    apiCache  = { dashboard: null, views: {} };
+    apiCache.dashboard = null;   // Cache leeren (Property-Mutation statt Neuzuweisung → geteilte Referenz bleibt)
     navLibraries = [];
     clearCurrentSession();
     // Zurück zum User-Screen, Server bleibt verbunden
@@ -1339,7 +1339,7 @@
   // Sammlungen/Wiedergabelisten — eigene Ansicht (Collection.svelte lädt selbst).
   let currentCollection    = $state(null);          // Seed-BoxSet/Playlist
   let collectionReturnView = $state('dashboard');   // wohin "Zurück" führt
-  let collectionRef;                                // bind:this → für Zurück-Taste (handleBackKey)
+  let collectionRef = $state();                     // bind:this → für Zurück-Taste (handleBackKey)
 
   function openCollection(boxSet) {
     collectionReturnView = viewState;
@@ -1567,28 +1567,6 @@
 
   .hide-scrollbar::-webkit-scrollbar { display: none; }
   .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-  /* content-visibility: Browser überspringt Rendering/Layout für Items außerhalb
-     des sichtbaren Bereichs. Nativer, sehr effizienter "Virtual Scrolling"-Ersatz
-     ab Chromium 85+ (B4 unterstützt es). contain-intrinsic-size reserviert Platz,
-     damit die Scrollleiste korrekt bleibt (Poster-Verhältnis 2:3). */
-  .cv-auto {
-    content-visibility: auto;
-    contain-intrinsic-size: auto 320px;
-  }
-
-  /* A-Z Sprung-Vorschau: kurz einblenden, dann ausblenden */
-  .jump-overlay { animation: jumpPop 0.8s ease forwards; }
-  @keyframes jumpPop {
-    0%   { opacity: 0; transform: scale(0.8); }
-    20%  { opacity: 1; transform: scale(1); }
-    70%  { opacity: 1; transform: scale(1); }
-    100% { opacity: 0; transform: scale(0.95); }
-  }
-
-  /* Backdrop-Vorschau: sanftes Einblenden */
-  .preview-fade { animation: previewFadeIn 0.6s ease forwards; }
-  @keyframes previewFadeIn { from { opacity: 0; } to { opacity: 1; } }
 
   /* Splashscreen: Logo pulsiert sanft, Overlay blendet aus */
   .splash-logo { animation: splashPulse 1.6s ease-in-out infinite; }
