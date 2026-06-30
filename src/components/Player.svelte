@@ -964,6 +964,7 @@
     if (seekCommitTimer) clearTimeout(seekCommitTimer);
     if (clockTimer)      clearInterval(clockTimer);
     if (infoInterval)    clearInterval(infoInterval);
+    clearSpinner();
     clearBufferWatchdog();
     if (hls) { try { hls.destroy(); } catch {} hls = null; }
     disposeGraphic();
@@ -1465,9 +1466,9 @@
     bind:this={videoElement}
     preload="auto"
     class="w-full h-full object-contain"
-    onplay={() => { vlog('play'); isPlaying = true; onPlayable(); onLocalPlay(); }}
+    onplay={() => { vlog('play'); isPlaying = true; onPlayable(); onLocalPlay(); flushProgress(); }}
     onplaying={() => { vlog('playing'); onPlayable(); syncReportReady(); }}
-    onpause={() => { isPlaying = false; clearSpinner(); isBuffering = false; clearBufferWatchdog(); onLocalPause(); }}
+    onpause={() => { isPlaying = false; clearSpinner(); isBuffering = false; clearBufferWatchdog(); onLocalPause(); flushProgress(); }}
     onseeked={onLocalSeeked}
     onseeking={syncReportBuffering}
     onwaiting={() => { vlog('waiting'); onWaiting(); syncReportBuffering(); }}
