@@ -2217,7 +2217,9 @@
   <AddToPicker mode={contextPickerMode} item={contextPickerItem} {selectedUser} {getAuthHeaders}
     onCreated={refreshLibraries} onClose={() => contextPickerMode = null} />
 
-  <!-- UHRZEIT — oben rechts, sichtbar im App-Betrieb außer im Player -->
+  <!-- UHRZEIT — oben rechts in den App-Ansichten. Im Player NICHT dieses Overlay: der Player bringt
+       seine EIGENE Uhr im HUD mit (nur bei eingeblendeter Steuerung, schont OLED), daher hier per
+       viewState !== 'player' ausgenommen. -->
   {#if appPhase === 'app' && viewState !== 'player' && displaySettings.clock}
     <Clock {viewState} {use24h} />
   {/if}
