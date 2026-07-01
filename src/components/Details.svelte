@@ -335,6 +335,24 @@
     onPlayVideo?.({ item: fresh, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId });
   }
 
+  // Zufallsfolge — für lange Serien "spiel einfach irgendwas". Serie → aus ALLEN Folgen (rekursiv über alle
+  // Staffeln, Specials/Staffel 0 ausgeschlossen); Staffel → nur aus dieser Staffel. Gleichverteilt, inkl. schon
+  // gesehener (bewusst: Comfort-Rewatch). Landet wie handlePlay über onPlayVideo im Player.
+  async function playRandomEpisode() {
+    const isSeries = fullItem.Type === 'Series';
+    const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}`
+      + `&IncludeItemTypes=Episode${isSeries ? '&Recursive=true' : ''}`;
+    try {
+      const res  = await fetch(url, { headers: getAuthHeaders() });
+      const data = await res.json();
+      let pool = (data.Items || []).filter(e => e.Type === 'Episode');
+      if (isSeries) pool = pool.filter(e => e.ParentIndexNumber !== 0);   // Specials (Staffel 0) ausschließen
+      if (!pool.length) return;
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      onPlayVideo?.({ item: pick, audioIndex: -1, subtitleIndex: -1 });
+    } catch (e) { console.error(e); }
+  }
+
   async function togglePlayed() {
     // Optimistisch lokal umschalten — kein Neuladen der ganzen Detailseite
     const willBePlayed = !fullItem.UserData?.Played;
@@ -527,6 +545,21 @@
               {#if fullItem.UserData?.PlaybackPositionTicks > 0}{i18n.t.resumePlay}{:else}{i18n.t.play}{/if}
             </button>
 
+            {#if fullItem.Type === 'Series' || fullItem.Type === 'Season'}
+              <button onclick={playRandomEpisode}
+                class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold text-lg px-8 py-4 rounded-xl
+                       focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg flex items-center gap-2">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                  <polyline points="16 3 21 3 21 8"/>
+                  <line x1="4" y1="20" x2="21" y2="3"/>
+                  <polyline points="21 16 21 21 16 21"/>
+                  <line x1="15" y1="15" x2="21" y2="21"/>
+                  <line x1="4" y1="4" x2="9" y2="9"/>
+                </svg>
+                {i18n.t.shuffle}
+              </button>
+            {/if}
+
             {#if fullItem.UserData?.PlaybackPositionTicks > 0 && fullItem.Type !== 'Series' && fullItem.Type !== 'Season'}
               <button onclick={playFromBeginning}
                 class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold text-lg px-7 py-4 rounded-xl
@@ -539,11 +572,12 @@
             {/if}
 
             {#if fullItem.RemoteTrailers?.length > 0}
-              <button onclick={openTrailer}
-                class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold text-lg px-8 py-4 rounded-xl
-                       focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg flex items-center gap-2">
-                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                {i18n.t.trailer}
+              <button onclick={openTrailer} aria-label={i18n.t.trailer} title={i18n.t.trailer}
+                class="p-4 rounded-xl bg-gray-800 text-white hover:bg-gray-700 focus:bg-gray-700
+                       focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg">
+                <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M4.5 4.5a3 3 0 00-3 3v9a3 3 0 003 3h8.25a3 3 0 003-3v-9a3 3 0 00-3-3H4.5zM19.94 18.75l-2.69-2.69V7.94l2.69-2.69c.944-.945 2.56-.276 2.56 1.06v11.38c0 1.336-1.616 2.005-2.56 1.06z"/>
+                </svg>
               </button>
             {/if}
 
