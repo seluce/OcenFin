@@ -213,7 +213,14 @@
     return 0;
   }
 
+  // Stale-Guard (Muster wie subtitleFetchToken im Player): Beim schnellen Durchschalten von
+  // Sortierung/Filter/Bibliothek dürfen nur Antworten der JÜNGSTEN Anfrage übernommen werden —
+  // sonst überschreibt eine langsame alte Antwort die neue Liste. Gilt auch für die
+  // Infinite-Scroll-Blöcke: ein überholter Append würde die Liste korrumpieren.
+  let loadToken = 0;
+
   async function loadLibraryItems(lib, letter = null) {
+    const myToken = ++loadToken;
     if (currentLibraryId !== lib.Id) {
       activeFilters   = { isFavorite: false, isPlayed: false, isNotPlayed: false };
       selectedGenres  = [];
@@ -246,6 +253,7 @@
     currentItems = [];
 
     const startIndex = letter !== null ? await letterStartIndex(lib.Id, letter) : 0;
+    if (myToken !== loadToken) return;   // während der Count-Abfrage kam eine neuere Anfrage
     firstLoadedIndex = startIndex;
 
     let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${lib.Id}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
@@ -253,26 +261,32 @@
 
     try {
       const res = await fetch(url, authOpts());
+      if (myToken !== loadToken) return;   // überholte Antwort verwerfen
       if (res.ok) {
         const data        = await res.json();
+        if (myToken !== loadToken) return;
         currentItems      = data.Items || [];
         totalLibraryItems = data.TotalRecordCount || 0;
         if (isCacheableView()) cacheLibraryView(lib.Id, { items: currentItems, total: totalLibraryItems });
       }
       session.connectionLost = false;
-    } catch { session.connectionLost = true; } finally { isLoading = false; }
+    } catch { if (myToken === loadToken) session.connectionLost = true; }
+    // Spinner nur löschen, wenn wir noch aktuell sind — sonst killt eine alte Antwort das Skelett der neuen.
+    finally { if (myToken === loadToken) isLoading = false; }
   }
 
   async function loadMoreLibraryItems() {
     if (isFetchingMore || firstLoadedIndex + currentItems.length >= totalLibraryItems || !currentLibraryId) return;
     isFetchingMore = true;
+    const myToken = loadToken;   // gehört zur AKTUELLEN Liste — nach einem Reload nicht mehr anhängen
     const start = firstLoadedIndex + currentItems.length;
     let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}`;
     url += getFilterQuery();
     try {
       const res = await fetch(url, authOpts());
-      if (res.ok) {
+      if (res.ok && myToken === loadToken) {
         const data   = await res.json();
+        if (myToken !== loadToken) return;
         currentItems = [...currentItems, ...(data.Items || [])];
         if (isCacheableView()) cacheLibraryView(currentLibraryId, { items: currentItems, total: totalLibraryItems });
       }
@@ -283,13 +297,15 @@
   async function loadPreviousLibraryItems() {
     if (isFetchingPrev || firstLoadedIndex <= 0 || !currentLibraryId) return;
     isFetchingPrev = true;
+    const myToken = loadToken;   // gehört zur AKTUELLEN Liste — nach einem Reload nicht mehr voranstellen
     const newStart = Math.max(0, firstLoadedIndex - libraryItemLimit);
     const count    = firstLoadedIndex - newStart;
     const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}`;
     try {
       const res = await fetch(url, authOpts());
-      if (res.ok) {
+      if (res.ok && myToken === loadToken) {
         const items  = (await res.json()).Items || [];
+        if (myToken !== loadToken) return;
         const before = libraryScrollContainer ? libraryScrollContainer.scrollHeight : 0;
         currentItems     = [...items, ...currentItems];
         firstLoadedIndex = newStart;

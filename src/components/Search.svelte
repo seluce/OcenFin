@@ -55,14 +55,20 @@
 
   const getAuthHeaders = () => authHeaders(session.token);
 
+  // Stale-Guard (Muster wie subtitleFetchToken im Player): Nur die JÜNGSTE Suche darf Ergebnisse
+  // übernehmen. Ohne das kann eine frühere, langsame Antwort eine spätere überschreiben —
+  // man sieht dann Treffer zum vorletzten Suchbegriff.
+  let searchToken = 0;
+
   function onSearchInput() {
     clearTimeout(searchTimeout);
-    if (query.trim().length < 2) { results = []; people = []; isLoading = false; return; }
+    if (query.trim().length < 2) { searchToken++; results = []; people = []; isLoading = false; return; }
     isLoading = true;
     searchTimeout = setTimeout(performSearch, 600);
   }
 
   async function performSearch() {
+    const myToken = ++searchToken;
     try {
       // Titel + Personen parallel suchen
       const [itemsRes, peopleRes] = await Promise.all([
@@ -71,7 +77,12 @@
         fetch(`${session.serverUrl}/Persons?searchTerm=${encodeURIComponent(query)}&Limit=10&userId=${selectedUser.Id}`,
           { headers: getAuthHeaders() })
       ]);
-      if (itemsRes.ok) results = (await itemsRes.json()).Items || [];
+      if (myToken !== searchToken) return;   // inzwischen neue Suche → diese Antwort verwerfen
+      if (itemsRes.ok) {
+        const items = (await itemsRes.json()).Items || [];
+        if (myToken !== searchToken) return;
+        results = items;
+      }
 
       // Personen: nur behalten, die tatsächlich in der Mediathek vorkommen.
       // Jellyfins /Persons liefert auch Namen, die in keinem eigenen Titel mitspielen —
@@ -87,12 +98,15 @@
             return ((await c.json()).TotalRecordCount || 0) > 0 ? p : null;
           } catch { return null; }
         }));
+        if (myToken !== searchToken) return;
         people = checked.filter(Boolean);
       }
 
       if (query.trim().length >= 2 && (results.length > 0 || people.length > 0)) saveToHistory(query);
     } catch (e) { console.error("search failed:", e); }
-    finally     { isLoading = false; }
+    // isLoading nur zurücksetzen, wenn wir noch die aktuelle Suche sind — sonst würde eine
+    // alte Antwort den Spinner der bereits laufenden neuen Suche vorzeitig löschen.
+    finally     { if (myToken === searchToken) isLoading = false; }
   }
 
   function getItemImageUrl(item, format = 'portrait') {
