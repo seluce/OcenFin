@@ -155,17 +155,32 @@
     if (key === 'isPlayed'    && activeFilters.isPlayed)    activeFilters.isNotPlayed = false;
     if (key === 'isNotPlayed' && activeFilters.isNotPlayed) activeFilters.isPlayed    = false;
     activeFilters = { ...activeFilters };
-    reloadCurrent();
+    if (!showFilterMenu) reloadCurrent();   // Chip-Leiste: sofort. Im Menü: gesammelt beim Schließen.
   }
   function toggleGenre(name) {
     selectedGenres = selectedGenres.includes(name)
       ? selectedGenres.filter(g => g !== name) : [...selectedGenres, name];
-    reloadCurrent();
+    if (!showFilterMenu) reloadCurrent();
   }
   function toggleFsk(age) {
     selectedFsk = selectedFsk.includes(age)
       ? selectedFsk.filter(v => v !== age) : [...selectedFsk, age];
-    reloadCurrent();
+    if (!showFilterMenu) reloadCurrent();
+  }
+
+  // Filter-Menü: Änderungen werden gesammelt und EINMAL beim Schließen angewendet — statt
+  // pro Chip-Tap ein kompletter Reload (3 Genres antippen = 3 Fetches, alle bis auf den
+  // letzten verworfen). Snapshot beim Öffnen; nur bei tatsächlicher Änderung neu laden.
+  let filterMenuSnapshot = '';
+  const filterStateKey = () => JSON.stringify([activeFilters, selectedGenres, selectedFsk]);
+  function openFilterMenu(e) {
+    sortFilterFocus.capture(e.currentTarget);
+    filterMenuSnapshot = filterStateKey();
+    showFilterMenu = true;
+  }
+  function closeFilterMenu() {
+    showFilterMenu = false;
+    if (filterStateKey() !== filterMenuSnapshot) reloadCurrent();
   }
 
   function setSort(option) {
@@ -447,7 +462,7 @@
           </svg>
           {i18n.t.sortBy}
         </button>
-        <button onclick={(e) => { sortFilterFocus.capture(e.currentTarget); showFilterMenu = true; }}
+        <button onclick={openFilterMenu}
           class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
                  focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -617,12 +632,12 @@
 <!-- FILTER-MENÜ -->
 {#if showFilterMenu}
   <div data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
-    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showFilterMenu = false; } }}>
+    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeFilterMenu(); } }}>
     <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
 
       <div class="flex justify-between items-center p-8 pb-4 shrink-0">
         <h2 class="text-4xl text-white font-bold">{i18n.t.filter}</h2>
-        <button onclick={() => showFilterMenu = false} {@attach focusOnMount()}
+        <button onclick={closeFilterMenu} {@attach focusOnMount()}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
@@ -676,7 +691,7 @@
       </div>
 
       <div class="p-8 pt-4 shrink-0">
-        <button onclick={() => showFilterMenu = false}
+        <button onclick={closeFilterMenu}
           class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold text-xl py-5 rounded-xl
                  focus:outline-none focus:ring-4 focus:ring-white transition-colors">
           {i18n.t.filterClose}

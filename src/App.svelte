@@ -35,6 +35,7 @@
   let appPhase = $state('servers');   // aktueller Schritt im Onboarding-Flow
   let initializing = $state(true);    // Splashscreen, bis Auto-Login/Start abgeschlossen ist
   let dashboardReloadKey = $state(0); // erhöhen erzwingt frisches Neuladen des Dashboards
+  let resumeStale = $state(false);    // nach einer Wiedergabe: Dashboard holt Resume/NextUp frisch (Cache bleibt sonst)
   let currentLibrary     = $state(null);  // { Id, Name } — aktive Bibliothek (an Library.svelte)
   let libraryReloadKey   = $state(0);     // erhöhen → Library verwirft View-Cache + lädt neu
   let libraryFocusFirst  = $state(false); // beim Öffnen aus dem Menü erste Karte fokussieren
@@ -45,6 +46,7 @@
   // Cache leeren (Einstellungen): In-Memory-Cache verwerfen und Dashboard frisch laden.
   function clearCache() {
     apiCache.dashboard = null;
+    partnersPlayedCache = {};
     libraryReloadKey++;        // Library verwirft ihren eigenen View-Cache + lädt neu
     dashboardReloadKey++;
     viewState = 'dashboard';
@@ -232,6 +234,7 @@
     }
     librarySharedOn  = false;   // Filter startet pro Sitzung aus
     partnersPlayedIds = null;
+    partnersPlayedCache = {};   // Partner-Cache gehört zur alten Sitzung
     applyingPrefs = false;
   }
 
@@ -914,7 +917,7 @@
   // ── Gemeinsames Schauen: Mitglieder & Datenbasis ───────────────────────────
   function toggleSharedEnabled() {
     sharedProfile = { ...sharedProfile, enabled: !sharedProfile.enabled };
-    if (!sharedProfile.enabled) { librarySharedOn = false; partnersPlayedIds = null; }
+    if (!sharedProfile.enabled) { librarySharedOn = false; partnersPlayedIds = null; partnersPlayedCache = {}; }
     saveUserPrefs();
   }
 
@@ -950,6 +953,7 @@
     sharedProfile = { ...sharedProfile, members };
     _loadedSugKey = null;   // Vorschläge neu berechnen
     saveUserPrefs();
+    partnersPlayedCache = {};   // Mitglieder geändert → alle gecachten Vereinigungen ungültig
     if (librarySharedOn) loadPartnersPlayedIds(currentLibrary?.Id);
     return 'ok';
   }
@@ -968,15 +972,23 @@
     }
     _loadedSugKey = null;   // Vorschläge neu berechnen
     saveUserPrefs();
+    partnersPlayedCache = {};   // Mitglieder geändert → alle gecachten Vereinigungen ungültig
     if (librarySharedOn) loadPartnersPlayedIds(currentLibrary?.Id);
   }
 
   // Vereinigung der von den Mitgliedern komplett gesehenen Top-Level-Titel der Bibliothek.
   // Jedes Profil mit eigenem Token (kein Admin). Wir holen alle Titel mit UserData und prüfen
   // selbst auf Played=true — zuverlässiger als Filters=IsPlayed, das bei Serien nicht immer greift.
+  // Cache pro Bibliothek (TTL 10 min): der Fetch ist die schwerste Abfrage der App (voller Katalog
+  // pro Mitglied) — beim Hin- und Herwechseln zwischen Bibliotheken nicht jedes Mal neu laden.
+  // Invalidiert bei Mitglieder-Änderung, Profil-Aus, Sitzungswechsel und "Cache leeren".
+  let partnersPlayedCache = {};   // libraryId → { ids: Set, at: Timestamp }
+  const PARTNERS_CACHE_TTL = 10 * 60 * 1000;
   async function loadPartnersPlayedIds(libraryId) {
     partnersPlayedIds = null;
     if (!librarySharedOn || !sharedReady || !libraryId) return;
+    const hit = partnersPlayedCache[libraryId];
+    if (hit && Date.now() - hit.at < PARTNERS_CACHE_TTL) { partnersPlayedIds = hit.ids; return; }
     const ids = new Set();
     for (const m of sharedProfile.members) {
       if (!m || !m.id) continue;
@@ -997,6 +1009,7 @@
       } catch (e) { console.warn('[Shared] error for', m.name, e); }
     }
     partnersPlayedIds = ids;
+    partnersPlayedCache[libraryId] = { ids, at: Date.now() };
   }
 
   // Partner-IDs für "Gemeinsam schauen" laden/verwerfen, sobald sich Bibliothek oder Schalter ändern.
@@ -2067,6 +2080,8 @@
           {#key dashboardReloadKey}
           <Dashboard
             {selectedUser} {apiCache} {reduceAnimations}
+            {resumeStale}
+            onResumeRefreshed={() => resumeStale = false}
             showHero={displaySettings.hero}
             showLibraries={displaySettings.libraries}
             showHistory={displaySettings.history}
@@ -2194,7 +2209,7 @@
           {syncCommand}
           {remoteCommand}
           {syncQueue}
-          onExit={() => viewState = 'details'}
+          onExit={() => { viewState = 'details'; resumeStale = true; }}
           onPlayState={(p) => playerPlaying = p}
           onLibChanged={refreshLibraries}
           onNext={(payload) => handleNextEpisode(payload)}

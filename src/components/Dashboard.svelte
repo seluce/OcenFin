@@ -18,6 +18,8 @@
     showCollections  = true,    // "Sammlungen" (BoxSets)
     sharedSuggestions = [],     // "Für euch beide" — Titel, die zur gemeinsamen Vorliebe passen
     showSharedSuggestions = false, // Reihe anzeigen (nur wenn gemeinsames Profil eingerichtet)
+    resumeStale = false,        // App: seit dem letzten Dashboard-Besuch lief eine Wiedergabe → Resume/NextUp frisch holen
+    onResumeRefreshed,          // () => void — App setzt das Flag zurück
     onLibrariesLoaded, onOpenCollection, onOpenContext, onOpenDetails, onOpenLibrary,   // Callback-Props
   } = $props();
 
@@ -43,6 +45,7 @@
   // HERO-BANNER: rotierendes Featured-Item (Netflix-Stil)
   let heroItems  = $state([]);
   let heroIndex  = $state(0);
+  let prevHeroIndex = $state(-1);   // vorheriges Bild bleibt beim Wechsel als Unterlage stehen (Crossfade statt Dip-to-Black)
   let heroTimer;
   let heroBuilt  = false;   // pro Laden: true, sobald der Hero einmal gebaut ist (verhindert Neu-Mischen beim zweiten Latest-Fetch)
   let heroLoading = $state(false);   // true, solange die Featured-Daten noch laden → Platz reservieren (kein Nachrücken)
@@ -74,6 +77,7 @@
     // Maximal 5, gemischt
     heroItems = pool.sort(() => Math.random() - 0.5).slice(0, 5);
     heroIndex = 0;
+    prevHeroIndex = -1;
     heroBuilt = true;
     heroLoading = false;   // Hero steht → Skelett sofort weg (unabhängig vom langsameren Latest-Fetch)
     clearInterval(heroTimer);
@@ -81,6 +85,7 @@
     if (!reduceAnimations && heroItems.length > 1) {
       preloadHero(1);   // nächstes Bild schon laden
       heroTimer = setInterval(() => {
+        prevHeroIndex = heroIndex;
         heroIndex = (heroIndex + 1) % heroItems.length;
         preloadHero((heroIndex + 1) % heroItems.length);
       }, 8000);
@@ -88,6 +93,33 @@
   }
 
   const getAuthHeaders = () => authHeaders(session.token);
+  const FIELDS = "PrimaryImageAspectRatio,Overview,BackdropImageTags";
+
+  // NextUp um Titel bereinigen, die schon in "Weiterschauen" laufen (per Episode- oder Serien-Id).
+  function filterNextUp(raw) {
+    const inProgress = new Set();
+    continueWatching.forEach(i => { inProgress.add(i.Id); if (i.SeriesId) inProgress.add(i.SeriesId); });
+    return raw.filter(i => !inProgress.has(i.Id) && !inProgress.has(i.SeriesId));
+  }
+
+  // Nach einer Wiedergabe: NUR Resume + NextUp frisch holen und in den Cache mergen — die
+  // Sofort-Anzeige aus dem Cache bleibt, aber die eine Zeile, die sich wirklich geändert hat,
+  // stimmt wieder (Fortschritt/neuer Titel). Kein Vollreload, Hero bleibt stehen (kein Neu-Mischen).
+  async function refreshResume() {
+    try {
+      const uId  = selectedUser.Id;
+      const opts = { headers: getAuthHeaders() };
+      const [rRes, rNext] = await Promise.all([
+        fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=12&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb`, opts),
+        fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=6&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb`, opts),
+      ]);
+      continueWatching = (await rRes.json()).Items || [];
+      const dNext = await rNext.json();
+      nextUp = filterNextUp(Array.isArray(dNext) ? dNext : (dNext.Items || []));
+      if (apiCache.dashboard) { apiCache.dashboard.continueWatching = continueWatching; apiCache.dashboard.nextUp = nextUp; }
+      onResumeRefreshed?.();
+    } catch { /* Flag bleibt gesetzt → nächster Dashboard-Besuch versucht es erneut */ }
+  }
 
   // Empfehlungen: Seeds aus zuletzt gesehenen Items, dann /Items/{id}/Similar.
   // Best Practice (Netflix/Plex): direkt im Dashboard, kein eigener Tab.
@@ -122,6 +154,7 @@
       recommendations = recommendations || [];
       collections     = apiCache.dashboard.collections || [];
       buildHero();
+      if (resumeStale) refreshResume();   // Hintergrund-Refresh, UI steht bereits aus dem Cache
       return;
     }
 
@@ -130,7 +163,7 @@
     try {
       const uId   = selectedUser.Id;
       const opts  = { headers: getAuthHeaders() };
-      const fields = "PrimaryImageAspectRatio,Overview,BackdropImageTags";
+      const fields = FIELDS;
 
       // Alle 5 Fetches gleichzeitig starten — kein sequentielles Warten
       const pViews        = fetch(`${session.serverUrl}/Users/${uId}/Views`, opts);
@@ -191,10 +224,7 @@
       pNextUp.then(r => r.json()).then(d => {
         const raw = Array.isArray(d) ? d : (d.Items || []);
         // In-Progress-Titel ausschließen (stehen schon in "Weiterschauen") — wie die Jellyfin-App.
-        // Per Episode-Id ODER SeriesId, falls eine Folge der Serie bereits angefangen wurde.
-        const inProgress = new Set();
-        continueWatching.forEach(i => { inProgress.add(i.Id); if (i.SeriesId) inProgress.add(i.SeriesId); });
-        nextUp = raw.filter(i => !inProgress.has(i.Id) && !inProgress.has(i.SeriesId));
+        nextUp = filterNextUp(raw);
         apiCache.dashboard.nextUp = nextUp;
       }).catch(() => {});
 
@@ -414,13 +444,18 @@
     <!-- HERO-BANNER — rotierendes Featured-Item -->
     {#if showHero && heroCurrent}
       <div transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gray-900">
-        <!-- Vollflächiger Backdrop (Netflix-Stil): Inhalt steht sofort, Bild blendet ein (Blurhash → scharf), dunkler Grund als Sicherheitsnetz -->
-        {#each heroItems as h, i (h.Id)}
-          {#if i === heroIndex && getHeroBackdrop(h)}
-            <img src={getHeroBackdrop(h)} {@attach blurUp(itemBlurHash(h, 'Backdrop'))} alt={h.Name} fetchpriority="high" loading="eager" decoding="async"
+        <!-- Vollflächiger Backdrop (Netflix-Stil): Crossfade — das VORHERIGE Bild bleibt als Unterlage
+             stehen, das neue blendet obendrauf ein (kein Dip-to-Black mehr). Blurhash → scharf. -->
+        {#if prevHeroIndex >= 0 && prevHeroIndex !== heroIndex && heroItems[prevHeroIndex] && getHeroBackdrop(heroItems[prevHeroIndex])}
+          <img src={getHeroBackdrop(heroItems[prevHeroIndex])} alt="" aria-hidden="true" decoding="async"
+            class="absolute inset-0 w-full h-full object-cover object-center" />
+        {/if}
+        {#key heroCurrent?.Id}
+          {#if heroCurrent && getHeroBackdrop(heroCurrent)}
+            <img src={getHeroBackdrop(heroCurrent)} {@attach blurUp(itemBlurHash(heroCurrent, 'Backdrop'))} alt={heroCurrent.Name} fetchpriority="high" loading="eager" decoding="async"
               class="absolute inset-0 w-full h-full object-cover object-center hero-fade" />
           {/if}
-        {/each}
+        {/key}
         <!-- Verläufe: links für Textlesbarkeit, unten für nahtlosen Übergang in die Reihen darunter -->
         <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/50 to-transparent"></div>
         <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/50 to-transparent"></div>
