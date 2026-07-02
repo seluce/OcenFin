@@ -686,3 +686,15 @@
     </div>
   </div>
 {/if}
+
+<style>
+  /* Bei der Extraktion aus App.svelte verloren gegangen (Klassen blieben im Markup, die
+     Regeln nicht) — hier rekonstruiert. Komponenten-spezifisch, daher lokal statt app.css. */
+  /* Backdrop-Vorschau: sanft einblenden statt hart umschalten ({#key} remountet das <img>) */
+  .preview-fade { animation: previewFadeIn 0.5s ease-out; }
+  @keyframes previewFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  /* A-Z-Sprung-Overlay: kurzes Aufpoppen (Skalierung + Einblenden) */
+  .jump-overlay { animation: jumpPop 0.18s ease-out; }
+  @keyframes jumpPop { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
+</style>

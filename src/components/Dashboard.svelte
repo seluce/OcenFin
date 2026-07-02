@@ -535,7 +535,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.recentlyWatched}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each recentlyWatched as item (item.Id)}
-            {@render portraitCard(item, getHistoryImageUrl(item), itemBlurHash(item, 'Backdrop'))}
+            {@render portraitCard(item, getHistoryImageUrl(item), itemBlurHash(item))}
           {/each}
         </div>
       </div>
