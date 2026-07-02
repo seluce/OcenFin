@@ -813,17 +813,21 @@
     startCountdown();
   } });
 
+  // Nächste Folge leicht vorladen (nur PlaybackInfo/Stream-URL, kein Video-Pre-Buffering),
+  // damit der Wechsel den Roundtrip spart. Greift nur, wenn die Parameter beim Wechsel passen.
+  // Gemeinsamer Helfer für BEIDE Wechselpfade: Countdown UND Auto-Skip-Abspann.
+  function prefetchNextEpisode() {
+    if (!nextEpisode?.Id) return;
+    prefetchPlaybackInfo({
+      serverUrl: session.serverUrl, userId: selectedUser.Id, token: session.token, itemId: nextEpisode.Id,
+      audioStreamIndex: selectedAudioIndex, subtitleStreamIndex: selectedSubtitleIndex,
+      maxBitrate, burnSubtitles: playbackPrefs.burnSubtitles, mediaSourceId: null,
+      clientGraphicSubs: clientGraphicRender, serverVobSub,
+    });
+  }
+
   function startCountdown() {
-    // Nächste Folge leicht vorladen (nur PlaybackInfo/Stream-URL, kein Video-Pre-Buffering),
-    // damit der Wechsel den Roundtrip spart. Greift nur, wenn die Parameter beim Wechsel passen.
-    if (nextEpisode?.Id) {
-      prefetchPlaybackInfo({
-        serverUrl: session.serverUrl, userId: selectedUser.Id, token: session.token, itemId: nextEpisode.Id,
-        audioStreamIndex: selectedAudioIndex, subtitleStreamIndex: selectedSubtitleIndex,
-        maxBitrate, burnSubtitles: playbackPrefs.burnSubtitles, mediaSourceId: null,
-        clientGraphicSubs: clientGraphicRender, serverVobSub,
-      });
-    }
+    prefetchNextEpisode();
     nextCountdown = COUNTDOWN_FROM;   // sofort sichtbar → Karte erscheint
     countdownProgress = 1;
     countdownEnd = Date.now() + COUNTDOWN_FROM * 1000;
@@ -880,6 +884,7 @@
   } });
   $effect(() => { if (playbackPrefs.autoSkipCredits && showSkipCredits && !creditsAutoSkipped && nextEpisode) {
     creditsAutoSkipped = true;
+    prefetchNextEpisode();   // dieser Pfad umgeht den Countdown → Fetch läuft parallel zum Player-Remount
     goToNextEpisode();
   } });
 
