@@ -570,10 +570,16 @@
         : (playbackPrefs.subtitleBackground === 'semi')
         ? 'background:rgba(0,0,0,.6);padding:0.05em 0.5em;border-radius:0.5vh;'
         : 'background:transparent;');
+  // VTT-Schriftart — bewusst IMMER explizit gesetzt (auch bei 'system' → Browser-Standard-Stack),
+  // damit die UI-Schriftwahl (html-Ebene) nicht in die Untertitel durcherbt. ASS ist unberührt.
+  let subFontCss = $derived(({ arimo: "font-family:'Arimo',sans-serif;",
+                               noto:  "font-family:'Noto Sans',sans-serif;",
+                               tinos: "font-family:'Tinos',serif;" })[playbackPrefs.subtitleFont]
+        ?? 'font-family:ui-sans-serif,system-ui,sans-serif;');
   // -webkit-text-fill-color zusätzlich zu color: bei gesetztem -webkit-text-stroke bestimmt auf webOS die
   // FILL-Farbe das Rendering und fällt dort fälschlich auf Schwarz zurück, statt color zu erben → Untertitel
   // sonst schwarz trotz Farbwahl. Explizit setzen erzwingt die gewählte Farbe (am Desktop ohnehin no-op).
-  let subStyle = $derived(`color:${subColor};-webkit-text-fill-color:${subColor};${subEdgeCss}${subBgCss}`);
+  let subStyle = $derived(`color:${subColor};-webkit-text-fill-color:${subColor};${subFontCss}${subEdgeCss}${subBgCss}`);
 
   // Untertitelgröße → libbitsub-Skalierung (Variante B: gilt für PGS UND VobSub, nicht nur VTT).
   function graphicSubScale() {

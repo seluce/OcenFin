@@ -149,10 +149,10 @@
   let reduceAnimations = $state(false);
 
   // Anzeige-Elemente (Uhr, Hero-Banner, Episodenanzahl, Mediatheken) — einzeln abschaltbar
-  let displaySettings = $state({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
+  let displaySettings = $state({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
 
   // Standard-Audio-/Untertitelsprache
-  let playbackPrefs = $state({ audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true });
+  let playbackPrefs = $state({ audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true });
 
   // ── Profil-bezogene Einstellungen ───────────────────────────
   // Sprache + Anzeige + Wiedergabe + Animationen werden PRO BENUTZER gespeichert.
@@ -208,8 +208,8 @@
       setLang(p.language);
       localStorage.setItem('app_language', p.language);   // "zuletzt genutzt" aktualisieren
     }
-    displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
-    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true, ...(p.playbackPrefs || {}) };
+    displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
+    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true, ...(p.playbackPrefs || {}) };
     reduceAnimations = p.reduceAnimations ?? false;
     librarySorts     = p.librarySorts || {};   // gemerkte Sortierung pro Bibliothek
     sharedProfile    = p.sharedProfile && Array.isArray(p.sharedProfile.members)
@@ -248,6 +248,11 @@
     const sizes = { small: '16px', medium: '20px', large: '24px' };
     document.documentElement.style.fontSize = sizes[displaySettings.uiSize] || '20px';
     document.documentElement.setAttribute('data-theme', displaySettings.theme || 'blue');
+    // UI-Schriftart: am Root gesetzt, alles erbt (font-mono-Stellen bleiben bewusst mono).
+    // 'system' → Inline-Style entfernen → Chromium/webOS-Standard wie bisher. Gilt NICHT für
+    // ASS-Untertitel (eigene Schriften aus dem Skript), wohl aber für die VTT-Anzeige.
+    const fonts = { arimo: "'Arimo', sans-serif", noto: "'Noto Sans', sans-serif" };
+    document.documentElement.style.fontFamily = fonts[displaySettings.uiFont] || '';
   } });
 
   function onReduceAnimationsChange(v) {
@@ -1548,6 +1553,24 @@
   @font-face { font-family: 'Trebuchet MS'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bold.woff2') format('woff2'); }
   @font-face { font-family: 'Trebuchet MS'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/notosans-italic.woff2') format('woff2'); }
   @font-face { font-family: 'Trebuchet MS'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bolditalic.woff2') format('woff2'); }
+
+  /* ── UI-/VTT-Schriftarten (Einstellungen → Darstellung bzw. → Untertitel) ─────
+     Dieselben Dateien wie oben, nur unter ihren ECHTEN Namen registriert, damit
+     UI und VTT-Untertitel sie sauber referenzieren können ('Arimo' statt Umweg
+     über den 'Arial'-Alias). Tinos (Serife) nur für VTT wählbar. Kein zusätz-
+     licher Speicher — WOFF2 wird pro Datei nur einmal geladen. */
+  @font-face { font-family: 'Arimo'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/arimo-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Arimo'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/arimo-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Arimo'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/arimo-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Arimo'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/arimo-bolditalic.woff2') format('woff2'); }
+  @font-face { font-family: 'Noto Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/notosans-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Noto Sans'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Noto Sans'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/notosans-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Noto Sans'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bolditalic.woff2') format('woff2'); }
+  @font-face { font-family: 'Tinos'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/tinos-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Tinos'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/tinos-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Tinos'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/tinos-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Tinos'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/tinos-bolditalic.woff2') format('woff2'); }
 
   /* TV-Skalierung (10-Fuß-UI): hebt die rem-basierte Basisgröße an, damit Texte und
      Abstände aus Sofa-Entfernung größer wirken. Standard-Browser sind 16px; 20px = +25%.

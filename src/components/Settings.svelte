@@ -283,6 +283,9 @@
   function setTheme(theme) {
     onDisplayChange?.({ ...displaySettings, theme });
   }
+  function setUiFont(font) {
+    onDisplayChange?.({ ...displaySettings, uiFont: font });
+  }
   function setSeekStep(sec) {
     onDisplayChange?.({ ...displaySettings, seekStep: sec });
   }
@@ -563,6 +566,26 @@
               <button onclick={() => setUiSize(val)}
                 class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                        {(displaySettings.uiSize || 'medium') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                {label}
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Schriftart — eigener Punkt, gilt für die gesamte Oberfläche. ASS-Untertitel sind
+             ausgenommen (bringen ihre eigenen Schriften mit); die VTT-Anzeige erbt die Wahl.
+             Die Buttons zeigen sich jeweils in ihrer eigenen Schrift (Vorschau). -->
+        <div class="p-6">
+          <span class="text-2xl text-white font-medium block">{i18n.t.uiFont}</span>
+          <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.uiFontDesc}</span>
+          <div class="flex gap-3">
+            {#each [['system', i18n.t.fontSystem, ''], ['arimo', 'Arimo', "'Arimo', sans-serif"], ['noto', 'Noto Sans', "'Noto Sans', sans-serif"]] as [val, label, fam]}
+              <button onclick={() => setUiFont(val)}
+                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                       {(displaySettings.uiFont || 'system') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}"
+                style={fam ? `font-family: ${fam}` : ''}>
                 {label}
               </button>
             {/each}
@@ -1107,6 +1130,23 @@
                 <button onclick={() => setSubtitleSize(val)}
                   class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                          {playbackPrefs.subtitleSize === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                  {label}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <!-- VTT-Schriftart — nur Textuntertitel, bewusst getrennt von der UI-Schrift (Darstellung).
+               Buttons zeigen sich in ihrer eigenen Schrift (Vorschau); Tinos = Serife, nur hier wählbar. -->
+          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+            <span class="text-2xl text-white font-medium block">{i18n.t.subtitleFont}</span>
+            <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleFontDesc}</span>
+            <div class="flex gap-3">
+              {#each [['system', i18n.t.fontSystem, ''], ['arimo', 'Arimo', "'Arimo', sans-serif"], ['noto', 'Noto Sans', "'Noto Sans', sans-serif"], ['tinos', 'Tinos', "'Tinos', serif"]] as [val, label, fam]}
+                <button onclick={() => setSubtitlePref('subtitleFont', val)}
+                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {(playbackPrefs.subtitleFont || 'system') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}"
+                  style={fam ? `font-family: ${fam}` : ''}>
                   {label}
                 </button>
               {/each}
