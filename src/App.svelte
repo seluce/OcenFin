@@ -987,7 +987,7 @@
           `${session.serverUrl}/Users/${m.id}/Items?ParentId=${libraryId}&Recursive=true` +
           `&IncludeItemTypes=Movie,Series&Fields=UserData&EnableImages=false` +
           `&Limit=100000&EnableTotalRecordCount=false`,
-          { headers: { 'Authorization': `MediaBrowser Token="${token}"`, 'Content-Type': 'application/json' } }
+          { headers: authHeaders(token) }
         );
         if (!res.ok) { console.warn('[Shared] query failed for', m.name, '· HTTP', res.status); continue; }
         let n = 0;
@@ -1021,7 +1021,7 @@
         const res = await fetch(
           `${session.serverUrl}/Users/${m.id}/Items?Recursive=true&IncludeItemTypes=Movie,Series` +
           `&Fields=Genres,CommunityRating,UserData&EnableImageTypes=Primary&Limit=100000&EnableTotalRecordCount=false`,
-          { headers: { 'Authorization': `MediaBrowser Token="${token}"`, 'Content-Type': 'application/json' } }
+          { headers: authHeaders(token) }
         );
         if (!res.ok) continue;
         const items = (await res.json()).Items || [];
@@ -1073,9 +1073,7 @@
   // `${session.serverUrl}` dort auf '' zeigen → relativer Fetch auf die App-Origin statt auf den Server.
   async function validateToken(token, baseUrl = session.serverUrl) {
     try {
-      const res = await fetch(`${baseUrl}/Users/Me`, {
-        headers: { "Authorization": `MediaBrowser Token="${token}"` }
-      });
+      const res = await fetch(`${baseUrl}/Users/Me`, { headers: authHeaders(token) });
       if (!res.ok) dlog('[auth] token validation failed — HTTP', res.status);
       return res.ok;
     } catch (e) { dlog('[auth] token validation — network error:', e?.message || e); return false; }

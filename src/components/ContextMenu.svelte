@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount } from '../utils.js';
+  import { isBackKey, focusOnMount, authHeaders } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy } from 'svelte';
 
@@ -31,7 +31,7 @@
   });
 
   function headers() {
-    return { "Authorization": `MediaBrowser Token="${session.token}"`, "Content-Type": "application/json" };
+    return authHeaders(session.token);
   }
   async function call(method, path) {
     busy = true;
