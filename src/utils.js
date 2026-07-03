@@ -396,6 +396,11 @@ export function serverSupportsVobSub(version) {
 }
 
 // Standard-Authentifizierungs-Header für Jellyfin-API-Aufrufe (Token + JSON-Content-Type).
+// KONVENTION für Listen-Abfragen (/Items, /Persons, /Genres, NextUp, Resume …):
+// immer &EnableTotalRecordCount=false anhängen — der Server spart sich sonst pro Abfrage
+// eine COUNT-Query über die Bibliothek. Ausnahmen (brauchen den Zähler wirklich): Library-
+// Hauptabfrage + letterStartIndex (Pagination/A-Z) und die Personen-Zählprüfung der Suche
+// (Limit=0). Audit-Einzeiler:  grep -rn "Items?" --include=*.svelte | grep -v EnableTotalRecordCount
 // Zentral, damit nicht jede Komponente ihre eigene Kopie pflegt.
 export function authHeaders(token) {
   return {
