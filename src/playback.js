@@ -6,13 +6,7 @@
 // gebrannt werden müssen, weil der Browser nur VTT rendern kann).
 // ============================================================
 
-import { dlog } from './utils.js';
-
-// Auth-Header — exakt im selben Format wie die übrigen (funktionierenden) API-Aufrufe der App,
-// damit PlaybackInfo nicht an einem abweichenden Header scheitert.
-function authHeader(token) {
-  return `MediaBrowser Token="${token}"`;
-}
+import { dlog, authHeaders } from './utils.js';
 
 // Geräteprofil für den LG B4 (webOS, Chromium-basierter <video>-Player).
 // Bewusste Entscheidungen:
@@ -152,7 +146,7 @@ export async function getPlaybackInfo({
 
   const res = await fetch(`${serverUrl}/Items/${itemId}/PlaybackInfo?${qs.toString()}`, {
     method: 'POST',
-    headers: { 'Authorization': authHeader(token), 'Content-Type': 'application/json' },
+    headers: authHeaders(token),   // ein Auth-Schema, eine Quelle (utils)
     body: JSON.stringify(body),
   });
   if (!res.ok) {
