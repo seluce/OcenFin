@@ -126,7 +126,7 @@
   // ── Laden ───────────────────────────────────────────────────
   async function loadGenres(libraryId) {
     try {
-      const res = await fetch(`${session.serverUrl}/Genres?ParentId=${libraryId}&UserId=${selectedUser.Id}`, authOpts());
+      const res = await fetch(`${session.serverUrl}/Genres?ParentId=${libraryId}&UserId=${selectedUser.Id}&EnableTotalRecordCount=false`, authOpts());
       if (res.ok) { const d = await res.json(); availableGenres = d.Items || []; }
     } catch { }
   }
