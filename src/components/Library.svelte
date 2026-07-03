@@ -693,7 +693,7 @@
           <div class="flex flex-col gap-3 pb-2">
             <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{i18n.t.genres}</h3>
             <div class="flex flex-wrap gap-3">
-              {#each availableGenres as genre}
+              {#each availableGenres as genre (genre)}
                 <button onclick={() => toggleGenre(genre.Name)}
                   class="px-5 py-2 rounded-full font-bold text-lg border-2 transition-all focus:outline-none focus:ring-4 focus:ring-white
                          {selectedGenres.includes(genre.Name) ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-white'}">

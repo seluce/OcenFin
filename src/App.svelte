@@ -1724,7 +1724,7 @@
         {#if savedServers.length > 0}
           <div class="flex flex-col gap-3">
             <p class="text-sm text-gray-400 uppercase tracking-wider font-bold ml-1">{i18n.t.savedServers}</p>
-            {#each savedServers as server, i}
+            {#each savedServers as server, i (server.id)}
               <div class="flex items-center gap-3">
                 <button
                   onclick={() => connectToServer(server)}
@@ -1834,7 +1834,7 @@
             {#if discoveredServers.length > 0}
               <div class="flex flex-col gap-2">
                 <p class="text-xs text-gray-400 uppercase tracking-wider font-bold">{i18n.t.serverFound}</p>
-                {#each discoveredServers as d}
+                {#each discoveredServers as d (d.url)}
                   <button
                     onclick={() => addAndConnectServer(d.url)}
                     class="flex items-center justify-between p-4 bg-gray-900 hover:bg-gray-700 focus:bg-gray-700
@@ -1988,7 +1988,7 @@
           <!-- Profile -->
           {#if users.length > 0}
             <div class="flex flex-wrap justify-center gap-10">
-              {#each users as user, i}
+              {#each users as user, i (user.Id)}
                 <button onclick={() => handleUserClick(user)} {@attach focusOnMount(i === 0)} class="flex flex-col items-center group focus:outline-none">
                   <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl transition-all">
                     {#if user.PrimaryImageTag}

@@ -21,21 +21,27 @@
   // Bei jedem Öffnen frisch laden (Eltern setzt mode von null auf einen Wert)
   $effect(() => { if (mode) loadList(mode); });
 
+  // Stale-Guard (Muster wie in Suche/Details): Schnelles Schließen + Wiederöffnen des Dialogs
+  // kann zwei loadList-Läufe überlappen — nur der jüngste darf Liste/Spinner schreiben.
+  let loadListToken = 0;
+
   async function loadList(m) {
+    const myToken = ++loadListToken;
     items = []; newName = ''; msg = ''; msgError = false; loading = true; alreadyIn.clear(); childrenOf = {};
     const type = m === 'collection' ? 'BoxSet' : 'Playlist';
     try {
       const res = await fetch(
-        `${session.serverUrl}/Users/${selectedUser.Id}/Items?Recursive=true&IncludeItemTypes=${type}&SortBy=SortName&SortOrder=Ascending`,
+        `${session.serverUrl}/Users/${selectedUser.Id}/Items?Recursive=true&IncludeItemTypes=${type}&SortBy=SortName&SortOrder=Ascending&EnableTotalRecordCount=false`,
         { headers: getAuthHeaders() }
       );
-      if (res.ok) items = (await res.json()).Items || [];
+      if (res.ok) { const d = await res.json(); if (myToken !== loadListToken) return; items = d.Items || []; }
     } catch { }
+    if (myToken !== loadListToken) return;
     // Inhalte jedes Ziels holen → Mitgliedschaft (keine Duplikate) + Vorschau, was drin ist
     await Promise.all(items.map(async (target) => {
       try {
         const url = m === 'collection'
-          ? `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${target.Id}&Fields=&Limit=300`
+          ? `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${target.Id}&Fields=&Limit=300&EnableTotalRecordCount=false`
           : `${session.serverUrl}/Playlists/${target.Id}/Items?UserId=${selectedUser.Id}&Limit=300`;
         const r = await fetch(url, { headers: getAuthHeaders() });
         if (r.ok) {
@@ -45,7 +51,7 @@
         }
       } catch { }
     }));
-    loading = false;
+    if (myToken === loadListToken) loading = false;
   }
 
   function close() { onClose?.(); }
@@ -144,7 +150,7 @@
               <div class="flex-1 min-w-0">
                 <div class="text-lg truncate {has ? 'text-gray-300' : ''}">{target.Name}</div>
                 {#if childrenOf[target.Id]?.length}
-                  <div class="text-sm text-gray-500 truncate">{childrenOf[target.Id].map(c => c.Name).join(', ')}</div>
+                  <div class="text-sm text-gray-500 truncate">{childrenOf[target.Id].slice(0, 10).map(c => c.Name).join(', ')}</div>
                 {/if}
                 {#if has}<div class="text-sm text-green-400">{i18n.t.alreadyAdded}</div>{/if}
               </div>

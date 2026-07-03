@@ -495,7 +495,7 @@
             <!-- Punkt-Indikatoren — nur wenn auch rotiert wird (bei reduzierter Bewegung: statischer Hero ohne Punkte) -->
             {#if !reduceAnimations && heroItems.length > 1}
               <div class="flex gap-2 ml-2">
-                {#each heroItems as _, i}
+                {#each heroItems as h, i (h.Id)}
                   <div class="h-2 rounded-full transition-all {i === heroIndex ? 'w-6 bg-white' : 'w-2 bg-white/40'}"></div>
                 {/each}
               </div>

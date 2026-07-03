@@ -1648,7 +1648,7 @@
             </div>
           {/if}
           {#if showChapters && duration > 0 && chapters.length > 1}
-            {#each chapters as ch}
+            {#each chapters as ch (ch.StartPositionTicks)}
               <div class="absolute top-1/2 -translate-y-1/2 w-0.5 h-3 bg-white/60 rounded-full pointer-events-none"
                    style="left: {(ch.StartPositionTicks / 10000000 / duration) * 100}%"></div>
             {/each}
@@ -1811,7 +1811,7 @@
         <div class="overflow-y-auto hide-scrollbar flex flex-col gap-2">
 
           {#if settingsTab === 'audio'}
-            {#each audioStreams as stream}
+            {#each audioStreams as stream (stream.Index)}
               <button onclick={() => changeTrack('audio', stream.Index)}
                 class="text-left p-3 rounded-lg font-medium text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors
                        {selectedAudioIndex === stream.Index ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
@@ -1826,7 +1826,7 @@
                      {selectedSubtitleIndex === -1 ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
               {i18n.t.subtitleOff}
             </button>
-            {#each subtitleStreams as stream}
+            {#each subtitleStreams as stream (stream.Index)}
               <button onclick={() => changeTrack('subtitle', stream.Index)}
                 class="text-left p-3 rounded-lg font-medium text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors
                        {selectedSubtitleIndex === stream.Index ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">

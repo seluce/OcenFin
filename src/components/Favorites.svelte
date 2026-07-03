@@ -43,11 +43,11 @@
         fetch(
           `${session.serverUrl}/Users/${selectedUser.Id}/Items?Filters=IsFavorite&Recursive=true` +
           `&IncludeItemTypes=Movie,Series,BoxSet,Season,Episode&SortBy=SortName&SortOrder=Ascending` +
-          `&Fields=PrimaryImageAspectRatio,ProductionYear,UserData,SeriesName,ParentIndexNumber,IndexNumber,SeriesId&EnableImageTypes=Primary,Backdrop,Thumb`,
+          `&Fields=PrimaryImageAspectRatio,ProductionYear,UserData,SeriesName,ParentIndexNumber,IndexNumber,SeriesId&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`,
           { headers: getAuthHeaders() }
         ),
         fetch(
-          `${session.serverUrl}/Persons?UserId=${selectedUser.Id}&IsFavorite=true&SortBy=SortName&SortOrder=Ascending&Fields=PrimaryImageAspectRatio`,
+          `${session.serverUrl}/Persons?UserId=${selectedUser.Id}&IsFavorite=true&SortBy=SortName&SortOrder=Ascending&Fields=PrimaryImageAspectRatio&EnableTotalRecordCount=false`,
           { headers: getAuthHeaders() }
         ),
       ]);

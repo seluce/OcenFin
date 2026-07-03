@@ -6,8 +6,6 @@
 
   let { item, userId, onChanged, onOpenDetails, onAddToList, onClose } = $props();
 
-  let busy = false;
-
   // Lokale (optimistische) Zustände — werden beim Klick sofort umgeschaltet, damit
   // Beschriftung/Icons im Menü die Änderung direkt zeigen. Initial aus dem Item.
   let played    = $state(!!item?.UserData?.Played);
@@ -34,13 +32,11 @@
     return authHeaders(session.token);
   }
   async function call(method, path) {
-    busy = true;
     try {
       await fetch(`${session.serverUrl}${path}`, { method, headers: headers() });
     } catch (e) {
       console.error('context action failed', e);
     }
-    busy = false;
   }
 
   async function toggleWatched() {

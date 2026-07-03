@@ -38,7 +38,7 @@
     // Sammlungen/BoxSets über ParentId.
     const url = collection.Type === 'Playlist'
       ? `${session.serverUrl}/Playlists/${collection.Id}/Items?UserId=${selectedUser.Id}&Fields=PrimaryImageAspectRatio&Limit=300`
-      : `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${collection.Id}&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=100`;
+      : `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${collection.Id}&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=100&EnableTotalRecordCount=false`;
     try {
       const res = await fetch(url, { headers: getAuthHeaders() });
       if (res.ok) items = (await res.json()).Items || [];
@@ -246,13 +246,13 @@
       { label: '',          items: items.filter(i => !['Movie', 'Series', 'Episode'].includes(i.Type)) }
     ].filter(g => g.items.length)}
     <div class="flex flex-col gap-10 pr-4">
-      {#each groups as group}
+      {#each groups as group (group.label)}
         <div>
           {#if groups.length > 1 && group.label}
             <h2 class="text-2xl font-bold text-gray-400 mb-4">{group.label}</h2>
           {/if}
           <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
-            {#each group.items as item}
+            {#each group.items as item (item.PlaylistItemId ?? item.Id)}
               <button onclick={() => onOpenDetails(item)}
                 {@attach longPress()} onlongpress={() => onContextMenu(item)}
                 class="group focus:outline-none text-left cv-auto">

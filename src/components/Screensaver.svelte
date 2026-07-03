@@ -32,9 +32,10 @@
   const CLOCK_FIRST_MOVE = 20000;   // erster Wechsel nach 20 s
   const CLOCK_INTERVAL   = 45000;   // danach alle 45 s
   let posX = $state(30), posY = $state(35), clockOn = $state(true);
+  let clockMoveTimeout = null;   // einziger Timer, der bisher NICHT im onDestroy geräumt wurde
   function moveClock() {
     clockOn = false;                          // ausblenden
-    setTimeout(() => {
+    clockMoveTimeout = setTimeout(() => {
       posX = 12 + Math.random() * 76;         // unsichtbar an neue Stelle setzen
       posY = 16 + Math.random() * 64;
       clockOn = true;                         // wieder einblenden
@@ -173,6 +174,7 @@
     clearInterval(clockTick);
     clearInterval(moveTimer);
     clearTimeout(firstMove);
+    clearTimeout(clockMoveTimeout);
     clearTimeout(artTimer);
     clearTimeout(firstArtTimeout);
   });
