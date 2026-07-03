@@ -62,7 +62,7 @@
       .filter(it => it.BackdropImageTags && it.BackdropImageTags.length)
       .map(it => ({
         id: it.Id,
-        url: `${session.serverUrl}/Items/${it.Id}/Images/Backdrop/0?tag=${it.BackdropImageTags[0]}&maxWidth=1920&quality=85&ApiKey=${session.token}`,
+        url: `${session.serverUrl}/Items/${it.Id}/Images/Backdrop/0?tag=${it.BackdropImageTags[0]}&maxWidth=1920&quality=85&format=webp&ApiKey=${session.token}`,
         title: it.Name || '',
         logo: it.ImageTags?.Logo ? logoUrl(it.Id, it.ImageTags.Logo) : null,
       }));
@@ -80,7 +80,7 @@
       .filter(ep => ep.SeriesId && ep.ParentBackdropImageTags && ep.ParentBackdropImageTags.length)
       .map(ep => ({
         id: ep.SeriesId,
-        url: `${session.serverUrl}/Items/${ep.SeriesId}/Images/Backdrop/0?tag=${ep.ParentBackdropImageTags[0]}&maxWidth=1920&quality=85&ApiKey=${session.token}`,
+        url: `${session.serverUrl}/Items/${ep.SeriesId}/Images/Backdrop/0?tag=${ep.ParentBackdropImageTags[0]}&maxWidth=1920&quality=85&format=webp&ApiKey=${session.token}`,
         title: ep.SeriesName || ep.Name || '',
         logo: ep.ParentLogoImageTag ? logoUrl(ep.ParentLogoItemId || ep.SeriesId, ep.ParentLogoImageTag) : null,
       }));

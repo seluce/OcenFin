@@ -1076,7 +1076,7 @@
       .map(it => ({ it, score: (it.Genres || []).reduce((s, g) => s + (weights[g] || 0), 0) }))
       .filter(x => x.score > 0)
       .sort((a, b) => b.score - a.score || (b.it.CommunityRating || 0) - (a.it.CommunityRating || 0))
-      .slice(0, 20)
+      .slice(0, 12)   // einheitliche Dashboard-Reihenlänge (ROW_LIMIT in Dashboard.svelte)
       .map(x => ({ ...x.it, UserData: {} }));   // UserData leeren → kein Fortschrittsbalken eines Mitglieds
     dlog('[Shared] suggestions:', sharedSuggestions.length);
   }
@@ -1992,7 +1992,7 @@
                 <button onclick={() => handleUserClick(user)} {@attach focusOnMount(i === 0)} class="flex flex-col items-center group focus:outline-none">
                   <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl transition-all">
                     {#if user.PrimaryImageTag}
-                      <img src="{session.serverUrl}/Users/{user.Id}/Images/Primary?tag={user.PrimaryImageTag}" alt={user.Name} class="w-full h-full object-cover"/>
+                      <img src="{session.serverUrl}/Users/{user.Id}/Images/Primary?tag={user.PrimaryImageTag}&fillWidth=300&fillHeight=300&quality=90&format=webp" alt={user.Name} class="w-full h-full object-cover"/>
                     {:else}
                       <div class="w-full h-full bg-gray-700 flex items-center justify-center">
                         <span class="text-6xl font-bold">{user.Name.charAt(0)}</span>

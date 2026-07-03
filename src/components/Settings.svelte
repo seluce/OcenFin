@@ -393,7 +393,7 @@
         list.push({
           id,
           name: isEp ? (it.SeriesName || it.Name) : it.Name,
-          imageUrl: `${session.serverUrl}/Items/${id}/Images/Primary?tag=${tag}&fillHeight=300&quality=90&ApiKey=${session.token}`,
+          imageUrl: `${session.serverUrl}/Items/${id}/Images/Primary?tag=${tag}&fillHeight=300&quality=90&format=webp&ApiKey=${session.token}`,
         });
         if (list.length >= AVATAR_ICON_KEYS.length) break;
       }
@@ -1210,7 +1210,7 @@
             {#if hasEditedAvatar && avatarPoster}
               <img src={avatarPoster.imageUrl} alt={avatarPoster.name} class="w-full h-full object-cover" />
             {:else if !hasEditedAvatar && selectedUser?.PrimaryImageTag}
-              <img src="{session.serverUrl}/Users/{selectedUser.Id}/Images/Primary?tag={selectedUser.PrimaryImageTag}" alt={i18n.t.profilePicture} class="w-full h-full object-cover" />
+              <img src="{session.serverUrl}/Users/{selectedUser.Id}/Images/Primary?tag={selectedUser.PrimaryImageTag}&fillWidth=160&fillHeight=160&quality=90&format=webp" alt={i18n.t.profilePicture} class="w-full h-full object-cover" />
             {:else}
               <svg class="w-11 h-11 text-white" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[effectiveIcon]}/></svg>
             {/if}

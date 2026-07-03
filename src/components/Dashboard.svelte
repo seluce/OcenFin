@@ -94,6 +94,8 @@
 
   const getAuthHeaders = () => authHeaders(session.token);
   const FIELDS = "PrimaryImageAspectRatio,Overview,BackdropImageTags";
+  const ROW_LIMIT = 12;   // einheitliche Reihenlänge: Reihen sind Teaser, der Katalog ist die Bibliothek
+                          // (Ausnahmen bewusst: Hero = 5er-Rotation, Sammlungen = kuratiert, ungekappt)
 
   // NextUp um Titel bereinigen, die schon in "Weiterschauen" laufen (per Episode- oder Serien-Id).
   function filterNextUp(raw) {
@@ -110,8 +112,8 @@
       const uId  = selectedUser.Id;
       const opts = { headers: getAuthHeaders() };
       const [rRes, rNext] = await Promise.all([
-        fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=12&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb`, opts),
-        fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=6&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb`, opts),
+        fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb`, opts),
+        fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb`, opts),
       ]);
       continueWatching = (await rRes.json()).Items || [];
       const dNext = await rNext.json();
@@ -136,7 +138,7 @@
       // Einstellung 1 oder 2 — so wirkt das Umschalten ohne Neuladen sofort.
       const rows = [];
       for (const seed of seeds.slice(0, 2)) {
-        const sim = await fetch(`${session.serverUrl}/Items/${seed.Id}/Similar?userId=${uId}&limit=12&Fields=${fields}`, opts);
+        const sim = await fetch(`${session.serverUrl}/Items/${seed.Id}/Similar?userId=${uId}&limit=${ROW_LIMIT}&Fields=${fields}`, opts);
         const items = (await sim.json()).Items || [];
         if (items.length >= 4) rows.push({ seedTitle: seed.Name, items });
       }
@@ -167,10 +169,10 @@
 
       // Alle 5 Fetches gleichzeitig starten — kein sequentielles Warten
       const pViews        = fetch(`${session.serverUrl}/Users/${uId}/Views`, opts);
-      const pResume       = fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=12&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
-      const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=6&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
-      const pLatestMovies = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Movie&Limit=6&Fields=${fields}`, opts);
-      const pLatestSeries = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Series&Limit=6&Fields=${fields}`, opts);
+      const pResume       = fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
+      const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
+      const pLatestMovies = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Movie&Limit=${ROW_LIMIT}&Fields=${fields}`, opts);
+      const pLatestSeries = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Series&Limit=${ROW_LIMIT}&Fields=${fields}`, opts);
       // Verlauf: zuletzt gesehene Filme/Folgen. Mehr holen (40), da Serien danach
       // zu je einem Eintrag zusammengefasst werden (Puffer für eine gute Mischung).
       const pHistory      = fetch(`${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}`, opts);
@@ -198,7 +200,7 @@
 
       // Verlauf laden + nach Serie zusammenfassen
       pHistory.then(r => r.json()).then(async d => {
-        let items = dedupeHistory(d.Items || []);
+        let items = dedupeHistory(d.Items || []).slice(0, ROW_LIMIT);   // Reihenlänge vereinheitlicht; Kappen VOR der Anreicherung spart Serien-Lookups
         // Serien wie in der Mediathek mit echtem Jahresbereich zeigen ("2016 – 2019" / "2024 – heute"):
         // einmalig die echten Serien-Infos (Jahr/Status/EndDate) für alle Serien-Einträge nachladen.
         const seriesIds = items.filter(i => i.Type === 'Series').map(i => i.Id);
