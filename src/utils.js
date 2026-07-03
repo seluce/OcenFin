@@ -574,7 +574,12 @@ export function blurUp(hash) {
   return (node) => {
     if (!hash) { node.style.backgroundImage = ''; return; }
     let url = _blurCache.get(hash);
-    if (url === undefined) { url = decodeBlurHash(hash); _blurCache.set(hash, url); }
+    if (url === undefined) {
+      // Deckel: Die App laeuft auf dem TV tagelang ohne Reload — unbegrenzt wuerde der Cache mit
+      // jedem je gesehenen Hash wachsen. Leeren ist billig (danach nur ein paar Re-Decodes).
+      if (_blurCache.size > 500) _blurCache.clear();
+      url = decodeBlurHash(hash); _blurCache.set(hash, url);
+    }
     if (url) { node.style.backgroundImage = `url(${url})`; node.style.backgroundSize = 'cover'; node.style.backgroundPosition = 'center'; }
   };
 }
