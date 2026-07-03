@@ -1493,6 +1493,16 @@
   function contextAddToList(item) { contextPickerItem = item; contextPickerMode = 'playlist'; }
 
   // Zurück aus Details/Player → an die Herkunft, Bibliotheksposition wiederherstellen
+  // Startet die Wiedergabe eines Items — genutzt von Details (Play/Von-Anfang/Zufallsfolge)
+  // und Collection (Zufällige Wiedergabe). Eine Quelle statt zwei Inline-Kopien.
+  function startPlayback(p) {
+    if (p.item) currentDetailItem = p.item;
+    activeAudioIndex    = p.audioIndex    ?? -1;
+    activeSubtitleIndex = p.subtitleIndex ?? -1;
+    activeMediaSourceId = p.mediaSourceId ?? null;
+    viewState = 'player';
+  }
+
   async function returnFromDetails() {
     viewState = detailsOrigin;
     if (detailsOrigin === 'library') {
@@ -2141,13 +2151,7 @@
             onOpenItemById={(id) => loadItemById(id)}
             onOpenPerson={(person) => openPerson(person)}
             onLibChanged={refreshLibraries}
-            onPlayVideo={(p) => {
-              if (p.item) currentDetailItem = p.item;
-              activeAudioIndex    = p.audioIndex    ?? -1;
-              activeSubtitleIndex = p.subtitleIndex ?? -1;
-              activeMediaSourceId = p.mediaSourceId ?? null;
-              viewState = 'player';
-            }}
+            onPlayVideo={startPlayback}
           />
 
         {:else if viewState === 'person'}
@@ -2163,6 +2167,7 @@
             onBack={() => viewState = collectionReturnView}
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu}
             onChildCountChanged={onCollectionChildCount}
+            onPlayVideo={(p) => { detailsOrigin = 'collection'; startPlayback(p); }}
             onPlaylistRenamed={onCollectionRenamed}
             onPlaylistDeleted={onCollectionDeleted} />
         {/if}

@@ -181,6 +181,7 @@
 
   function dismiss() { onDismiss?.(); }
   let useArt = $derived(mode === 'art' && artReady);
+
 </script>
 
 <!-- Schwarzer Grund schont OLED; im Art-Modus stark abgedunkelte Backdrops im Crossfade. -->
