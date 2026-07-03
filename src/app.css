@@ -1,1 +1,14 @@
 @import "tailwindcss";
+/* Scrollbalken global ausblenden — überall dort, wo .hide-scrollbar gesetzt ist. */
+.hide-scrollbar::-webkit-scrollbar { display: none; }                 /* Chromium / WebKit (auch webOS) */
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }  /* Firefox / Edge-Legacy */
+
+/* Rendering-Kosten sparen: Karten außerhalb des Sichtbereichs überspringt der Browser
+   (Layout/Paint), bis sie in die Nähe scrollen. Genutzt von den Grid-Ansichten
+   (Library, Collection, Favorites, Person). Global statt pro Komponente, weil es —
+   wie .hide-scrollbar — eine Opt-in-Utility ist; Svelte-Scoping würde sie bei jeder
+   Extraktion erneut verlieren (genau das war hier passiert: cv-auto stand im Markup,
+   die Regel existierte nirgends mehr).
+   contain-intrinsic-size: 'auto' merkt sich nach dem ersten Rendern die echte Größe
+   (kein Scroll-Springen); 480px ist nur der Platzhalter davor (~2:3-Karte + Textzeilen). */
+.cv-auto { content-visibility: auto; contain-intrinsic-size: auto 480px; }

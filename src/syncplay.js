@@ -2,9 +2,11 @@
 // Phase 1: Gruppen verwalten (auflisten/erstellen/beitreten/verlassen) per REST + Polling.
 // Phase 2 (später): Echtzeit-Synchronisation der Wiedergabe über WebSocket-Kommandos.
 
-function headers(token) {
-  return { 'Authorization': `MediaBrowser Token="${token}"`, 'Content-Type': 'application/json' };
-}
+import { authHeaders } from './utils.js';
+
+// Ein Auth-Schema, eine Quelle: utils.authHeaders. Lokaler Alias bleibt, damit die
+// vielen Aufrufstellen unverändert bleiben (headers(token) statt überall umzubauen).
+const headers = (token) => authHeaders(token);
 
 // Registriert die Sitzung als steuerbar — Voraussetzung dafür, dass SyncPlay die Sitzung
 // in einer Gruppe ansprechen darf. Idempotent; einmal nach dem Login genügt.

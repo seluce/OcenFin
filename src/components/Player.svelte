@@ -36,7 +36,7 @@
 
   let videoElement;
   let playerContainer;
-  let settingsPanel;       // bind für Auto-Fokus auf WebOS
+  let settingsPanel = $state();       // bind für Auto-Fokus auf WebOS
   let playPauseBtn;        // bind: damit ▼ von der Leiste direkt hierher springt
   let seekBarEl;           // bind: damit Links/Rechts bei verborgenem HUD direkt hierher springt
   let isPlaying  = $state(false);
@@ -563,14 +563,23 @@
   let subEdgeCss = $derived((playbackPrefs.subtitleEdge === 'outline')
         ? '-webkit-text-stroke:0.35vh #000;paint-order:stroke fill;text-shadow:0 0 3px rgba(0,0,0,.55);'
         : (playbackPrefs.subtitleEdge === 'none')
-        ? '-webkit-text-stroke:0;text-shadow:none;'
-        : '-webkit-text-stroke:0;text-shadow:0 1px 2px #000,0 2px 8px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.9);');
+        ? 'text-shadow:none;'
+        : 'text-shadow:0 1px 2px #000,0 2px 8px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.9);');
   let subBgCss = $derived((playbackPrefs.subtitleBackground === 'solid')
         ? 'background:#000;padding:0.05em 0.5em;border-radius:0.5vh;'
         : (playbackPrefs.subtitleBackground === 'semi')
         ? 'background:rgba(0,0,0,.6);padding:0.05em 0.5em;border-radius:0.5vh;'
         : 'background:transparent;');
-  let subStyle = $derived(`color:${subColor};${subEdgeCss}${subBgCss}`);
+  // VTT-Schriftart — bewusst IMMER explizit gesetzt (auch bei 'system' → Browser-Standard-Stack),
+  // damit die UI-Schriftwahl (html-Ebene) nicht in die Untertitel durcherbt. ASS ist unberührt.
+  let subFontCss = $derived(({ arimo: "font-family:'Arimo',sans-serif;",
+                               noto:  "font-family:'Noto Sans',sans-serif;",
+                               tinos: "font-family:'Tinos',serif;" })[playbackPrefs.subtitleFont]
+        ?? 'font-family:ui-sans-serif,system-ui,sans-serif;');
+  // -webkit-text-fill-color zusätzlich zu color: bei gesetztem -webkit-text-stroke bestimmt auf webOS die
+  // FILL-Farbe das Rendering und fällt dort fälschlich auf Schwarz zurück, statt color zu erben → Untertitel
+  // sonst schwarz trotz Farbwahl. Explizit setzen erzwingt die gewählte Farbe (am Desktop ohnehin no-op).
+  let subStyle = $derived(`color:${subColor};-webkit-text-fill-color:${subColor};${subFontCss}${subEdgeCss}${subBgCss}`);
 
   // Untertitelgröße → libbitsub-Skalierung (Variante B: gilt für PGS UND VobSub, nicht nur VTT).
   function graphicSubScale() {
@@ -804,17 +813,21 @@
     startCountdown();
   } });
 
+  // Nächste Folge leicht vorladen (nur PlaybackInfo/Stream-URL, kein Video-Pre-Buffering),
+  // damit der Wechsel den Roundtrip spart. Greift nur, wenn die Parameter beim Wechsel passen.
+  // Gemeinsamer Helfer für BEIDE Wechselpfade: Countdown UND Auto-Skip-Abspann.
+  function prefetchNextEpisode() {
+    if (!nextEpisode?.Id) return;
+    prefetchPlaybackInfo({
+      serverUrl: session.serverUrl, userId: selectedUser.Id, token: session.token, itemId: nextEpisode.Id,
+      audioStreamIndex: selectedAudioIndex, subtitleStreamIndex: selectedSubtitleIndex,
+      maxBitrate, burnSubtitles: playbackPrefs.burnSubtitles, mediaSourceId: null,
+      clientGraphicSubs: clientGraphicRender, serverVobSub,
+    });
+  }
+
   function startCountdown() {
-    // Nächste Folge leicht vorladen (nur PlaybackInfo/Stream-URL, kein Video-Pre-Buffering),
-    // damit der Wechsel den Roundtrip spart. Greift nur, wenn die Parameter beim Wechsel passen.
-    if (nextEpisode?.Id) {
-      prefetchPlaybackInfo({
-        serverUrl: session.serverUrl, userId: selectedUser.Id, token: session.token, itemId: nextEpisode.Id,
-        audioStreamIndex: selectedAudioIndex, subtitleStreamIndex: selectedSubtitleIndex,
-        maxBitrate, burnSubtitles: playbackPrefs.burnSubtitles, mediaSourceId: null,
-        clientGraphicSubs: clientGraphicRender, serverVobSub,
-      });
-    }
+    prefetchNextEpisode();
     nextCountdown = COUNTDOWN_FROM;   // sofort sichtbar → Karte erscheint
     countdownProgress = 1;
     countdownEnd = Date.now() + COUNTDOWN_FROM * 1000;
@@ -871,6 +884,7 @@
   } });
   $effect(() => { if (playbackPrefs.autoSkipCredits && showSkipCredits && !creditsAutoSkipped && nextEpisode) {
     creditsAutoSkipped = true;
+    prefetchNextEpisode();   // dieser Pfad umgeht den Countdown → Fetch läuft parallel zum Player-Remount
     goToNextEpisode();
   } });
 
@@ -961,6 +975,7 @@
     if (seekCommitTimer) clearTimeout(seekCommitTimer);
     if (clockTimer)      clearInterval(clockTimer);
     if (infoInterval)    clearInterval(infoInterval);
+    clearSpinner();
     clearBufferWatchdog();
     if (hls) { try { hls.destroy(); } catch {} hls = null; }
     disposeGraphic();
@@ -1462,9 +1477,9 @@
     bind:this={videoElement}
     preload="auto"
     class="w-full h-full object-contain"
-    onplay={() => { vlog('play'); isPlaying = true; onPlayable(); onLocalPlay(); }}
+    onplay={() => { vlog('play'); isPlaying = true; onPlayable(); onLocalPlay(); flushProgress(); }}
     onplaying={() => { vlog('playing'); onPlayable(); syncReportReady(); }}
-    onpause={() => { isPlaying = false; clearSpinner(); isBuffering = false; clearBufferWatchdog(); onLocalPause(); }}
+    onpause={() => { isPlaying = false; clearSpinner(); isBuffering = false; clearBufferWatchdog(); onLocalPause(); flushProgress(); }}
     onseeked={onLocalSeeked}
     onseeking={syncReportBuffering}
     onwaiting={() => { vlog('waiting'); onWaiting(); syncReportBuffering(); }}
@@ -1480,7 +1495,7 @@
     }}
     onended={onVideoEnded}
     onclick={togglePlay}
-  />
+  ></video>
 
   <!-- ASS/SSA-Untertitel: assjs injiziert hier sein DOM-Overlay, synchron zum <video> (liest KEINE Pixel
        → kein Taint). Container überlappt das Video (absolute inset-0); z unter Spinner/Controls. -->
@@ -1633,7 +1648,7 @@
             </div>
           {/if}
           {#if showChapters && duration > 0 && chapters.length > 1}
-            {#each chapters as ch}
+            {#each chapters as ch (ch.StartPositionTicks)}
               <div class="absolute top-1/2 -translate-y-1/2 w-0.5 h-3 bg-white/60 rounded-full pointer-events-none"
                    style="left: {(ch.StartPositionTicks / 10000000 / duration) * 100}%"></div>
             {/each}
@@ -1796,7 +1811,7 @@
         <div class="overflow-y-auto hide-scrollbar flex flex-col gap-2">
 
           {#if settingsTab === 'audio'}
-            {#each audioStreams as stream}
+            {#each audioStreams as stream (stream.Index)}
               <button onclick={() => changeTrack('audio', stream.Index)}
                 class="text-left p-3 rounded-lg font-medium text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors
                        {selectedAudioIndex === stream.Index ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
@@ -1811,7 +1826,7 @@
                      {selectedSubtitleIndex === -1 ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
               {i18n.t.subtitleOff}
             </button>
-            {#each subtitleStreams as stream}
+            {#each subtitleStreams as stream (stream.Index)}
               <button onclick={() => changeTrack('subtitle', stream.Index)}
                 class="text-left p-3 rounded-lg font-medium text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors
                        {selectedSubtitleIndex === stream.Index ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
@@ -1949,9 +1964,6 @@
   onClose={async () => { pickerMode = null; if (wasPlayingBeforePicker) videoElement?.play().catch(() => {}); wasPlayingBeforePicker = false; await tick(); if (controlOpener && document.contains(controlOpener)) controlOpener.focus(); else playerContainer?.focus(); controlOpener = null; }} />
 
 <style>
-  .hide-scrollbar::-webkit-scrollbar { display: none; }
-  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
   /* Wiedergabeleiste — gesehener Teil blau, Rest hell (konsistent in allen Browsern),
      weißer Griff, dezente Fokus-Aura statt kräftigem Ring (moderner Player-Stil). */
   :global(.seekbar) { -webkit-appearance: none; appearance: none; }

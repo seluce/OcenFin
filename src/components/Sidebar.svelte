@@ -40,7 +40,7 @@
 
   function getAvatarUrl(user) {
     if (user?.PrimaryImageTag)
-      return `${session.serverUrl}/Users/${user.Id}/Images/Primary?tag=${user.PrimaryImageTag}`;
+      return `${session.serverUrl}/Users/${user.Id}/Images/Primary?tag=${user.PrimaryImageTag}&fillWidth=120&fillHeight=120&quality=90&format=webp`;
     return null;
   }
 
@@ -68,7 +68,7 @@
 <div class="h-full w-24 shrink-0 relative z-40">
 <nav
   data-focus-group="sidebar"
-  class="absolute top-0 left-0 h-full bg-gray-900 border-r border-gray-800 flex flex-col pt-8 pb-8 shadow-2xl
+  class="absolute top-0 left-0 h-full bg-gray-900 border-r border-gray-800 flex flex-col pt-8 pb-8 [contain:layout]
          transition-[width] duration-300 ease-in-out overflow-visible
          {isExpanded ? 'w-72' : 'w-24'}"
   onfocusin={() => isExpanded = true}
@@ -77,6 +77,14 @@
   onmouseleave={() => { isExpanded = false; showProfileMenu = false; }}
   onkeydown={handleNavKeyDown}
 >
+  <!-- Kantenschatten als Gradient mit Opacity-Fade statt box-shadow: Ein box-shadow an einem
+       Element, dessen Breite animiert, wird auf dem B4 bei JEDEM Frame neu gerastert (großer
+       Blur-Radius = teuer) — das war der letzte große Kostenpunkt beim Aufklappen. Opacity läuft
+       auf dem Compositor; eingeklappt trennt die border-r die Leiste vom Inhalt.
+       [contain:layout] oben: Layout-Neuberechnung pro Frame bleibt strikt aufs Panel begrenzt
+       (bewusst KEIN contain:paint — das würde das Profil-Flyout abschneiden). -->
+  <div class="absolute inset-y-0 -right-6 w-6 bg-gradient-to-r from-black/35 to-transparent pointer-events-none
+              transition-opacity duration-300 {isExpanded ? 'opacity-100' : 'opacity-0'}" aria-hidden="true"></div>
 
   <!-- LOGO + NAME (über dem Profil) — ausblendbar via Einstellung -->
   {#if showLogo}
@@ -170,7 +178,3 @@
 </nav>
 </div>
 
-<style>
-  .hide-scrollbar::-webkit-scrollbar { display: none; }
-  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-</style>

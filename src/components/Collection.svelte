@@ -5,7 +5,7 @@
 
   let {
     collection, selectedUser,
-    onBack, onOpenDetails, onContextMenu,
+    onBack, onOpenDetails, onContextMenu, onPlayVideo,
     onChildCountChanged, onPlaylistRenamed, onPlaylistDeleted,
   } = $props();
 
@@ -21,6 +21,29 @@
   let renameError          = $state(false);
 
   const getAuthHeaders = () => authHeaders(session.token);
+
+  // Zufällige Wiedergabe aus Sammlung/Playlist — Pendant zum Serien-Shuffle in den Details.
+  // Filme/Folgen spielen direkt. Fällt die Wahl auf eine Serie/Staffel (in BoxSets normal),
+  // wird daraus eine zufällige Folge gezogen (Specials/Staffel 0 ausgeschlossen), weil eine
+  // Serie selbst nicht abspielbar ist. Gleichverteilt, inkl. schon Gesehenem (Comfort-Rewatch).
+  async function playRandom() {
+    if (!items.length) return;
+    const pick = items[Math.floor(Math.random() * items.length)];
+    if (pick.Type === 'Series' || pick.Type === 'Season') {
+      try {
+        const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${pick.Id}`
+          + `&IncludeItemTypes=Episode${pick.Type === 'Series' ? '&Recursive=true' : ''}&EnableTotalRecordCount=false`;
+        const res  = await fetch(url, { headers: getAuthHeaders() });
+        const data = await res.json();
+        let pool = (data.Items || []).filter(e => e.Type === 'Episode');
+        if (pick.Type === 'Series') pool = pool.filter(e => e.ParentIndexNumber !== 0);
+        if (!pool.length) return;
+        onPlayVideo?.({ item: pool[Math.floor(Math.random() * pool.length)], audioIndex: -1, subtitleIndex: -1 });
+      } catch (e) { console.error(e); }
+    } else {
+      onPlayVideo?.({ item: pick, audioIndex: -1, subtitleIndex: -1 });
+    }
+  }
 
   // Beschriftung für eine Folge: "S1 · E5 · Titel"
   function episodeLabel(item) {
@@ -38,7 +61,7 @@
     // Sammlungen/BoxSets über ParentId.
     const url = collection.Type === 'Playlist'
       ? `${session.serverUrl}/Playlists/${collection.Id}/Items?UserId=${selectedUser.Id}&Fields=PrimaryImageAspectRatio&Limit=300`
-      : `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${collection.Id}&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=100`;
+      : `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${collection.Id}&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=100&EnableTotalRecordCount=false`;
     try {
       const res = await fetch(url, { headers: getAuthHeaders() });
       if (res.ok) items = (await res.json()).Items || [];
@@ -129,17 +152,34 @@
       class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
       {i18n.t.back}
     </button>
+  </div>
+  <!-- Titel-Zeile: Name wird bei Ueberlaenge mit "…" gekuerzt (min-w-0 + truncate), Icon und
+       Buttons sind shrink-0 — so bleiben Zufaellig/Bearbeiten IMMER sichtbar, egal wie lang
+       der Playlist-/Sammlungsname ist (sonst wuerden sie aus dem Sichtfeld geschoben). -->
+  <div class="flex items-center gap-4 mb-10">
+    <svg class="w-10 h-10 shrink-0 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
+    <h1 class="text-4xl font-bold text-white min-w-0 truncate">{name}</h1>
+    {#if items.length > 0 && !playlistEditMode}
+      <button onclick={playRandom}
+        class="ml-4 shrink-0 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold px-6 py-3 rounded-xl
+               focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors flex items-center gap-2">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+          <polyline points="16 3 21 3 21 8"/>
+          <line x1="4" y1="20" x2="21" y2="3"/>
+          <polyline points="21 16 21 21 16 21"/>
+          <line x1="15" y1="15" x2="21" y2="21"/>
+          <line x1="4" y1="4" x2="9" y2="9"/>
+        </svg>
+        {i18n.t.shuffle}
+      </button>
+    {/if}
     {#if collection?.Type === 'Playlist'}
       <button onclick={() => { playlistEditMode = !playlistEditMode; confirmDeletePlaylist = false; renamingPlaylist = false; }}
-        class="ml-auto px-6 py-2 rounded-lg font-bold focus:outline-none focus:ring-4 focus:ring-white transition-colors
+        class="shrink-0 px-6 py-3 rounded-xl font-bold focus:outline-none focus:ring-4 focus:ring-white transition-colors
                {playlistEditMode ? 'bg-blue-600 text-white' : 'bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white'}">
         {playlistEditMode ? i18n.t.done : i18n.t.edit}
       </button>
     {/if}
-  </div>
-  <div class="flex items-center gap-4 mb-10">
-    <svg class="w-10 h-10 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
-    <h1 class="text-4xl font-bold text-white">{name}</h1>
   </div>
 
   {#if isLoading}
@@ -246,13 +286,13 @@
       { label: '',          items: items.filter(i => !['Movie', 'Series', 'Episode'].includes(i.Type)) }
     ].filter(g => g.items.length)}
     <div class="flex flex-col gap-10 pr-4">
-      {#each groups as group}
+      {#each groups as group (group.label)}
         <div>
           {#if groups.length > 1 && group.label}
             <h2 class="text-2xl font-bold text-gray-400 mb-4">{group.label}</h2>
           {/if}
           <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
-            {#each group.items as item}
+            {#each group.items as item (item.PlaylistItemId ?? item.Id)}
               <button onclick={() => onOpenDetails(item)}
                 {@attach longPress()} onlongpress={() => onContextMenu(item)}
                 class="group focus:outline-none text-left cv-auto">

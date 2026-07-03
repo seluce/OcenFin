@@ -55,44 +55,66 @@
 
   const getAuthHeaders = () => authHeaders(session.token);
 
+  // Stale-Guard (Muster wie subtitleFetchToken im Player): Nur die JÜNGSTE Suche darf Ergebnisse
+  // übernehmen. Ohne das kann eine frühere, langsame Antwort eine spätere überschreiben —
+  // man sieht dann Treffer zum vorletzten Suchbegriff.
+  let searchToken = 0;
+  const personHasTitles = new Map();   // personId → boolean; lebt nur so lange wie diese Ansicht gemountet ist
+
   function onSearchInput() {
     clearTimeout(searchTimeout);
-    if (query.trim().length < 2) { results = []; people = []; isLoading = false; return; }
+    if (query.trim().length < 2) { searchToken++; results = []; people = []; isLoading = false; return; }
     isLoading = true;
     searchTimeout = setTimeout(performSearch, 600);
   }
 
   async function performSearch() {
+    const myToken = ++searchToken;
     try {
       // Titel + Personen parallel suchen
       const [itemsRes, peopleRes] = await Promise.all([
-        fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items?searchTerm=${encodeURIComponent(query)}&Recursive=true&IncludeItemTypes=Movie,Series,Episode&Limit=24&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName`,
+        fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items?searchTerm=${encodeURIComponent(query)}&Recursive=true&IncludeItemTypes=Movie,Series,Episode&Limit=24&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName&EnableTotalRecordCount=false`,
           { headers: getAuthHeaders() }),
-        fetch(`${session.serverUrl}/Persons?searchTerm=${encodeURIComponent(query)}&Limit=10&userId=${selectedUser.Id}`,
+        fetch(`${session.serverUrl}/Persons?searchTerm=${encodeURIComponent(query)}&Limit=10&userId=${selectedUser.Id}&EnableTotalRecordCount=false`,
           { headers: getAuthHeaders() })
       ]);
-      if (itemsRes.ok) results = (await itemsRes.json()).Items || [];
+      if (myToken !== searchToken) return;   // inzwischen neue Suche → diese Antwort verwerfen
+      if (itemsRes.ok) {
+        const items = (await itemsRes.json()).Items || [];
+        if (myToken !== searchToken) return;
+        results = items;
+      }
 
       // Personen: nur behalten, die tatsächlich in der Mediathek vorkommen.
       // Jellyfins /Persons liefert auch Namen, die in keinem eigenen Titel mitspielen —
       // daher pro Person eine schnelle Zähl-Abfrage (Limit=0 = nur TotalRecordCount).
+      // Ergebnis pro Person cachen (Lebensdauer = geöffnete Such-Ansicht): beim Tippen
+      // liefern aufeinanderfolgende Debounce-Suchen größtenteils dieselben Personen —
+      // ohne Cache je ein voller Abfrage-Burst. Die Titel-Suche ist davon unabhängig
+      // und immer frisch; Fehler werden bewusst NICHT gecacht.
       if (peopleRes.ok) {
         const found = (await peopleRes.json()).Items || [];
         const checked = await Promise.all(found.map(async p => {
+          if (personHasTitles.has(p.Id)) return personHasTitles.get(p.Id) ? p : null;
           try {
             const c = await fetch(
               `${session.serverUrl}/Users/${selectedUser.Id}/Items?PersonIds=${p.Id}&Recursive=true&IncludeItemTypes=Movie,Series&Limit=0`,
               { headers: getAuthHeaders() }
             );
-            return ((await c.json()).TotalRecordCount || 0) > 0 ? p : null;
+            const has = ((await c.json()).TotalRecordCount || 0) > 0;
+            personHasTitles.set(p.Id, has);
+            return has ? p : null;
           } catch { return null; }
         }));
+        if (myToken !== searchToken) return;
         people = checked.filter(Boolean);
       }
 
       if (query.trim().length >= 2 && (results.length > 0 || people.length > 0)) saveToHistory(query);
     } catch (e) { console.error("search failed:", e); }
-    finally     { isLoading = false; }
+    // isLoading nur zurücksetzen, wenn wir noch die aktuelle Suche sind — sonst würde eine
+    // alte Antwort den Spinner der bereits laufenden neuen Suche vorzeitig löschen.
+    finally     { if (myToken === searchToken) isLoading = false; }
   }
 
   function getItemImageUrl(item, format = 'portrait') {
@@ -143,7 +165,7 @@
         </button>
       </div>
       <div class="flex flex-wrap gap-4 px-2">
-        {#each searchHistory as term}
+        {#each searchHistory as term (term)}
           <button onclick={() => useHistory(term)}
             class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-gray-300 focus:text-white
                    px-6 py-3 rounded-full font-bold focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all border border-gray-700">
@@ -167,7 +189,7 @@
         <div>
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.series}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-4 px-2">
-            {#each series as s}
+            {#each series as s (s.Id)}
               <button onclick={() => onOpenDetails?.(s)} class="shrink-0 w-48 group focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
                   {#if getItemImageUrl(s, 'portrait')}<img src={getItemImageUrl(s, 'portrait')} {@attach blurUp(itemBlurHash(s))} alt={s.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
@@ -186,7 +208,7 @@
         <div>
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.movies}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-4 px-2">
-            {#each movies as m}
+            {#each movies as m (m.Id)}
               <button onclick={() => onOpenDetails?.(m)} class="shrink-0 w-48 group focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
                   {#if getItemImageUrl(m, 'portrait')}<img src={getItemImageUrl(m, 'portrait')} {@attach blurUp(itemBlurHash(m))} alt={m.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
@@ -205,7 +227,7 @@
         <div>
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.episodes}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-4 px-2">
-            {#each episodes as ep}
+            {#each episodes as ep (ep.Id)}
               <button onclick={() => onOpenDetails?.(ep)} class="shrink-0 w-80 group focus:outline-none text-left">
                 <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
                   {#if getItemImageUrl(ep, 'landscape')}<img src={getItemImageUrl(ep, 'landscape')} {@attach blurUp(itemBlurHash(ep))} alt={ep.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
@@ -227,7 +249,7 @@
         <div>
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.people}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-4 px-2">
-            {#each people as p}
+            {#each people as p (p.Id)}
               <button onclick={() => onOpenPerson?.(p)} class="shrink-0 w-40 group focus:outline-none text-center">
                 <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto">
                   {#if personImageUrl(session.serverUrl, p)}
@@ -255,7 +277,3 @@
 
 </div>
 
-<style>
-  .hide-scrollbar::-webkit-scrollbar { display: none; }
-  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-</style>

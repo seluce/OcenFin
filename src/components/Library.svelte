@@ -126,7 +126,7 @@
   // ── Laden ───────────────────────────────────────────────────
   async function loadGenres(libraryId) {
     try {
-      const res = await fetch(`${session.serverUrl}/Genres?ParentId=${libraryId}&UserId=${selectedUser.Id}`, authOpts());
+      const res = await fetch(`${session.serverUrl}/Genres?ParentId=${libraryId}&UserId=${selectedUser.Id}&EnableTotalRecordCount=false`, authOpts());
       if (res.ok) { const d = await res.json(); availableGenres = d.Items || []; }
     } catch { }
   }
@@ -155,17 +155,32 @@
     if (key === 'isPlayed'    && activeFilters.isPlayed)    activeFilters.isNotPlayed = false;
     if (key === 'isNotPlayed' && activeFilters.isNotPlayed) activeFilters.isPlayed    = false;
     activeFilters = { ...activeFilters };
-    reloadCurrent();
+    if (!showFilterMenu) reloadCurrent();   // Chip-Leiste: sofort. Im Menü: gesammelt beim Schließen.
   }
   function toggleGenre(name) {
     selectedGenres = selectedGenres.includes(name)
       ? selectedGenres.filter(g => g !== name) : [...selectedGenres, name];
-    reloadCurrent();
+    if (!showFilterMenu) reloadCurrent();
   }
   function toggleFsk(age) {
     selectedFsk = selectedFsk.includes(age)
       ? selectedFsk.filter(v => v !== age) : [...selectedFsk, age];
-    reloadCurrent();
+    if (!showFilterMenu) reloadCurrent();
+  }
+
+  // Filter-Menü: Änderungen werden gesammelt und EINMAL beim Schließen angewendet — statt
+  // pro Chip-Tap ein kompletter Reload (3 Genres antippen = 3 Fetches, alle bis auf den
+  // letzten verworfen). Snapshot beim Öffnen; nur bei tatsächlicher Änderung neu laden.
+  let filterMenuSnapshot = '';
+  const filterStateKey = () => JSON.stringify([activeFilters, selectedGenres, selectedFsk]);
+  function openFilterMenu(e) {
+    sortFilterFocus.capture(e.currentTarget);
+    filterMenuSnapshot = filterStateKey();
+    showFilterMenu = true;
+  }
+  function closeFilterMenu() {
+    showFilterMenu = false;
+    if (filterStateKey() !== filterMenuSnapshot) reloadCurrent();
   }
 
   function setSort(option) {
@@ -198,7 +213,14 @@
     return 0;
   }
 
+  // Stale-Guard (Muster wie subtitleFetchToken im Player): Beim schnellen Durchschalten von
+  // Sortierung/Filter/Bibliothek dürfen nur Antworten der JÜNGSTEN Anfrage übernommen werden —
+  // sonst überschreibt eine langsame alte Antwort die neue Liste. Gilt auch für die
+  // Infinite-Scroll-Blöcke: ein überholter Append würde die Liste korrumpieren.
+  let loadToken = 0;
+
   async function loadLibraryItems(lib, letter = null) {
+    const myToken = ++loadToken;
     if (currentLibraryId !== lib.Id) {
       activeFilters   = { isFavorite: false, isPlayed: false, isNotPlayed: false };
       selectedGenres  = [];
@@ -231,6 +253,7 @@
     currentItems = [];
 
     const startIndex = letter !== null ? await letterStartIndex(lib.Id, letter) : 0;
+    if (myToken !== loadToken) return;   // während der Count-Abfrage kam eine neuere Anfrage
     firstLoadedIndex = startIndex;
 
     let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${lib.Id}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
@@ -238,26 +261,32 @@
 
     try {
       const res = await fetch(url, authOpts());
+      if (myToken !== loadToken) return;   // überholte Antwort verwerfen
       if (res.ok) {
         const data        = await res.json();
+        if (myToken !== loadToken) return;
         currentItems      = data.Items || [];
         totalLibraryItems = data.TotalRecordCount || 0;
         if (isCacheableView()) cacheLibraryView(lib.Id, { items: currentItems, total: totalLibraryItems });
       }
       session.connectionLost = false;
-    } catch { session.connectionLost = true; } finally { isLoading = false; }
+    } catch { if (myToken === loadToken) session.connectionLost = true; }
+    // Spinner nur löschen, wenn wir noch aktuell sind — sonst killt eine alte Antwort das Skelett der neuen.
+    finally { if (myToken === loadToken) isLoading = false; }
   }
 
   async function loadMoreLibraryItems() {
     if (isFetchingMore || firstLoadedIndex + currentItems.length >= totalLibraryItems || !currentLibraryId) return;
     isFetchingMore = true;
+    const myToken = loadToken;   // gehört zur AKTUELLEN Liste — nach einem Reload nicht mehr anhängen
     const start = firstLoadedIndex + currentItems.length;
     let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}`;
     url += getFilterQuery();
     try {
       const res = await fetch(url, authOpts());
-      if (res.ok) {
+      if (res.ok && myToken === loadToken) {
         const data   = await res.json();
+        if (myToken !== loadToken) return;
         currentItems = [...currentItems, ...(data.Items || [])];
         if (isCacheableView()) cacheLibraryView(currentLibraryId, { items: currentItems, total: totalLibraryItems });
       }
@@ -268,13 +297,15 @@
   async function loadPreviousLibraryItems() {
     if (isFetchingPrev || firstLoadedIndex <= 0 || !currentLibraryId) return;
     isFetchingPrev = true;
+    const myToken = loadToken;   // gehört zur AKTUELLEN Liste — nach einem Reload nicht mehr voranstellen
     const newStart = Math.max(0, firstLoadedIndex - libraryItemLimit);
     const count    = firstLoadedIndex - newStart;
     const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}`;
     try {
       const res = await fetch(url, authOpts());
-      if (res.ok) {
+      if (res.ok && myToken === loadToken) {
         const items  = (await res.json()).Items || [];
+        if (myToken !== loadToken) return;
         const before = libraryScrollContainer ? libraryScrollContainer.scrollHeight : 0;
         currentItems     = [...items, ...currentItems];
         firstLoadedIndex = newStart;
@@ -447,7 +478,7 @@
           </svg>
           {i18n.t.sortBy}
         </button>
-        <button onclick={(e) => { sortFilterFocus.capture(e.currentTarget); showFilterMenu = true; }}
+        <button onclick={openFilterMenu}
           class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
                  focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -617,12 +648,12 @@
 <!-- FILTER-MENÜ -->
 {#if showFilterMenu}
   <div data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
-    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showFilterMenu = false; } }}>
+    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeFilterMenu(); } }}>
     <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
 
       <div class="flex justify-between items-center p-8 pb-4 shrink-0">
         <h2 class="text-4xl text-white font-bold">{i18n.t.filter}</h2>
-        <button onclick={() => showFilterMenu = false} {@attach focusOnMount()}
+        <button onclick={closeFilterMenu} {@attach focusOnMount()}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
@@ -662,7 +693,7 @@
           <div class="flex flex-col gap-3 pb-2">
             <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{i18n.t.genres}</h3>
             <div class="flex flex-wrap gap-3">
-              {#each availableGenres as genre}
+              {#each availableGenres as genre (genre)}
                 <button onclick={() => toggleGenre(genre.Name)}
                   class="px-5 py-2 rounded-full font-bold text-lg border-2 transition-all focus:outline-none focus:ring-4 focus:ring-white
                          {selectedGenres.includes(genre.Name) ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-white'}">
@@ -676,7 +707,7 @@
       </div>
 
       <div class="p-8 pt-4 shrink-0">
-        <button onclick={() => showFilterMenu = false}
+        <button onclick={closeFilterMenu}
           class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold text-xl py-5 rounded-xl
                  focus:outline-none focus:ring-4 focus:ring-white transition-colors">
           {i18n.t.filterClose}
@@ -686,3 +717,15 @@
     </div>
   </div>
 {/if}
+
+<style>
+  /* Bei der Extraktion aus App.svelte verloren gegangen (Klassen blieben im Markup, die
+     Regeln nicht) — hier rekonstruiert. Komponenten-spezifisch, daher lokal statt app.css. */
+  /* Backdrop-Vorschau: sanft einblenden statt hart umschalten ({#key} remountet das <img>) */
+  .preview-fade { animation: previewFadeIn 0.5s ease-out; }
+  @keyframes previewFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  /* A-Z-Sprung-Overlay: kurzes Aufpoppen (Skalierung + Einblenden) */
+  .jump-overlay { animation: jumpPop 0.18s ease-out; }
+  @keyframes jumpPop { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
+</style>

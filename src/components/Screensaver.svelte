@@ -32,9 +32,10 @@
   const CLOCK_FIRST_MOVE = 20000;   // erster Wechsel nach 20 s
   const CLOCK_INTERVAL   = 45000;   // danach alle 45 s
   let posX = $state(30), posY = $state(35), clockOn = $state(true);
+  let clockMoveTimeout = null;   // einziger Timer, der bisher NICHT im onDestroy geräumt wurde
   function moveClock() {
     clockOn = false;                          // ausblenden
-    setTimeout(() => {
+    clockMoveTimeout = setTimeout(() => {
       posX = 12 + Math.random() * 76;         // unsichtbar an neue Stelle setzen
       posY = 16 + Math.random() * 64;
       clockOn = true;                         // wieder einblenden
@@ -62,7 +63,7 @@
       .filter(it => it.BackdropImageTags && it.BackdropImageTags.length)
       .map(it => ({
         id: it.Id,
-        url: `${session.serverUrl}/Items/${it.Id}/Images/Backdrop/0?tag=${it.BackdropImageTags[0]}&maxWidth=1920&quality=85&ApiKey=${session.token}`,
+        url: `${session.serverUrl}/Items/${it.Id}/Images/Backdrop/0?tag=${it.BackdropImageTags[0]}&maxWidth=1920&quality=85&format=webp&ApiKey=${session.token}`,
         title: it.Name || '',
         logo: it.ImageTags?.Logo ? logoUrl(it.Id, it.ImageTags.Logo) : null,
       }));
@@ -80,7 +81,7 @@
       .filter(ep => ep.SeriesId && ep.ParentBackdropImageTags && ep.ParentBackdropImageTags.length)
       .map(ep => ({
         id: ep.SeriesId,
-        url: `${session.serverUrl}/Items/${ep.SeriesId}/Images/Backdrop/0?tag=${ep.ParentBackdropImageTags[0]}&maxWidth=1920&quality=85&ApiKey=${session.token}`,
+        url: `${session.serverUrl}/Items/${ep.SeriesId}/Images/Backdrop/0?tag=${ep.ParentBackdropImageTags[0]}&maxWidth=1920&quality=85&format=webp&ApiKey=${session.token}`,
         title: ep.SeriesName || ep.Name || '',
         logo: ep.ParentLogoImageTag ? logoUrl(ep.ParentLogoItemId || ep.SeriesId, ep.ParentLogoImageTag) : null,
       }));
@@ -173,12 +174,14 @@
     clearInterval(clockTick);
     clearInterval(moveTimer);
     clearTimeout(firstMove);
+    clearTimeout(clockMoveTimeout);
     clearTimeout(artTimer);
     clearTimeout(firstArtTimeout);
   });
 
   function dismiss() { onDismiss?.(); }
   let useArt = $derived(mode === 'art' && artReady);
+
 </script>
 
 <!-- Schwarzer Grund schont OLED; im Art-Modus stark abgedunkelte Backdrops im Crossfade. -->

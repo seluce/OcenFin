@@ -35,16 +35,18 @@
   let appPhase = $state('servers');   // aktueller Schritt im Onboarding-Flow
   let initializing = $state(true);    // Splashscreen, bis Auto-Login/Start abgeschlossen ist
   let dashboardReloadKey = $state(0); // erhöhen erzwingt frisches Neuladen des Dashboards
+  let resumeStale = $state(false);    // nach einer Wiedergabe: Dashboard holt Resume/NextUp frisch (Cache bleibt sonst)
   let currentLibrary     = $state(null);  // { Id, Name } — aktive Bibliothek (an Library.svelte)
   let libraryReloadKey   = $state(0);     // erhöhen → Library verwirft View-Cache + lädt neu
   let libraryFocusFirst  = $state(false); // beim Öffnen aus dem Menü erste Karte fokussieren
   let librarySharedOn    = $state(false); // "Gemeinsam schauen" aktiv (von Library gemeldet)
   let libraryMounted     = $state(false); // ab erstem Bibliotheksbesuch dauerhaft gemountet (State bleibt)
-  let libraryRef;                         // bind:this → restoreView / Grid-Mutationen
+  let libraryRef = $state();              // bind:this → restoreView / Grid-Mutationen
 
   // Cache leeren (Einstellungen): In-Memory-Cache verwerfen und Dashboard frisch laden.
   function clearCache() {
     apiCache.dashboard = null;
+    partnersPlayedCache = {};
     libraryReloadKey++;        // Library verwirft ihren eigenen View-Cache + lädt neu
     dashboardReloadKey++;
     viewState = 'dashboard';
@@ -149,10 +151,10 @@
   let reduceAnimations = $state(false);
 
   // Anzeige-Elemente (Uhr, Hero-Banner, Episodenanzahl, Mediatheken) — einzeln abschaltbar
-  let displaySettings = $state({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
+  let displaySettings = $state({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
 
   // Standard-Audio-/Untertitelsprache
-  let playbackPrefs = $state({ audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true });
+  let playbackPrefs = $state({ audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true });
 
   // ── Profil-bezogene Einstellungen ───────────────────────────
   // Sprache + Anzeige + Wiedergabe + Animationen werden PRO BENUTZER gespeichert.
@@ -208,8 +210,8 @@
       setLang(p.language);
       localStorage.setItem('app_language', p.language);   // "zuletzt genutzt" aktualisieren
     }
-    displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
-    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true, ...(p.playbackPrefs || {}) };
+    displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
+    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true, ...(p.playbackPrefs || {}) };
     reduceAnimations = p.reduceAnimations ?? false;
     librarySorts     = p.librarySorts || {};   // gemerkte Sortierung pro Bibliothek
     sharedProfile    = p.sharedProfile && Array.isArray(p.sharedProfile.members)
@@ -232,6 +234,7 @@
     }
     librarySharedOn  = false;   // Filter startet pro Sitzung aus
     partnersPlayedIds = null;
+    partnersPlayedCache = {};   // Partner-Cache gehört zur alten Sitzung
     applyingPrefs = false;
   }
 
@@ -248,6 +251,11 @@
     const sizes = { small: '16px', medium: '20px', large: '24px' };
     document.documentElement.style.fontSize = sizes[displaySettings.uiSize] || '20px';
     document.documentElement.setAttribute('data-theme', displaySettings.theme || 'blue');
+    // UI-Schriftart: am Root gesetzt, alles erbt (font-mono-Stellen bleiben bewusst mono).
+    // 'system' → Inline-Style entfernen → Chromium/webOS-Standard wie bisher. Gilt NICHT für
+    // ASS-Untertitel (eigene Schriften aus dem Skript), wohl aber für die VTT-Anzeige.
+    const fonts = { arimo: "'Arimo', sans-serif", noto: "'Noto Sans', sans-serif" };
+    document.documentElement.style.fontFamily = fonts[displaySettings.uiFont] || '';
   } });
 
   function onReduceAnimationsChange(v) {
@@ -425,7 +433,7 @@
 
   // Banner-Buttons. "Erneut versuchen" prüft SOFORT, ohne Reload → dein Platz bleibt erhalten:
   // ist der Server zurück, schließt der Banner; sonst bleibt er (Auto-Reconnect läuft weiter).
-  let retryBtnEl;
+  let retryBtnEl = $state();
   async function retryNow() {
     try {
       const r = await fetch(`${session.serverUrl}/System/Info/Public`, { cache: 'no-store' });
@@ -909,7 +917,7 @@
   // ── Gemeinsames Schauen: Mitglieder & Datenbasis ───────────────────────────
   function toggleSharedEnabled() {
     sharedProfile = { ...sharedProfile, enabled: !sharedProfile.enabled };
-    if (!sharedProfile.enabled) { librarySharedOn = false; partnersPlayedIds = null; }
+    if (!sharedProfile.enabled) { librarySharedOn = false; partnersPlayedIds = null; partnersPlayedCache = {}; }
     saveUserPrefs();
   }
 
@@ -945,6 +953,7 @@
     sharedProfile = { ...sharedProfile, members };
     _loadedSugKey = null;   // Vorschläge neu berechnen
     saveUserPrefs();
+    partnersPlayedCache = {};   // Mitglieder geändert → alle gecachten Vereinigungen ungültig
     if (librarySharedOn) loadPartnersPlayedIds(currentLibrary?.Id);
     return 'ok';
   }
@@ -963,15 +972,23 @@
     }
     _loadedSugKey = null;   // Vorschläge neu berechnen
     saveUserPrefs();
+    partnersPlayedCache = {};   // Mitglieder geändert → alle gecachten Vereinigungen ungültig
     if (librarySharedOn) loadPartnersPlayedIds(currentLibrary?.Id);
   }
 
   // Vereinigung der von den Mitgliedern komplett gesehenen Top-Level-Titel der Bibliothek.
   // Jedes Profil mit eigenem Token (kein Admin). Wir holen alle Titel mit UserData und prüfen
   // selbst auf Played=true — zuverlässiger als Filters=IsPlayed, das bei Serien nicht immer greift.
+  // Cache pro Bibliothek (TTL 10 min): der Fetch ist die schwerste Abfrage der App (voller Katalog
+  // pro Mitglied) — beim Hin- und Herwechseln zwischen Bibliotheken nicht jedes Mal neu laden.
+  // Invalidiert bei Mitglieder-Änderung, Profil-Aus, Sitzungswechsel und "Cache leeren".
+  let partnersPlayedCache = {};   // libraryId → { ids: Set, at: Timestamp }
+  const PARTNERS_CACHE_TTL = 10 * 60 * 1000;
   async function loadPartnersPlayedIds(libraryId) {
     partnersPlayedIds = null;
     if (!librarySharedOn || !sharedReady || !libraryId) return;
+    const hit = partnersPlayedCache[libraryId];
+    if (hit && Date.now() - hit.at < PARTNERS_CACHE_TTL) { partnersPlayedIds = hit.ids; return; }
     const ids = new Set();
     for (const m of sharedProfile.members) {
       if (!m || !m.id) continue;
@@ -982,7 +999,7 @@
           `${session.serverUrl}/Users/${m.id}/Items?ParentId=${libraryId}&Recursive=true` +
           `&IncludeItemTypes=Movie,Series&Fields=UserData&EnableImages=false` +
           `&Limit=100000&EnableTotalRecordCount=false`,
-          { headers: { 'Authorization': `MediaBrowser Token="${token}"`, 'Content-Type': 'application/json' } }
+          { headers: authHeaders(token) }
         );
         if (!res.ok) { console.warn('[Shared] query failed for', m.name, '· HTTP', res.status); continue; }
         let n = 0;
@@ -992,6 +1009,7 @@
       } catch (e) { console.warn('[Shared] error for', m.name, e); }
     }
     partnersPlayedIds = ids;
+    partnersPlayedCache[libraryId] = { ids, at: Date.now() };
   }
 
   // Partner-IDs für "Gemeinsam schauen" laden/verwerfen, sobald sich Bibliothek oder Schalter ändern.
@@ -1016,7 +1034,7 @@
         const res = await fetch(
           `${session.serverUrl}/Users/${m.id}/Items?Recursive=true&IncludeItemTypes=Movie,Series` +
           `&Fields=Genres,CommunityRating,UserData&EnableImageTypes=Primary&Limit=100000&EnableTotalRecordCount=false`,
-          { headers: { 'Authorization': `MediaBrowser Token="${token}"`, 'Content-Type': 'application/json' } }
+          { headers: authHeaders(token) }
         );
         if (!res.ok) continue;
         const items = (await res.json()).Items || [];
@@ -1058,7 +1076,7 @@
       .map(it => ({ it, score: (it.Genres || []).reduce((s, g) => s + (weights[g] || 0), 0) }))
       .filter(x => x.score > 0)
       .sort((a, b) => b.score - a.score || (b.it.CommunityRating || 0) - (a.it.CommunityRating || 0))
-      .slice(0, 20)
+      .slice(0, 12)   // einheitliche Dashboard-Reihenlänge (ROW_LIMIT in Dashboard.svelte)
       .map(x => ({ ...x.it, UserData: {} }));   // UserData leeren → kein Fortschrittsbalken eines Mitglieds
     dlog('[Shared] suggestions:', sharedSuggestions.length);
   }
@@ -1068,9 +1086,7 @@
   // `${session.serverUrl}` dort auf '' zeigen → relativer Fetch auf die App-Origin statt auf den Server.
   async function validateToken(token, baseUrl = session.serverUrl) {
     try {
-      const res = await fetch(`${baseUrl}/Users/Me`, {
-        headers: { "Authorization": `MediaBrowser Token="${token}"` }
-      });
+      const res = await fetch(`${baseUrl}/Users/Me`, { headers: authHeaders(token) });
       if (!res.ok) dlog('[auth] token validation failed — HTTP', res.status);
       return res.ok;
     } catch (e) { dlog('[auth] token validation — network error:', e?.message || e); return false; }
@@ -1248,7 +1264,7 @@
     closeSyncPlay(); syncMyGroup = null; syncGroups = []; syncQueue = null; syncCommand = null; _lastSyncQueueItem = null; syncJoined = false; syncMyGroupId = null;   // Gruppenstatus zurücksetzen
     remoteCommand = null; dismissRemoteMessage();   // Admin-Fernsteuerung/Nachricht verwerfen
     viewState = 'dashboard';
-    apiCache  = { dashboard: null, views: {} };
+    apiCache.dashboard = null;   // Cache leeren (Property-Mutation statt Neuzuweisung → geteilte Referenz bleibt)
     navLibraries = [];
     clearCurrentSession();
     // Zurück zum User-Screen, Server bleibt verbunden
@@ -1339,7 +1355,7 @@
   // Sammlungen/Wiedergabelisten — eigene Ansicht (Collection.svelte lädt selbst).
   let currentCollection    = $state(null);          // Seed-BoxSet/Playlist
   let collectionReturnView = $state('dashboard');   // wohin "Zurück" führt
-  let collectionRef;                                // bind:this → für Zurück-Taste (handleBackKey)
+  let collectionRef = $state();                     // bind:this → für Zurück-Taste (handleBackKey)
 
   function openCollection(boxSet) {
     collectionReturnView = viewState;
@@ -1477,6 +1493,16 @@
   function contextAddToList(item) { contextPickerItem = item; contextPickerMode = 'playlist'; }
 
   // Zurück aus Details/Player → an die Herkunft, Bibliotheksposition wiederherstellen
+  // Startet die Wiedergabe eines Items — genutzt von Details (Play/Von-Anfang/Zufallsfolge)
+  // und Collection (Zufällige Wiedergabe). Eine Quelle statt zwei Inline-Kopien.
+  function startPlayback(p) {
+    if (p.item) currentDetailItem = p.item;
+    activeAudioIndex    = p.audioIndex    ?? -1;
+    activeSubtitleIndex = p.subtitleIndex ?? -1;
+    activeMediaSourceId = p.mediaSourceId ?? null;
+    viewState = 'player';
+  }
+
   async function returnFromDetails() {
     viewState = detailsOrigin;
     if (detailsOrigin === 'library') {
@@ -1528,6 +1554,45 @@
   @font-face { font-family: 'Courier New'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/cousine-italic.woff2') format('woff2'); }
   @font-face { font-family: 'Courier New'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/cousine-bolditalic.woff2') format('woff2'); }
 
+  /* ── Weitere häufige Fansub-Schriften (Tahoma / Verdana / Trebuchet MS) ───────
+     Für diese gibt es KEINE metrisch kompatiblen Klone wie oben. Stattdessen ein
+     gemeinsamer "Topf": EINE neutrale, moderne Sans (Noto Sans, latin + latin-ext,
+     je 4 Schnitte) wird unter allen drei Windows-Namen registriert. Nur visuell
+     ähnlich, NICHT metrik-genau — für Dialog/Schilder in der Praxis ausreichend.
+     Noto ist enger als Tahoma/Verdana, dafür einheitlich mit der übrigen Font-
+     Pipeline (gwfh, latin+latin-ext). Dieselben 4 Dateien für alle drei Namen →
+     kein zusätzlicher Speicher pro Name. */
+  @font-face { font-family: 'Tahoma'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/notosans-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Tahoma'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Tahoma'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/notosans-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Tahoma'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bolditalic.woff2') format('woff2'); }
+  @font-face { font-family: 'Verdana'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/notosans-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Verdana'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Verdana'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/notosans-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Verdana'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bolditalic.woff2') format('woff2'); }
+  @font-face { font-family: 'Trebuchet MS'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/notosans-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Trebuchet MS'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Trebuchet MS'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/notosans-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Trebuchet MS'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bolditalic.woff2') format('woff2'); }
+
+  /* ── UI-/VTT-Schriftarten (Einstellungen → Darstellung bzw. → Untertitel) ─────
+     Dieselben Dateien wie oben, nur unter ihren ECHTEN Namen registriert, damit
+     UI und VTT-Untertitel sie sauber referenzieren können ('Arimo' statt Umweg
+     über den 'Arial'-Alias). Tinos (Serife) nur für VTT wählbar. Kein zusätz-
+     licher Speicher — WOFF2 wird pro Datei nur einmal geladen. */
+  @font-face { font-family: 'Arimo'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/arimo-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Arimo'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/arimo-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Arimo'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/arimo-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Arimo'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/arimo-bolditalic.woff2') format('woff2'); }
+  @font-face { font-family: 'Noto Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/notosans-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Noto Sans'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Noto Sans'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/notosans-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Noto Sans'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bolditalic.woff2') format('woff2'); }
+  @font-face { font-family: 'Tinos'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/tinos-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Tinos'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/tinos-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Tinos'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/tinos-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Tinos'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/tinos-bolditalic.woff2') format('woff2'); }
+
   /* TV-Skalierung (10-Fuß-UI): hebt die rem-basierte Basisgröße an, damit Texte und
      Abstände aus Sofa-Entfernung größer wirken. Standard-Browser sind 16px; 20px = +25%.
      Bei Bedarf weiter anpassen, falls auf dem TV noch zu klein/zu groß. */
@@ -1564,31 +1629,6 @@
   :global(html[data-theme="orange"]) {
     --color-blue-300:#fdba74; --color-blue-400:#fb923c; --color-blue-500:#f97316; --color-blue-600:#ea580c; --color-blue-900:#7c2d12;
   }
-
-  .hide-scrollbar::-webkit-scrollbar { display: none; }
-  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-  /* content-visibility: Browser überspringt Rendering/Layout für Items außerhalb
-     des sichtbaren Bereichs. Nativer, sehr effizienter "Virtual Scrolling"-Ersatz
-     ab Chromium 85+ (B4 unterstützt es). contain-intrinsic-size reserviert Platz,
-     damit die Scrollleiste korrekt bleibt (Poster-Verhältnis 2:3). */
-  .cv-auto {
-    content-visibility: auto;
-    contain-intrinsic-size: auto 320px;
-  }
-
-  /* A-Z Sprung-Vorschau: kurz einblenden, dann ausblenden */
-  .jump-overlay { animation: jumpPop 0.8s ease forwards; }
-  @keyframes jumpPop {
-    0%   { opacity: 0; transform: scale(0.8); }
-    20%  { opacity: 1; transform: scale(1); }
-    70%  { opacity: 1; transform: scale(1); }
-    100% { opacity: 0; transform: scale(0.95); }
-  }
-
-  /* Backdrop-Vorschau: sanftes Einblenden */
-  .preview-fade { animation: previewFadeIn 0.6s ease forwards; }
-  @keyframes previewFadeIn { from { opacity: 0; } to { opacity: 1; } }
 
   /* Splashscreen: Logo pulsiert sanft, Overlay blendet aus */
   .splash-logo { animation: splashPulse 1.6s ease-in-out infinite; }
@@ -1694,7 +1734,7 @@
         {#if savedServers.length > 0}
           <div class="flex flex-col gap-3">
             <p class="text-sm text-gray-400 uppercase tracking-wider font-bold ml-1">{i18n.t.savedServers}</p>
-            {#each savedServers as server, i}
+            {#each savedServers as server, i (server.id)}
               <div class="flex items-center gap-3">
                 <button
                   onclick={() => connectToServer(server)}
@@ -1804,7 +1844,7 @@
             {#if discoveredServers.length > 0}
               <div class="flex flex-col gap-2">
                 <p class="text-xs text-gray-400 uppercase tracking-wider font-bold">{i18n.t.serverFound}</p>
-                {#each discoveredServers as d}
+                {#each discoveredServers as d (d.url)}
                   <button
                     onclick={() => addAndConnectServer(d.url)}
                     class="flex items-center justify-between p-4 bg-gray-900 hover:bg-gray-700 focus:bg-gray-700
@@ -1958,11 +1998,11 @@
           <!-- Profile -->
           {#if users.length > 0}
             <div class="flex flex-wrap justify-center gap-10">
-              {#each users as user, i}
+              {#each users as user, i (user.Id)}
                 <button onclick={() => handleUserClick(user)} {@attach focusOnMount(i === 0)} class="flex flex-col items-center group focus:outline-none">
                   <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl transition-all">
                     {#if user.PrimaryImageTag}
-                      <img src="{session.serverUrl}/Users/{user.Id}/Images/Primary?tag={user.PrimaryImageTag}" alt={user.Name} class="w-full h-full object-cover"/>
+                      <img src="{session.serverUrl}/Users/{user.Id}/Images/Primary?tag={user.PrimaryImageTag}&fillWidth=300&fillHeight=300&quality=90&format=webp" alt={user.Name} class="w-full h-full object-cover"/>
                     {:else}
                       <div class="w-full h-full bg-gray-700 flex items-center justify-center">
                         <span class="text-6xl font-bold">{user.Name.charAt(0)}</span>
@@ -2050,6 +2090,8 @@
           {#key dashboardReloadKey}
           <Dashboard
             {selectedUser} {apiCache} {reduceAnimations}
+            {resumeStale}
+            onResumeRefreshed={() => resumeStale = false}
             showHero={displaySettings.hero}
             showLibraries={displaySettings.libraries}
             showHistory={displaySettings.history}
@@ -2109,13 +2151,7 @@
             onOpenItemById={(id) => loadItemById(id)}
             onOpenPerson={(person) => openPerson(person)}
             onLibChanged={refreshLibraries}
-            onPlayVideo={(p) => {
-              if (p.item) currentDetailItem = p.item;
-              activeAudioIndex    = p.audioIndex    ?? -1;
-              activeSubtitleIndex = p.subtitleIndex ?? -1;
-              activeMediaSourceId = p.mediaSourceId ?? null;
-              viewState = 'player';
-            }}
+            onPlayVideo={startPlayback}
           />
 
         {:else if viewState === 'person'}
@@ -2131,6 +2167,7 @@
             onBack={() => viewState = collectionReturnView}
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu}
             onChildCountChanged={onCollectionChildCount}
+            onPlayVideo={(p) => { detailsOrigin = 'collection'; startPlayback(p); }}
             onPlaylistRenamed={onCollectionRenamed}
             onPlaylistDeleted={onCollectionDeleted} />
         {/if}
@@ -2177,7 +2214,7 @@
           {syncCommand}
           {remoteCommand}
           {syncQueue}
-          onExit={() => viewState = 'details'}
+          onExit={() => { viewState = 'details'; resumeStale = true; }}
           onPlayState={(p) => playerPlaying = p}
           onLibChanged={refreshLibraries}
           onNext={(payload) => handleNextEpisode(payload)}
@@ -2221,7 +2258,9 @@
   <AddToPicker mode={contextPickerMode} item={contextPickerItem} {selectedUser} {getAuthHeaders}
     onCreated={refreshLibraries} onClose={() => contextPickerMode = null} />
 
-  <!-- UHRZEIT — oben rechts, sichtbar im App-Betrieb außer im Player -->
+  <!-- UHRZEIT — oben rechts in den App-Ansichten. Im Player NICHT dieses Overlay: der Player bringt
+       seine EIGENE Uhr im HUD mit (nur bei eingeblendeter Steuerung, schont OLED), daher hier per
+       viewState !== 'player' ausgenommen. -->
   {#if appPhase === 'app' && viewState !== 'player' && displaySettings.clock}
     <Clock {viewState} {use24h} />
   {/if}

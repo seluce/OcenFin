@@ -18,6 +18,8 @@
     showCollections  = true,    // "Sammlungen" (BoxSets)
     sharedSuggestions = [],     // "Für euch beide" — Titel, die zur gemeinsamen Vorliebe passen
     showSharedSuggestions = false, // Reihe anzeigen (nur wenn gemeinsames Profil eingerichtet)
+    resumeStale = false,        // App: seit dem letzten Dashboard-Besuch lief eine Wiedergabe → Resume/NextUp frisch holen
+    onResumeRefreshed,          // () => void — App setzt das Flag zurück
     onLibrariesLoaded, onOpenCollection, onOpenContext, onOpenDetails, onOpenLibrary,   // Callback-Props
   } = $props();
 
@@ -43,6 +45,7 @@
   // HERO-BANNER: rotierendes Featured-Item (Netflix-Stil)
   let heroItems  = $state([]);
   let heroIndex  = $state(0);
+  let prevHeroIndex = $state(-1);   // vorheriges Bild bleibt beim Wechsel als Unterlage stehen (Crossfade statt Dip-to-Black)
   let heroTimer;
   let heroBuilt  = false;   // pro Laden: true, sobald der Hero einmal gebaut ist (verhindert Neu-Mischen beim zweiten Latest-Fetch)
   let heroLoading = $state(false);   // true, solange die Featured-Daten noch laden → Platz reservieren (kein Nachrücken)
@@ -74,6 +77,7 @@
     // Maximal 5, gemischt
     heroItems = pool.sort(() => Math.random() - 0.5).slice(0, 5);
     heroIndex = 0;
+    prevHeroIndex = -1;
     heroBuilt = true;
     heroLoading = false;   // Hero steht → Skelett sofort weg (unabhängig vom langsameren Latest-Fetch)
     clearInterval(heroTimer);
@@ -81,6 +85,7 @@
     if (!reduceAnimations && heroItems.length > 1) {
       preloadHero(1);   // nächstes Bild schon laden
       heroTimer = setInterval(() => {
+        prevHeroIndex = heroIndex;
         heroIndex = (heroIndex + 1) % heroItems.length;
         preloadHero((heroIndex + 1) % heroItems.length);
       }, 8000);
@@ -88,6 +93,35 @@
   }
 
   const getAuthHeaders = () => authHeaders(session.token);
+  const FIELDS = "PrimaryImageAspectRatio,Overview,BackdropImageTags";
+  const ROW_LIMIT = 12;   // einheitliche Reihenlänge: Reihen sind Teaser, der Katalog ist die Bibliothek
+                          // (Ausnahmen bewusst: Hero = 5er-Rotation, Sammlungen = kuratiert, ungekappt)
+
+  // NextUp um Titel bereinigen, die schon in "Weiterschauen" laufen (per Episode- oder Serien-Id).
+  function filterNextUp(raw) {
+    const inProgress = new Set();
+    continueWatching.forEach(i => { inProgress.add(i.Id); if (i.SeriesId) inProgress.add(i.SeriesId); });
+    return raw.filter(i => !inProgress.has(i.Id) && !inProgress.has(i.SeriesId));
+  }
+
+  // Nach einer Wiedergabe: NUR Resume + NextUp frisch holen und in den Cache mergen — die
+  // Sofort-Anzeige aus dem Cache bleibt, aber die eine Zeile, die sich wirklich geändert hat,
+  // stimmt wieder (Fortschritt/neuer Titel). Kein Vollreload, Hero bleibt stehen (kein Neu-Mischen).
+  async function refreshResume() {
+    try {
+      const uId  = selectedUser.Id;
+      const opts = { headers: getAuthHeaders() };
+      const [rRes, rNext] = await Promise.all([
+        fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
+        fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
+      ]);
+      continueWatching = (await rRes.json()).Items || [];
+      const dNext = await rNext.json();
+      nextUp = filterNextUp(Array.isArray(dNext) ? dNext : (dNext.Items || []));
+      if (apiCache.dashboard) { apiCache.dashboard.continueWatching = continueWatching; apiCache.dashboard.nextUp = nextUp; }
+      onResumeRefreshed?.();
+    } catch { /* Flag bleibt gesetzt → nächster Dashboard-Besuch versucht es erneut */ }
+  }
 
   // Empfehlungen: Seeds aus zuletzt gesehenen Items, dann /Items/{id}/Similar.
   // Best Practice (Netflix/Plex): direkt im Dashboard, kein eigener Tab.
@@ -104,7 +138,7 @@
       // Einstellung 1 oder 2 — so wirkt das Umschalten ohne Neuladen sofort.
       const rows = [];
       for (const seed of seeds.slice(0, 2)) {
-        const sim = await fetch(`${session.serverUrl}/Items/${seed.Id}/Similar?userId=${uId}&limit=12&Fields=${fields}`, opts);
+        const sim = await fetch(`${session.serverUrl}/Items/${seed.Id}/Similar?userId=${uId}&limit=${ROW_LIMIT}&Fields=${fields}`, opts);
         const items = (await sim.json()).Items || [];
         if (items.length >= 4) rows.push({ seedTitle: seed.Name, items });
       }
@@ -122,6 +156,7 @@
       recommendations = recommendations || [];
       collections     = apiCache.dashboard.collections || [];
       buildHero();
+      if (resumeStale) refreshResume();   // Hintergrund-Refresh, UI steht bereits aus dem Cache
       return;
     }
 
@@ -130,19 +165,19 @@
     try {
       const uId   = selectedUser.Id;
       const opts  = { headers: getAuthHeaders() };
-      const fields = "PrimaryImageAspectRatio,Overview,BackdropImageTags";
+      const fields = FIELDS;
 
       // Alle 5 Fetches gleichzeitig starten — kein sequentielles Warten
       const pViews        = fetch(`${session.serverUrl}/Users/${uId}/Views`, opts);
-      const pResume       = fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=12&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
-      const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=6&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
-      const pLatestMovies = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Movie&Limit=6&Fields=${fields}`, opts);
-      const pLatestSeries = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Series&Limit=6&Fields=${fields}`, opts);
+      const pResume       = fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
+      const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
+      const pLatestMovies = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Movie&Limit=${ROW_LIMIT}&Fields=${fields}`, opts);
+      const pLatestSeries = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Series&Limit=${ROW_LIMIT}&Fields=${fields}`, opts);
       // Verlauf: zuletzt gesehene Filme/Folgen. Mehr holen (40), da Serien danach
       // zu je einem Eintrag zusammengefasst werden (Puffer für eine gute Mischung).
-      const pHistory      = fetch(`${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}`, opts);
+      const pHistory      = fetch(`${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}&EnableTotalRecordCount=false`, opts);
       // Sammlungen (BoxSets)
-      const pCollections  = fetch(`${session.serverUrl}/Users/${uId}/Items?IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=50`, opts);
+      const pCollections  = fetch(`${session.serverUrl}/Users/${uId}/Items?IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=50&EnableTotalRecordCount=false`, opts);
 
       // Priorität: Views + Resume → UI sofort freigeben
       const [resViews, resResume] = await Promise.all([pViews, pResume]);
@@ -165,7 +200,7 @@
 
       // Verlauf laden + nach Serie zusammenfassen
       pHistory.then(r => r.json()).then(async d => {
-        let items = dedupeHistory(d.Items || []);
+        let items = dedupeHistory(d.Items || []).slice(0, ROW_LIMIT);   // Reihenlänge vereinheitlicht; Kappen VOR der Anreicherung spart Serien-Lookups
         // Serien wie in der Mediathek mit echtem Jahresbereich zeigen ("2016 – 2019" / "2024 – heute"):
         // einmalig die echten Serien-Infos (Jahr/Status/EndDate) für alle Serien-Einträge nachladen.
         const seriesIds = items.filter(i => i.Type === 'Series').map(i => i.Id);
@@ -191,10 +226,7 @@
       pNextUp.then(r => r.json()).then(d => {
         const raw = Array.isArray(d) ? d : (d.Items || []);
         // In-Progress-Titel ausschließen (stehen schon in "Weiterschauen") — wie die Jellyfin-App.
-        // Per Episode-Id ODER SeriesId, falls eine Folge der Serie bereits angefangen wurde.
-        const inProgress = new Set();
-        continueWatching.forEach(i => { inProgress.add(i.Id); if (i.SeriesId) inProgress.add(i.SeriesId); });
-        nextUp = raw.filter(i => !inProgress.has(i.Id) && !inProgress.has(i.SeriesId));
+        nextUp = filterNextUp(raw);
         apiCache.dashboard.nextUp = nextUp;
       }).catch(() => {});
 
@@ -414,13 +446,18 @@
     <!-- HERO-BANNER — rotierendes Featured-Item -->
     {#if showHero && heroCurrent}
       <div transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gray-900">
-        <!-- Vollflächiger Backdrop (Netflix-Stil): Inhalt steht sofort, Bild blendet ein (Blurhash → scharf), dunkler Grund als Sicherheitsnetz -->
-        {#each heroItems as h, i (h.Id)}
-          {#if i === heroIndex && getHeroBackdrop(h)}
-            <img src={getHeroBackdrop(h)} {@attach blurUp(itemBlurHash(h, 'Backdrop'))} alt={h.Name} fetchpriority="high" loading="eager" decoding="async"
+        <!-- Vollflächiger Backdrop (Netflix-Stil): Crossfade — das VORHERIGE Bild bleibt als Unterlage
+             stehen, das neue blendet obendrauf ein (kein Dip-to-Black mehr). Blurhash → scharf. -->
+        {#if prevHeroIndex >= 0 && prevHeroIndex !== heroIndex && heroItems[prevHeroIndex] && getHeroBackdrop(heroItems[prevHeroIndex])}
+          <img src={getHeroBackdrop(heroItems[prevHeroIndex])} alt="" aria-hidden="true" decoding="async"
+            class="absolute inset-0 w-full h-full object-cover object-center" />
+        {/if}
+        {#key heroCurrent?.Id}
+          {#if heroCurrent && getHeroBackdrop(heroCurrent)}
+            <img src={getHeroBackdrop(heroCurrent)} {@attach blurUp(itemBlurHash(heroCurrent, 'Backdrop'))} alt={heroCurrent.Name} fetchpriority="high" loading="eager" decoding="async"
               class="absolute inset-0 w-full h-full object-cover object-center hero-fade" />
           {/if}
-        {/each}
+        {/key}
         <!-- Verläufe: links für Textlesbarkeit, unten für nahtlosen Übergang in die Reihen darunter -->
         <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/50 to-transparent"></div>
         <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/50 to-transparent"></div>
@@ -458,7 +495,7 @@
             <!-- Punkt-Indikatoren — nur wenn auch rotiert wird (bei reduzierter Bewegung: statischer Hero ohne Punkte) -->
             {#if !reduceAnimations && heroItems.length > 1}
               <div class="flex gap-2 ml-2">
-                {#each heroItems as _, i}
+                {#each heroItems as h, i (h.Id)}
                   <div class="h-2 rounded-full transition-all {i === heroIndex ? 'w-6 bg-white' : 'w-2 bg-white/40'}"></div>
                 {/each}
               </div>
@@ -535,7 +572,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.recentlyWatched}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
           {#each recentlyWatched as item (item.Id)}
-            {@render portraitCard(item, getHistoryImageUrl(item), itemBlurHash(item, 'Backdrop'))}
+            {@render portraitCard(item, getHistoryImageUrl(item), itemBlurHash(item))}
           {/each}
         </div>
       </div>
@@ -605,8 +642,6 @@
 </div>
 
 <style>
-  .hide-scrollbar::-webkit-scrollbar { display: none; }
-  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
   /* scroll-snap: horizontale Reihen rasten beim Blättern an Kartengrenzen ein (proximity = sanft) */
   .snap-row { scroll-snap-type: x proximity; scroll-padding-inline-start: 0.5rem; }
   .snap-row > * { scroll-snap-align: start; }

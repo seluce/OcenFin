@@ -217,7 +217,7 @@
   let showLog = $state(false);
   let logText = $state('');
   let qrSvg = $state(null);
-  let qrBtnEl;   // für Fokus-Rückgabe beim Verlassen der QR-Ansicht
+  let qrBtnEl = $state();   // für Fokus-Rückgabe beim Verlassen der QR-Ansicht
   let logEl = $state(null);   // <pre> mit den Log-Zeilen (für Auto-Scroll + Blättern)
   // Neueste Einträge stehen unten → beim Öffnen ans Ende springen.
   function scrollLogToBottom() { if (logEl) logEl.scrollTop = logEl.scrollHeight; }
@@ -283,6 +283,9 @@
   function setTheme(theme) {
     onDisplayChange?.({ ...displaySettings, theme });
   }
+  function setUiFont(font) {
+    onDisplayChange?.({ ...displaySettings, uiFont: font });
+  }
   function setSeekStep(sec) {
     onDisplayChange?.({ ...displaySettings, seekStep: sec });
   }
@@ -291,10 +294,10 @@
   // Gemeinsame Quelle wie die Sidebar; zeigt hier ALLE Einträge inkl. ausgeblendeter.
   let navEntries = $derived(applyNavConfig(buildNavEntries(libraries, i18n.t, displaySettings.navIcons || {}), displaySettings.navOrder || [], displaySettings.navHidden || []));
   let grabbedId = $state(null);   // angehobener Eintrag (Greifen-Modus) – null = keiner
-  let navListEl;          // bind: zum Refokussieren nach dem Verschieben
+  let navListEl = $state();          // bind: zum Refokussieren nach dem Verschieben
   let lastGrabToggle = 0; // gegen Auto-Repeat: gehaltene OK-Taste = ein Umschalten
   let iconPickerFor = $state(null);   // Eintrags-Id, für die gerade ein Icon gewählt wird (null = zu)
-  let iconGridEl;             // bind: Auto-Fokus im Icon-Wähler
+  let iconGridEl = $state();             // bind: Auto-Fokus im Icon-Wähler
 
   // grabbedId zentral setzen + App melden, damit der Fokus-Manager die Sidebar währenddessen sperrt.
   function setGrabbed(id) {
@@ -390,7 +393,7 @@
         list.push({
           id,
           name: isEp ? (it.SeriesName || it.Name) : it.Name,
-          imageUrl: `${session.serverUrl}/Items/${id}/Images/Primary?tag=${tag}&fillHeight=300&quality=90&ApiKey=${session.token}`,
+          imageUrl: `${session.serverUrl}/Items/${id}/Images/Primary?tag=${tag}&fillHeight=300&quality=90&format=webp&ApiKey=${session.token}`,
         });
         if (list.length >= AVATAR_ICON_KEYS.length) break;
       }
@@ -563,6 +566,26 @@
               <button onclick={() => setUiSize(val)}
                 class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                        {(displaySettings.uiSize || 'medium') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                {label}
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Schriftart — eigener Punkt, gilt für die gesamte Oberfläche. ASS-Untertitel sind
+             ausgenommen (bringen ihre eigenen Schriften mit); die VTT-Anzeige erbt die Wahl.
+             Die Buttons zeigen sich jeweils in ihrer eigenen Schrift (Vorschau). -->
+        <div class="p-6">
+          <span class="text-2xl text-white font-medium block">{i18n.t.uiFont}</span>
+          <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.uiFontDesc}</span>
+          <div class="flex gap-3">
+            {#each [['system', i18n.t.fontSystem, ''], ['arimo', 'Arimo', "'Arimo', sans-serif"], ['noto', 'Noto Sans', "'Noto Sans', sans-serif"]] as [val, label, fam]}
+              <button onclick={() => setUiFont(val)}
+                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                       {(displaySettings.uiFont || 'system') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}"
+                style={fam ? `font-family: ${fam}` : ''}>
                 {label}
               </button>
             {/each}
@@ -1113,6 +1136,23 @@
             </div>
           </div>
 
+          <!-- VTT-Schriftart — nur Textuntertitel, bewusst getrennt von der UI-Schrift (Darstellung).
+               Buttons zeigen sich in ihrer eigenen Schrift (Vorschau); Tinos = Serife, nur hier wählbar. -->
+          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+            <span class="text-2xl text-white font-medium block">{i18n.t.subtitleFont}</span>
+            <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleFontDesc}</span>
+            <div class="flex gap-3">
+              {#each [['system', i18n.t.fontSystem, ''], ['arimo', 'Arimo', "'Arimo', sans-serif"], ['noto', 'Noto Sans', "'Noto Sans', sans-serif"], ['tinos', 'Tinos', "'Tinos', serif"]] as [val, label, fam]}
+                <button onclick={() => setSubtitlePref('subtitleFont', val)}
+                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {(playbackPrefs.subtitleFont || 'system') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}"
+                  style={fam ? `font-family: ${fam}` : ''}>
+                  {label}
+                </button>
+              {/each}
+            </div>
+          </div>
+
           <!-- Textuntertitel-Styling (Farbe/Rand/Hintergrund) — nur WebVTT/SRT, nicht PGS/VobSub -->
           <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
             <span class="text-2xl text-white font-medium block">{i18n.t.subtitleColor}</span>
@@ -1170,7 +1210,7 @@
             {#if hasEditedAvatar && avatarPoster}
               <img src={avatarPoster.imageUrl} alt={avatarPoster.name} class="w-full h-full object-cover" />
             {:else if !hasEditedAvatar && selectedUser?.PrimaryImageTag}
-              <img src="{session.serverUrl}/Users/{selectedUser.Id}/Images/Primary?tag={selectedUser.PrimaryImageTag}" alt={i18n.t.profilePicture} class="w-full h-full object-cover" />
+              <img src="{session.serverUrl}/Users/{selectedUser.Id}/Images/Primary?tag={selectedUser.PrimaryImageTag}&fillWidth=160&fillHeight=160&quality=90&format=webp" alt={i18n.t.profilePicture} class="w-full h-full object-cover" />
             {:else}
               <svg class="w-11 h-11 text-white" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[effectiveIcon]}/></svg>
             {/if}
@@ -1797,7 +1837,3 @@
   </div>
 {/if}
 
-<style>
-  .hide-scrollbar::-webkit-scrollbar { display: none; }
-  .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-</style>

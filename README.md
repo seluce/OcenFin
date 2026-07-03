@@ -59,7 +59,7 @@ First, choose the right `.ipk` version for your TV from the Releases page:
 
 ## Documentation & FAQ
 
-I have gathered a few more common questions into an FAQ and addressed them in the Wiki. I will continue to expand the Wiki and the FAQ over time: [Check out the OcenFin FAQ](https://github.com/seluce/OcenFin/wiki/FAQ)
+I have gathered a few more common questions into an FAQ and addressed them in the Wiki. I will continue to expand the Wiki and the FAQ over time: [Check out the OcenFin FAQ](https://github.com/seluce/OcenFin/wiki)
 
 ---
 
