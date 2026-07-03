@@ -31,7 +31,7 @@
       const res = await fetch(
         `${session.serverUrl}/Users/${selectedUser.Id}/Items?PersonIds=${person.Id}` +
         `&Recursive=true&IncludeItemTypes=Movie,Series&SortBy=PremiereDate&SortOrder=Descending` +
-        `&Limit=100&Fields=PrimaryImageAspectRatio,SeriesName`,
+        `&Limit=100&Fields=PrimaryImageAspectRatio,SeriesName&EnableTotalRecordCount=false`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) items = (await res.json()).Items || [];
@@ -83,10 +83,10 @@
       {/each}
     </div>
   {:else if groups.length > 0}
-    {#each groups as group}
+    {#each groups as group (group.label)}
       <h2 class="text-2xl font-bold text-white mb-4 mt-2">{group.label}</h2>
       <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-10">
-        {#each group.items as item}
+        {#each group.items as item (item.Id)}
           <button onclick={() => onOpenDetails(item)}
             {@attach longPress()} onlongpress={() => onContextMenu(item)}
             class="group focus:outline-none text-left cv-auto">

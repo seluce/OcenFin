@@ -112,8 +112,8 @@
       const uId  = selectedUser.Id;
       const opts = { headers: getAuthHeaders() };
       const [rRes, rNext] = await Promise.all([
-        fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb`, opts),
-        fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb`, opts),
+        fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
+        fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
       ]);
       continueWatching = (await rRes.json()).Items || [];
       const dNext = await rNext.json();
@@ -169,15 +169,15 @@
 
       // Alle 5 Fetches gleichzeitig starten — kein sequentielles Warten
       const pViews        = fetch(`${session.serverUrl}/Users/${uId}/Views`, opts);
-      const pResume       = fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
-      const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb`, opts);
+      const pResume       = fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
+      const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
       const pLatestMovies = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Movie&Limit=${ROW_LIMIT}&Fields=${fields}`, opts);
       const pLatestSeries = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Series&Limit=${ROW_LIMIT}&Fields=${fields}`, opts);
       // Verlauf: zuletzt gesehene Filme/Folgen. Mehr holen (40), da Serien danach
       // zu je einem Eintrag zusammengefasst werden (Puffer für eine gute Mischung).
-      const pHistory      = fetch(`${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}`, opts);
+      const pHistory      = fetch(`${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}&EnableTotalRecordCount=false`, opts);
       // Sammlungen (BoxSets)
-      const pCollections  = fetch(`${session.serverUrl}/Users/${uId}/Items?IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=50`, opts);
+      const pCollections  = fetch(`${session.serverUrl}/Users/${uId}/Items?IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=50&EnableTotalRecordCount=false`, opts);
 
       // Priorität: Views + Resume → UI sofort freigeben
       const [resViews, resResume] = await Promise.all([pViews, pResume]);
