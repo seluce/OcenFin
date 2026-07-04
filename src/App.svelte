@@ -1507,6 +1507,13 @@
     viewState = detailsOrigin;
     if (detailsOrigin === 'library') {
       libraryRef?.restoreView();
+      // Gleiche Mechanik wie onContextChanged: Details hat item.UserData in-place mitgezogen
+      // (Favorit/Gesehen-Toggles). Passt das Item nicht mehr zum aktiven Status-Filter
+      // (z. B. Favoriten-Filter an + Favorit in den Details entfernt), fliegt es gezielt aus
+      // der geladenen Liste — statt Full-Reload, damit Scrollposition und Fokus erhalten bleiben.
+      if (currentDetailItem && libraryRef && !libraryRef.matchesStatusFilters(currentDetailItem)) {
+        libraryRef.removeItem(currentDetailItem.Id);
+      }
     } else if (detailsOrigin === 'favorites') {
       // Favoriten neu laden — z.B. wenn in den Details ein Favorit entfernt wurde, war er sonst
       // noch in der Übersicht gelistet, bis man die Ansicht wechselte. Schlüssel hochzählen → Favorites lädt neu.
