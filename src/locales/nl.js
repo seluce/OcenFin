@@ -193,6 +193,9 @@ export default {
     // Search
     searchPlaceholder: "Typ om te zoeken…",
     noResults: "Geen resultaten gevonden.",
+    libraryEmpty: "Deze bibliotheek is leeg.",
+    libraryEmptyFiltered: "Geen resultaten met de huidige filters.",
+    noFavorites: "Nog geen favorieten — markeer titels met het hart.",
     people: "Personen",
     appearsIn: "Verschijnt in",
     cast: "Cast",

@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, getItemSubtitle, personImageUrl, itemBlurHash, blurUp, longPress, authHeaders, dlog, getItemImageUrl } from '../utils.js';
+  import { itemProgress, itemBadge, getItemSubtitle, personImageUrl, itemBlurHash, blurUp, longPress, authHeaders, dlog, getItemImageUrl } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { tick } from 'svelte';
 
@@ -75,6 +75,13 @@
     <h1 class="text-4xl font-bold text-white">{i18n.t.favorites}</h1>
   </div>
 
+  <!-- Leerzustand: noch keine Favoriten — freundlicher Hinweis statt leerer Seite -->
+  {#if !isLoadingFavorites && favoriteItems.length === 0}
+    <div class="flex flex-col items-center justify-center py-24 text-center">
+      <svg class="w-16 h-16 text-gray-700 mb-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"/></svg>
+      <p class="text-xl text-gray-400 font-bold">{i18n.t.noFavorites}</p>
+    </div>
+  {/if}
   {#if isLoadingFavorites}
     <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4">
       {#each Array(12).fill(0) as _}
@@ -88,10 +95,16 @@
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{group.label}</h2>
           <div data-focus-group data-enter-first class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-12">
             {#each group.items as item (item.Id)}
+              {@const badge = itemBadge(item)}
               <button onclick={() => onOpenDetails(item)}
                 {@attach longPress()} onlongpress={() => onContextMenu(item)}
-                class="group focus:outline-none text-left cv-auto">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
+                class="group focus:outline-none text-left scroll-my-4">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl relative">
+                  {#if badge}
+                    <div class="absolute top-2 left-2 z-10 min-w-[1.6rem] h-[1.6rem] px-1.5 rounded-full flex items-center justify-center bg-blue-600/90 text-white text-xs font-bold shadow-md pointer-events-none">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                  {/if}
                   {#if getItemImageUrl(item)}
                     <img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                   {/if}
@@ -119,8 +132,8 @@
           {#each favEpisodes as item (item.Id)}
             <button onclick={() => onOpenDetails(item)}
               {@attach longPress()} onlongpress={() => onContextMenu(item)}
-              class="group focus:outline-none text-left cv-auto">
-              <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
+              class="group focus:outline-none text-left scroll-my-4">
+              <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl relative">
                 {#if getItemImageUrl(item, 'landscape')}
                   <img src={getItemImageUrl(item, 'landscape')} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                 {/if}
@@ -141,8 +154,8 @@
         <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.people}</h2>
         <div data-focus-group data-enter-first class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-6 pr-4 mb-12">
           {#each favPersons as p (p.Id)}
-            <button onclick={() => onOpenPerson(p)} class="group focus:outline-none text-center cv-auto">
-              <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl">
+            <button onclick={() => onOpenPerson(p)} class="group focus:outline-none text-center scroll-my-4">
+              <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl">
                 {#if personImageUrl(session.serverUrl, p)}
                   <img src={personImageUrl(session.serverUrl, p)} {@attach blurUp(itemBlurHash(p))} alt={p.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                 {:else}
@@ -156,10 +169,6 @@
           {/each}
         </div>
       {/if}
-    </div>
-  {:else}
-    <div class="flex items-center justify-center h-64">
-      <p class="text-2xl text-gray-500 font-bold">{i18n.t.noItems}</p>
     </div>
   {/if}
 </div>

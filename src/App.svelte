@@ -1507,6 +1507,13 @@
     viewState = detailsOrigin;
     if (detailsOrigin === 'library') {
       libraryRef?.restoreView();
+      // Gleiche Mechanik wie onContextChanged: Details hat item.UserData in-place mitgezogen
+      // (Favorit/Gesehen-Toggles). Passt das Item nicht mehr zum aktiven Status-Filter
+      // (z. B. Favoriten-Filter an + Favorit in den Details entfernt), fliegt es gezielt aus
+      // der geladenen Liste — statt Full-Reload, damit Scrollposition und Fokus erhalten bleiben.
+      if (currentDetailItem && libraryRef && !libraryRef.matchesStatusFilters(currentDetailItem)) {
+        libraryRef.removeItem(currentDetailItem.Id);
+      }
     } else if (detailsOrigin === 'favorites') {
       // Favoriten neu laden — z.B. wenn in den Details ein Favorit entfernt wurde, war er sonst
       // noch in der Übersicht gelistet, bis man die Ansicht wechselte. Schlüssel hochzählen → Favorites lädt neu.
@@ -2000,7 +2007,7 @@
             <div class="flex flex-wrap justify-center gap-10">
               {#each users as user, i (user.Id)}
                 <button onclick={() => handleUserClick(user)} {@attach focusOnMount(i === 0)} class="flex flex-col items-center group focus:outline-none">
-                  <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl transition-all">
+                  <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 shadow-xl transition-all duration-200">
                     {#if user.PrimaryImageTag}
                       <img src="{session.serverUrl}/Users/{user.Id}/Images/Primary?tag={user.PrimaryImageTag}&fillWidth=300&fillHeight=300&quality=90&format=webp" alt={user.Name} class="w-full h-full object-cover"/>
                     {:else}

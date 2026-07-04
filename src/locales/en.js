@@ -193,6 +193,9 @@ export default {
     // Search
     searchPlaceholder: "Type to search…",
     noResults: "No results found.",
+    libraryEmpty: "This library is empty.",
+    libraryEmptyFiltered: "No matches with the current filters.",
+    noFavorites: "No favorites yet — mark titles with the heart.",
     people: "People",
     appearsIn: "Appears In",
     cast: "Cast",

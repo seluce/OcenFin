@@ -188,6 +188,14 @@ export function getItemImageUrl(item, format = 'portrait') {
 
 // Fortschritt 0–100: Resume-Position (Filme/Folgen) oder Anteil gesehener Folgen
 // (Serien, via Jellyfins PlayedPercentage). Für Fortschrittsbalken.
+// Karten-Badge "Gesehen" (oben links; oben rechts gehoert dem Folgenzaehler-Opt-in bzw. in den
+// Details-Strips dem dortigen gruenen Haekchen): NUR ein Haekchen, NUR wenn komplett gesehen.
+// Jellyfin setzt Played bei Serien/Staffeln/Sammlungen erst, wenn ALLE enthaltenen Titel gesehen
+// sind — genau die gewuenschte Semantik. Bewusst KEIN Ungesehen-Zaehler: der wuerde den
+// Folgenzaehler oben rechts optisch doppeln.
+export function itemBadge(item) {
+  return item?.UserData?.Played ? { check: true } : null;
+}
 export function itemProgress(item) {
   if (item.UserData?.PlaybackPositionTicks && item.RunTimeTicks)
     return (item.UserData.PlaybackPositionTicks / item.RunTimeTicks) * 100;

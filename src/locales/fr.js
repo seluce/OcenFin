@@ -193,6 +193,9 @@ export default {
     // Search
     searchPlaceholder: "Tapez pour rechercher…",
     noResults: "Aucun résultat trouvé.",
+    libraryEmpty: "Cette médiathèque est vide.",
+    libraryEmptyFiltered: "Aucun résultat avec les filtres actuels.",
+    noFavorites: "Pas encore de favoris — marquez des titres avec le cœur.",
     people: "Personnes",
     appearsIn: "Apparaît dans",
     cast: "Distribution",

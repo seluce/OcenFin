@@ -193,6 +193,9 @@ export default {
     // Search
     searchPlaceholder: "Wpisz, aby wyszukać…",
     noResults: "Nie znaleziono wyników.",
+    libraryEmpty: "Ta biblioteka jest pusta.",
+    libraryEmptyFiltered: "Brak wyników przy obecnych filtrach.",
+    noFavorites: "Brak ulubionych — oznacz tytuły serduszkiem.",
     people: "Osoby",
     appearsIn: "Występuje w",
     cast: "Obsada",

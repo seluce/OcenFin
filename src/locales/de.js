@@ -193,6 +193,9 @@ export default {
     // Search
     searchPlaceholder: "Suchbegriff eingeben…",
     noResults: "Keine Ergebnisse gefunden.",
+    libraryEmpty: "Diese Bibliothek ist leer.",
+    libraryEmptyFiltered: "Keine Treffer mit den aktuellen Filtern.",
+    noFavorites: "Noch keine Favoriten — markiere Titel mit dem Herz.",
     people: "Personen",
     appearsIn: "Mitwirkung",
     cast: "Besetzung",
