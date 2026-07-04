@@ -1206,8 +1206,9 @@
       <!-- Profilbild: Preset-Avatar + Hintergrundfarbe, wird als Jellyfin-Profilbild hochgeladen -->
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-6 shadow-xl flex flex-col gap-5">
         <div class="flex items-center gap-5">
-          <div class="w-20 h-20 rounded-full overflow-hidden flex items-center justify-center shrink-0 shadow-md" style="background:{(hasEditedAvatar && avatarPoster) || (!hasEditedAvatar && selectedUser?.PrimaryImageTag) ? 'transparent' : effectiveColor}">
-            {#if hasEditedAvatar && avatarPoster}
+          <div class="w-20 h-20 rounded-full overflow-hidden flex items-center justify-center shrink-0 shadow-md" style="background:{(hasEditedAvatar && avatarTab === 'recent' && avatarPoster) || (!hasEditedAvatar && selectedUser?.PrimaryImageTag) ? 'transparent' : effectiveColor}">
+            <!-- Spiegelt EXAKT die Speicher-Bedingung (avatarTab + avatarPoster): Vorschau = was gespeichert wuerde -->
+            {#if hasEditedAvatar && avatarTab === 'recent' && avatarPoster}
               <img src={avatarPoster.imageUrl} alt={avatarPoster.name} class="w-full h-full object-cover" />
             {:else if !hasEditedAvatar && selectedUser?.PrimaryImageTag}
               <img src="{session.serverUrl}/Users/{selectedUser.Id}/Images/Primary?tag={selectedUser.PrimaryImageTag}&fillWidth=160&fillHeight=160&quality=90&format=webp" alt={i18n.t.profilePicture} class="w-full h-full object-cover" />
