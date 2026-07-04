@@ -545,7 +545,7 @@
           <button onclick={() => openDetails(item)} data-item-id={item.Id}
             onfocus={() => previewItem(item)} onblur={cancelPreview}
             {@attach longPress()} onlongpress={() => onContextMenu?.(item)}
-            class="group focus:outline-none text-left">
+            class="group focus:outline-none text-left scroll-my-4">
             <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl relative">
               {#if item.Type === 'Playlist' && item.ChildCount === 0}
                 <div class="w-full h-full flex items-center justify-center text-gray-600">

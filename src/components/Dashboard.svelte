@@ -355,7 +355,7 @@
     {@const rem = getRemainingMinutes(item)}
     {@const sub = getItemSubtitle(item, i18n.t.today)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
-      class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24">
+      class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
                   border-4 border-transparent group-focus:border-white group-focus:scale-105
                   transition-all duration-200 shadow-xl relative">
@@ -393,7 +393,7 @@
     {@const badge = itemBadge(item)}
     {@const sub = getItemSubtitle(item, i18n.t.today)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
-      class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24">
+      class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                   border-4 border-transparent group-focus:border-white group-focus:scale-105
                   transition-all duration-200 shadow-xl">
@@ -424,7 +424,7 @@
   {#snippet collectionCard(col)}
     {@const img = getItemImageUrl(col)}
     <button onclick={() => onOpenCollection?.(col)}
-      class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24">
+      class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                   border-4 border-transparent group-focus:border-white group-focus:scale-105
                   transition-all duration-200 shadow-xl">
