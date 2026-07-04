@@ -193,6 +193,9 @@ export default {
     // Search
     searchPlaceholder: "Escribe para buscar…",
     noResults: "No se han encontrado resultados.",
+    libraryEmpty: "Esta biblioteca está vacía.",
+    libraryEmptyFiltered: "Sin resultados con los filtros actuales.",
+    noFavorites: "Aún no hay favoritos: marca títulos con el corazón.",
     people: "Personas",
     appearsIn: "Aparece en",
     cast: "Reparto",

@@ -193,6 +193,9 @@ export default {
     // Search
     searchPlaceholder: "Digita per cercare…",
     noResults: "Nessun risultato trovato.",
+    libraryEmpty: "Questa libreria è vuota.",
+    libraryEmptyFiltered: "Nessun risultato con i filtri attuali.",
+    noFavorites: "Ancora nessun preferito: contrassegna i titoli con il cuore.",
     people: "Persone",
     appearsIn: "Appare in",
     cast: "Cast",

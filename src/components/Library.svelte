@@ -6,7 +6,7 @@
   import { tick } from 'svelte';
   import { session } from '../session.svelte.js';
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, getItemSubtitle, getItemImageUrl, blurUp, itemBlurHash, longPress,
+  import { itemProgress, itemBadge, getItemSubtitle, getItemImageUrl, blurUp, itemBlurHash, longPress,
            focusOnMount, isBackKey, makeFocusReturn, authHeaders, uiFade, dropTrapOnOutro } from '../utils.js';
 
   let {
@@ -541,11 +541,12 @@
         {/each}
       {:else}
         {#each visibleLibraryItems as item (item.Id)}
+          {@const badge = itemBadge(item)}
           <button onclick={() => openDetails(item)} data-item-id={item.Id}
             onfocus={() => previewItem(item)} onblur={cancelPreview}
             {@attach longPress()} onlongpress={() => onContextMenu?.(item)}
-            class="group focus:outline-none text-left cv-auto">
-            <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl relative">
+            class="group focus:outline-none text-left">
+            <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl relative">
               {#if item.Type === 'Playlist' && item.ChildCount === 0}
                 <div class="w-full h-full flex items-center justify-center text-gray-600">
                   <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
@@ -556,6 +557,11 @@
               {#if displaySettings.episodeCount && item.Type === 'Series' && item.RecursiveItemCount}
                 <div class="absolute top-2 right-2 bg-black/80 text-white text-xs font-bold px-2 py-1 rounded-md">
                   {item.RecursiveItemCount} {i18n.t.episodes}
+                </div>
+              {/if}
+              {#if badge}
+                <div class="absolute top-2 left-2 z-10 min-w-[1.6rem] h-[1.6rem] px-1.5 rounded-full flex items-center justify-center bg-blue-600/90 text-white text-xs font-bold shadow-md pointer-events-none">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
                 </div>
               {/if}
               {#if itemProgress(item) > 0}
@@ -575,6 +581,16 @@
 
     {#if sharedWatchMode && !isLoading && currentItems.length > 0 && visibleLibraryItems.length === 0}
       <div class="text-center text-gray-400 py-24 text-lg">{i18n.t.watchTogetherEmpty}</div>
+    {/if}
+    <!-- Leerzustand: leere Bibliothek bzw. 0 Treffer durch aktive Filter — statt stummem leerem Grid -->
+    {#if !isLoading && currentItems.length === 0}
+      <div class="flex flex-col items-center justify-center py-24 text-center">
+        <svg class="w-16 h-16 text-gray-700 mb-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z"/></svg>
+        <p class="text-xl text-gray-400 font-bold">
+          {selectedGenres.length || selectedFsk.length || activeFilters.isFavorite || activeFilters.isPlayed || activeFilters.isNotPlayed
+            ? i18n.t.libraryEmptyFiltered : i18n.t.libraryEmpty}
+        </p>
+      </div>
     {/if}
 
     {#if currentItems.length > 0 && firstLoadedIndex + currentItems.length < totalLibraryItems}

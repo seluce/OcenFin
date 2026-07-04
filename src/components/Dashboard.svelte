@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle } from '../utils.js';
+  import { itemProgress, itemBadge, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy } from 'svelte';
 
@@ -210,7 +210,9 @@
             const info = new Map(((await r2.json()).Items || []).map(s => [s.Id, s]));
             items = items.map(i => {
               const s = i.Type === 'Series' ? info.get(i.Id) : null;
-              return s ? { ...i, ProductionYear: s.ProductionYear, Status: s.Status, EndDate: s.EndDate } : i;
+              // UserData der ECHTEN Serie mitnehmen: die Pseudo-Einträge aus dedupeHistory haben
+              // keine — ohne sie bleibt das Gesehen-Badge bei komplett geschauten Serien blind.
+              return s ? { ...i, ProductionYear: s.ProductionYear, Status: s.Status, EndDate: s.EndDate, UserData: s.UserData } : i;
             });
           } catch { /* Anreicherung optional — schlägt sie fehl, bleibt nur der Titel */ }
         }
@@ -349,6 +351,7 @@
   {#snippet landscapeCard(item)}
     {@const img = getItemImageUrl(item, 'landscape')}
     {@const prog = itemProgress(item)}
+    {@const badge = itemBadge(item)}
     {@const rem = getRemainingMinutes(item)}
     {@const sub = getItemSubtitle(item, i18n.t.today)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
@@ -359,6 +362,11 @@
         {#if img}
           <img src={img} {@attach blurUp(itemBlurHash(item, 'Backdrop'))} alt={item.Name}
             class="w-full h-full object-cover" loading="lazy" />
+        {/if}
+        {#if badge}
+          <div class="absolute top-2 left-2 z-10 min-w-[1.6rem] h-[1.6rem] px-1.5 rounded-full flex items-center justify-center bg-blue-600/90 text-white text-xs font-bold shadow-md pointer-events-none">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
         {/if}
         {#if prog > 0}
           <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
@@ -382,15 +390,21 @@
 
   {#snippet portraitCard(item, img, blur)}
     {@const prog = itemProgress(item)}
+    {@const badge = itemBadge(item)}
     {@const sub = getItemSubtitle(item, i18n.t.today)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
-      class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
+      class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                  border-4 border-transparent group-focus:border-white
-                  transition-colors duration-200 shadow-xl">
+                  border-4 border-transparent group-focus:border-white group-focus:scale-105
+                  transition-all duration-200 shadow-xl">
         {#if img}
           <img src={img} {@attach blurUp(blur)} alt={item.Name}
             class="w-full h-full object-cover" loading="lazy" />
+        {/if}
+        {#if badge}
+          <div class="absolute top-2 left-2 z-10 min-w-[1.6rem] h-[1.6rem] px-1.5 rounded-full flex items-center justify-center bg-blue-600/90 text-white text-xs font-bold shadow-md pointer-events-none">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
         {/if}
         {#if prog > 0}
           <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
@@ -410,10 +424,10 @@
   {#snippet collectionCard(col)}
     {@const img = getItemImageUrl(col)}
     <button onclick={() => onOpenCollection?.(col)}
-      class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 cv-card transition-transform duration-200 group-focus:scale-105">
+      class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                  border-4 border-transparent group-focus:border-white
-                  transition-colors duration-200 shadow-xl">
+                  border-4 border-transparent group-focus:border-white group-focus:scale-105
+                  transition-all duration-200 shadow-xl">
         {#if img}
           <img src={img} {@attach blurUp(itemBlurHash(col))} alt={col.Name}
             class="w-full h-full object-cover" loading="lazy" />
@@ -645,13 +659,6 @@
   /* scroll-snap: horizontale Reihen rasten beim Blättern an Kartengrenzen ein (proximity = sanft) */
   .snap-row { scroll-snap-type: x proximity; scroll-padding-inline-start: 0.5rem; }
   .snap-row > * { scroll-snap-align: start; }
-
-  /* content-visibility: überspringt Rendering für Karten außerhalb des sichtbaren
-     Bereichs (horizontale Reihen). Spart Layout-Arbeit bei vielen Reihen/Karten. */
-  .cv-card {
-    content-visibility: auto;
-    contain-intrinsic-size: 192px 290px;
-  }
 
   /* Sanftes Einblenden beim Hero-Wechsel */
   .hero-fade { animation: heroFadeIn 1.2s ease; }

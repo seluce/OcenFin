@@ -12,3 +12,9 @@
    contain-intrinsic-size: 'auto' merkt sich nach dem ersten Rendern die echte Größe
    (kein Scroll-Springen); 480px ist nur der Platzhalter davor (~2:3-Karte + Textzeilen). */
 .cv-auto { content-visibility: auto; contain-intrinsic-size: auto 480px; }
+/* WICHTIG: cv-auto/cv-card NICHT auf Karten legen, deren Inhalt bei Fokus skaliert
+   (group-focus:scale-105). content-visibility erzwingt Paint-Containment: alles, was
+   ueber die Button-Box hinauswaechst, wird abgeschnitten — sichtbar als "Rahmen nur
+   unten". Deshalb wurden die cv-Klassen von den Grid-/Dashboard-Karten entfernt.
+   Falls grosse Grids auf dem B4 je wieder Render-Hilfe brauchen: overflow-clip-margin
+   pruefen statt cv zurueckzulegen. */
