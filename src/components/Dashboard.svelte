@@ -441,9 +441,26 @@
     </button>
   {/snippet}
 
+  <!-- Hero-Skelett: reserviert Banner-Höhe + deutet Titel/Text/Button an. EIN Snippet für beide
+       Ladephasen (Erst-Skelett UND heroLoading), damit ab dem ersten Paint nichts nachrückt. -->
+  {#snippet heroSkeleton()}
+    <div class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gradient-to-br from-gray-800/40 via-gray-900/70 to-gray-900">
+      <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/40 to-transparent"></div>
+      <div class="absolute bottom-0 left-0 p-10 pb-8 max-w-3xl flex flex-col gap-3 {reduceAnimations ? '' : 'animate-pulse'}">
+        <div class="h-14 w-80 max-w-[60%] bg-white/10 rounded-lg"></div>
+        <div class="h-4 w-44 bg-white/10 rounded"></div>
+        <div class="h-3.5 w-full max-w-xl bg-white/10 rounded"></div>
+        <div class="h-3.5 w-2/3 max-w-md bg-white/10 rounded"></div>
+        <div class="h-12 w-44 bg-white/10 rounded-xl mt-2"></div>
+      </div>
+    </div>
+  {/snippet}
+
 
   {#if isLoading}
-    <!-- Skeleton-Loader -->
+    <!-- Skeleton-Loader — spiegelt den echten Aufbau: erst Hero-Höhe (wenn aktiv), dann Reihen,
+         damit beim Fertigladen nichts nachspringt. -->
+    {#if showHero}{@render heroSkeleton()}{/if}
     {#each [1, 2, 3] as _}
       <div>
         <div class="h-8 w-48 bg-gray-800 rounded animate-pulse mb-4"></div>
@@ -518,17 +535,7 @@
         </div>
       </div>
     {:else if showHero && heroLoading}
-      <!-- Skelett: reserviert die Hero-Höhe und deutet Titel/Text/Button an (gleiche Position wie der echte Inhalt) → sauberer, nahtloser Übergang -->
-      <div class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gradient-to-br from-gray-800/40 via-gray-900/70 to-gray-900">
-        <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/40 to-transparent"></div>
-        <div class="absolute bottom-0 left-0 p-10 pb-8 max-w-3xl flex flex-col gap-3 {reduceAnimations ? '' : 'animate-pulse'}">
-          <div class="h-14 w-80 max-w-[60%] bg-white/10 rounded-lg"></div>
-          <div class="h-4 w-44 bg-white/10 rounded"></div>
-          <div class="h-3.5 w-full max-w-xl bg-white/10 rounded"></div>
-          <div class="h-3.5 w-2/3 max-w-md bg-white/10 rounded"></div>
-          <div class="h-12 w-44 bg-white/10 rounded-xl mt-2"></div>
-        </div>
-      </div>
+      {@render heroSkeleton()}
     {/if}
 
     <!-- MEDIATHEKEN -->
