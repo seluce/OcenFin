@@ -100,6 +100,7 @@ export default {
     filterClose: "Fertig & Schließen",
     filterActive: "Aktiv",
     shuffle: "Zufällig",
+    playAll: "Alle abspielen",
     sortBy: "Sortieren",
     sortName: "Name (A-Z)",
     sortDateAdded: "Zuletzt hinzugefügt",

@@ -100,6 +100,7 @@ export default {
     filterClose: "Klaar",
     filterActive: "Actief",
     shuffle: "Willekeurig",
+    playAll: "Alles afspelen",
     sortBy: "Sorteren",
     sortName: "Naam (A-Z)",
     sortDateAdded: "Onlangs toegevoegd",

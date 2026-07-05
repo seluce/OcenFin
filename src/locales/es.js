@@ -100,6 +100,7 @@ export default {
     filterClose: "Hecho",
     filterActive: "Activo",
     shuffle: "Aleatorio",
+    playAll: "Reproducir todo",
     sortBy: "Ordenar",
     sortName: "Nombre (A-Z)",
     sortDateAdded: "Añadidos recientemente",

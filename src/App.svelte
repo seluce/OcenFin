@@ -1078,6 +1078,7 @@
     autoPlayStreak = detail?.resetStreak ? 0 : autoPlayStreak + 1;
     activeMediaSourceId = null;   // neue Folge → eigene Standard-Version, nicht die der vorigen
     currentDetailItem = episodeItem;
+    syncQueueIndex(episodeItem);
     // viewState bleibt 'player' — {#key currentDetailItem.Id} in der Template sorgt für Remount
   }
 
@@ -1086,6 +1087,7 @@
     autoPlayStreak = 0;   // Zurückspringen ist eine bewusste Aktion → Zähler zurücksetzen
     activeMediaSourceId = null;
     currentDetailItem = episodeItem;
+    syncQueueIndex(episodeItem);
   }
 
   // ── Personen-Ansicht (Filmografie) ──────────────────────────
@@ -1236,6 +1238,20 @@
   // Zurück aus Details/Player → an die Herkunft, Bibliotheksposition wiederherstellen
   // Startet die Wiedergabe eines Items — genutzt von Details (Play/Von-Anfang/Zufallsfolge)
   // und Collection (Zufällige Wiedergabe). Eine Quelle statt zwei Inline-Kopien.
+  // "Alle abspielen" (Sammlung/Playlist): geordnete Abspiel-Queue. Lebt nur, solange der
+  // Player offen ist — beim Verlassen wird sie geräumt, damit spätere normale Wiedergaben
+  // nicht versehentlich weiterschalten.
+  let playQueue = $state(null);   // { items: [...], index }
+  let queueNext = $derived(playQueue && playQueue.index < playQueue.items.length - 1 ? playQueue.items[playQueue.index + 1] : null);
+  let queuePrev = $derived(playQueue && playQueue.index > 0 ? playQueue.items[playQueue.index - 1] : null);
+  $effect(() => { if (viewState !== 'player' && playQueue) playQueue = null; });
+
+  // Beim Titelwechsel im Player den Queue-Zeiger mitführen (deckt Vor UND Zurück ab)
+  function syncQueueIndex(playedItem) {
+    if (!playQueue || !playedItem) return;
+    const qi = playQueue.items.findIndex(x => x.Id === playedItem.Id);
+    if (qi >= 0) playQueue = { ...playQueue, index: qi };
+  }
   function startPlayback(p) {
     if (p.item) currentDetailItem = p.item;
     activeAudioIndex    = p.audioIndex    ?? -1;
@@ -1606,6 +1622,7 @@
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu}
             onChildCountChanged={onCollectionChildCount}
             onPlayVideo={(p) => { detailsOrigin = 'collection'; startPlayback(p); }}
+            onPlayQueue={(qItems) => { playQueue = { items: qItems, index: 0 }; detailsOrigin = 'collection'; startPlayback({ item: qItems[0], audioIndex: -1, subtitleIndex: -1 }); }}
             onPlaylistRenamed={onCollectionRenamed}
             onPlaylistDeleted={onCollectionDeleted} />
         {/if}
@@ -1652,6 +1669,9 @@
           {syncCommand}
           {remoteCommand}
           {syncQueue}
+          queueActive={!!playQueue}
+          {queueNext}
+          {queuePrev}
           onExit={() => { viewState = 'details'; resumeStale = true; }}
           onPlayState={(p) => playerPlaying = p}
           onLibChanged={refreshLibraries}
