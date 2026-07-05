@@ -1,0 +1,658 @@
+<script>
+  // ============================================================
+  // LOGIN / ONBOARDING — Server-Auswahl, Discovery, Profilwahl,
+  // Passwort- / manuelle / Quick-Connect-Anmeldung.
+  //
+  // Bewusst lazy geladen (App: lazyLogin) — der Auto-Login-Pfad
+  // mountet diese Komponente nie. Aller Flow-Zustand lebt hier und
+  // stirbt mit dem Unmount; ein Profil-/Serverwechsel mountet frisch.
+  //
+  // App behält die langlebigen Wahrheiten: session, selectedServer,
+  // users (Settings braucht die Liste), savedServers/savedTokens
+  // (Startup / Schnellwechsel / Gemeinsam-Profil) sowie finishLogin.
+  // Diese Komponente meldet Ergebnisse über schmale Callbacks.
+  // ============================================================
+  import { onDestroy } from 'svelte';
+  import { i18n } from '../i18n.svelte.js';
+  import { session } from '../session.svelte.js';
+  import { focusOnMount, dlog } from '../utils.js';
+
+  let {
+    phase = $bindable('servers'), // 'servers' | 'users' — App steuert den Einstieg (Startup/Profilwechsel/Logout)
+    server = null,                // aktuell verbundener Server (App-owned; speist dort session.serverUrl)
+    users = [],                   // öffentliche Profile (App-owned — Settings braucht die Liste später)
+    savedServers = [],            // gespeicherte Server (App-owned — der Startup liest sie fürs Auto-Login)
+    clientAuthHeader = '',        // Auth-Header ohne Nutzerbezug (Quick Connect Initiate)
+    authHeaderFor,                // (name) => Auth-Header mit nutzerspezifischer DeviceId
+    getStoredToken,               // (serverId, userId) => token | undefined (Schnellwechsel)
+    onValidateToken,              // (token) => Promise<boolean>
+    onServerConnected,            // (server) => void — App setzt selectedServer
+    onFetchUsers,                 // () => Promise<void> — füllt users (App-State)
+    onSaveServer,                 // (server) => void — anhängen + persistieren
+    onRemoveServer,               // (id) => void — entfernen + Tokens dieses Servers löschen
+    onRenameServer,               // (id, name) => void — Servername vom Server übernommen
+    onTokenRefreshed,             // (serverId, userId, token) => void — App aktualisiert nur bei aktivem Speichern
+    onSwitchServer,               // () => void — zurück zur Server-Auswahl (App: handleLogout)
+    onDone,                       // (user, token) => void — App: finishLogin
+  } = $props();
+
+  // ── Flow-Zustand: lebt nur hier und endet mit dem Unmount ──
+  let serverConnectError = $state('');
+  let isConnecting       = $state(false);
+  let showAddServer      = $state(false); // Panel "Neuen Server hinzufügen"
+  let isDiscovering      = $state(false);
+  let discoveredServers  = $state([]);
+  let newServerUrl       = $state('');
+  let pendingServer      = $state(null);  // Eintrag, der gerade verbindet (Spinner / Retry / Fehler-Zurück)
+  let pendingUser        = $state(null);  // Profil, für das das Passwort abgefragt wird
+  let showPasswordForm   = $state(false);
+  let showManualLogin    = $state(false);
+  let manualUsername     = $state('');
+  let manualPassword     = $state('');
+  let loginError         = $state('');
+  let password           = $state('');
+  let qcCode    = $state(null);
+  let qcSecret  = null;
+  let qcPolling = null;
+
+  // Einstieg direkt auf der Profilwahl (Profilwechsel oder abgelaufener Auto-Login-Token):
+  // users kann dann leer sein → einmalig nachladen.
+  $effect(() => { if (phase === 'users' && server && users.length === 0) onFetchUsers?.(); });
+
+  // QC-Polling überlebt die Ansicht nie (Login-Erfolg oder Wechsel unmountet die Komponente)
+  onDestroy(() => clearInterval(qcPolling));
+
+  /** Zurück-Taste, von App.handleGlobalBack gerufen (Muster wie Collection.handleBackKey):
+   *  true = hier verbraucht (Unterdialog geschlossen), false = App geht zur Server-Auswahl. */
+  export function handleBackKey() {
+    if (showPasswordForm || showManualLogin || qcCode) {
+      showPasswordForm = false;
+      showManualLogin  = false;
+      if (qcCode) cancelQuickConnect();
+      return true;
+    }
+    return false;
+  }
+
+  // ============================================================
+  // SERVER DISCOVERY
+  // ============================================================
+
+  async function getLocalIpViaWebRTC() {
+    return new Promise((resolve) => {
+      try {
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        pc.createDataChannel('');
+        pc.createOffer().then(o => pc.setLocalDescription(o));
+        pc.onicecandidate = (e) => {
+          if (!e?.candidate) { pc.close(); resolve(null); return; }
+          const m = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(e.candidate.candidate);
+          if (m && !m[1].startsWith('127.')) { pc.close(); resolve(m[1]); }
+        };
+      } catch { resolve(null); }
+      setTimeout(() => resolve(null), 3000);
+    });
+  }
+
+  async function tryJellyfinServer(url) {
+    const ctrl  = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 1500);
+    try {
+      const res = await fetch(`${url}/System/Info/Public`, { signal: ctrl.signal });
+      if (res.ok) {
+        const data = await res.json();
+        return { url, name: data.ServerName || 'Jellyfin Server' };
+      }
+    } catch { } finally { clearTimeout(timer); }
+    return null;
+  }
+
+  async function discoverJellyfinServers() {
+    isDiscovering     = true;
+    discoveredServers = [];
+
+    const candidates = new Set([
+      'http://jellyfin.local:8096',
+      'https://jellyfin.local:8920',
+      'http://localhost:8096',
+    ]);
+
+    const localIp = await getLocalIpViaWebRTC();
+    if (localIp) {
+      const subnet = localIp.split('.').slice(0, 3).join('.');
+      for (const h of [1, 2, 3, 10, 50, 100, 101, 150, 200, 201, 250]) {
+        if (!localIp.endsWith(`.${h}`)) candidates.add(`http://${subnet}.${h}:8096`);
+      }
+    } else {
+      for (const s of ['192.168.0','192.168.1','192.168.2','10.0.0','10.0.1']) {
+        for (const h of [1, 2, 100, 101]) candidates.add(`http://${s}.${h}:8096`);
+      }
+    }
+
+    const results = await Promise.allSettled([...candidates].map(tryJellyfinServer));
+    discoveredServers = results
+      .filter(r => r.status === 'fulfilled' && r.value)
+      .map(r => r.value)
+      .filter(d => !savedServers.find(s => s.url === d.url)); // bereits gespeicherte rausfiltern
+
+    isDiscovering = false;
+  }
+
+  // ============================================================
+  // SERVER VERBINDEN / HINZUFÜGEN
+  // ============================================================
+
+  async function connectToServer(srv) {
+    pendingServer      = srv;
+    onServerConnected?.(srv);   // App: selectedServer = srv → $effect.pre speist session.serverUrl
+    serverConnectError = '';
+    isConnecting       = true;
+    loginError         = '';
+    showPasswordForm   = false;
+    showManualLogin    = false;
+
+    try {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 6000);
+      const res   = await fetch(`${srv.url}/System/Info/Public`, { signal: ctrl.signal });
+      clearTimeout(timer);
+
+      if (res.ok) {
+        const data = await res.json();
+        // Servernamen aktualisieren wenn geändert
+        if (data.ServerName && data.ServerName !== srv.name) {
+          onRenameServer?.(srv.id, data.ServerName);
+        }
+        await onFetchUsers?.();
+        phase         = 'users';
+        showAddServer = false;
+      } else {
+        serverConnectError = i18n.t.errInvalid;
+      }
+    } catch (e) {
+      console.warn('[Server] connection failed:', e);
+      serverConnectError = i18n.t.errOffline;
+    } finally {
+      isConnecting = false;
+    }
+  }
+
+  async function addAndConnectServer(url) {
+    if (!url.trim()) return;
+    const cleanUrl = url.trim().replace(/\/$/, '');
+
+    // Schon vorhanden?
+    const existing = savedServers.find(s => s.url === cleanUrl);
+    if (existing) { await connectToServer(existing); return; }
+
+    // Neuer Server: testen, dann speichern
+    serverConnectError = '';
+    isConnecting       = true;
+    try {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 6000);
+      const res   = await fetch(`${cleanUrl}/System/Info/Public`, { signal: ctrl.signal });
+      clearTimeout(timer);
+
+      if (res.ok) {
+        const data = await res.json();
+        const srv  = { id: 'srv_' + Date.now(), url: cleanUrl, name: data.ServerName || 'Jellyfin Server' };
+        onSaveServer?.(srv);
+        await connectToServer(srv);
+        newServerUrl = '';
+      } else {
+        serverConnectError = i18n.t.errInvalid;
+      }
+    } catch (e) {
+      console.warn('[Server] connection failed:', e);
+      serverConnectError = i18n.t.errOffline;
+    } finally {
+      isConnecting = false;
+    }
+  }
+
+  // ============================================================
+  // ANMELDUNG
+  // ============================================================
+
+  /** Profil angeklickt — ggf. Schnellanmeldung per gespeichertem Token */
+  async function handleUserClick(user) {
+    loginError      = '';
+    password        = '';
+    pendingUser     = user;
+    showManualLogin = false;
+
+    if (!user.HasPassword) {
+      await authenticateUser(user.Name, '');
+      return;
+    }
+
+    const storedToken = getStoredToken?.(server?.id, user.Id);
+    if (storedToken) {
+      if (await onValidateToken?.(storedToken)) {
+        onDone?.(user, storedToken);
+        return;
+      } else {
+        // Token abgelehnt: Eintrag NICHT löschen — er steht für den Speicher-Wunsch des Nutzers.
+        // Nach erfolgreicher Passwort-Anmeldung frischt ihn App via onTokenRefreshed auf.
+        dlog('[auth] stored token rejected for', user.Name, '— save preference kept, refreshed after password login');
+      }
+    }
+
+    // Passwort-Eingabe anzeigen
+    showPasswordForm = true;
+  }
+
+  async function authenticateUser(username, pw) {
+    loginError = '';
+    try {
+      const res = await fetch(`${session.serverUrl}/Users/AuthenticateByName`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': authHeaderFor(username) },
+        body:    JSON.stringify({ Username: username, Pw: pw })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // Gespeicherten Token auffrischen — ob Speichern aktiv ist, prüft App
+        onTokenRefreshed?.(server?.id, data.User.Id, data.AccessToken);
+        onDone?.(data.User, data.AccessToken);
+      } else {
+        loginError = i18n.t.errLogin;
+      }
+    } catch { loginError = i18n.t.errOffline; }
+  }
+
+  // Quick Connect — Login-Flow (Code auf TV, Handy bestätigt)
+  async function startQuickConnect() {
+    loginError = '';
+    showPasswordForm = false;
+    showManualLogin  = false;
+    try {
+      const res = await fetch(`${session.serverUrl}/QuickConnect/Initiate`, {
+        headers: { 'Authorization': clientAuthHeader }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        qcCode   = data.Code;
+        qcSecret = data.Secret;
+        qcPolling = setInterval(async () => {
+          try {
+            const poll = await fetch(`${session.serverUrl}/QuickConnect/Connect?Secret=${qcSecret}`, {
+              headers: { 'Authorization': clientAuthHeader }
+            });
+            const pd   = await poll.json();
+            if (pd.Authenticated) {
+              clearInterval(qcPolling);
+              const authRes = await fetch(`${session.serverUrl}/Users/AuthenticateWithQuickConnect`, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': clientAuthHeader },
+                body:    JSON.stringify({ Secret: qcSecret })
+              });
+              if (authRes.ok) {
+                const authData = await authRes.json();
+                qcCode = null;
+                onDone?.(authData.User, authData.AccessToken);
+              }
+            }
+          } catch { }
+        }, 3000);
+      } else {
+        loginError = i18n.t.qcError;
+      }
+    } catch { loginError = i18n.t.networkError; }
+  }
+
+  function cancelQuickConnect() {
+    clearInterval(qcPolling);
+    qcCode = qcSecret = null;
+  }
+</script>
+
+<!-- ============================================================
+     PHASE: SERVER-AUSWAHL
+============================================================ -->
+{#if phase === 'servers'}
+  <div class="h-full flex items-center justify-center p-8">
+    <div class="w-full max-w-2xl flex flex-col gap-6">
+
+      <div class="text-center mb-2">
+        <h1 class="text-4xl font-bold text-blue-500 mb-1">{i18n.t.title}</h1>
+        <p class="text-gray-400">{i18n.t.serverSelectPrompt}</p>
+      </div>
+
+      <!-- Gespeicherte Server + Fehlermeldung: eigene Fokus-Gruppe -->
+      <div data-focus-group="servers" class="flex flex-col gap-6">
+
+      <!-- Gespeicherte Server -->
+      {#if savedServers.length > 0}
+        <div class="flex flex-col gap-3">
+          <p class="text-sm text-gray-400 uppercase tracking-wider font-bold ml-1">{i18n.t.savedServers}</p>
+          {#each savedServers as server, i (server.id)}
+            <div class="flex items-center gap-3">
+              <button
+                onclick={() => connectToServer(server)}
+                {@attach focusOnMount(i === 0)}
+                class="flex-1 flex items-center justify-between p-5 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700
+                       border border-gray-600 hover:border-blue-500 focus:border-blue-500
+                       rounded-xl text-left focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+              >
+                <div class="overflow-hidden">
+                  <span class="text-xl font-bold text-white block truncate">{server.name}</span>
+                  <span class="text-sm text-gray-400 block mt-0.5 truncate">{server.url}</span>
+                </div>
+                {#if isConnecting && pendingServer?.id === server.id}
+                  <div class="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin shrink-0 ml-4"></div>
+                {:else}
+                  <svg class="w-6 h-6 text-blue-400 shrink-0 ml-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+                  </svg>
+                {/if}
+              </button>
+              <!-- Server entfernen -->
+              <button
+                onclick={() => onRemoveServer?.(server.id)}
+                class="p-3 text-gray-600 hover:text-red-400 focus:text-red-400 focus:outline-none focus:ring-2 focus:ring-red-500 rounded-lg transition-colors"
+                title={i18n.t.backToServers}
+              >
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      <!-- Fehlermeldung + Retry -->
+      {#if serverConnectError}
+        <div class="bg-red-900/40 border border-red-700 rounded-xl p-5 flex flex-col gap-4">
+          <div class="flex items-center gap-3">
+            <svg class="w-6 h-6 text-red-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <p class="text-red-300 font-semibold text-lg">{serverConnectError}</p>
+          </div>
+          <div class="flex gap-3">
+            <button
+              onclick={() => pendingServer && connectToServer(pendingServer)}
+              {@attach focusOnMount()}
+              class="flex-1 bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white font-bold py-3 rounded-lg
+                     focus:outline-none focus:ring-2 focus:ring-white transition-colors"
+            >
+              {i18n.t.serverRetry}
+            </button>
+            <button
+              onclick={() => { serverConnectError = ''; pendingServer = null; }}
+              class="flex-1 bg-transparent border border-gray-600 hover:bg-gray-800 focus:bg-gray-800 text-gray-300 font-bold py-3 rounded-lg
+                     focus:outline-none focus:ring-2 focus:ring-white transition-colors"
+            >
+              {i18n.t.backToServers}
+            </button>
+          </div>
+        </div>
+      {/if}
+
+      </div><!-- Ende Fokus-Gruppe "servers" -->
+
+      <!-- "Server hinzufügen"-Flow (Toggle + Panel): eigene Gruppe; Eintritt immer auf den Toggle,
+           damit Hoch/Runter sauber Toggle → Suche → Manuell durchläuft (nicht das vollbreite Toggle
+           gegen das eingerückte Panel ausspielt). -->
+      <div data-focus-group="addserver" data-enter-first class="flex flex-col gap-6">
+
+      <!-- Neuen Server hinzufügen (Toggle-Panel) -->
+      <button
+        onclick={() => { showAddServer = !showAddServer; if (showAddServer) discoverJellyfinServers(); }}
+        class="w-full flex items-center justify-center gap-3 py-4 rounded-xl border-2 transition-all
+               focus:outline-none focus:ring-4 focus:ring-blue-300 font-bold text-lg
+               {showAddServer ? 'bg-gray-800 border-blue-600 text-blue-400' : 'bg-transparent border-gray-700 text-gray-400 hover:border-blue-500 hover:text-blue-400'}"
+      >
+        <svg class="w-6 h-6 transition-transform {showAddServer ? 'rotate-45' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+        </svg>
+        {showAddServer ? i18n.t.qcCancel : i18n.t.addServer}
+      </button>
+
+      {#if showAddServer}
+        <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 flex flex-col gap-5">
+
+          <!-- Discovery -->
+          <button
+            onclick={discoverJellyfinServers}
+            disabled={isDiscovering}
+            class="w-full flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900
+                   text-white font-bold text-lg py-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-300 transition-colors"
+          >
+            {#if isDiscovering}
+              <div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              {i18n.t.discovering}
+            {:else}
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/>
+              </svg>
+              {i18n.t.discoverServers}
+            {/if}
+          </button>
+
+          <!-- Gefundene (neue) Server -->
+          {#if discoveredServers.length > 0}
+            <div class="flex flex-col gap-2">
+              <p class="text-xs text-gray-400 uppercase tracking-wider font-bold">{i18n.t.serverFound}</p>
+              {#each discoveredServers as d (d.url)}
+                <button
+                  onclick={() => addAndConnectServer(d.url)}
+                  class="flex items-center justify-between p-4 bg-gray-900 hover:bg-gray-700 focus:bg-gray-700
+                         border border-gray-600 hover:border-blue-500 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-left"
+                >
+                  <div>
+                    <span class="text-lg font-bold text-white block">{d.name}</span>
+                    <span class="text-sm text-gray-400">{d.url}</span>
+                  </div>
+                  <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+                  </svg>
+                </button>
+              {/each}
+            </div>
+          {/if}
+
+          <!-- Trennlinie -->
+          <div class="flex items-center gap-3">
+            <div class="flex-1 h-px bg-gray-700"></div>
+            <span class="text-gray-500 text-sm">{i18n.t.serverManualEntry}</span>
+            <div class="flex-1 h-px bg-gray-700"></div>
+          </div>
+
+          <!-- Manuelle URL -->
+          <div class="flex gap-3">
+            <input
+              type="text"
+              bind:value={newServerUrl}
+              onkeydown={(e) => e.key === 'Enter' && addAndConnectServer(newServerUrl)}
+              placeholder="z.B. http://192.168.1.100:8096"
+              class="flex-1 bg-gray-900 text-white text-lg p-4 rounded-xl border border-gray-600
+                     focus:outline-none focus:ring-4 focus:ring-blue-500"
+            />
+            <button
+              onclick={() => addAndConnectServer(newServerUrl)}
+              disabled={!newServerUrl.trim() || isConnecting}
+              class="bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-white font-bold px-6 rounded-xl
+                     focus:outline-none focus:ring-4 focus:ring-white transition-colors"
+            >
+              {isConnecting ? '…' : 'OK'}
+            </button>
+          </div>
+
+        </div>
+      {/if}
+      </div><!-- Ende Fokus-Gruppe "addserver" -->
+
+    </div>
+  </div>
+
+<!-- ============================================================
+     PHASE: BENUTZER-AUSWAHL
+============================================================ -->
+{:else if phase === 'users'}
+  <div class="h-full flex items-center justify-center p-8">
+    <div data-focus-group="users" class="w-full max-w-6xl flex flex-col items-center gap-10">
+
+      <!-- Server-Name als Kontext -->
+      {#if server}
+        <p class="text-gray-500 text-lg font-medium tracking-wide">
+          {server.name} · <span class="text-gray-600">{server.url}</span>
+        </p>
+      {/if}
+
+      <!-- QC-Login: Code anzeigen -->
+      {#if qcCode}
+        <div class="bg-gray-800 p-10 rounded-2xl shadow-xl max-w-xl w-full text-center border border-gray-700">
+          <h2 class="text-3xl font-bold text-white mb-4">{i18n.t.quickConnect}</h2>
+          <p class="text-gray-400 mb-6 text-xl">{i18n.t.qcInstruction}</p>
+          <div class="bg-gray-900 border-2 border-blue-500 rounded-lg py-6 mb-6">
+            <span class="text-6xl font-mono font-bold text-white tracking-widest">{qcCode}</span>
+          </div>
+          <button onclick={cancelQuickConnect}
+            class="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-4 rounded-xl
+                   focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+            {i18n.t.qcCancel}
+          </button>
+        </div>
+
+      <!-- Passwort-Eingabe für ausgewähltes Profil -->
+      {:else if showPasswordForm && pendingUser}
+        <div class="bg-gray-800 p-10 rounded-2xl shadow-xl max-w-xl w-full text-center border border-gray-700">
+          <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.passwordPrompt} {pendingUser.Name}</h2>
+          <input
+            type="password"
+            bind:value={password}
+            class="w-full bg-gray-900 text-white text-2xl p-5 rounded-xl mb-6 border border-gray-600 text-center
+                   focus:outline-none focus:ring-4 focus:ring-blue-500"
+            onkeydown={(e) => e.key === 'Enter' && authenticateUser(pendingUser.Name, password)}
+            {@attach focusOnMount()}
+          />
+          <button onclick={() => authenticateUser(pendingUser.Name, password)}
+            class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xl py-4 rounded-xl mb-4
+                   focus:outline-none focus:ring-4 focus:ring-white">
+            {i18n.t.loginText}
+          </button>
+          <!-- Alternative: Quick Connect (falls Kennwort nicht gespeichert/getippt werden soll) -->
+          <button onclick={startQuickConnect}
+            class="w-full flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold text-lg py-3.5 rounded-xl mb-4
+                   focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            {i18n.t.quickConnect}
+          </button>
+          <button onclick={() => { showPasswordForm = false; pendingUser = null; }}
+            class="w-full bg-gray-700/50 hover:bg-gray-600 text-gray-300 hover:text-white font-bold text-lg py-3.5 rounded-xl
+                   focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+            {i18n.t.back}
+          </button>
+          {#if loginError}<p class="text-red-400 mt-4 font-semibold">{loginError}</p>{/if}
+        </div>
+
+      <!-- Manuelle Anmeldung -->
+      {:else if showManualLogin}
+        <div class="bg-gray-800 p-10 rounded-2xl shadow-xl max-w-xl w-full text-center border border-gray-700">
+          <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.manualLogin}</h2>
+          <input
+            type="text"
+            bind:value={manualUsername}
+            placeholder={i18n.t.username}
+            onkeydown={(e) => e.key === 'Enter' && authenticateUser(manualUsername, manualPassword)}
+            class="w-full bg-gray-900 text-white text-xl p-5 rounded-xl mb-4 border border-gray-600
+                   focus:outline-none focus:ring-4 focus:ring-blue-500"
+            {@attach focusOnMount()}
+          />
+          <input
+            type="password"
+            bind:value={manualPassword}
+            placeholder="Passwort"
+            onkeydown={(e) => e.key === 'Enter' && authenticateUser(manualUsername, manualPassword)}
+            class="w-full bg-gray-900 text-white text-xl p-5 rounded-xl mb-6 border border-gray-600
+                   focus:outline-none focus:ring-4 focus:ring-blue-500"
+          />
+          <button onclick={() => authenticateUser(manualUsername, manualPassword)}
+            class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xl py-4 rounded-xl mb-4
+                   focus:outline-none focus:ring-4 focus:ring-white">
+            {i18n.t.loginText}
+          </button>
+          <button onclick={() => showManualLogin = false}
+            class="w-full bg-gray-700/50 hover:bg-gray-600 text-gray-300 hover:text-white font-bold text-lg py-3.5 rounded-xl
+                   focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+            {i18n.t.back}
+          </button>
+          {#if loginError}<p class="text-red-400 mt-4 font-semibold">{loginError}</p>{/if}
+        </div>
+
+      <!-- Profilauswahl -->
+      {:else}
+        <h1 class="text-5xl font-bold text-white">{i18n.t.selectUser}</h1>
+
+        <!-- Profile -->
+        {#if users.length > 0}
+          <div class="flex flex-wrap justify-center gap-10">
+            {#each users as user, i (user.Id)}
+              <button onclick={() => handleUserClick(user)} {@attach focusOnMount(i === 0)} class="flex flex-col items-center group focus:outline-none">
+                <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 shadow-xl transition-all duration-200">
+                  {#if user.PrimaryImageTag}
+                    <img src="{session.serverUrl}/Users/{user.Id}/Images/Primary?tag={user.PrimaryImageTag}&fillWidth=300&fillHeight=300&quality=90&format=webp" alt={user.Name} class="w-full h-full object-cover"/>
+                  {:else}
+                    <div class="w-full h-full bg-gray-700 flex items-center justify-center">
+                      <span class="text-6xl font-bold">{user.Name.charAt(0)}</span>
+                    </div>
+                  {/if}
+                </div>
+                <span class="mt-4 text-2xl text-gray-400 group-focus:text-white transition-colors">{user.Name}</span>
+              </button>
+            {/each}
+          </div>
+        {/if}
+
+        <!-- Trennlinie -->
+        <div class="flex items-center gap-4 w-full max-w-xl mt-4">
+          <div class="flex-1 h-px bg-gray-800"></div>
+          <span class="text-gray-600 text-sm">oder</span>
+          <div class="flex-1 h-px bg-gray-800"></div>
+        </div>
+
+        <!-- Manuelle Anmeldung + Quick Connect Buttons (wie original Jellyfin) -->
+        <div class="flex gap-4">
+          <button
+            onclick={() => { showManualLogin = true; loginError = ''; }}
+            class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700
+                   border border-gray-700 hover:border-gray-500 text-gray-300 hover:text-white
+                   font-bold text-lg px-8 py-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-all"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+            </svg>
+            {i18n.t.manualLogin}
+          </button>
+
+          <button
+            onclick={startQuickConnect}
+            class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700
+                   border border-gray-700 hover:border-blue-500 text-gray-300 hover:text-blue-300
+                   font-bold text-lg px-8 py-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            {i18n.t.quickConnect}
+          </button>
+        </div>
+
+        <!-- Anderen Server wählen -->
+        <button
+          onclick={onSwitchServer}
+          class="text-gray-600 hover:text-gray-400 focus:text-gray-400 focus:outline-none text-sm font-medium mt-2"
+        >
+          ← {i18n.t.switchServer}
+        </button>
+
+        {#if loginError}<p class="text-red-400 font-semibold">{loginError}</p>{/if}
+      {/if}
+
+    </div>
+  </div>
+{/if}
