@@ -538,10 +538,10 @@
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each libraries as library (library.Id)}
             <button onclick={() => onOpenLibrary?.(library)}
-              class="shrink-0 group flex flex-col items-center focus:outline-none">
+              class="shrink-0 scroll-mt-24 scroll-mx-4 group flex flex-col items-center focus:outline-none">
               <div class="w-64 h-36 bg-gray-800 rounded-xl flex items-center justify-center
-                          border-4 border-transparent group-focus:border-white group-hover:border-gray-400
-                          transition-all shadow-lg overflow-hidden">
+                          border-4 border-transparent group-focus:border-white group-focus:scale-105 group-hover:border-gray-400
+                          transition-all duration-200 shadow-lg overflow-hidden">
                 {#if getItemImageUrl(library)}
                   <img src={getItemImageUrl(library)} {@attach blurUp(itemBlurHash(library))} alt={library.Name}
                     class="w-full h-full object-cover opacity-80 group-focus:opacity-100" loading="lazy" />
