@@ -790,6 +790,7 @@
   let outroDismissed = $state(false); // manueller Outro-Prompt für DIESE Folge weggeklickt → dranbleiben
   const COUNTDOWN_FROM  = 20;
   const OUTRO_FALLBACK  = 45;     // ohne Kapitel/Segment-Daten: "Nächste Folge"-Karte in den letzten X s zeigen
+  const STILL_WATCHING_TIMEOUT = 120;  // "Schaust du noch?": schließt den Player nach X s ohne Reaktion (NAS entlasten)
 
   // Kapitel-Fallback für Intro/Abspann: greift reaktiv, sobald die Plugin-APIs nichts lieferten
   // UND die Kapitel geladen sind (nur eindeutig benannte Kapitel, sonst kein Prompt).
@@ -956,6 +957,17 @@
     // Nutzer ist wach → weiter zur nächsten Folge; Zähler in App zurücksetzen.
     if (nextEpisode) onNext?.({ episode: nextEpisode, resetStreak: true });
   }
+
+  // Reagiert niemand auf "Schaust du noch?", ist der Nutzer mit hoher Wahrscheinlichkeit
+  // eingeschlafen (der Prompt kommt erst nach mehreren Folgen ohne Interaktion). Dann den
+  // Player schließen statt die Nacht über offen zu lassen — das meldet Stopp und trennt die
+  // Session, damit die NAS nicht dauerhaft aktiv bleibt. Der Effekt-Cleanup räumt den Timer
+  // bei "Weiter" (showStillWatching → false), Folgenwechsel oder Unmount automatisch weg.
+  $effect(() => {
+    if (!showStillWatching) return;
+    const t = setTimeout(() => onExit?.(), STILL_WATCHING_TIMEOUT * 1000);
+    return () => clearTimeout(t);
+  });
 
   onMount(async () => {
     resetControlsTimeout();
@@ -1988,6 +2000,7 @@
           <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
           {i18n.t.continueWatching}
         </button>
+        <p class="text-gray-500 text-sm">{i18n.t.stillWatchingTimeout}</p>
       </div>
     </div>
   {/if}

@@ -73,6 +73,7 @@ export default {
     of: "of",
     minShort: "min",
     stillWatching: "Are you still watching?",
+    stillWatchingTimeout: "Ends automatically if there is no response",
     stillWatchingDesc: "For shows, pauses after several episodes auto-play in a row without any activity.",
     stillWatchingAfter: "Pause after",
     continueWatching: "Keep watching",

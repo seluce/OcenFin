@@ -73,6 +73,7 @@ export default {
     of: "sur",
     minShort: "min",
     stillWatching: "Êtes-vous toujours là ?",
+    stillWatchingTimeout: "Se ferme automatiquement en l'absence de réponse",
     stillWatchingDesc: "Pour les séries, met en pause après plusieurs épisodes lus automatiquement sans activité.",
     stillWatchingAfter: "Pause après",
     continueWatching: "Continuer",

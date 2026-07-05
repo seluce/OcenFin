@@ -73,6 +73,7 @@ export default {
     of: "van",
     minShort: "min",
     stillWatching: "Ben je er nog?",
+    stillWatchingTimeout: "Sluit automatisch bij geen reactie",
     stillWatchingDesc: "Pauzeert bij series nadat er meerdere afleveringen automatisch zijn afgespeeld zonder activiteit.",
     stillWatchingAfter: "Pauzeren na",
     continueWatching: "Blijven kijken",

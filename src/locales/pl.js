@@ -73,6 +73,7 @@ export default {
     of: "z",
     minShort: "min",
     stillWatching: "Czy nadal oglądasz?",
+    stillWatchingTimeout: "Zamknie się automatycznie przy braku reakcji",
     stillWatchingDesc: "W serialach wstrzymuje po automatycznym odtworzeniu kilku odcinków z rzędu bez aktywności.",
     stillWatchingAfter: "Wstrzymaj po",
     continueWatching: "Oglądaj dalej",

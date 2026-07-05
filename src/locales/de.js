@@ -73,6 +73,7 @@ export default {
     of: "von",
     minShort: "Min",
     stillWatching: "Schaust du noch?",
+    stillWatchingTimeout: "Wird bei Inaktivität automatisch beendet",
     stillWatchingDesc: "Pausiert bei Serien, nachdem mehrere Folgen ohne Aktivität automatisch abgespielt wurden.",
     stillWatchingAfter: "Pause nach",
     continueWatching: "Weiterschauen",

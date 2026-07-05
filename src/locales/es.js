@@ -73,6 +73,7 @@ export default {
     of: "de",
     minShort: "min",
     stillWatching: "¿Sigues ahí?",
+    stillWatchingTimeout: "Se cierra automáticamente si no hay respuesta",
     stillWatchingDesc: "En las series, pausa tras reproducir varios episodios seguidos automáticamente sin actividad.",
     stillWatchingAfter: "Pausar tras",
     continueWatching: "Seguir viendo",
