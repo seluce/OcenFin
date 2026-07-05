@@ -767,7 +767,7 @@
             {:else}{i18n.t.moreFromSeason} {fullItem.SeasonName || ''}
             {/if}
           </h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2 snap-row">
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each relatedItems as ep (ep.Id)}
               <button onclick={() => { fullItem = null; loadFullDetails(ep.Id); }}
                 class="shrink-0 scroll-m-4 group flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
@@ -802,7 +802,7 @@
       {#if castMembers.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-cast">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.cast}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2 snap-row">
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each castMembers as person (person.Id)}
               <button onclick={() => onOpenPerson?.(person)} class="shrink-0 w-36 scroll-m-4 group focus:outline-none text-center">
                 <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto group-focus:scale-105 transition-all duration-200">
@@ -826,7 +826,7 @@
       {#if similarItems.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-similar">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.similar}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2 snap-row">
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each similarItems as si (si.Id)}
               <button onclick={() => navigateTo(si.Id)} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-all duration-200">
@@ -971,6 +971,7 @@
   onCreated={() => onLibChanged?.()} onClose={() => pickerMode = null} />
 
 <style>
-  .snap-row { scroll-snap-type: x proximity; scroll-padding-inline-start: 0.5rem; }
-  .snap-row > * { scroll-snap-align: start; }
+  /* Bewusst KEIN scroll-snap auf den Reihen: auf D-Pad-Geraeten scrollt ausschliesslich
+     der Fokus (scrollIntoView) — Proximity-Snapping zog dessen Position phasenabhaengig
+     zurueck und schnitt den skalierten Rahmen der Randkarte ab (webOS/B4). */
 </style>

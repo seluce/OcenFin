@@ -535,7 +535,7 @@
     {#if showLibraries && libraries.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-gray-400 mb-4 px-2">{i18n.t.myMedia}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each libraries as library (library.Id)}
             <button onclick={() => onOpenLibrary?.(library)}
               class="shrink-0 group flex flex-col items-center focus:outline-none">
@@ -560,7 +560,7 @@
     {#if resumeRow.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.continueWatchingRow}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each resumeRow as item (item.Id)}
             {@render landscapeCard(item)}
           {/each}
@@ -572,7 +572,7 @@
     {#if showNextUp && nextUp.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.nextUp}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each nextUp as item (item.Id)}
             {@render landscapeCard(item)}
           {/each}
@@ -584,7 +584,7 @@
     {#if showHistory && recentlyWatched.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.recentlyWatched}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each recentlyWatched as item (item.Id)}
             {@render portraitCard(item, getHistoryImageUrl(item), itemBlurHash(item))}
           {/each}
@@ -596,7 +596,7 @@
     {#if showSharedSuggestions && sharedSuggestions.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.sharedSuggestions}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each sharedSuggestions as item (item.Id)}
             {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
           {/each}
@@ -608,7 +608,7 @@
     {#each (showRecommendations ? recommendations.slice(0, recommendationRows) : []) as rec}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each rec.items as item (item.Id)}
             {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
           {/each}
@@ -620,7 +620,7 @@
     {#if showLatest && latestMovies.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestMovies}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each latestMovies as item (item.Id)}
             {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
           {/each}
@@ -632,7 +632,7 @@
     {#if showLatest && latestSeries.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestSeries}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each latestSeries as item (item.Id)}
             {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
           {/each}
@@ -644,7 +644,7 @@
     {#if showCollections && collections.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.collections}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each collections as col (col.Id)}
             {@render collectionCard(col)}
           {/each}
@@ -656,9 +656,9 @@
 </div>
 
 <style>
-  /* scroll-snap: horizontale Reihen rasten beim Blättern an Kartengrenzen ein (proximity = sanft) */
-  .snap-row { scroll-snap-type: x proximity; scroll-padding-inline-start: 0.5rem; }
-  .snap-row > * { scroll-snap-align: start; }
+  /* Bewusst KEIN scroll-snap auf den Reihen: auf D-Pad-Geraeten scrollt ausschliesslich
+     der Fokus (scrollIntoView) — Proximity-Snapping zog dessen Position phasenabhaengig
+     zurueck und schnitt den skalierten Rahmen der Randkarte ab (webOS/B4). */
 
   /* Sanftes Einblenden beim Hero-Wechsel */
   .hero-fade { animation: heroFadeIn 1.2s ease; }
