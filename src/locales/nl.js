@@ -346,6 +346,9 @@ export default {
 
     playbackInfo: "Afspeelinfo",
     playbackInfoDesc: "Voegt een knop toe in de speler die live afspeeldetails toont (methode, codec, bitrate, buffer).",
+    sleepButton: "Stop na deze aflevering",
+    sleepButtonDesc: "Toont een knop die autoplay na de huidige aflevering stopt",
+    stopAfterEpisode: "Stop na deze aflevering",
     infoMethod: "Methode",
     infoVideo: "Video",
     infoBuffer: "Buffer",

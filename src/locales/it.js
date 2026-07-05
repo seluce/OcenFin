@@ -346,6 +346,9 @@ export default {
 
     playbackInfo: "Info di riproduzione",
     playbackInfoDesc: "Aggiunge un pulsante nel lettore che mostra i dettagli di riproduzione in tempo reale (metodo, codec, bitrate, buffer).",
+    sleepButton: "Ferma dopo questo episodio",
+    sleepButtonDesc: "Mostra un pulsante che ferma la riproduzione automatica dopo l'episodio corrente",
+    stopAfterEpisode: "Ferma dopo questo episodio",
     infoMethod: "Metodo",
     infoVideo: "Video",
     infoBuffer: "Buffer",

@@ -346,6 +346,9 @@ export default {
 
     playbackInfo: "Información de reproducción",
     playbackInfoDesc: "Añade un botón en el reproductor que muestra detalles de reproducción en vivo (método, códec, tasa de bits, búfer).",
+    sleepButton: "Detener tras este episodio",
+    sleepButtonDesc: "Muestra un botón que detiene la reproducción automática tras el episodio actual",
+    stopAfterEpisode: "Detener tras este episodio",
     infoMethod: "Método",
     infoVideo: "Vídeo",
     infoBuffer: "Búfer",

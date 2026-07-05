@@ -346,6 +346,9 @@ export default {
 
     playbackInfo: "Informacje o odtwarzaniu",
     playbackInfoDesc: "Dodaje w odtwarzaczu przycisk pokazujący szczegóły odtwarzania na żywo (metoda, kodek, bitrate, bufor).",
+    sleepButton: "Zatrzymaj po tym odcinku",
+    sleepButtonDesc: "Pokazuje przycisk zatrzymujący autoodtwarzanie po bieżącym odcinku",
+    stopAfterEpisode: "Zatrzymaj po tym odcinku",
     infoMethod: "Metoda",
     infoVideo: "Wideo",
     infoBuffer: "Bufor",

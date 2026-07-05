@@ -346,6 +346,9 @@ export default {
 
     playbackInfo: "Wiedergabeinfos",
     playbackInfoDesc: "Fügt im Player einen Button hinzu, der Live-Wiedergabedetails zeigt (Methode, Codec, Bitrate, Puffer).",
+    sleepButton: "Nur noch diese Folge",
+    sleepButtonDesc: "Zeigt im Player einen Button, der die automatische Wiedergabe nach der aktuellen Folge stoppt",
+    stopAfterEpisode: "Nur noch diese Folge",
     infoMethod: "Methode",
     infoVideo: "Video",
     infoBuffer: "Puffer",

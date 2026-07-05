@@ -998,6 +998,21 @@
           </div>
         </button>
 
+        <!-- Nur-noch-diese-Folge – Einschlaf-Knopf im Player freischalten (stoppt Auto-Play nach der Folge) -->
+        <button onclick={() => togglePlaybackPref('sleepButton')}
+          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.sleepButton}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.sleepButtonDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.sleepButton ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.sleepButton ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
         <!-- Vorschaubilder beim Spulen (Trickplay) – opt-out, fällt auf Kapitel/Zeit zurück -->
         <button onclick={() => togglePlaybackPref('trickplay')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700

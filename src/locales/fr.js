@@ -346,6 +346,9 @@ export default {
 
     playbackInfo: "Infos de lecture",
     playbackInfoDesc: "Ajoute un bouton dans le lecteur qui affiche les détails de lecture en direct (méthode, codec, débit, tampon).",
+    sleepButton: "Arrêter après cet épisode",
+    sleepButtonDesc: "Affiche un bouton qui arrête la lecture automatique après l'épisode en cours",
+    stopAfterEpisode: "Arrêter après cet épisode",
     infoMethod: "Méthode",
     infoVideo: "Vidéo",
     infoBuffer: "Tampon",

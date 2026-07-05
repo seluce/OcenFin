@@ -28,6 +28,9 @@
     inSyncGroup  = false, // … außer in aktiver Gruppe: dann NICHT lokal pausieren
     syncCommand = null,   // letztes empfangenes SyncPlayCommand (von App)
     syncQueue   = null,   // aktueller Gruppen-Queue-Stand (von App)
+    queueActive = false,  // "Alle abspielen"-Queue aktiv (von App) → Vor/Zurück folgen der Queue
+    queueNext = null,     // nächstes Queue-Element (null = Queue-Ende → normales Wiedergabe-Ende)
+    queuePrev = null,     // vorheriges Queue-Element
     remoteCommand = null, // Admin-Fernsteuerung (Dashboard) (von App)
     serverVobSub = false, // Server liefert VobSub/DVD extern (.mks, Jellyfin 12.0+)?
     onExit, onPrev, onNext, onSyncplay, onLibChanged,   // Callback-Props (statt Events)
@@ -808,7 +811,7 @@
   let overlayActive = $derived(showSkipIntro || showStillWatching || (outroPromptActive && !!nextEpisode));
   // Genau dann ist EIN Outro-Entscheidungsprompt sichtbar (Timer ODER manuell) → Fokus dort einsperren.
   let outroPromptShowing = $derived(!!nextEpisode && (nextCountdown !== null || (outroPromptActive && !outroDismissed)));
-  $effect(() => { if (playbackPrefs.autoPlayNext && nextEpisode && !playbackPrefs.autoSkipCredits
+  $effect(() => { if (playbackPrefs.autoPlayNext && !stopAfterThis && nextEpisode && !playbackPrefs.autoSkipCredits
          && nearEnd && nextCountdown === null && !countdownDismissed) {
     startCountdown();
   } });
@@ -850,7 +853,10 @@
     resetControlsTimeout();
   }
   function onVideoEnded() {
-    // Am Ende automatisch weiter, sofern aktiviert und nicht abgebrochen
+    // "Nur noch diese Folge": am Ende NICHT weiterschalten, sondern den Player schließen
+    // (zurück zu der gerade gesehenen Folge) — das eigentliche Einschlaf-Verhalten.
+    if (stopAfterThis) { onExit?.(); return; }
+    // Sonst am Ende automatisch weiter, sofern aktiviert und nicht abgebrochen
     if (playbackPrefs.autoPlayNext && nextEpisode && !countdownDismissed) {
       stopCountdown();
       goToNextEpisode();
@@ -882,7 +888,7 @@
     introAutoSkipped = true;
     skipIntro();
   } });
-  $effect(() => { if (playbackPrefs.autoSkipCredits && showSkipCredits && !creditsAutoSkipped && nextEpisode) {
+  $effect(() => { if (playbackPrefs.autoSkipCredits && !stopAfterThis && showSkipCredits && !creditsAutoSkipped && nextEpisode) {
     creditsAutoSkipped = true;
     prefetchNextEpisode();   // dieser Pfad umgeht den Countdown → Fetch läuft parallel zum Player-Remount
     goToNextEpisode();
@@ -891,10 +897,28 @@
   // Serien-Episoden (alle Staffeln) für zuverlässige Vor/Zurück-Navigation über Staffelgrenzen hinweg
   let seriesEpisodes = $state([]);
   let episodeIndex   = $state(-1);
-  let prevEpisode = $derived(episodeIndex > 0 ? seriesEpisodes[episodeIndex - 1] : null);
-  let nextByIndex = $derived(episodeIndex >= 0 && episodeIndex < seriesEpisodes.length - 1
-                   ? seriesEpisodes[episodeIndex + 1] : null);
+  // "Alle abspielen"-Queue (von App): aktiv ersetzt sie die Serien-Sequenz als Quelle für
+  // Vor/Zurück. Die GESAMTE Weiterschalt-Maschinerie (Outro-Prompt, Countdown, Auto-Play,
+  // onVideoEnded, nexttrack-Fernbedienung, Buttons) hängt an diesen zwei Ableitungen und
+  // folgt damit automatisch der Queue. queueNext === null am Queue-Ende → endet normal.
+  let prevEpisode = $derived(queueActive ? queuePrev : (episodeIndex > 0 ? seriesEpisodes[episodeIndex - 1] : null));
+  let nextByIndex = $derived(queueActive ? queueNext : (episodeIndex >= 0 && episodeIndex < seriesEpisodes.length - 1
+                   ? seriesEpisodes[episodeIndex + 1] : null));
   let nextEpisode = $derived(nextByIndex);   // Auto-Play/Outro nutzen dieselbe sequentielle nächste Folge (auch zur nächsten Staffel)
+
+  // "Nur noch diese Folge" — Einschlaf-Einmalschalter (opt-in via playbackPrefs.sleepButton).
+  // Blockiert NUR die automatischen Übergänge (Outro-Countdown, Videoende, Auto-Skip-Abspann);
+  // manuelles Weiterschalten (Button/Fernbedienung) bleibt erlaubt. Der {#key}-Remount pro Folge
+  // setzt das Flag von selbst zurück → echtes Einmal-Verhalten ohne Aufräumen.
+  let stopAfterThis = $state(false);
+  // Button nur zeigen, wenn er etwas bewirken kann: es gibt ein nächstes Element UND
+  // irgendein Auto-Weiter ist aktiv (Auto-Play ODER Auto-Skip-Abspann, die unabhängig schalten).
+  let autoAdvanceOn = $derived(!!nextEpisode && (playbackPrefs.autoPlayNext || playbackPrefs.autoSkipCredits));
+  function toggleStopAfter() {
+    stopAfterThis = !stopAfterThis;
+    if (stopAfterThis) stopCountdown();   // laufenden Auto-Play-Countdown sofort anhalten
+    resetControlsTimeout();
+  }
   // Position in der Staffel für die Anzeige oben links: "Folge X von Y"
   let seasonTotal = $derived((item?.Type === 'Episode' && item.ParentIndexNumber != null)
                    ? seriesEpisodes.filter(e => e.ParentIndexNumber === item.ParentIndexNumber).length : 0);
@@ -1739,6 +1763,17 @@
 
         <div class="flex items-center gap-4">
 
+          <!-- NUR NOCH DIESE FOLGE — Einschlaf-Einmalschalter (opt-in), erster der rechten Gruppe.
+               Nur sichtbar, wenn freigeschaltet UND ein Auto-Weiter aktiv ist (sonst wirkungslos). -->
+          {#if playbackPrefs.sleepButton && autoAdvanceOn}
+            <button onclick={(e) => { e.stopPropagation(); toggleStopAfter(); }} title={i18n.t.stopAfterEpisode} aria-label={i18n.t.stopAfterEpisode}
+              class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
+                     {stopAfterThis ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
+              <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+              </svg>
+            </button>
+          {/if}
           <!-- Favorit -->
           <button onclick={toggleFavorite}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors {isFavorite ? 'text-red-500' : 'text-gray-400 hover:text-white focus:text-white'}">
@@ -1790,6 +1825,7 @@
               </svg>
             </button>
           {/if}
+
         </div>
       </div>
     </div>

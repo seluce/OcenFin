@@ -346,6 +346,9 @@ export default {
 
     playbackInfo: "Playback info",
     playbackInfoDesc: "Adds a button to the player that shows live playback details (method, codec, bitrate, buffer).",
+    sleepButton: "Stop after this episode",
+    sleepButtonDesc: "Shows a player button that stops autoplay after the current episode",
+    stopAfterEpisode: "Stop after this episode",
     infoMethod: "Method",
     infoVideo: "Video",
     infoBuffer: "Buffer",
