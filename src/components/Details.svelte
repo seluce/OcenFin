@@ -116,8 +116,13 @@
   let showShare = $state(false);
   let kebabBtnEl = $state();                 // Drei-Punkte-Button (bind:this, immer im DOM)
   const shareFocus = makeFocusReturn();   // Fokus-Rückgabe nach Schließen des Teilen-Modals
+  // Dieselbe Rückgabe für Medieninfos + Playlist/Sammlung-Picker (nie gleichzeitig offen): ohne sie
+  // fiel der Fokus nach dem Schließen auf den Body → die Navigation fing ihn ab (Teilen war korrekt,
+  // die anderen drei nicht). Jetzt landet er wieder auf dem Drei-Punkte-Button.
+  const menuReturn = makeFocusReturn();
   // Nach dem Schließen des Teilen-Modals den Fokus zurück auf die drei Punkte legen.
   $effect(() => { if (!showShare && shareFocus.pending) shareFocus.restore(); });
+  $effect(() => { if (!showMediaInfo && !pickerMode && menuReturn.pending) menuReturn.restore(); });
   let shareQrSvg = $state(null);
   // Öffentlicher Link (IMDb/TMDb) eines Items — oder null, wenn keine eigene ID vorhanden.
   function buildShareUrl(item) {
@@ -616,18 +621,18 @@
                 {#if openDropdown === 'kebab'}
                   <div class="absolute right-0 mt-2 z-50 w-80 flex flex-col gap-1 bg-gray-900 rounded-xl border border-gray-700 p-2 shadow-2xl">
                     {#if fullItem.MediaSources?.length > 0}
-                      <button onclick={() => { closeDropdown(false); showMediaInfo = true; }}
+                      <button onclick={() => { menuReturn.capture(kebabBtnEl); closeDropdown(false); showMediaInfo = true; }}
                         class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                         <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         {i18n.t.mediaInfo}
                       </button>
                     {/if}
-                    <button onclick={() => { closeDropdown(false); pickerMode = 'playlist'; }}
+                    <button onclick={() => { menuReturn.capture(kebabBtnEl); closeDropdown(false); pickerMode = 'playlist'; }}
                       class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h13M3 12h9m-9 6h9m4-3v6m3-3h-6"/></svg>
                       {i18n.t.addToPlaylist}
                     </button>
-                    <button onclick={() => { closeDropdown(false); pickerMode = 'collection'; }}
+                    <button onclick={() => { menuReturn.capture(kebabBtnEl); closeDropdown(false); pickerMode = 'collection'; }}
                       class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
                       {i18n.t.addToCollection}
