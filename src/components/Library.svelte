@@ -53,9 +53,10 @@
 
   // ── Backdrop-Vorschau (700ms nach Fokus auf einer Karte) ────
   let previewBackdrop = $state('');
-  let previewTimer;
+  let previewTimer, clearTimer;
   function previewItem(item) {
     if (!displaySettings.backdropPreview) return;
+    clearTimeout(clearTimer);   // folgt direkt ein Karten-Fokus → NICHT leeren (kein Flackern Karte→Karte)
     clearTimeout(previewTimer);
     previewTimer = setTimeout(() => {
       const tag  = item.BackdropImageTags?.[0];
@@ -64,7 +65,14 @@
       else if (pTag) previewBackdrop = `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${pTag}&maxWidth=1280&quality=70&format=webp`;
     }, 700);
   }
-  function cancelPreview() { clearTimeout(previewTimer); }
+  // Fokus verlässt eine Karte: Einblende-Timer stoppen und das Backdrop kurz verzögert leeren.
+  // Folgt sofort ein anderer Karten-Fokus, bricht previewItem das Leeren ab → kein Flackern.
+  // Geht der Fokus zur Navigation/Filter/A-Z, bleibt es beim Leeren → wie im Dashboard.
+  function cancelPreview() {
+    clearTimeout(previewTimer);
+    clearTimeout(clearTimer);
+    clearTimer = setTimeout(() => { previewBackdrop = ''; }, 150);
+  }
 
   // ── Filter ──────────────────────────────────────────────────
   let showFilterMenu  = $state(false);
@@ -228,6 +236,7 @@
       currentSort     = librarySorts[lib.Id] ? { ...librarySorts[lib.Id] } : { by: 'SortName', order: 'Ascending' };
       previewBackdrop = '';
       clearTimeout(previewTimer);
+      clearTimeout(clearTimer);
       loadGenres(lib.Id);
     }
     currentLibraryName = lib.Name;

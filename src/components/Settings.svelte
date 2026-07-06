@@ -469,6 +469,7 @@
     { key: 'clock',           label: i18n.t.displayClock },
     { key: 'episodeCount',    label: i18n.t.displayEpisodeCount },
     { key: 'backdropPreview', label: i18n.t.displayBackdropPreview },
+    { key: 'dashboardBackdrop', label: i18n.t.displayDashboardBackdrop },
   ]);
   let detailToggles = $derived([
     { key: 'detailsBackdrop',   label: i18n.t.displayDetailsBackdrop },

@@ -9,6 +9,7 @@
     apiCache,
     reduceAnimations = false,   // steuert Hero-Auto-Rotation
     showHero         = true,    // Hero-Banner anzeigen (Einstellung)
+    dashboardBackdrop = true,   // Backdrop des fokussierten Titels hinter dem Dashboard (Opt-out)
     showLibraries    = true,    // "Meine Mediatheken"-Zeile anzeigen
     showHistory      = true,    // "Zuletzt gesehen"-Zeile anzeigen
     showNextUp       = true,    // "Als Nächstes"-Zeile anzeigen
@@ -55,7 +56,53 @@
   const skeletons = Array(6).fill(0);
 
   onMount(() => { loadDashboardData(); });
-  onDestroy(() => clearInterval(heroTimer));
+  onDestroy(() => { clearInterval(heroTimer); clearTimeout(previewTimer); clearTimeout(clearTimer); });
+
+  // ── Backdrop-Vorschau (wie in der Library): 700 ms nach Fokus auf einer Karte deren Backdrop
+  //    hinter dem Dashboard einblenden; beim Verlassen wieder weg. Opt-out via dashboardBackdrop. ──
+  let previewBackdrop = $state("");
+  let previewTimer, clearTimer;
+  function previewItem(item) {
+    if (!dashboardBackdrop || !item) return;
+    clearTimeout(clearTimer);   // folgt direkt ein Karten-Fokus → NICHT leeren (kein Flackern Karte→Karte)
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(() => {
+      const tag  = item.BackdropImageTags?.[0];
+      const pTag = item.ParentBackdropImageTags?.[0];
+      if (tag)       previewBackdrop = `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${tag}&maxWidth=1280&quality=70&format=webp`;
+      else if (pTag) previewBackdrop = `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${pTag}&maxWidth=1280&quality=70&format=webp`;
+    }, 700);
+  }
+  // Fokus verlässt eine Karte: Einblende-Timer stoppen und das Backdrop kurz verzögert leeren.
+  // Folgt sofort ein anderer Karten-Fokus (Karte→Karte), bricht previewItem das Leeren ab → kein
+  // Flackern. Geht der Fokus zum Hero, zu den Mediathek-Kacheln oder zur Navigation, bleibt es beim
+  // Leeren → kein Backdrop hinter dem Hero mehr (siehe Screenshot-Problem).
+  // Backdrop-Deckkraft an die Hero-Sichtbarkeit koppeln: ganz oben (Hero sichtbar) aus → kein
+  // Konflikt mit dem Hero-Bild; beim Runterscrollen blendet es ein, sobald der Hero das Bild
+  // verlässt. So bekommen auch Weiterschauen/Als Nächstes das Backdrop, nur eben erst beim Scrollen.
+  let bgOpacity = $state(0);
+  function heroScrollFade(node) {
+    let sc = node.parentElement;   // scrollenden Vorfahren (App-Hauptbereich) suchen
+    while (sc && !(/(auto|scroll)/.test(getComputedStyle(sc).overflowY) && sc.scrollHeight > sc.clientHeight + 4)) sc = sc.parentElement;
+    if (!sc) { bgOpacity = 1; return; }
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      if (!showHero || !heroItems.length) { bgOpacity = 1; return; }   // kein Hero → kein Konflikt, voll zeigen
+      const heroH = sc.clientHeight * 0.44;   // entspricht der Hero-Höhe (h-[44vh])
+      bgOpacity = Math.min(1, Math.max(0, sc.scrollTop / heroH));
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
+    sc.addEventListener("scroll", onScroll, { passive: true });
+    update();   // Anfangswert sofort
+    return () => { sc.removeEventListener("scroll", onScroll); if (raf) cancelAnimationFrame(raf); };
+  }
+
+  function cancelPreview() {
+    clearTimeout(previewTimer);
+    clearTimeout(clearTimer);
+    clearTimer = setTimeout(() => { previewBackdrop = ""; }, 150);
+  }
 
   // Featured-Liste aus neuesten Filmen/Serien mit Backdrop bauen + Rotation starten
   // Lädt das Bild des nächsten Hero-Items vorab → nahtloser Wechsel ohne Aufploppen.
@@ -421,7 +468,20 @@
     return null;
   }</script>
 
-<div class="px-10 pt-16 pb-20 flex flex-col gap-12">
+<div class="relative">
+  <!-- Dashboard-Backdrop: Backdrop des fokussierten Titels, an der Viewport-Oberkante fixiert
+       (sticky, nicht absolute — das Dashboard scrollt im App-Container). -mb-[100vh] hebt die
+       Eigenhöhe wieder auf, sodass der Inhalt darüber liegt statt darunter zu rutschen. -->
+  {#if dashboardBackdrop && previewBackdrop}
+    <div {@attach heroScrollFade} style="opacity:{bgOpacity}" class="sticky top-0 h-screen w-full -mb-[100vh] z-0 pointer-events-none overflow-hidden">
+      {#key previewBackdrop}
+        <img src={previewBackdrop} alt="" class="w-full h-full object-cover preview-fade" />
+      {/key}
+      <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/85 to-gray-900/40"></div>
+      <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-gray-900/60"></div>
+    </div>
+  {/if}
+  <div class="relative z-10 px-10 pt-16 pb-20 flex flex-col gap-12">
 
   <!-- Wiederverwendbare Card-Snippets (statt 8 fast identischer Blöcke) -->
   {#snippet landscapeCard(item)}
@@ -431,6 +491,7 @@
     {@const rem = getRemainingMinutes(item)}
     {@const sub = getItemSubtitle(item, i18n.t.today)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
+      onfocus={() => previewItem(item)} onblur={cancelPreview}
       class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
                   border-4 border-transparent group-focus:border-white group-focus:scale-105
@@ -469,6 +530,7 @@
     {@const badge = itemBadge(item)}
     {@const sub = getItemSubtitle(item, i18n.t.today)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
+      onfocus={() => previewItem(item)} onblur={cancelPreview}
       class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                   border-4 border-transparent group-focus:border-white group-focus:scale-105
@@ -499,7 +561,7 @@
 
   {#snippet collectionCard(col)}
     {@const img = getItemImageUrl(col)}
-    <button onclick={() => onOpenCollection?.(col)}
+    <button onclick={() => onOpenCollection?.(col)} onfocus={() => previewItem(col)} onblur={cancelPreview}
       class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                   border-4 border-transparent group-focus:border-white group-focus:scale-105
@@ -736,9 +798,13 @@
     {/if}
 
   {/if}
+  </div>
 </div>
 
 <style>
+  /* Backdrop-Vorschau: sanft einblenden statt hart umschalten ({#key} remountet das <img>) */
+  .preview-fade { animation: previewFadeIn 0.5s ease-out; }
+  @keyframes previewFadeIn { from { opacity: 0; } to { opacity: 1; } }
   /* Bewusst KEIN scroll-snap auf den Reihen: auf D-Pad-Geraeten scrollt ausschliesslich
      der Fokus (scrollIntoView) — Proximity-Snapping zog dessen Position phasenabhaengig
      zurueck und schnitt den skalierten Rahmen der Randkarte ab (webOS/B4). */
