@@ -252,8 +252,9 @@
   const capText  = (v) => v === true ? i18n.t.statusYes : v === false ? i18n.t.statusNo : i18n.t.statusUnknown;
   const capClass = (v) => v === true ? 'text-green-400' : v === false ? 'text-gray-400' : 'text-gray-600';
   // Einklappbare Status-Gruppen (fokussierbare Kopfzeilen → D-Pad kann nach unten wandern/scrollen).
-  // Fernseher standardmäßig zugeklappt, da nicht für jeden sofort relevant.
-  let openStatus = $state({ tv: false, runtime: true, components: true });
+  // Alle standardmäßig zugeklappt: kürzere Liste, und von jedem Untertitel-Menüpunkt kommt man ohne
+  // dazwischenliegende Inhalte sauber per Rechts in die Einstellungen.
+  let openStatus = $state({ tv: false, runtime: false, components: false });
   const toggleStatus = (k) => { openStatus = { ...openStatus, [k]: !openStatus[k] }; };
   // Beim Fokussieren einer Kopfzeile die ganze Karte (inkl. Inhalt) sichtbar scrollen — sonst
   // bliebe der Inhalt der untersten offenen Gruppe verdeckt (kein fokussierbares Element darunter).

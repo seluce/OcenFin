@@ -63,7 +63,11 @@ function pickGeometric(dir, from, candidates, exclude, strictRow = false) {
     if (el === exclude) continue;
     if (dir === 'ArrowUp' || dir === 'ArrowDown') {
       const elHbar = el.closest('[data-hbar]');
-      if (elHbar && elHbar !== fromHbar) continue;
+      // Hoch/Runter bleibt strikt in derselben hbar-Gruppe: von außen NICHT hinein (elHbar gesetzt,
+      // fromHbar null) UND von innen NICHT hinaus (fromHbar gesetzt, elHbar null oder andere Gruppe).
+      // Dadurch springt der Fokus an der obersten/untersten Kategorie der Settings-Navigation nicht
+      // seitlich in den Inhalt — nur Kandidaten derselben Gruppe (bzw. beide ohne) bleiben gültig.
+      if (elHbar !== fromHbar) continue;
     }
     const r = rectOf(el);
     const mX = cx(r), mY = cy(r);
@@ -209,6 +213,15 @@ export function createFocusManager(isEnabled) {
     // 1) Innerhalb der aktuellen Gruppe / des Modals
     if (scope) {
       let within = pickGeometric(e.key, from, focusablesIn(scope), active, true);
+      // Fallback für den Eintritt in einen "oben-anfangen"-Bereich (data-enter-top): Fand die strikte
+      // Zeilen-Bindung nichts, weil auf Höhe der Quelle im Zielbereich nur NICHT-fokussierbarer Inhalt
+      // steht (z.B. die Server-Info-Karte über "Cache leeren" in Konto & Server), ohne Zeilen-Bindung
+      // nachfassen und dort oben einsteigen. Greift nur beim Übergang in einen fremden enter-top-Bereich.
+      if (!within && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        const loose = pickGeometric(e.key, from, focusablesIn(scope), active, false);
+        const top = loose?.closest('[data-enter-top]');
+        if (top && !top.contains(active)) within = focusablesIn(top)[0] || null;
+      }
       // Eintritt von außen IN eine Sprungleiste (per Links/Rechts): direkt auf das aktuell
       // markierte Element (data-hbar-current, z.B. der ausgewählte Buchstabe) springen statt
       // auf das geometrisch nächste. Innerhalb der Leiste bleibt die Navigation normal.
