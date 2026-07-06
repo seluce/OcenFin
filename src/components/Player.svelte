@@ -37,6 +37,10 @@
     onPlayState,          // meldet App den Wiedergabe-Status (für den Screensaver: pausiert → erlaubt)
   } = $props();
 
+  // Darf dieses Profil Sammlungen verwalten? (Policy.EnableCollectionManagement kommt mit dem Login-User.
+  //  Nur bei explizitem false ausblenden → älterer Server/fehlendes Feld: sichtbar + 403-Fallback.)
+  const canManageCollections = $derived(selectedUser?.Policy?.EnableCollectionManagement !== false);
+
   let videoElement;
   let playerContainer;
   let settingsPanel = $state();       // bind für Auto-Fokus auf WebOS
@@ -1800,11 +1804,13 @@
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h13M3 12h9m-9 6h9m4-3v6m3-3h-6"/></svg>
           </button>
 
+          {#if canManageCollections}
           <!-- Zur Sammlung hinzufügen -->
           <button onclick={(e) => { e.stopPropagation(); openPicker('collection'); }} title={i18n.t.addToCollection} aria-label={i18n.t.addToCollection}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors text-gray-400 hover:text-white focus:text-white">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
           </button>
+          {/if}
 
           <!-- AUDIO — nur Icon (ersetzt das Zahnrad) -->
           <button onclick={(e) => { e.stopPropagation(); openSettings('audio'); }} title={i18n.t.audio} aria-label={i18n.t.audio}

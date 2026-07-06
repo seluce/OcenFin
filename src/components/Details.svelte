@@ -120,6 +120,10 @@
   // fiel der Fokus nach dem Schließen auf den Body → die Navigation fing ihn ab (Teilen war korrekt,
   // die anderen drei nicht). Jetzt landet er wieder auf dem Drei-Punkte-Button.
   const menuReturn = makeFocusReturn();
+  // Darf dieses Profil Sammlungen verwalten? Policy.EnableCollectionManagement kommt mit dem
+  // Login-User mit. Bewusst nur bei explizitem false ausblenden: fehlt das Feld (älterer Server),
+  // bleibt der Eintrag sichtbar und der 403-Fallback in AddToPicker greift. Admins haben true.
+  const canManageCollections = $derived(selectedUser?.Policy?.EnableCollectionManagement !== false);
   // Nach dem Schließen des Teilen-Modals den Fokus zurück auf die drei Punkte legen.
   $effect(() => { if (!showShare && shareFocus.pending) shareFocus.restore(); });
   $effect(() => { if (!showMediaInfo && !pickerMode && menuReturn.pending) menuReturn.restore(); });
@@ -632,11 +636,13 @@
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h13M3 12h9m-9 6h9m4-3v6m3-3h-6"/></svg>
                       {i18n.t.addToPlaylist}
                     </button>
+                    {#if canManageCollections}
                     <button onclick={() => { menuReturn.capture(kebabBtnEl); closeDropdown(false); pickerMode = 'collection'; }}
                       class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
                       {i18n.t.addToCollection}
                     </button>
+                    {/if}
                     <button onclick={() => { closeDropdown(false); openShare(); }}
                       class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
