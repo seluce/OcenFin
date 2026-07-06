@@ -153,25 +153,27 @@
   <!-- SUCHVERLAUF -->
   {#if query.trim().length < 2 && searchHistory.length > 0}
     <div class="mb-8 flex flex-col gap-4">
-      <div class="flex justify-between items-center px-2">
+      <div class="px-2">
         <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider">{i18n.t.searchHistory}</h2>
+      </div>
+      <div class="flex flex-wrap gap-4 px-2">
+        {#each searchHistory as term (term)}
+          <button onclick={() => useHistory(term)}
+            class="max-w-[22rem] truncate bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-gray-300 focus:text-white
+                   px-6 py-3 rounded-full font-bold focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all border border-gray-700">
+            {term}
+          </button>
+        {/each}
+        <!-- Verlauf löschen: als LETZTES Element der Pill-Reihe → per D-Pad rechts vom letzten
+             Begriff erreichbar (vorher oben rechts in der Kopfzeile, dorthin kam man nicht). -->
         <button onclick={clearHistory}
           class="flex items-center gap-2 bg-gray-800 hover:bg-red-900/80 focus:bg-red-900/80 text-gray-400 hover:text-red-200 focus:text-red-200
-                 px-4 py-2 rounded-lg text-sm font-bold transition-all focus:outline-none focus:ring-2 focus:ring-red-500">
+                 px-6 py-3 rounded-full text-sm font-bold transition-all focus:outline-none focus:ring-4 focus:ring-red-500 border border-gray-700 shrink-0">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
           </svg>
           {i18n.t.clearHistory}
         </button>
-      </div>
-      <div class="flex flex-wrap gap-4 px-2">
-        {#each searchHistory as term (term)}
-          <button onclick={() => useHistory(term)}
-            class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-gray-300 focus:text-white
-                   px-6 py-3 rounded-full font-bold focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all border border-gray-700">
-            {term}
-          </button>
-        {/each}
       </div>
     </div>
   {/if}
