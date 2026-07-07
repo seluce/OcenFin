@@ -5,7 +5,7 @@
 
   let {
     collection, selectedUser,
-    onBack, onOpenDetails, onContextMenu, onPlayVideo,
+    onBack, onOpenDetails, onContextMenu, onPlayVideo, onPlayQueue,
     onChildCountChanged, onPlaylistRenamed, onPlaylistDeleted,
   } = $props();
 
@@ -43,6 +43,35 @@
     } else {
       onPlayVideo?.({ item: pick, audioIndex: -1, subtitleIndex: -1 });
     }
+  }
+
+  // "Alle abspielen": Elemente in Listen-Reihenfolge zu einer flachen Queue auflösen.
+  // Serien/Staffeln werden zu ihren Folgen expandiert (ohne Specials, in Staffel-/Folgen-
+  // Reihenfolge) — dieselbe Auflösung wie beim Zufällig-Button, nur geordnet statt gezogen.
+  // Abspielen mit Weiterschalten übernimmt App (playQueue) + Player (queueNext).
+  let buildingQueue = $state(false);   // Spinner im Button, während Serien aufgelöst werden
+  async function playAll() {
+    if (!items.length || buildingQueue) return;
+    buildingQueue = true;
+    const queue = [];
+    try {
+      for (const it of items) {
+        if (it.Type === 'Series' || it.Type === 'Season') {
+          const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${it.Id}`
+            + `&IncludeItemTypes=Episode${it.Type === 'Series' ? '&Recursive=true' : ''}`
+            + `&SortBy=ParentIndexNumber,IndexNumber&EnableTotalRecordCount=false`;
+          const res  = await fetch(url, { headers: getAuthHeaders() });
+          const data = await res.json();
+          let eps = (data.Items || []).filter(e => e.Type === 'Episode');
+          if (it.Type === 'Series') eps = eps.filter(e => e.ParentIndexNumber !== 0);
+          queue.push(...eps);
+        } else {
+          queue.push(it);
+        }
+      }
+    } catch (e) { console.error(e); }
+    finally { buildingQueue = false; }
+    if (queue.length) onPlayQueue?.(queue);
   }
 
   // Beschriftung für eine Folge: "S1 · E5 · Titel"
@@ -160,8 +189,18 @@
     <svg class="w-10 h-10 shrink-0 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
     <h1 class="text-4xl font-bold text-white min-w-0 truncate">{name}</h1>
     {#if items.length > 0 && !playlistEditMode}
+      <button onclick={playAll}
+        class="ml-4 shrink-0 bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold px-6 py-3 rounded-xl
+               focus:outline-none focus:ring-4 focus:ring-white transition-colors flex items-center gap-2">
+        {#if buildingQueue}
+          <div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+        {:else}
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        {/if}
+        {i18n.t.playAll}
+      </button>
       <button onclick={playRandom}
-        class="ml-4 shrink-0 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold px-6 py-3 rounded-xl
+        class="shrink-0 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold px-6 py-3 rounded-xl
                focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors flex items-center gap-2">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
           <polyline points="16 3 21 3 21 8"/>

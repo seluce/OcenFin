@@ -1190,7 +1190,7 @@
   let contextItem = $state(null);
   let contextReturnId = $state(null);     // Item-Id der auslösenden Card (Fokus-Rückgabe, überlebt Reload)
   let contextReturnEl = $state(null);     // Fallback: Element-Referenz, falls keine data-item-id vorhanden
-  let contextPickerMode = $state(null);   // null | 'playlist' | 'collection' — AddToPicker aus dem Kontextmenü
+  let contextPickerMode = $state(null);   // null | 'playlist' — AddToPicker aus dem Kontextmenü
   let contextPickerItem = $state(null);
   function openContextMenu(item) {
     contextReturnId = item?.Id ?? null;
@@ -1234,7 +1234,6 @@
   // "Zur Wiedergabeliste hinzufügen" aus dem Kontextmenü → AddToPicker öffnen (Fokus-Rückgabe-Id bleibt
   // erhalten und greift erst, wenn auch der Picker geschlossen ist).
   function contextAddToList(item) { contextPickerItem = item; contextPickerMode = 'playlist'; }
-  function contextAddToCollection(item) { contextPickerItem = item; contextPickerMode = 'collection'; }
 
   // Zurück aus Details/Player → an die Herkunft, Bibliotheksposition wiederherstellen
   // Startet die Wiedergabe eines Items — genutzt von Details (Play/Von-Anfang/Zufallsfolge)
@@ -1711,8 +1710,6 @@
       onChanged={onContextChanged}
       onOpenDetails={contextOpenDetails}
       onAddToList={contextAddToList}
-      onAddToCollection={contextAddToCollection}
-      {selectedUser}
     />
   {/if}
 
