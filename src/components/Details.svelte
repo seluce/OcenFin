@@ -116,8 +116,17 @@
   let showShare = $state(false);
   let kebabBtnEl = $state();                 // Drei-Punkte-Button (bind:this, immer im DOM)
   const shareFocus = makeFocusReturn();   // Fokus-Rückgabe nach Schließen des Teilen-Modals
+  // Dieselbe Rückgabe für Medieninfos + Playlist/Sammlung-Picker (nie gleichzeitig offen): ohne sie
+  // fiel der Fokus nach dem Schließen auf den Body → die Navigation fing ihn ab (Teilen war korrekt,
+  // die anderen drei nicht). Jetzt landet er wieder auf dem Drei-Punkte-Button.
+  const menuReturn = makeFocusReturn();
+  // Darf dieses Profil Sammlungen verwalten? Policy.EnableCollectionManagement kommt mit dem
+  // Login-User mit. Bewusst nur bei explizitem false ausblenden: fehlt das Feld (älterer Server),
+  // bleibt der Eintrag sichtbar und der 403-Fallback in AddToPicker greift. Admins haben true.
+  const canManageCollections = $derived(selectedUser?.Policy?.EnableCollectionManagement !== false);
   // Nach dem Schließen des Teilen-Modals den Fokus zurück auf die drei Punkte legen.
   $effect(() => { if (!showShare && shareFocus.pending) shareFocus.restore(); });
+  $effect(() => { if (!showMediaInfo && !pickerMode && menuReturn.pending) menuReturn.restore(); });
   let shareQrSvg = $state(null);
   // Öffentlicher Link (IMDb/TMDb) eines Items — oder null, wenn keine eigene ID vorhanden.
   function buildShareUrl(item) {
@@ -616,22 +625,24 @@
                 {#if openDropdown === 'kebab'}
                   <div class="absolute right-0 mt-2 z-50 w-80 flex flex-col gap-1 bg-gray-900 rounded-xl border border-gray-700 p-2 shadow-2xl">
                     {#if fullItem.MediaSources?.length > 0}
-                      <button onclick={() => { closeDropdown(false); showMediaInfo = true; }}
+                      <button onclick={() => { menuReturn.capture(kebabBtnEl); closeDropdown(false); showMediaInfo = true; }}
                         class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                         <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         {i18n.t.mediaInfo}
                       </button>
                     {/if}
-                    <button onclick={() => { closeDropdown(false); pickerMode = 'playlist'; }}
+                    <button onclick={() => { menuReturn.capture(kebabBtnEl); closeDropdown(false); pickerMode = 'playlist'; }}
                       class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h13M3 12h9m-9 6h9m4-3v6m3-3h-6"/></svg>
                       {i18n.t.addToPlaylist}
                     </button>
-                    <button onclick={() => { closeDropdown(false); pickerMode = 'collection'; }}
+                    {#if canManageCollections}
+                    <button onclick={() => { menuReturn.capture(kebabBtnEl); closeDropdown(false); pickerMode = 'collection'; }}
                       class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
                       {i18n.t.addToCollection}
                     </button>
+                    {/if}
                     <button onclick={() => { closeDropdown(false); openShare(); }}
                       class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                       <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
@@ -767,7 +778,7 @@
             {:else}{i18n.t.moreFromSeason} {fullItem.SeasonName || ''}
             {/if}
           </h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2 snap-row">
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each relatedItems as ep (ep.Id)}
               <button onclick={() => { fullItem = null; loadFullDetails(ep.Id); }}
                 class="shrink-0 scroll-m-4 group flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
@@ -802,7 +813,7 @@
       {#if castMembers.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-cast">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.cast}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2 snap-row">
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each castMembers as person (person.Id)}
               <button onclick={() => onOpenPerson?.(person)} class="shrink-0 w-36 scroll-m-4 group focus:outline-none text-center">
                 <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto group-focus:scale-105 transition-all duration-200">
@@ -826,7 +837,7 @@
       {#if similarItems.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-similar">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.similar}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2 snap-row">
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each similarItems as si (si.Id)}
               <button onclick={() => navigateTo(si.Id)} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-all duration-200">
@@ -971,6 +982,7 @@
   onCreated={() => onLibChanged?.()} onClose={() => pickerMode = null} />
 
 <style>
-  .snap-row { scroll-snap-type: x proximity; scroll-padding-inline-start: 0.5rem; }
-  .snap-row > * { scroll-snap-align: start; }
+  /* Bewusst KEIN scroll-snap auf den Reihen: auf D-Pad-Geraeten scrollt ausschliesslich
+     der Fokus (scrollIntoView) — Proximity-Snapping zog dessen Position phasenabhaengig
+     zurueck und schnitt den skalierten Rahmen der Randkarte ab (webOS/B4). */
 </style>

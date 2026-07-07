@@ -252,8 +252,9 @@
   const capText  = (v) => v === true ? i18n.t.statusYes : v === false ? i18n.t.statusNo : i18n.t.statusUnknown;
   const capClass = (v) => v === true ? 'text-green-400' : v === false ? 'text-gray-400' : 'text-gray-600';
   // Einklappbare Status-Gruppen (fokussierbare Kopfzeilen → D-Pad kann nach unten wandern/scrollen).
-  // Fernseher standardmäßig zugeklappt, da nicht für jeden sofort relevant.
-  let openStatus = $state({ tv: false, runtime: true, components: true });
+  // Alle standardmäßig zugeklappt: kürzere Liste, und von jedem Untertitel-Menüpunkt kommt man ohne
+  // dazwischenliegende Inhalte sauber per Rechts in die Einstellungen.
+  let openStatus = $state({ tv: false, runtime: false, components: false });
   const toggleStatus = (k) => { openStatus = { ...openStatus, [k]: !openStatus[k] }; };
   // Beim Fokussieren einer Kopfzeile die ganze Karte (inkl. Inhalt) sichtbar scrollen — sonst
   // bliebe der Inhalt der untersten offenen Gruppe verdeckt (kein fokussierbares Element darunter).
@@ -469,6 +470,7 @@
     { key: 'clock',           label: i18n.t.displayClock },
     { key: 'episodeCount',    label: i18n.t.displayEpisodeCount },
     { key: 'backdropPreview', label: i18n.t.displayBackdropPreview },
+    { key: 'dashboardBackdrop', label: i18n.t.displayDashboardBackdrop },
   ]);
   let detailToggles = $derived([
     { key: 'detailsBackdrop',   label: i18n.t.displayDetailsBackdrop },
@@ -995,6 +997,21 @@
                       {playbackPrefs.showPlaybackInfo ? 'bg-blue-500' : 'bg-gray-600'}">
             <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
                         {playbackPrefs.showPlaybackInfo ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        <!-- Nur-noch-diese-Folge – Einschlaf-Knopf im Player freischalten (stoppt Auto-Play nach der Folge) -->
+        <button onclick={() => togglePlaybackPref('sleepButton')}
+          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.sleepButton}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.sleepButtonDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.sleepButton ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.sleepButton ? 'translate-x-8' : ''}"></div>
           </div>
         </button>
 

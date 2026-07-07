@@ -27,6 +27,9 @@
   const lazySettings = () => (_settingsP ??= import('./components/Settings.svelte').then(m => m.default));
   const lazyPlayer   = () => (_playerP   ??= import('./components/Player.svelte').then(m => m.default));
   const lazySyncPlay = () => (_syncP     ??= import('./components/SyncPlay.svelte').then(m => m.default));
+  let _loginP;
+  const lazyLogin    = () => (_loginP    ??= import('./components/Login.svelte').then(m => m.default));
+  let loginRef = $state();   // bind:this → handleBackKey (Zurück in Anmelde-Unterdialogen)
 
   // ============================================================
   // APP PHASE
@@ -57,16 +60,10 @@
   // ============================================================
   let savedServers      = $state([]);   // [{ id, url, name }]
   let selectedServer    = $state(null); // aktuell verbundener Server
-  let serverConnectError = $state('');
-  let isConnecting      = $state(false);
-  let showAddServer     = $state(false); // Panel "Neuen Server hinzufügen"
 
   // Discovery
-  let isDiscovering      = $state(false);
-  let discoveredServers  = $state([]);
 
   // Manuelle Eingabe im Add-Panel
-  let newServerUrl       = $state('');
 
   // ============================================================
   // AUTH / BENUTZER
@@ -80,17 +77,8 @@
   let sharedTokens     = $state({});  // { serverId: { userId: token } } — gemeinsames Schauen, GETRENNT vom Schnellwechsel
 
   // Login-Unteransichten
-  let showPasswordForm  = $state(false);  // Passwort für ausgewähltes Profil
-  let showManualLogin   = $state(false);  // Manuelle Anmeldung (beliebiger Benutzer)
-  let manualUsername    = $state('');
-  let manualPassword    = $state('');
-  let loginError        = $state('');
-  let password          = $state('');     // Passwort für Profil-Login
 
   // Quick Connect (Login-Flow — TV zeigt Code, Handy scannt)
-  let qcCode    = $state(null);
-  let qcSecret  = $state(null);
-  let qcPolling = null;
 
   // Geräte-Basis-ID: einmalig pro Installation zufällig erzeugt und in localStorage gehalten, damit
   // dasselbe Profil auf zwei TVs NICHT dieselbe DeviceId bekommt (Jellyfin erlaubt nur einen Token je
@@ -151,10 +139,10 @@
   let reduceAnimations = $state(false);
 
   // Anzeige-Elemente (Uhr, Hero-Banner, Episodenanzahl, Mediatheken) — einzeln abschaltbar
-  let displaySettings = $state({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
+  let displaySettings = $state({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
 
   // Standard-Audio-/Untertitelsprache
-  let playbackPrefs = $state({ audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true });
+  let playbackPrefs = $state({ audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true });
 
   // ── Profil-bezogene Einstellungen ───────────────────────────
   // Sprache + Anzeige + Wiedergabe + Animationen werden PRO BENUTZER gespeichert.
@@ -210,8 +198,8 @@
       setLang(p.language);
       localStorage.setItem('app_language', p.language);   // "zuletzt genutzt" aktualisieren
     }
-    displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
-    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, trickplay: true, ...(p.playbackPrefs || {}) };
+    displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
+    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, ...(p.playbackPrefs || {}) };
     reduceAnimations = p.reduceAnimations ?? false;
     librarySorts     = p.librarySorts || {};   // gemerkte Sortierung pro Bibliothek
     sharedProfile    = p.sharedProfile && Array.isArray(p.sharedProfile.members)
@@ -735,7 +723,9 @@
             // Token abgelaufen → User-Screen für diesen Server
             dlog('[restore] token invalid → back to user screen');
             clearCurrentSession();
-            await connectToServer(server);
+            // selectedServer ist gesetzt (oben) — die Login-Komponente zeigt die Profilwahl
+            // und lädt die Profile selbst nach (users-Effect in Login.svelte).
+            appPhase = 'users';
             return;
           }
         } catch (e) { dlog('[restore] restore failed:', e?.message || e); clearCurrentSession(); }
@@ -750,144 +740,9 @@
   });
 
   // ============================================================
-  // SERVER DISCOVERY
+  // SERVER ENTFERNEN — Verbinden-/Discovery-/Anmelde-Flow lebt in
+  // components/Login.svelte (lazy geladen)
   // ============================================================
-
-  async function getLocalIpViaWebRTC() {
-    return new Promise((resolve) => {
-      try {
-        const pc = new RTCPeerConnection({ iceServers: [] });
-        pc.createDataChannel('');
-        pc.createOffer().then(o => pc.setLocalDescription(o));
-        pc.onicecandidate = (e) => {
-          if (!e?.candidate) { pc.close(); resolve(null); return; }
-          const m = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(e.candidate.candidate);
-          if (m && !m[1].startsWith('127.')) { pc.close(); resolve(m[1]); }
-        };
-      } catch { resolve(null); }
-      setTimeout(() => resolve(null), 3000);
-    });
-  }
-
-  async function tryJellyfinServer(url) {
-    const ctrl  = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 1500);
-    try {
-      const res = await fetch(`${url}/System/Info/Public`, { signal: ctrl.signal });
-      if (res.ok) {
-        const data = await res.json();
-        return { url, name: data.ServerName || 'Jellyfin Server' };
-      }
-    } catch { } finally { clearTimeout(timer); }
-    return null;
-  }
-
-  async function discoverJellyfinServers() {
-    isDiscovering     = true;
-    discoveredServers = [];
-
-    const candidates = new Set([
-      'http://jellyfin.local:8096',
-      'https://jellyfin.local:8920',
-      'http://localhost:8096',
-    ]);
-
-    const localIp = await getLocalIpViaWebRTC();
-    if (localIp) {
-      const subnet = localIp.split('.').slice(0, 3).join('.');
-      for (const h of [1, 2, 3, 10, 50, 100, 101, 150, 200, 201, 250]) {
-        if (!localIp.endsWith(`.${h}`)) candidates.add(`http://${subnet}.${h}:8096`);
-      }
-    } else {
-      for (const s of ['192.168.0','192.168.1','192.168.2','10.0.0','10.0.1']) {
-        for (const h of [1, 2, 100, 101]) candidates.add(`http://${s}.${h}:8096`);
-      }
-    }
-
-    const results = await Promise.allSettled([...candidates].map(tryJellyfinServer));
-    discoveredServers = results
-      .filter(r => r.status === 'fulfilled' && r.value)
-      .map(r => r.value)
-      .filter(d => !savedServers.find(s => s.url === d.url)); // bereits gespeicherte rausfiltern
-
-    isDiscovering = false;
-  }
-
-  // ============================================================
-  // SERVER VERBINDEN / HINZUFÜGEN
-  // ============================================================
-
-  async function connectToServer(server) {
-    selectedServer     = server;
-    serverConnectError = '';
-    isConnecting       = true;
-    users              = [];
-    loginError         = '';
-    showPasswordForm   = false;
-    showManualLogin    = false;
-
-    try {
-      const ctrl  = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 6000);
-      const res   = await fetch(`${server.url}/System/Info/Public`, { signal: ctrl.signal });
-      clearTimeout(timer);
-
-      if (res.ok) {
-        const data = await res.json();
-        // Servernamen aktualisieren wenn geändert
-        if (data.ServerName && data.ServerName !== server.name) {
-          server.name    = data.ServerName;
-          savedServers   = savedServers.map(s => s.id === server.id ? { ...s, name: data.ServerName } : s);
-          persistSavedServers();
-        }
-        await fetchUsers();
-        appPhase     = 'users';
-        showAddServer = false;
-      } else {
-        serverConnectError = i18n.t.errInvalid;
-      }
-    } catch (e) {
-      console.warn('[Server] connection failed:', e);
-      serverConnectError = i18n.t.errOffline;
-    } finally {
-      isConnecting = false;
-    }
-  }
-
-  async function addAndConnectServer(url) {
-    if (!url.trim()) return;
-    const cleanUrl = url.trim().replace(/\/$/, '');
-
-    // Schon vorhanden?
-    const existing = savedServers.find(s => s.url === cleanUrl);
-    if (existing) { await connectToServer(existing); return; }
-
-    // Neuer Server: testen, dann speichern
-    serverConnectError = '';
-    isConnecting       = true;
-    try {
-      const ctrl  = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 6000);
-      const res   = await fetch(`${cleanUrl}/System/Info/Public`, { signal: ctrl.signal });
-      clearTimeout(timer);
-
-      if (res.ok) {
-        const data   = await res.json();
-        const server = { id: 'srv_' + Date.now(), url: cleanUrl, name: data.ServerName || 'Jellyfin Server' };
-        savedServers = [...savedServers, server];
-        persistSavedServers();
-        await connectToServer(server);
-        newServerUrl = '';
-      } else {
-        serverConnectError = i18n.t.errInvalid;
-      }
-    } catch (e) {
-      console.warn('[Server] connection failed:', e);
-      serverConnectError = i18n.t.errOffline;
-    } finally {
-      isConnecting = false;
-    }
-  }
 
   function removeServer(id) {
     savedServers = savedServers.filter(s => s.id !== id);
@@ -1092,69 +947,12 @@
     } catch (e) { dlog('[auth] token validation — network error:', e?.message || e); return false; }
   }
 
-  /** Profil angeklickt — ggf. Schnellanmeldung per gespeichertem Token */
-  async function handleUserClick(user) {
-    loginError       = '';
-    password         = '';
-    selectedUser     = user;
-    showManualLogin  = false;
-
-    if (!user.HasPassword) {
-      await authenticateUser(user.Name, '');
-      return;
-    }
-
-    const storedToken = savedTokens[selectedServer.id]?.[user.Id];
-    if (storedToken) {
-      if (await validateToken(storedToken)) {
-        session.token = storedToken;
-        finishLogin(user, storedToken);
-        return;
-      } else {
-        // Token abgelehnt: Eintrag NICHT löschen — er steht für den Speicher-Wunsch des Nutzers.
-        // authenticateUser überschreibt ihn nach erfolgreicher Passwort-Anmeldung mit dem frischen
-        // Token. (Früher wurde hier gelöscht, wodurch sich der Schnellwechsel nach einem einzigen
-        // Token-Ablauf still selbst abschaltete.)
-        dlog('[auth] stored token rejected for', user.Name, '— save preference kept, refreshed after password login');
-      }
-    }
-
-    // Passwort-Eingabe anzeigen
-    showPasswordForm = true;
-  }
-
-  async function authenticateUser(username, pw) {
-    loginError = '';
-    try {
-      const res = await fetch(`${session.serverUrl}/Users/AuthenticateByName`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json", "Authorization": authHeaderFor(username) },
-        body:    JSON.stringify({ Username: username, Pw: pw })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        // Gespeicherten Token aktualisieren wenn Speichern aktiv
-        if (savedTokens[selectedServer.id]?.[data.User.Id]) {
-          savedTokens[selectedServer.id][data.User.Id] = data.AccessToken;
-          persistSavedTokens();
-        }
-        finishLogin(data.User, data.AccessToken);
-      } else {
-        loginError = i18n.t.errLogin;
-      }
-    } catch { loginError = i18n.t.errOffline; }
-  }
-
   function finishLogin(user, token) {
     selectedUser = user;
     session.token  = token;
     isLoggedIn   = true;
     appPhase     = 'app';
     applyUserPrefs(user.Id);   // Profil-Einstellungen laden
-    showPasswordForm = false;
-    showManualLogin  = false;
-    manualUsername   = '';
-    manualPassword   = '';
     saveCurrentSession();
     scheduleScreensaver();
     detectServerCapabilities();
@@ -1191,51 +989,6 @@
     dlog('[OcenFin] server capabilities:', { version: serverVersion || '(unknown)', vobSub: serverVobSub });
   }
 
-  // Quick Connect — Login-Flow (Code auf TV, Handy scannt)
-  async function startQuickConnect() {
-    loginError = '';
-    showPasswordForm = false;
-    showManualLogin  = false;
-    try {
-      const res = await fetch(`${session.serverUrl}/QuickConnect/Initiate`, {
-        headers: { "Authorization": CLIENT_AUTH_HEADER }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        qcCode   = data.Code;
-        qcSecret = data.Secret;
-        qcPolling = setInterval(async () => {
-          try {
-            const poll = await fetch(`${session.serverUrl}/QuickConnect/Connect?Secret=${qcSecret}`, {
-              headers: { "Authorization": CLIENT_AUTH_HEADER }
-            });
-            const pd   = await poll.json();
-            if (pd.Authenticated) {
-              clearInterval(qcPolling);
-              const authRes = await fetch(`${session.serverUrl}/Users/AuthenticateWithQuickConnect`, {
-                method:  "POST",
-                headers: { "Content-Type": "application/json", "Authorization": CLIENT_AUTH_HEADER },
-                body:    JSON.stringify({ Secret: qcSecret })
-              });
-              if (authRes.ok) {
-                const authData = await authRes.json();
-                qcCode = null;
-                finishLogin(authData.User, authData.AccessToken);
-              }
-            }
-          } catch { }
-        }, 3000);
-      } else {
-        loginError = i18n.t.qcError;
-      }
-    } catch { loginError = i18n.t.networkError; }
-  }
-
-  function cancelQuickConnect() {
-    clearInterval(qcPolling);
-    qcCode = qcSecret = null;
-  }
-
   function toggleCurrentUserSave() {
     if (!selectedUser || !selectedServer) return;
     const sid = selectedServer.id;
@@ -1254,12 +1007,6 @@
     isLoggedIn       = false;
     selectedUser     = null;
     session.token      = '';
-    password         = '';
-    loginError       = '';
-    showPasswordForm = false;
-    showManualLogin  = false;
-    qcCode           = null;
-    clearInterval(qcPolling);
     disconnectSyncSocket();              // SyncPlay-Socket schließen
     closeSyncPlay(); syncMyGroup = null; syncGroups = []; syncQueue = null; syncCommand = null; _lastSyncQueueItem = null; syncJoined = false; syncMyGroupId = null;   // Gruppenstatus zurücksetzen
     remoteCommand = null; dismissRemoteMessage();   // Admin-Fernsteuerung/Nachricht verwerfen
@@ -1276,7 +1023,6 @@
     handleSwitchUser();
     selectedServer    = null;
     users             = [];
-    serverConnectError = '';
     appPhase          = 'servers';
   }
 
@@ -1287,15 +1033,10 @@
   function handleGlobalBack(e) {
     if (!isBackKey(e)) return;   // Escape / Backspace (außer in Eingaben) / Fernbedienung 461
     if (appPhase === 'users') {
-      if (showPasswordForm || showManualLogin || qcCode) {
-        showPasswordForm = false;
-        showManualLogin  = false;
-        if (qcCode) cancelQuickConnect();
-        e.preventDefault();
-        return;
-      }
       e.preventDefault();
-      handleLogout(); // zurück zur Server-Auswahl
+      // Unterdialoge (Passwort/Manuell/QC) schließt die Login-Komponente selbst;
+      // sonst zurück zur Server-Auswahl. (Muster wie collectionRef.handleBackKey)
+      if (!loginRef?.handleBackKey()) handleLogout();
       return;
     }
     if (appPhase !== 'app') return;
@@ -1337,6 +1078,7 @@
     autoPlayStreak = detail?.resetStreak ? 0 : autoPlayStreak + 1;
     activeMediaSourceId = null;   // neue Folge → eigene Standard-Version, nicht die der vorigen
     currentDetailItem = episodeItem;
+    syncQueueIndex(episodeItem);
     // viewState bleibt 'player' — {#key currentDetailItem.Id} in der Template sorgt für Remount
   }
 
@@ -1345,6 +1087,7 @@
     autoPlayStreak = 0;   // Zurückspringen ist eine bewusste Aktion → Zähler zurücksetzen
     activeMediaSourceId = null;
     currentDetailItem = episodeItem;
+    syncQueueIndex(episodeItem);
   }
 
   // ── Personen-Ansicht (Filmografie) ──────────────────────────
@@ -1447,7 +1190,7 @@
   let contextItem = $state(null);
   let contextReturnId = $state(null);     // Item-Id der auslösenden Card (Fokus-Rückgabe, überlebt Reload)
   let contextReturnEl = $state(null);     // Fallback: Element-Referenz, falls keine data-item-id vorhanden
-  let contextPickerMode = $state(null);   // null | 'playlist' — AddToPicker aus dem Kontextmenü
+  let contextPickerMode = $state(null);   // null | 'playlist' | 'collection' — AddToPicker aus dem Kontextmenü
   let contextPickerItem = $state(null);
   function openContextMenu(item) {
     contextReturnId = item?.Id ?? null;
@@ -1491,10 +1234,25 @@
   // "Zur Wiedergabeliste hinzufügen" aus dem Kontextmenü → AddToPicker öffnen (Fokus-Rückgabe-Id bleibt
   // erhalten und greift erst, wenn auch der Picker geschlossen ist).
   function contextAddToList(item) { contextPickerItem = item; contextPickerMode = 'playlist'; }
+  function contextAddToCollection(item) { contextPickerItem = item; contextPickerMode = 'collection'; }
 
   // Zurück aus Details/Player → an die Herkunft, Bibliotheksposition wiederherstellen
   // Startet die Wiedergabe eines Items — genutzt von Details (Play/Von-Anfang/Zufallsfolge)
   // und Collection (Zufällige Wiedergabe). Eine Quelle statt zwei Inline-Kopien.
+  // "Alle abspielen" (Sammlung/Playlist): geordnete Abspiel-Queue. Lebt nur, solange der
+  // Player offen ist — beim Verlassen wird sie geräumt, damit spätere normale Wiedergaben
+  // nicht versehentlich weiterschalten.
+  let playQueue = $state(null);   // { items: [...], index }
+  let queueNext = $derived(playQueue && playQueue.index < playQueue.items.length - 1 ? playQueue.items[playQueue.index + 1] : null);
+  let queuePrev = $derived(playQueue && playQueue.index > 0 ? playQueue.items[playQueue.index - 1] : null);
+  $effect(() => { if (viewState !== 'player' && playQueue) playQueue = null; });
+
+  // Beim Titelwechsel im Player den Queue-Zeiger mitführen (deckt Vor UND Zurück ab)
+  function syncQueueIndex(playedItem) {
+    if (!playQueue || !playedItem) return;
+    const qi = playQueue.items.findIndex(x => x.Id === playedItem.Id);
+    if (qi >= 0) playQueue = { ...playQueue, index: qi };
+  }
   function startPlayback(p) {
     if (p.item) currentDetailItem = p.item;
     activeAudioIndex    = p.audioIndex    ?? -1;
@@ -1723,352 +1481,42 @@
   {/if}
 
   <!-- ============================================================
-       PHASE: SERVER-AUSWAHL
+       PHASE: LOGIN — Server-Auswahl + Profilwahl.
+       Lazy geladen: der Auto-Login-Pfad fasst den Chunk nie an.
+       Flow-Zustand/-Logik leben komplett in components/Login.svelte;
+       App behält session/selectedServer/users/savedServers/savedTokens.
   ============================================================ -->
-  {#if appPhase === 'servers'}
-    <div class="h-full flex items-center justify-center p-8">
-      <div class="w-full max-w-2xl flex flex-col gap-6">
-
-        <div class="text-center mb-2">
-          <h1 class="text-4xl font-bold text-blue-500 mb-1">{i18n.t.title}</h1>
-          <p class="text-gray-400">{i18n.t.serverSelectPrompt}</p>
-        </div>
-
-        <!-- Gespeicherte Server + Fehlermeldung: eigene Fokus-Gruppe -->
-        <div data-focus-group="servers" class="flex flex-col gap-6">
-
-        <!-- Gespeicherte Server -->
-        {#if savedServers.length > 0}
-          <div class="flex flex-col gap-3">
-            <p class="text-sm text-gray-400 uppercase tracking-wider font-bold ml-1">{i18n.t.savedServers}</p>
-            {#each savedServers as server, i (server.id)}
-              <div class="flex items-center gap-3">
-                <button
-                  onclick={() => connectToServer(server)}
-                  {@attach focusOnMount(i === 0)}
-                  class="flex-1 flex items-center justify-between p-5 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700
-                         border border-gray-600 hover:border-blue-500 focus:border-blue-500
-                         rounded-xl text-left focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                >
-                  <div class="overflow-hidden">
-                    <span class="text-xl font-bold text-white block truncate">{server.name}</span>
-                    <span class="text-sm text-gray-400 block mt-0.5 truncate">{server.url}</span>
-                  </div>
-                  {#if isConnecting && selectedServer?.id === server.id}
-                    <div class="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin shrink-0 ml-4"></div>
-                  {:else}
-                    <svg class="w-6 h-6 text-blue-400 shrink-0 ml-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
-                    </svg>
-                  {/if}
-                </button>
-                <!-- Server entfernen -->
-                <button
-                  onclick={() => removeServer(server.id)}
-                  class="p-3 text-gray-600 hover:text-red-400 focus:text-red-400 focus:outline-none focus:ring-2 focus:ring-red-500 rounded-lg transition-colors"
-                  title={i18n.t.backToServers}
-                >
-                  <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-                  </svg>
-                </button>
-              </div>
-            {/each}
-          </div>
-        {/if}
-
-        <!-- Fehlermeldung + Retry -->
-        {#if serverConnectError}
-          <div class="bg-red-900/40 border border-red-700 rounded-xl p-5 flex flex-col gap-4">
-            <div class="flex items-center gap-3">
-              <svg class="w-6 h-6 text-red-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-              </svg>
-              <p class="text-red-300 font-semibold text-lg">{serverConnectError}</p>
-            </div>
-            <div class="flex gap-3">
-              <button
-                onclick={() => selectedServer && connectToServer(selectedServer)}
-                {@attach focusOnMount()}
-                class="flex-1 bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white font-bold py-3 rounded-lg
-                       focus:outline-none focus:ring-2 focus:ring-white transition-colors"
-              >
-                {i18n.t.serverRetry}
-              </button>
-              <button
-                onclick={() => { serverConnectError = ''; selectedServer = null; }}
-                class="flex-1 bg-transparent border border-gray-600 hover:bg-gray-800 focus:bg-gray-800 text-gray-300 font-bold py-3 rounded-lg
-                       focus:outline-none focus:ring-2 focus:ring-white transition-colors"
-              >
-                {i18n.t.backToServers}
-              </button>
-            </div>
-          </div>
-        {/if}
-
-        </div><!-- Ende Fokus-Gruppe "servers" -->
-
-        <!-- "Server hinzufügen"-Flow (Toggle + Panel): eigene Gruppe; Eintritt immer auf den Toggle,
-             damit Hoch/Runter sauber Toggle → Suche → Manuell durchläuft (nicht das vollbreite Toggle
-             gegen das eingerückte Panel ausspielt). -->
-        <div data-focus-group="addserver" data-enter-first class="flex flex-col gap-6">
-
-        <!-- Neuen Server hinzufügen (Toggle-Panel) -->
-        <button
-          onclick={() => { showAddServer = !showAddServer; if (showAddServer) discoverJellyfinServers(); }}
-          class="w-full flex items-center justify-center gap-3 py-4 rounded-xl border-2 transition-all
-                 focus:outline-none focus:ring-4 focus:ring-blue-300 font-bold text-lg
-                 {showAddServer ? 'bg-gray-800 border-blue-600 text-blue-400' : 'bg-transparent border-gray-700 text-gray-400 hover:border-blue-500 hover:text-blue-400'}"
-        >
-          <svg class="w-6 h-6 transition-transform {showAddServer ? 'rotate-45' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-          </svg>
-          {showAddServer ? i18n.t.qcCancel : i18n.t.addServer}
-        </button>
-
-        {#if showAddServer}
-          <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 flex flex-col gap-5">
-
-            <!-- Discovery -->
-            <button
-              onclick={discoverJellyfinServers}
-              disabled={isDiscovering}
-              class="w-full flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900
-                     text-white font-bold text-lg py-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-300 transition-colors"
-            >
-              {#if isDiscovering}
-                <div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                {i18n.t.discovering}
-              {:else}
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/>
-                </svg>
-                {i18n.t.discoverServers}
-              {/if}
-            </button>
-
-            <!-- Gefundene (neue) Server -->
-            {#if discoveredServers.length > 0}
-              <div class="flex flex-col gap-2">
-                <p class="text-xs text-gray-400 uppercase tracking-wider font-bold">{i18n.t.serverFound}</p>
-                {#each discoveredServers as d (d.url)}
-                  <button
-                    onclick={() => addAndConnectServer(d.url)}
-                    class="flex items-center justify-between p-4 bg-gray-900 hover:bg-gray-700 focus:bg-gray-700
-                           border border-gray-600 hover:border-blue-500 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-left"
-                  >
-                    <div>
-                      <span class="text-lg font-bold text-white block">{d.name}</span>
-                      <span class="text-sm text-gray-400">{d.url}</span>
-                    </div>
-                    <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-                    </svg>
-                  </button>
-                {/each}
-              </div>
-            {/if}
-
-            <!-- Trennlinie -->
-            <div class="flex items-center gap-3">
-              <div class="flex-1 h-px bg-gray-700"></div>
-              <span class="text-gray-500 text-sm">{i18n.t.serverManualEntry}</span>
-              <div class="flex-1 h-px bg-gray-700"></div>
-            </div>
-
-            <!-- Manuelle URL -->
-            <div class="flex gap-3">
-              <input
-                type="text"
-                bind:value={newServerUrl}
-                onkeydown={(e) => e.key === 'Enter' && addAndConnectServer(newServerUrl)}
-                placeholder="z.B. http://192.168.1.100:8096"
-                class="flex-1 bg-gray-900 text-white text-lg p-4 rounded-xl border border-gray-600
-                       focus:outline-none focus:ring-4 focus:ring-blue-500"
-              />
-              <button
-                onclick={() => addAndConnectServer(newServerUrl)}
-                disabled={!newServerUrl.trim() || isConnecting}
-                class="bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-white font-bold px-6 rounded-xl
-                       focus:outline-none focus:ring-4 focus:ring-white transition-colors"
-              >
-                {isConnecting ? '…' : 'OK'}
-              </button>
-            </div>
-
-          </div>
-        {/if}
-        </div><!-- Ende Fokus-Gruppe "addserver" -->
-
-      </div>
-    </div>
-
-  <!-- ============================================================
-       PHASE: BENUTZER-AUSWAHL
-  ============================================================ -->
-  {:else if appPhase === 'users'}
-    <div class="h-full flex items-center justify-center p-8">
-      <div data-focus-group="users" class="w-full max-w-6xl flex flex-col items-center gap-10">
-
-        <!-- Server-Name als Kontext -->
-        {#if selectedServer}
-          <p class="text-gray-500 text-lg font-medium tracking-wide">
-            {selectedServer.name} · <span class="text-gray-600">{selectedServer.url}</span>
-          </p>
-        {/if}
-
-        <!-- QC-Login: Code anzeigen -->
-        {#if qcCode}
-          <div class="bg-gray-800 p-10 rounded-2xl shadow-xl max-w-xl w-full text-center border border-gray-700">
-            <h2 class="text-3xl font-bold text-white mb-4">{i18n.t.quickConnect}</h2>
-            <p class="text-gray-400 mb-6 text-xl">{i18n.t.qcInstruction}</p>
-            <div class="bg-gray-900 border-2 border-blue-500 rounded-lg py-6 mb-6">
-              <span class="text-6xl font-mono font-bold text-white tracking-widest">{qcCode}</span>
-            </div>
-            <button onclick={cancelQuickConnect}
-              class="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-4 rounded-xl
-                     focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-              {i18n.t.qcCancel}
-            </button>
-          </div>
-
-        <!-- Passwort-Eingabe für ausgewähltes Profil -->
-        {:else if showPasswordForm && selectedUser}
-          <div class="bg-gray-800 p-10 rounded-2xl shadow-xl max-w-xl w-full text-center border border-gray-700">
-            <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.passwordPrompt} {selectedUser.Name}</h2>
-            <input
-              type="password"
-              bind:value={password}
-              class="w-full bg-gray-900 text-white text-2xl p-5 rounded-xl mb-6 border border-gray-600 text-center
-                     focus:outline-none focus:ring-4 focus:ring-blue-500"
-              onkeydown={(e) => e.key === 'Enter' && authenticateUser(selectedUser.Name, password)}
-              {@attach focusOnMount()}
-            />
-            <button onclick={() => authenticateUser(selectedUser.Name, password)}
-              class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xl py-4 rounded-xl mb-4
-                     focus:outline-none focus:ring-4 focus:ring-white">
-              {i18n.t.loginText}
-            </button>
-            <!-- Alternative: Quick Connect (falls Kennwort nicht gespeichert/getippt werden soll) -->
-            <button onclick={startQuickConnect}
-              class="w-full flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold text-lg py-3.5 rounded-xl mb-4
-                     focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-              {i18n.t.quickConnect}
-            </button>
-            <button onclick={() => { showPasswordForm = false; selectedUser = null; }}
-              class="w-full bg-gray-700/50 hover:bg-gray-600 text-gray-300 hover:text-white font-bold text-lg py-3.5 rounded-xl
-                     focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-              {i18n.t.back}
-            </button>
-            {#if loginError}<p class="text-red-400 mt-4 font-semibold">{loginError}</p>{/if}
-          </div>
-
-        <!-- Manuelle Anmeldung -->
-        {:else if showManualLogin}
-          <div class="bg-gray-800 p-10 rounded-2xl shadow-xl max-w-xl w-full text-center border border-gray-700">
-            <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.manualLogin}</h2>
-            <input
-              type="text"
-              bind:value={manualUsername}
-              placeholder={i18n.t.username}
-              onkeydown={(e) => e.key === 'Enter' && authenticateUser(manualUsername, manualPassword)}
-              class="w-full bg-gray-900 text-white text-xl p-5 rounded-xl mb-4 border border-gray-600
-                     focus:outline-none focus:ring-4 focus:ring-blue-500"
-              {@attach focusOnMount()}
-            />
-            <input
-              type="password"
-              bind:value={manualPassword}
-              placeholder="Passwort"
-              onkeydown={(e) => e.key === 'Enter' && authenticateUser(manualUsername, manualPassword)}
-              class="w-full bg-gray-900 text-white text-xl p-5 rounded-xl mb-6 border border-gray-600
-                     focus:outline-none focus:ring-4 focus:ring-blue-500"
-            />
-            <button onclick={() => authenticateUser(manualUsername, manualPassword)}
-              class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xl py-4 rounded-xl mb-4
-                     focus:outline-none focus:ring-4 focus:ring-white">
-              {i18n.t.loginText}
-            </button>
-            <button onclick={() => showManualLogin = false}
-              class="w-full bg-gray-700/50 hover:bg-gray-600 text-gray-300 hover:text-white font-bold text-lg py-3.5 rounded-xl
-                     focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-              {i18n.t.back}
-            </button>
-            {#if loginError}<p class="text-red-400 mt-4 font-semibold">{loginError}</p>{/if}
-          </div>
-
-        <!-- Profilauswahl -->
-        {:else}
-          <h1 class="text-5xl font-bold text-white">{i18n.t.selectUser}</h1>
-
-          <!-- Profile -->
-          {#if users.length > 0}
-            <div class="flex flex-wrap justify-center gap-10">
-              {#each users as user, i (user.Id)}
-                <button onclick={() => handleUserClick(user)} {@attach focusOnMount(i === 0)} class="flex flex-col items-center group focus:outline-none">
-                  <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 shadow-xl transition-all duration-200">
-                    {#if user.PrimaryImageTag}
-                      <img src="{session.serverUrl}/Users/{user.Id}/Images/Primary?tag={user.PrimaryImageTag}&fillWidth=300&fillHeight=300&quality=90&format=webp" alt={user.Name} class="w-full h-full object-cover"/>
-                    {:else}
-                      <div class="w-full h-full bg-gray-700 flex items-center justify-center">
-                        <span class="text-6xl font-bold">{user.Name.charAt(0)}</span>
-                      </div>
-                    {/if}
-                  </div>
-                  <span class="mt-4 text-2xl text-gray-400 group-focus:text-white transition-colors">{user.Name}</span>
-                </button>
-              {/each}
-            </div>
-          {/if}
-
-          <!-- Trennlinie -->
-          <div class="flex items-center gap-4 w-full max-w-xl mt-4">
-            <div class="flex-1 h-px bg-gray-800"></div>
-            <span class="text-gray-600 text-sm">oder</span>
-            <div class="flex-1 h-px bg-gray-800"></div>
-          </div>
-
-          <!-- Manuelle Anmeldung + Quick Connect Buttons (wie original Jellyfin) -->
-          <div class="flex gap-4">
-            <button
-              onclick={() => { showManualLogin = true; loginError = ''; }}
-              class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700
-                     border border-gray-700 hover:border-gray-500 text-gray-300 hover:text-white
-                     font-bold text-lg px-8 py-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-all"
-            >
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
-              </svg>
-              {i18n.t.manualLogin}
-            </button>
-
-            <button
-              onclick={startQuickConnect}
-              class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700
-                     border border-gray-700 hover:border-blue-500 text-gray-300 hover:text-blue-300
-                     font-bold text-lg px-8 py-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all"
-            >
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-              </svg>
-              {i18n.t.quickConnect}
-            </button>
-          </div>
-
-          <!-- Anderen Server wählen -->
-          <button
-            onclick={handleLogout}
-            class="text-gray-600 hover:text-gray-400 focus:text-gray-400 focus:outline-none text-sm font-medium mt-2"
-          >
-            ← {i18n.t.switchServer}
-          </button>
-
-          {#if loginError}<p class="text-red-400 font-semibold">{loginError}</p>{/if}
-        {/if}
-
-      </div>
-    </div>
+  {#if appPhase === 'servers' || appPhase === 'users'}
+    {#await lazyLogin()}
+      <div class="h-full flex items-center justify-center"><div class="w-14 h-14 border-4 border-white/25 border-t-white rounded-full animate-spin"></div></div>
+    {:then Login}
+      <Login
+        bind:this={loginRef}
+        bind:phase={appPhase}
+        server={selectedServer}
+        {users}
+        {savedServers}
+        clientAuthHeader={CLIENT_AUTH_HEADER}
+        {authHeaderFor}
+        getStoredToken={(sid, uid) => savedTokens[sid]?.[uid]}
+        onValidateToken={(t) => validateToken(t)}
+        onServerConnected={(s) => { selectedServer = s; }}
+        onFetchUsers={fetchUsers}
+        onSaveServer={(s) => { savedServers = [...savedServers, s]; persistSavedServers(); }}
+        onRemoveServer={removeServer}
+        onRenameServer={(id, name) => {
+          savedServers = savedServers.map(x => x.id === id ? { ...x, name } : x);
+          if (selectedServer?.id === id) selectedServer = { ...selectedServer, name };
+          persistSavedServers();
+        }}
+        onTokenRefreshed={(sid, uid, token) => {
+          // Nur auffrischen, wenn der Nutzer das Speichern aktiviert hat (Eintrag existiert)
+          if (savedTokens[sid]?.[uid]) { savedTokens[sid][uid] = token; persistSavedTokens(); }
+        }}
+        onSwitchServer={handleLogout}
+        onDone={finishLogin}
+      />
+    {/await}
 
   <!-- ============================================================
        PHASE: HAUPT-APP
@@ -2100,6 +1548,7 @@
             {resumeStale}
             onResumeRefreshed={() => resumeStale = false}
             showHero={displaySettings.hero}
+            dashboardBackdrop={displaySettings.dashboardBackdrop}
             showLibraries={displaySettings.libraries}
             showHistory={displaySettings.history}
             showNextUp={displaySettings.nextUp}
@@ -2175,6 +1624,7 @@
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu}
             onChildCountChanged={onCollectionChildCount}
             onPlayVideo={(p) => { detailsOrigin = 'collection'; startPlayback(p); }}
+            onPlayQueue={(qItems) => { playQueue = { items: qItems, index: 0 }; detailsOrigin = 'collection'; startPlayback({ item: qItems[0], audioIndex: -1, subtitleIndex: -1 }); }}
             onPlaylistRenamed={onCollectionRenamed}
             onPlaylistDeleted={onCollectionDeleted} />
         {/if}
@@ -2221,6 +1671,9 @@
           {syncCommand}
           {remoteCommand}
           {syncQueue}
+          queueActive={!!playQueue}
+          {queueNext}
+          {queuePrev}
           onExit={() => { viewState = 'details'; resumeStale = true; }}
           onPlayState={(p) => playerPlaying = p}
           onLibChanged={refreshLibraries}
@@ -2258,6 +1711,8 @@
       onChanged={onContextChanged}
       onOpenDetails={contextOpenDetails}
       onAddToList={contextAddToList}
+      onAddToCollection={contextAddToCollection}
+      {selectedUser}
     />
   {/if}
 

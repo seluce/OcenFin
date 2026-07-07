@@ -9,6 +9,7 @@
     apiCache,
     reduceAnimations = false,   // steuert Hero-Auto-Rotation
     showHero         = true,    // Hero-Banner anzeigen (Einstellung)
+    dashboardBackdrop = true,   // Backdrop des fokussierten Titels hinter dem Dashboard (Opt-out)
     showLibraries    = true,    // "Meine Mediatheken"-Zeile anzeigen
     showHistory      = true,    // "Zuletzt gesehen"-Zeile anzeigen
     showNextUp       = true,    // "Als Nächstes"-Zeile anzeigen
@@ -48,13 +49,60 @@
   let prevHeroIndex = $state(-1);   // vorheriges Bild bleibt beim Wechsel als Unterlage stehen (Crossfade statt Dip-to-Black)
   let heroTimer;
   let heroBuilt  = false;   // pro Laden: true, sobald der Hero einmal gebaut ist (verhindert Neu-Mischen beim zweiten Latest-Fetch)
+  let heroForYouPending = false;   // true, solange der "Für dich"-Fetch läuft → Neuzugangs-Fallback wartet, bis er entschieden hat
   let heroLoading = $state(false);   // true, solange die Featured-Daten noch laden → Platz reservieren (kein Nachrücken)
   let heroCurrent = $derived(heroItems[heroIndex] || null);
 
   const skeletons = Array(6).fill(0);
 
   onMount(() => { loadDashboardData(); });
-  onDestroy(() => clearInterval(heroTimer));
+  onDestroy(() => { clearInterval(heroTimer); clearTimeout(previewTimer); clearTimeout(clearTimer); });
+
+  // ── Backdrop-Vorschau (wie in der Library): 700 ms nach Fokus auf einer Karte deren Backdrop
+  //    hinter dem Dashboard einblenden; beim Verlassen wieder weg. Opt-out via dashboardBackdrop. ──
+  let previewBackdrop = $state("");
+  let previewTimer, clearTimer;
+  function previewItem(item) {
+    if (!dashboardBackdrop || !item) return;
+    clearTimeout(clearTimer);   // folgt direkt ein Karten-Fokus → NICHT leeren (kein Flackern Karte→Karte)
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(() => {
+      const tag  = item.BackdropImageTags?.[0];
+      const pTag = item.ParentBackdropImageTags?.[0];
+      if (tag)       previewBackdrop = `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${tag}&maxWidth=1280&quality=70&format=webp`;
+      else if (pTag) previewBackdrop = `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${pTag}&maxWidth=1280&quality=70&format=webp`;
+    }, 700);
+  }
+  // Fokus verlässt eine Karte: Einblende-Timer stoppen und das Backdrop kurz verzögert leeren.
+  // Folgt sofort ein anderer Karten-Fokus (Karte→Karte), bricht previewItem das Leeren ab → kein
+  // Flackern. Geht der Fokus zum Hero, zu den Mediathek-Kacheln oder zur Navigation, bleibt es beim
+  // Leeren → kein Backdrop hinter dem Hero mehr (siehe Screenshot-Problem).
+  // Backdrop-Deckkraft an die Hero-Sichtbarkeit koppeln: ganz oben (Hero sichtbar) aus → kein
+  // Konflikt mit dem Hero-Bild; beim Runterscrollen blendet es ein, sobald der Hero das Bild
+  // verlässt. So bekommen auch Weiterschauen/Als Nächstes das Backdrop, nur eben erst beim Scrollen.
+  let bgOpacity = $state(0);
+  function heroScrollFade(node) {
+    let sc = node.parentElement;   // scrollenden Vorfahren (App-Hauptbereich) suchen
+    while (sc && !(/(auto|scroll)/.test(getComputedStyle(sc).overflowY) && sc.scrollHeight > sc.clientHeight + 4)) sc = sc.parentElement;
+    if (!sc) { bgOpacity = 1; return; }
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      if (!showHero || !heroItems.length) { bgOpacity = 1; return; }   // kein Hero → kein Konflikt, voll zeigen
+      const heroH = sc.clientHeight * 0.44;   // entspricht der Hero-Höhe (h-[44vh])
+      bgOpacity = Math.min(1, Math.max(0, sc.scrollTop / heroH));
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
+    sc.addEventListener("scroll", onScroll, { passive: true });
+    update();   // Anfangswert sofort
+    return () => { sc.removeEventListener("scroll", onScroll); if (raf) cancelAnimationFrame(raf); };
+  }
+
+  function cancelPreview() {
+    clearTimeout(previewTimer);
+    clearTimeout(clearTimer);
+    clearTimer = setTimeout(() => { previewBackdrop = ""; }, 150);
+  }
 
   // Featured-Liste aus neuesten Filmen/Serien mit Backdrop bauen + Rotation starten
   // Lädt das Bild des nächsten Hero-Items vorab → nahtloser Wechsel ohne Aufploppen.
@@ -65,23 +113,21 @@
     if (url) { const img = new Image(); img.src = url; }
   }
 
-  function buildHero() {
-    if (heroBuilt) return;   // bereits gebaut → nicht neu mischen (zweiter Latest-Fetch speist nur seine Reihe)
-    // Titel ausschließen, die bereits in "Weiterschauen" laufen (keine Dopplung).
-    // Bei Serien auch über SeriesId, falls eine Folge der Serie angefangen wurde.
+  // Titel ausschließen, die bereits in "Weiterschauen" laufen (keine Dopplung); Serien auch über SeriesId.
+  function heroInProgressSet() {
     const inProgress = new Set();
     continueWatching.forEach(i => { inProgress.add(i.Id); if (i.SeriesId) inProgress.add(i.SeriesId); });
-    const pool = [...latestMovies, ...latestSeries]
-      .filter(i => i.BackdropImageTags?.length > 0 && !inProgress.has(i.Id));
-    if (pool.length === 0) return;   // noch keine brauchbaren Items → nächster Aufruf versucht es erneut
-    // Maximal 5, gemischt
-    heroItems = pool.sort(() => Math.random() - 0.5).slice(0, 5);
+    return inProgress;
+  }
+
+  // Rotation für die bereits gesetzten heroItems starten (gemeinsam für "Für dich" und Fallback).
+  function startHeroRotation() {
     heroIndex = 0;
     prevHeroIndex = -1;
     heroBuilt = true;
-    heroLoading = false;   // Hero steht → Skelett sofort weg (unabhängig vom langsameren Latest-Fetch)
+    heroLoading = false;   // Hero steht → Skelett weg
     clearInterval(heroTimer);
-    // Nur automatisch rotieren wenn Animationen erlaubt sind
+    if (apiCache.dashboard) apiCache.dashboard.heroItems = heroItems;   // cache-fest: Dashboard-Wechsel lädt nicht neu
     if (!reduceAnimations && heroItems.length > 1) {
       preloadHero(1);   // nächstes Bild schon laden
       heroTimer = setInterval(() => {
@@ -92,9 +138,35 @@
     }
   }
 
+  // "Für dich"-Pool (rating-sortiert) in den Hero übernehmen. Leicht durchmischen unter den
+  // Top-Bewerteten, damit Qualität oben bleibt, aber nicht immer dieselben 5 gleich sortiert stehen.
+  // false = Pool zu dünn → Aufrufer nutzt den Neuzugangs-Fallback.
+  function applyHeroPool(pool) {
+    if (heroBuilt) return true;
+    const inProgress = heroInProgressSet();
+    const filtered = (pool || []).filter(i => i.BackdropImageTags?.length > 0 && !inProgress.has(i.Id));
+    if (filtered.length < HERO_MIN) return false;
+    heroItems = filtered.slice(0, 12).sort(() => Math.random() - 0.5).slice(0, 5);
+    startHeroRotation();
+    return true;
+  }
+
+  // Neuzugangs-Fallback: neueste Filme/Serien mit Backdrop, zufällig. Greift, wenn "Für dich"
+  // kein/zu dünnes Signal hatte (neues Profil, leere Genres) oder der Fetch fehlschlug.
+  function buildHero() {
+    if (heroBuilt || heroForYouPending) return;   // schon gebaut ODER "Für dich" entscheidet noch
+    const inProgress = heroInProgressSet();
+    const pool = [...latestMovies, ...latestSeries]
+      .filter(i => i.BackdropImageTags?.length > 0 && !inProgress.has(i.Id));
+    if (pool.length === 0) return;   // noch keine brauchbaren Items → nächster Aufruf versucht es erneut
+    heroItems = pool.sort(() => Math.random() - 0.5).slice(0, 5);
+    startHeroRotation();
+  }
+
   const getAuthHeaders = () => authHeaders(session.token);
   const FIELDS = "PrimaryImageAspectRatio,Overview,BackdropImageTags";
   const ROW_LIMIT = 12;   // einheitliche Reihenlänge: Reihen sind Teaser, der Katalog ist die Bibliothek
+  const HERO_MIN = 3;     // "Für dich"-Pool erst ab so vielen brauchbaren Titeln nutzen, sonst Neuzugangs-Fallback
                           // (Ausnahmen bewusst: Hero = 5er-Rotation, Sammlungen = kuratiert, ungekappt)
 
   // NextUp um Titel bereinigen, die schon in "Weiterschauen" laufen (per Episode- oder Serien-Id).
@@ -147,6 +219,45 @@
     } catch { /* Empfehlungen sind optional */ }
   }
 
+  // "Für dich"-Hero (Variante A): leitet aus zuletzt Gesehenem die häufigsten Genres ab und zieht
+  // daraus UNGESEHENE, gut bewertete Titel mit Backdrop — statt "neueste Neuzugänge, zufällig".
+  // Gibt den Kandidaten-Pool zurück (rating-sortiert). Leer = kein Signal / Fehler → der Aufrufer
+  // fällt auf die bisherige Neuzugangs-Logik zurück, damit der Hero nie leer wirkt.
+  // NOCH NICHT verdrahtet — Schritt 2 stellt buildHero darauf um.
+  async function loadHeroForYou(uId, opts) {
+    try {
+      // 1) Geschmackssignal: zuletzt gesehene Filme/Serien MIT Genres (eigener Fetch, da FIELDS keine führt).
+      const seedRes = await fetch(
+        `${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
+        `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=25&Fields=Genres&EnableTotalRecordCount=false`, opts
+      );
+      const seeds = (await seedRes.json()).Items || [];
+
+      // 2) Genres gewichtet auszählen — frisch Gesehenes (weiter oben in der DatePlayed-Liste) zählt etwas mehr.
+      const counts = new Map();
+      seeds.forEach((it, idx) => {
+        const weight = 1 + (seeds.length - idx) / seeds.length;
+        (it.Genres || []).forEach(g => counts.set(g, (counts.get(g) || 0) + weight));
+      });
+      if (counts.size === 0) return [];   // kein Signal (neues Profil) → Fallback beim Aufrufer
+
+      const topGenres = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([g]) => g);
+
+      // 3) "Für dich"-Pool: ungesehene, gut bewertete Titel aus diesen Genres, mit Backdrop.
+      //    Genres= ist pipe-getrennt (ODER-Verknüpfung).
+      const genreParam = topGenres.map(encodeURIComponent).join('|');
+      const poolRes = await fetch(
+        `${session.serverUrl}/Users/${uId}/Items?IncludeItemTypes=Movie,Series&Recursive=true` +
+        `&Filters=IsUnplayed&Genres=${genreParam}&SortBy=CommunityRating&SortOrder=Descending` +
+        `&Limit=40&Fields=${FIELDS}&EnableImageTypes=Backdrop,Primary,Logo&EnableTotalRecordCount=false`, opts
+      );
+      const pool = ((await poolRes.json()).Items || []).filter(i => i.BackdropImageTags?.length > 0);
+      return pool;
+    } catch {
+      return [];   // Fehler → Neuzugangs-Fallback beim Aufrufer
+    }
+  }
+
   async function loadDashboardData() {
     heroBuilt = false;   // pro Laden neu bauen
     // Cache-Hit: sofort aus Cache laden, kein Netzwerk
@@ -155,7 +266,10 @@
       recentlyWatched = recentlyWatched || [];
       recommendations = recommendations || [];
       collections     = apiCache.dashboard.collections || [];
-      buildHero();
+      // Cache-Hit: die zuvor gebaute "Für dich"-Auswahl direkt übernehmen (instant, kein Netz);
+      // nur falls keine gecacht ist, den Neuzugangs-Fallback bauen.
+      if (apiCache.dashboard.heroItems?.length) { heroItems = apiCache.dashboard.heroItems; startHeroRotation(); }
+      else buildHero();
       if (resumeStale) refreshResume();   // Hintergrund-Refresh, UI steht bereits aus dem Cache
       return;
     }
@@ -187,7 +301,7 @@
       session.connectionLost = false;   // Server erreichbar
 
       // Cache früh befüllen → Sidebar-Navigation funktioniert sofort
-      apiCache.dashboard = { libraries, continueWatching, nextUp: [], latestMovies: [], latestSeries: [], recentlyWatched: [], recommendations: [], collections: [] };
+      apiCache.dashboard = { libraries, continueWatching, nextUp: [], latestMovies: [], latestSeries: [], recentlyWatched: [], recommendations: [], collections: [], heroItems: [] };
 
       // Sammlungen unabhängig laden
       pCollections.then(r => r.json()).then(d => {
@@ -197,6 +311,14 @@
 
       // Empfehlungen ("Weil du X gesehen hast") aus zuletzt Gesehenem ableiten
       loadRecommendations(uId, opts, fields);
+
+      // "Für dich"-Hero (Variante A) parallel anstoßen: entscheidet zwischen Genre-Pool und
+      // Neuzugangs-Fallback. Bis dahin blockiert buildHero (heroForYouPending) — kurzer Skelett-
+      // Moment mehr, dafür der bessere Hero; der reservierte Platz verhindert ein Nachrücken.
+      heroForYouPending = true;
+      const pHeroForYou = loadHeroForYou(uId, opts)
+        .then(pool => { heroForYouPending = false; if (!heroBuilt && !applyHeroPool(pool)) buildHero(); })
+        .catch(() => { heroForYouPending = false; if (!heroBuilt) buildHero(); });
 
       // Verlauf laden + nach Serie zusammenfassen
       pHistory.then(r => r.json()).then(async d => {
@@ -247,8 +369,9 @@
         apiCache.dashboard.latestSeries = latestSeries;
         buildHero();
       });
-      // Sicherheitsnetz: spätestens wenn beide da sind, Skelett beenden (falls gar kein Hero baubar war)
-      Promise.all([pm, ps]).then(() => { heroLoading = false; });
+      // Sicherheitsnetz: Skelett erst beenden, wenn Latest UND "Für dich" entschieden haben
+      // (sonst verschwände der Platzhalter, während der Für-dich-Fetch noch läuft → Lücke/Sprung).
+      Promise.all([pm, ps, pHeroForYou]).then(() => { heroLoading = false; });
 
     } catch (err) {
       console.error("Dashboard load failed:", err);
@@ -345,7 +468,20 @@
     return null;
   }</script>
 
-<div class="px-10 pt-16 pb-20 flex flex-col gap-12">
+<div class="relative">
+  <!-- Dashboard-Backdrop: Backdrop des fokussierten Titels, an der Viewport-Oberkante fixiert
+       (sticky, nicht absolute — das Dashboard scrollt im App-Container). -mb-[100vh] hebt die
+       Eigenhöhe wieder auf, sodass der Inhalt darüber liegt statt darunter zu rutschen. -->
+  {#if dashboardBackdrop && previewBackdrop}
+    <div {@attach heroScrollFade} style="opacity:{bgOpacity}" class="sticky top-0 h-screen w-full -mb-[100vh] z-0 pointer-events-none overflow-hidden">
+      {#key previewBackdrop}
+        <img src={previewBackdrop} alt="" class="w-full h-full object-cover preview-fade" />
+      {/key}
+      <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/85 to-gray-900/40"></div>
+      <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-gray-900/60"></div>
+    </div>
+  {/if}
+  <div class="relative z-10 px-10 pt-16 pb-20 flex flex-col gap-12">
 
   <!-- Wiederverwendbare Card-Snippets (statt 8 fast identischer Blöcke) -->
   {#snippet landscapeCard(item)}
@@ -355,6 +491,7 @@
     {@const rem = getRemainingMinutes(item)}
     {@const sub = getItemSubtitle(item, i18n.t.today)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
+      onfocus={() => previewItem(item)} onblur={cancelPreview}
       class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
                   border-4 border-transparent group-focus:border-white group-focus:scale-105
@@ -393,6 +530,7 @@
     {@const badge = itemBadge(item)}
     {@const sub = getItemSubtitle(item, i18n.t.today)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
+      onfocus={() => previewItem(item)} onblur={cancelPreview}
       class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                   border-4 border-transparent group-focus:border-white group-focus:scale-105
@@ -423,7 +561,7 @@
 
   {#snippet collectionCard(col)}
     {@const img = getItemImageUrl(col)}
-    <button onclick={() => onOpenCollection?.(col)}
+    <button onclick={() => onOpenCollection?.(col)} onfocus={() => previewItem(col)} onblur={cancelPreview}
       class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                   border-4 border-transparent group-focus:border-white group-focus:scale-105
@@ -441,9 +579,26 @@
     </button>
   {/snippet}
 
+  <!-- Hero-Skelett: reserviert Banner-Höhe + deutet Titel/Text/Button an. EIN Snippet für beide
+       Ladephasen (Erst-Skelett UND heroLoading), damit ab dem ersten Paint nichts nachrückt. -->
+  {#snippet heroSkeleton()}
+    <div class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gradient-to-br from-gray-800/40 via-gray-900/70 to-gray-900">
+      <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/40 to-transparent"></div>
+      <div class="absolute bottom-0 left-0 p-10 pb-8 max-w-3xl flex flex-col gap-3 {reduceAnimations ? '' : 'animate-pulse'}">
+        <div class="h-14 w-80 max-w-[60%] bg-white/10 rounded-lg"></div>
+        <div class="h-4 w-44 bg-white/10 rounded"></div>
+        <div class="h-3.5 w-full max-w-xl bg-white/10 rounded"></div>
+        <div class="h-3.5 w-2/3 max-w-md bg-white/10 rounded"></div>
+        <div class="h-12 w-44 bg-white/10 rounded-xl mt-2"></div>
+      </div>
+    </div>
+  {/snippet}
+
 
   {#if isLoading}
-    <!-- Skeleton-Loader -->
+    <!-- Skeleton-Loader — spiegelt den echten Aufbau: erst Hero-Höhe (wenn aktiv), dann Reihen,
+         damit beim Fertigladen nichts nachspringt. -->
+    {#if showHero}{@render heroSkeleton()}{/if}
     {#each [1, 2, 3] as _}
       <div>
         <div class="h-8 w-48 bg-gray-800 rounded animate-pulse mb-4"></div>
@@ -518,30 +673,20 @@
         </div>
       </div>
     {:else if showHero && heroLoading}
-      <!-- Skelett: reserviert die Hero-Höhe und deutet Titel/Text/Button an (gleiche Position wie der echte Inhalt) → sauberer, nahtloser Übergang -->
-      <div class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gradient-to-br from-gray-800/40 via-gray-900/70 to-gray-900">
-        <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/40 to-transparent"></div>
-        <div class="absolute bottom-0 left-0 p-10 pb-8 max-w-3xl flex flex-col gap-3 {reduceAnimations ? '' : 'animate-pulse'}">
-          <div class="h-14 w-80 max-w-[60%] bg-white/10 rounded-lg"></div>
-          <div class="h-4 w-44 bg-white/10 rounded"></div>
-          <div class="h-3.5 w-full max-w-xl bg-white/10 rounded"></div>
-          <div class="h-3.5 w-2/3 max-w-md bg-white/10 rounded"></div>
-          <div class="h-12 w-44 bg-white/10 rounded-xl mt-2"></div>
-        </div>
-      </div>
+      {@render heroSkeleton()}
     {/if}
 
     <!-- MEDIATHEKEN -->
     {#if showLibraries && libraries.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-gray-400 mb-4 px-2">{i18n.t.myMedia}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each libraries as library (library.Id)}
             <button onclick={() => onOpenLibrary?.(library)}
-              class="shrink-0 group flex flex-col items-center focus:outline-none">
+              class="shrink-0 scroll-mt-24 scroll-mx-4 group flex flex-col items-center focus:outline-none">
               <div class="w-64 h-36 bg-gray-800 rounded-xl flex items-center justify-center
-                          border-4 border-transparent group-focus:border-white group-hover:border-gray-400
-                          transition-all shadow-lg overflow-hidden">
+                          border-4 border-transparent group-focus:border-white group-focus:scale-105 group-hover:border-gray-400
+                          transition-all duration-200 shadow-lg overflow-hidden">
                 {#if getItemImageUrl(library)}
                   <img src={getItemImageUrl(library)} {@attach blurUp(itemBlurHash(library))} alt={library.Name}
                     class="w-full h-full object-cover opacity-80 group-focus:opacity-100" loading="lazy" />
@@ -560,7 +705,7 @@
     {#if resumeRow.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.continueWatchingRow}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each resumeRow as item (item.Id)}
             {@render landscapeCard(item)}
           {/each}
@@ -572,7 +717,7 @@
     {#if showNextUp && nextUp.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.nextUp}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each nextUp as item (item.Id)}
             {@render landscapeCard(item)}
           {/each}
@@ -584,7 +729,7 @@
     {#if showHistory && recentlyWatched.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.recentlyWatched}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each recentlyWatched as item (item.Id)}
             {@render portraitCard(item, getHistoryImageUrl(item), itemBlurHash(item))}
           {/each}
@@ -596,7 +741,7 @@
     {#if showSharedSuggestions && sharedSuggestions.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.sharedSuggestions}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each sharedSuggestions as item (item.Id)}
             {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
           {/each}
@@ -608,7 +753,7 @@
     {#each (showRecommendations ? recommendations.slice(0, recommendationRows) : []) as rec}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each rec.items as item (item.Id)}
             {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
           {/each}
@@ -620,7 +765,7 @@
     {#if showLatest && latestMovies.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestMovies}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each latestMovies as item (item.Id)}
             {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
           {/each}
@@ -632,7 +777,7 @@
     {#if showLatest && latestSeries.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestSeries}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each latestSeries as item (item.Id)}
             {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
           {/each}
@@ -644,7 +789,7 @@
     {#if showCollections && collections.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.collections}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2 snap-row">
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each collections as col (col.Id)}
             {@render collectionCard(col)}
           {/each}
@@ -653,12 +798,16 @@
     {/if}
 
   {/if}
+  </div>
 </div>
 
 <style>
-  /* scroll-snap: horizontale Reihen rasten beim Blättern an Kartengrenzen ein (proximity = sanft) */
-  .snap-row { scroll-snap-type: x proximity; scroll-padding-inline-start: 0.5rem; }
-  .snap-row > * { scroll-snap-align: start; }
+  /* Backdrop-Vorschau: sanft einblenden statt hart umschalten ({#key} remountet das <img>) */
+  .preview-fade { animation: previewFadeIn 0.5s ease-out; }
+  @keyframes previewFadeIn { from { opacity: 0; } to { opacity: 1; } }
+  /* Bewusst KEIN scroll-snap auf den Reihen: auf D-Pad-Geraeten scrollt ausschliesslich
+     der Fokus (scrollIntoView) — Proximity-Snapping zog dessen Position phasenabhaengig
+     zurueck und schnitt den skalierten Rahmen der Randkarte ab (webOS/B4). */
 
   /* Sanftes Einblenden beim Hero-Wechsel */
   .hero-fade { animation: heroFadeIn 1.2s ease; }

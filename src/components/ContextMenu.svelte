@@ -4,7 +4,7 @@
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy } from 'svelte';
 
-  let { item, userId, onChanged, onOpenDetails, onAddToList, onClose } = $props();
+  let { item, userId, selectedUser, onChanged, onOpenDetails, onAddToList, onAddToCollection, onClose } = $props();
 
   // Lokale (optimistische) Zustände — werden beim Klick sofort umgeschaltet, damit
   // Beschriftung/Icons im Menü die Änderung direkt zeigen. Initial aus dem Item.
@@ -65,6 +65,10 @@
   }
   function openDetails() { if (!armed) return; onOpenDetails?.(item); onClose?.(); }
   function addToList()   { if (!armed) return; onAddToList?.(item); onClose?.(); }
+  function addToCollection() { if (!armed) return; onAddToCollection?.(item); onClose?.(); }
+  // Sammlung nur zeigen, wenn das Profil das Recht hat (wie in Details/Player). Nur bei explizitem
+  // false ausblenden → fehlendes Feld/älterer Server: sichtbar + 403-Fallback in AddToPicker.
+  const canManageCollections = $derived(selectedUser?.Policy?.EnableCollectionManagement !== false);
 
   function handleKeyDown(e) {
     if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); onClose?.(); }
@@ -126,6 +130,17 @@
         </svg>
         {i18n.t.addToPlaylist}
       </button>
+
+      {#if canManageCollections}
+        <button onclick={addToCollection}
+          class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
+                 hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
+          <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 10.5v6m3-3H9m4.06-7.19l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"/>
+          </svg>
+          {i18n.t.addToCollection}
+        </button>
+      {/if}
 
       <button onclick={openDetails}
         class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg

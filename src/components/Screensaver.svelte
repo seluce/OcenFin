@@ -87,6 +87,14 @@
       }));
   }
 
+  // Fisher-Yates, in-place
+  function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  }
+
   async function loadArt() {
     if (!session.serverUrl || !userId || !session.token) return;
     try {
@@ -99,19 +107,20 @@
           fetchBackdrops('&Filters=IsResumable'),
           fetchBackdrops('&Filters=IsPlayed'),
         ]);
-        const seen = new Set(); list = [];
-        for (const x of [...nextUp, ...resuming, ...played]) if (!seen.has(x.id)) { seen.add(x.id); list.push(x); }
+        // Reihenfolge priorisiert das Aktuelle; Deduplizierung erledigt der universelle Pass unten.
+        list = [...nextUp, ...resuming, ...played];
       } else if (artSource === 'unwatched') {
         list = await fetchBackdrops('&Filters=IsUnplayed');
       } else {
         list = await fetchBackdrops('');
       }
-      // mischen (Fisher-Yates) für abwechslungsreiche Reihenfolge. KEIN Auffüllen mit Zufallstiteln
-      // mehr – die Auswahl (gesehen/ungesehen) wird strikt respektiert; ist sie leer → Uhr-Fallback.
-      for (let i = list.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [list[i], list[j]] = [list[j], list[i]];
-      }
+      // Über ALLE Quellen hinweg per Id deduplizieren: dieselbe Serie / derselbe Film taucht nie
+      // doppelt in der Rotation auf (das erste, höher priorisierte Vorkommen bleibt).
+      const seen = new Set();
+      list = list.filter(x => x.id && !seen.has(x.id) && seen.add(x.id));
+      // Mischen für abwechslungsreiche Reihenfolge. KEIN Auffüllen mit Zufallstiteln — die Auswahl
+      // (gesehen/ungesehen) wird strikt respektiert; ist sie leer → Uhr-Fallback.
+      shuffle(list);
       artlist = list;
     } catch {
       artlist = [];
@@ -147,7 +156,17 @@
           artReady = true;
           preload(artlist[1]?.url);
           const tick = () => {
-            artIdx = (artIdx + 1) % artlist.length;
+            if (artIdx + 1 >= artlist.length) {
+              // Alle Backdrops einmal gezeigt → Wiederholungsrunde neu mischen, damit nicht
+              // dieselbe Reihenfolge 1:1 wiederkehrt. Danach sicherstellen, dass nicht ausgerechnet
+              // das gerade gezeigte Bild direkt wieder an Position 0 landet (kein Sofort-Doppel).
+              const lastShown = artlist[artIdx];
+              shuffle(artlist);
+              if (artlist.length > 1 && artlist[0] === lastShown) [artlist[0], artlist[1]] = [artlist[1], artlist[0]];
+              artIdx = 0;
+            } else {
+              artIdx++;
+            }
             applyArt(artIdx);
             preload(artlist[(artIdx + 1) % artlist.length]?.url);
             artTimer = setTimeout(tick, 30000 + Math.random() * 30000);   // 30–60 s

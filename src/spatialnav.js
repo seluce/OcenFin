@@ -63,7 +63,11 @@ function pickGeometric(dir, from, candidates, exclude, strictRow = false) {
     if (el === exclude) continue;
     if (dir === 'ArrowUp' || dir === 'ArrowDown') {
       const elHbar = el.closest('[data-hbar]');
-      if (elHbar && elHbar !== fromHbar) continue;
+      // Hoch/Runter bleibt strikt in derselben hbar-Gruppe: von außen NICHT hinein (elHbar gesetzt,
+      // fromHbar null) UND von innen NICHT hinaus (fromHbar gesetzt, elHbar null oder andere Gruppe).
+      // Dadurch springt der Fokus an der obersten/untersten Kategorie der Settings-Navigation nicht
+      // seitlich in den Inhalt — nur Kandidaten derselben Gruppe (bzw. beide ohne) bleiben gültig.
+      if (elHbar !== fromHbar) continue;
     }
     const r = rectOf(el);
     const mX = cx(r), mY = cy(r);
@@ -152,10 +156,20 @@ function entryOf(group, dir, from) {
 }
 
 function nearestGroup(dir, from, currentGroup) {
-  const groups = Array.from(document.querySelectorAll('[data-focus-group]'))
+  let groups = Array.from(document.querySelectorAll('[data-focus-group]'))
     .filter(g => g !== currentGroup && isVisible(g) && focusablesIn(g).length
               && !(currentGroup && g.contains(currentGroup)));   // Vorfahr-Gruppen (z.B. der Inhalts-Container "main")
                                                                  // sind kein Sprungziel – man ist bereits darin.
+  // Hoch/Runter nur zu Gruppen wechseln, die sich HORIZONTAL mit der Quelle überlappen. Sonst springt
+  // der Fokus am unteren Rand der Mediathek in die (bildschirmhohe) Sidebar links: deren Mitte liegt
+  // dann unter der letzten Karte, weil der Nachlade-Bereich (Sentinel/Skelett) die Karte nach oben
+  // schiebt. Die Sidebar bleibt so ausschließlich per Links/Rechts erreichbar.
+  if (dir === 'ArrowUp' || dir === 'ArrowDown') {
+    groups = groups.filter(g => {
+      const r = rectOf(g);
+      return Math.min(from.right, r.right) - Math.max(from.left, r.left) > 0;
+    });
+  }
   return pickGeometric(dir, from, groups, null);
 }
 
@@ -209,6 +223,15 @@ export function createFocusManager(isEnabled) {
     // 1) Innerhalb der aktuellen Gruppe / des Modals
     if (scope) {
       let within = pickGeometric(e.key, from, focusablesIn(scope), active, true);
+      // Fallback für den Eintritt in einen "oben-anfangen"-Bereich (data-enter-top): Fand die strikte
+      // Zeilen-Bindung nichts, weil auf Höhe der Quelle im Zielbereich nur NICHT-fokussierbarer Inhalt
+      // steht (z.B. die Server-Info-Karte über "Cache leeren" in Konto & Server), ohne Zeilen-Bindung
+      // nachfassen und dort oben einsteigen. Greift nur beim Übergang in einen fremden enter-top-Bereich.
+      if (!within && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        const loose = pickGeometric(e.key, from, focusablesIn(scope), active, false);
+        const top = loose?.closest('[data-enter-top]');
+        if (top && !top.contains(active)) within = focusablesIn(top)[0] || null;
+      }
       // Eintritt von außen IN eine Sprungleiste (per Links/Rechts): direkt auf das aktuell
       // markierte Element (data-hbar-current, z.B. der ausgewählte Buchstabe) springen statt
       // auf das geometrisch nächste. Innerhalb der Leiste bleibt die Navigation normal.
