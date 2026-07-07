@@ -156,10 +156,20 @@ function entryOf(group, dir, from) {
 }
 
 function nearestGroup(dir, from, currentGroup) {
-  const groups = Array.from(document.querySelectorAll('[data-focus-group]'))
+  let groups = Array.from(document.querySelectorAll('[data-focus-group]'))
     .filter(g => g !== currentGroup && isVisible(g) && focusablesIn(g).length
               && !(currentGroup && g.contains(currentGroup)));   // Vorfahr-Gruppen (z.B. der Inhalts-Container "main")
                                                                  // sind kein Sprungziel – man ist bereits darin.
+  // Hoch/Runter nur zu Gruppen wechseln, die sich HORIZONTAL mit der Quelle überlappen. Sonst springt
+  // der Fokus am unteren Rand der Mediathek in die (bildschirmhohe) Sidebar links: deren Mitte liegt
+  // dann unter der letzten Karte, weil der Nachlade-Bereich (Sentinel/Skelett) die Karte nach oben
+  // schiebt. Die Sidebar bleibt so ausschließlich per Links/Rechts erreichbar.
+  if (dir === 'ArrowUp' || dir === 'ArrowDown') {
+    groups = groups.filter(g => {
+      const r = rectOf(g);
+      return Math.min(from.right, r.right) - Math.max(from.left, r.left) > 0;
+    });
+  }
   return pickGeometric(dir, from, groups, null);
 }
 
