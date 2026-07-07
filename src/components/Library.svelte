@@ -585,6 +585,14 @@
             </div>
           </button>
         {/each}
+        <!-- Nachlade-Skelett: füllt die frei werdende Grid-Fläche mit Platzhaltern (gleiche Kacheln wie
+             das Initial-Skelett), damit man beim schnellen Runterscrollen nicht an der letzten Karte
+             „hängt", bis die nächsten 50 Elemente da sind. -->
+        {#if isFetchingMore}
+          {#each Array(12).fill(0) as _}
+            <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg animate-pulse"></div>
+          {/each}
+        {/if}
       {/if}
     </div>
 
