@@ -6,11 +6,9 @@
   <a href="https://github.com/seluce/OcenFin/network/members"><img src="https://img.shields.io/github/forks/seluce/OcenFin?style=flat-square&color=lightgrey" alt="GitHub Forks"></a>
 </p>
 
-> OcenFin is a native WebOS app for LG TVs. Just to be clear: I don't want to build the ultimate Jellyfin app. I just built it for my own needs. If you want an app with many features, check out MoonFin, Litefin, or Breezyfin. They also offer native apps for WebOS. 
-
-The official Jellyfin app from the LG App Store is basically just a web browser wrapper. It's just the normal website, which is not optimized for WebOS. My main problem was that I switch users on the TV very often. In the official app, this is annoying. Also, the performance on my LG B4 TV was very slow. 
-
-So I decided to build a better app: A native WebOS app based on Svelte and Tailwind. I hid some details that are not very important to keep it clean and simple.
+> OcenFin is a fast and lightweight Jellyfin client for LG WebOS TVs. Built with Svelte 5, it takes up almost no space and runs smoothly. It is actively tested on an LG B4 and fully supports **Dolby Vision** and **Dolby Atmos** via **Direct Play**.
+> 
+> **Please note:** OcenFin is made only for movies and TV shows. It does **not** include **IPTV (Live TV)** or **Music**. Why? IPTV doesn't always run smoothly. And for music, there are already great tools like Navidrome that do a much better job.
 
 ---
 
@@ -26,34 +24,16 @@ So I decided to build a better app: A native WebOS app based on Svelte and Tailw
 
 ---
 
-## Under the Hood
-
-OcenFin is made for WebOS and focuses on speed for older devices.
-
-* **Tech Stack:** Built with Svelte and Tailwind CSS.
-* **No Frameworks:** Svelte helps me avoid heavy frameworks. This keeps the app very lightweight and fast.
-* **Minimalist Design:** I removed things you don't really need to keep the interface clean and fast.
-
----
-
 ## Installation
 
 You can install OcenFin via an `.ipk` file. **No root is required.**
 
-First, choose the right `.ipk` version for your TV from the Releases page:
-* **Modern:** For newer LG TVs running **WebOS 22+** (2022 models and above). This version delivers highly optimized, modern code for maximum performance on all recent chipsets.
-* **Legacy:** For older LG TVs running **WebOS 5 or WebOS 6**. Choose this if the modern version gives you a black screen.
+First, download the `.ipk` file for your TV from the Releases page:
+* **Modern:** This version is exclusively tested and fully functional on **WebOS 25 or newer**. Older WebOS versions are not supported.
 
 1. **Prepare the TV:** Install the official "Developer Mode" app from the LG Content Store on your TV and enable it.
 2. **Sideload from PC:** To install the app from your computer to the TV, I highly recommend using **[dev-manager-desktop](https://github.com/webosbrew/dev-manager-desktop)**. It provides a very easy-to-use graphical interface.
 3. **Bypass the 50-Hour Limit:** LG restricts developer apps to a 50-hour lifespan. To keep OcenFin working permanently, use `dev-manager-desktop` to also install the **"Auto Dev Token Refresh"** app on your TV. It automatically resets the timer in the background so your apps never expire.
-
----
-
-## Work in Progress
-
-* **Keep it Simple:** Instead of blindly adding new features, my main focus is on making the existing app better, faster, and more stable.
-* **Smarter Settings:** Expanding the settings menu with useful options that perfectly fit the app's philosophy.
 
 ---
 
