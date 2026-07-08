@@ -9,12 +9,12 @@ const appinfo = JSON.parse(
 );
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(appinfo.version),
+  },
   base: './',
   plugins: [
     tailwindcss(),
     svelte(),
   ],
-  define: {
-    __APP_VERSION__: JSON.stringify(appinfo.version),
-  },
 })

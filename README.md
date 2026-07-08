@@ -28,9 +28,8 @@
 
 You can install OcenFin via an `.ipk` file. **No root is required.**
 
-First, choose the right `.ipk` version for your TV from the Releases page:
-* **Modern:** For newer LG TVs running **WebOS 22+** (2022 models and above). 
-* **Legacy:** For older LG TVs running **WebOS 5 or WebOS 6**. Choose this if the modern version gives you a black screen.
+First, download the `.ipk` file for your TV from the Releases page:
+* **Modern:** This version is exclusively tested and fully functional on **WebOS 25 or newer**. Older WebOS versions are not supported.
 
 1. **Prepare the TV:** Install the official "Developer Mode" app from the LG Content Store on your TV and enable it.
 2. **Sideload from PC:** To install the app from your computer to the TV, I highly recommend using **[dev-manager-desktop](https://github.com/webosbrew/dev-manager-desktop)**. It provides a very easy-to-use graphical interface.
