@@ -1869,7 +1869,7 @@
               <button onclick={() => changeTrack('audio', stream.Index)}
                 class="text-left p-3 rounded-lg font-medium text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors
                        {selectedAudioIndex === stream.Index ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
-                {stream.DisplayTitle || `${stream.Language || 'Unbekannt'} – ${stream.Codec}`}
+                {stream.DisplayTitle || `${stream.Language || i18n.t.unknown} – ${stream.Codec}`}
               </button>
             {:else}
               <p class="text-gray-500 text-sm p-3">—</p>
@@ -1884,7 +1884,7 @@
               <button onclick={() => changeTrack('subtitle', stream.Index)}
                 class="text-left p-3 rounded-lg font-medium text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors
                        {selectedSubtitleIndex === stream.Index ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
-                {stream.DisplayTitle || stream.Language || 'Unbekannt'}
+                {stream.DisplayTitle || stream.Language || i18n.t.unknown}
               </button>
             {/each}
           {/if}

@@ -38,7 +38,7 @@
     const h = v?.Height || 0;
     const res = h >= 2160 ? '4K' : h >= 1080 ? '1080p' : h >= 720 ? '720p' : (h ? h + 'p' : '');
     const codec = (v?.Codec || '').toUpperCase();
-    return [res, codec].filter(Boolean).join(' ') || src?.Name || 'Quelle';
+    return [res, codec].filter(Boolean).join(' ') || src?.Name || i18n.t.source;
   }
 
   // Choose default audio/subtitle for a source (preferences + server defaults)
@@ -100,8 +100,8 @@
   onDestroy(() => { window.removeEventListener('keydown', onDropdownBack, true); window.removeEventListener('click', onDropdownOutside); });
 
   // Display labels for the trigger buttons
-  function audioLabel(s)    { return s ? (s.DisplayTitle || `${s.Language || 'Unbekannt'} – ${s.Codec}`) : ''; }
-  function subtitleLabel(s) { return s ? (s.DisplayTitle || s.Language || 'Unbekannt') : ''; }
+  function audioLabel(s)    { return s ? (s.DisplayTitle || `${s.Language || i18n.t.unknown} – ${s.Codec}`) : ''; }
+  function subtitleLabel(s) { return s ? (s.DisplayTitle || s.Language || i18n.t.unknown) : ''; }
 
   // ---- Add to collection / playlist -----------------------------------------------------------
   // The dialog itself lives in the shared component <AddToPicker>; here only the trigger.

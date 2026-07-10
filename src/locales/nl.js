@@ -135,6 +135,8 @@ export default {
     mins: "min",
 
     // Player
+    unknown: "Onbekend",
+    source: "Bron",
     playback: "Afspelen",
     prevEpisode: "Vorige aflevering",
     nextEpisode: "Volgende aflevering",

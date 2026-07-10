@@ -135,6 +135,8 @@ export default {
     mins: "min",
 
     // Player
+    unknown: "Inconnu",
+    source: "Source",
     playback: "Lecture",
     prevEpisode: "Épisode précédent",
     nextEpisode: "Épisode suivant",

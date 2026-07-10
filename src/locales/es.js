@@ -135,6 +135,8 @@ export default {
     mins: "min",
 
     // Player
+    unknown: "Desconocido",
+    source: "Fuente",
     playback: "Reproducción",
     prevEpisode: "Episodio anterior",
     nextEpisode: "Episodio siguiente",
