@@ -6,17 +6,17 @@
 
   let { item, userId, selectedUser, onChanged, onOpenDetails, onAddToList, onAddToCollection, onClose } = $props();
 
-  // Lokale (optimistische) Zustände — werden beim Klick sofort umgeschaltet, damit
-  // Beschriftung/Icons im Menü die Änderung direkt zeigen. Initial aus dem Item.
+  // Local (optimistic) states — toggled immediately on click so the
+  // label/icons in the menu show the change directly. Initialized from the item.
   let played    = $state(!!item?.UserData?.Played);
   let favorite  = $state(!!item?.UserData?.IsFavorite);
   let hasResume = $state((item?.UserData?.PlaybackPositionTicks || 0) > 0
                   && item?.Type !== 'Series' && item?.Type !== 'Season');
 
-  // "Scharfschalten": Wird das Menü durch langes OK-Halten geöffnet, ist die Taste noch
-  // gedrückt. Wir nehmen Eingaben ERST nach dem Loslassen an (keyup bzw. pointerup) —
-  // egal wie lange gehalten wird —, damit die gehaltene Taste nicht den ersten Eintrag
-  // auslöst. Kein Timer (zu langes Halten würde sonst doch durchrutschen).
+  // "Arming": if the menu is opened by holding OK long, the key is still
+  // pressed. We only accept input AFTER release (keyup or pointerup) —
+  // no matter how long it's held — so the held key doesn't trigger the first entry.
+  // No timer (holding too long would otherwise still slip through).
   let armed = false;
   function arm() { armed = true; }
   onMount(() => {
@@ -42,11 +42,11 @@
   async function toggleWatched() {
     if (!armed) return;
     const next = !played;
-    played = next;                         // optimistisch umschalten
-    if (next) hasResume = false;           // als gesehen → kein Fortsetzen mehr
+    played = next;                         // toggle optimistically
+    if (next) hasResume = false;           // marked as watched → no more resume
     if (item.UserData) item.UserData.Played = next;
     await call(next ? 'POST' : 'DELETE', `/Users/${userId}/PlayedItems/${item.Id}`);
-    onChanged?.();                   // ERST nach dem Server-Write neu laden (sonst Race: Reload liest veraltete Daten)
+    onChanged?.();                   // reload only AFTER the server write (otherwise a race: reload reads stale data)
   }
   async function toggleFavorite() {
     if (!armed) return;
@@ -58,7 +58,7 @@
   }
   async function resetProgress() {
     if (!armed) return;
-    hasResume = false; played = false;     // raus aus "Weiterschauen"
+    hasResume = false; played = false;     // out of "Continue Watching"
     if (item.UserData) { item.UserData.Played = false; item.UserData.PlaybackPositionTicks = 0; }
     await call('DELETE', `/Users/${userId}/PlayedItems/${item.Id}`);
     onChanged?.();
@@ -66,15 +66,15 @@
   function openDetails() { if (!armed) return; onOpenDetails?.(item); onClose?.(); }
   function addToList()   { if (!armed) return; onAddToList?.(item); onClose?.(); }
   function addToCollection() { if (!armed) return; onAddToCollection?.(item); onClose?.(); }
-  // Sammlung nur zeigen, wenn das Profil das Recht hat (wie in Details/Player). Nur bei explizitem
-  // false ausblenden → fehlendes Feld/älterer Server: sichtbar + 403-Fallback in AddToPicker.
+  // Show collection only if the profile has the right (like in Details/Player). Hide only on an explicit
+  // false → missing field/older server: visible + 403 fallback in AddToPicker.
   const canManageCollections = $derived(selectedUser?.Policy?.EnableCollectionManagement !== false);
 
   function handleKeyDown(e) {
     if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); onClose?.(); }
   }
 
-  // Titel: bei Folgen "Serie · Folgentitel", sonst der Name
+  // Title: for episodes "Series · Episode title", otherwise the name
   let title = $derived(item?.SeriesName ? `${item.SeriesName} · ${item.Name}` : item?.Name);
 </script>
 
@@ -85,13 +85,13 @@
      onclick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
 
   <div class="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden ring-1 ring-white/10">
-    <!-- Kopf -->
+    <!-- Header -->
     <div class="px-6 pt-6 pb-4 border-b border-white/10">
       <p class="text-xs uppercase tracking-wider text-gray-500 font-bold mb-1">{i18n.t.options}</p>
       <h2 class="text-xl font-bold text-white line-clamp-2">{title}</h2>
     </div>
 
-    <!-- Aktionen -->
+    <!-- Actions -->
     <div class="p-3 flex flex-col gap-1">
       <button onclick={toggleWatched} {@attach focusOnMount()}
         class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg

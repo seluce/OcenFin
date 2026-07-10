@@ -28,7 +28,7 @@ export default {
     manualLogin: "Manuell anmelden",
     username: "Benutzername",
 
-    // Navigation (auch via $t[navItem.id] in Sidebar)
+    // Navigation (also used via $t[navItem.id] in Sidebar)
     dashboard: "Start",
     movies: "Filme",
     series: "Serien",
@@ -204,7 +204,7 @@ export default {
     searchHistory: "Suchverlauf",
     clearHistory: "Verlauf löschen",
 
-    // Settings — Darstellung
+    // Settings — Display
     settingsDisplay: "Darstellung",
     language: "Sprache",
     languageDesc: "Ändere die Sprache der Benutzeroberfläche.",
@@ -277,12 +277,12 @@ export default {
     minuteShort: "Min",
     secondShort: "Sek",
 
-    // Settings — Profil
+    // Settings — Profile
     profile: "Profil",
     savePasswords: "Kennwort für schnellen Benutzerwechsel speichern",
     fastSwitchDesc: "Erlaubt das Einloggen ohne Passwort-Eingabe auf diesem Gerät.",
 
-    // Settings — Sicherheit
+    // Settings — Security
     profileSecurity: "Profil & Sicherheit",
     sharedWatching: "Gemeinsames Profil",
     sharedWatchingDesc: "Zwei Profile zusammenf\u00fchren: blendet aus, was beide schon zu Ende gesehen haben.",
@@ -326,7 +326,7 @@ export default {
     qcDesc: "Autorisiere ein anderes Gerät mit einem 6-stelligen Code.",
     qcPlaceholder: "z.B. 123456",
 
-    // Settings — Konto
+    // Settings — Account
     settingsAccount: "Konto & Server",
     statusSection: "Status / Logs",
     debugLogging: "Diagnose-Protokollierung",
@@ -380,7 +380,7 @@ export default {
     logQrHint: "Mit dem Handy scannen, um die letzten Zeilen zu übertragen (z. B. per E-Mail).",
     logBackToText: "Zurück zum Text",
 
-    // Untertitel-Styling (nur Text)
+    // Subtitle styling (text only)
     subtitleColor: "Farbe",
     subtitleEdge: "Rand",
     subtitleBackground: "Hintergrund",
@@ -397,14 +397,14 @@ export default {
     bgSemi: "Halbklar",
     bgSolid: "Deckend",
 
-    // Teilen
+    // Share
     share: "Teilen",
     shareHint: "Mit dem Handy scannen, um den Titel nachzuschlagen oder zu teilen.",
 
-    // Untertitel-Versatz
+    // Subtitle offset
     subtitleOffset: "Versatz",
 
-    // Kennwort anzeigen/verbergen
+    // Show/hide password
     showPassword: "Kennwort anzeigen",
     hidePassword: "Kennwort verbergen",
 

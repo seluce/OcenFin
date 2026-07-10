@@ -1,8 +1,8 @@
 <script>
-  // Mediathek-/Grid-Ansicht — aus App.svelte extrahiert. Besitzt den kompletten Grid-State
-  // (Laden, Filter inkl. Genre/FSK, Sortierung + A-Z mit Offset-Sprung, bidirektionales Infinite-
-  // Scroll, eigener View-Cache, Backdrop-Vorschau). App koordiniert nur Navigation/Details/Sort-
-  // Persistenz und reicht via Props/Callbacks rein (Muster wie Collection/Favorites).
+  // Library/grid view — extracted from App.svelte. Owns the complete grid state
+  // (loading, filters incl. genre/age rating, sorting + A-Z with offset jump, bidirectional infinite
+  // scroll, its own view cache, backdrop preview). App only coordinates navigation/details/sort
+  // persistence and passes things in via props/callbacks (pattern like Collection/Favorites).
   import { tick } from 'svelte';
   import { session } from '../session.svelte.js';
   import { i18n } from '../i18n.svelte.js';
@@ -11,22 +11,22 @@
 
   let {
     selectedUser,
-    library = null,            // { Id, Name } — welche Bibliothek anzeigen (von App)
-    reloadKey = 0,             // hochzählen → View-Cache verwerfen + neu laden
-    focusFirstOnLoad = false,  // beim Öffnen aus dem Menü: erste Karte fokussieren (nicht "Zufällig")
-    sharedReady = false,       // App-Ebene: gemeinsames Profil aktiv? (zeigt den "Gemeinsam schauen"-Schalter)
-    partnerPlayedIds = null,   // Set der von BEIDEN gesehenen IDs (App lädt, Library filtert)
-    librarySorts = {},         // pro Bibliothek gemerkte Sortierung
+    library = null,            // { Id, Name } — which library to show (from App)
+    reloadKey = 0,             // increment → discard the view cache + reload
+    focusFirstOnLoad = false,  // when opened from the menu: focus the first card (not "Random")
+    sharedReady = false,       // App level: shared profile active? (shows the "watch together" toggle)
+    partnerPlayedIds = null,   // set of IDs watched by BOTH (App loads, Library filters)
+    librarySorts = {},         // remembered sort per library
     displaySettings = {},      // backdropPreview, episodeCount
     onOpenDetails,             // (item) => void
     onContextMenu,             // (item) => void
-    onSortPersist,             // (libId, sort) => void — App speichert ins Profil
-    onSharedWatchToggle,       // (on: boolean) => void — App lädt/verwirft Partner-IDs
+    onSortPersist,             // (libId, sort) => void — App saves into the profile
+    onSharedWatchToggle,       // (on: boolean) => void — App loads/discards partner IDs
   } = $props();
 
   const libraryItemLimit = 50;
 
-  // ── Grid-State ──────────────────────────────────────────────
+  // ── Grid state ──────────────────────────────────────────────
   let currentItems        = $state([]);
   let currentLibraryName  = $state('');
   let currentLibraryId    = $state(null);
@@ -51,12 +51,12 @@
     jumpOverlayTimer = setTimeout(() => { jumpLetterOverlay = ''; }, 800);
   }
 
-  // ── Backdrop-Vorschau (700ms nach Fokus auf einer Karte) ────
+  // ── Backdrop preview (700 ms after focusing a card) ─────────
   let previewBackdrop = $state('');
   let previewTimer, clearTimer;
   function previewItem(item) {
     if (!displaySettings.backdropPreview) return;
-    clearTimeout(clearTimer);   // folgt direkt ein Karten-Fokus → NICHT leeren (kein Flackern Karte→Karte)
+    clearTimeout(clearTimer);   // a card focus follows directly → do NOT clear (no card→card flicker)
     clearTimeout(previewTimer);
     previewTimer = setTimeout(() => {
       const tag  = item.BackdropImageTags?.[0];
@@ -65,16 +65,16 @@
       else if (pTag) previewBackdrop = `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${pTag}&maxWidth=1280&quality=70&format=webp`;
     }, 700);
   }
-  // Fokus verlässt eine Karte: Einblende-Timer stoppen und das Backdrop kurz verzögert leeren.
-  // Folgt sofort ein anderer Karten-Fokus, bricht previewItem das Leeren ab → kein Flackern.
-  // Geht der Fokus zur Navigation/Filter/A-Z, bleibt es beim Leeren → wie im Dashboard.
+  // Focus leaves a card: stop the fade-in timer and clear the backdrop with a short delay.
+  // If another card focus follows immediately, previewItem cancels the clearing → no flicker.
+  // If focus goes to the navigation/filter/A-Z, the clearing stands → like in the dashboard.
   function cancelPreview() {
     clearTimeout(previewTimer);
     clearTimeout(clearTimer);
     clearTimer = setTimeout(() => { previewBackdrop = ''; }, 150);
   }
 
-  // ── Filter ──────────────────────────────────────────────────
+  // ── Filters ─────────────────────────────────────────────────
   let showFilterMenu  = $state(false);
   let activeFilters   = $state({ isFavorite: false, isPlayed: false, isNotPlayed: false });
   let availableGenres = $state([]);
@@ -84,7 +84,7 @@
   let hasFilters = $derived(activeFilters.isFavorite || activeFilters.isPlayed || activeFilters.isNotPlayed
                   || selectedGenres.length > 0 || selectedFsk.length > 0);
 
-  // ── Sortierung ──────────────────────────────────────────────
+  // ── Sorting ─────────────────────────────────────────────────
   let showSortMenu = $state(false);
   let currentSort  = $state({ by: 'SortName', order: 'Ascending' });
   const sortOptions = [
@@ -95,10 +95,10 @@
     { by: 'Random',          order: 'Ascending',  key: 'sortRandom' },
   ];
   let showLetterBar = $derived(currentSort.by === 'SortName');
-  const sortFilterFocus = makeFocusReturn();   // Auslöser-Button für Fokus-Rückgabe nach Schließen
+  const sortFilterFocus = makeFocusReturn();   // trigger button for focus return after closing
   $effect(() => { if (!showSortMenu && !showFilterMenu && sortFilterFocus.pending) sortFilterFocus.restore(); });
 
-  // ── Gemeinsam schauen ───────────────────────────────────────
+  // ── Watch together ──────────────────────────────────────────
   let sharedWatchMode = $state(false);
   let visibleLibraryItems = $derived((sharedWatchMode && partnerPlayedIds)
                            ? currentItems.filter(i => !partnerPlayedIds.has(i.Id))
@@ -108,7 +108,7 @@
     onSharedWatchToggle?.(sharedWatchMode);
   }
 
-  // ── View-Cache (eigener LRU, höchstens 5 Bibliotheken) ──────
+  // ── View cache (own LRU, at most 5 libraries) ──────────────
   const MAX_CACHED_VIEWS = 5;
   let viewCache = {};
   function cacheLibraryView(libraryId, data) {
@@ -131,7 +131,7 @@
 
   const authOpts = () => ({ headers: authHeaders(session.token) });
 
-  // ── Laden ───────────────────────────────────────────────────
+  // ── Loading ─────────────────────────────────────────────────
   async function loadGenres(libraryId) {
     try {
       const res = await fetch(`${session.serverUrl}/Genres?ParentId=${libraryId}&UserId=${selectedUser.Id}&EnableTotalRecordCount=false`, authOpts());
@@ -163,7 +163,7 @@
     if (key === 'isPlayed'    && activeFilters.isPlayed)    activeFilters.isNotPlayed = false;
     if (key === 'isNotPlayed' && activeFilters.isNotPlayed) activeFilters.isPlayed    = false;
     activeFilters = { ...activeFilters };
-    if (!showFilterMenu) reloadCurrent();   // Chip-Leiste: sofort. Im Menü: gesammelt beim Schließen.
+    if (!showFilterMenu) reloadCurrent();   // chip bar: immediately. In the menu: collected on close.
   }
   function toggleGenre(name) {
     selectedGenres = selectedGenres.includes(name)
@@ -176,9 +176,9 @@
     if (!showFilterMenu) reloadCurrent();
   }
 
-  // Filter-Menü: Änderungen werden gesammelt und EINMAL beim Schließen angewendet — statt
-  // pro Chip-Tap ein kompletter Reload (3 Genres antippen = 3 Fetches, alle bis auf den
-  // letzten verworfen). Snapshot beim Öffnen; nur bei tatsächlicher Änderung neu laden.
+  // Filter menu: changes are collected and applied ONCE on close — instead of
+  // a full reload per chip tap (tapping 3 genres = 3 fetches, all but the
+  // last discarded). Snapshot on open; reload only on an actual change.
   let filterMenuSnapshot = '';
   const filterStateKey = () => JSON.stringify([activeFilters, selectedGenres, selectedFsk]);
   function openFilterMenu(e) {
@@ -203,7 +203,7 @@
     loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, null);
   }
 
-  // Index des ersten Titels eines Buchstabens in der (gefilterten) Gesamtliste – per Count-Abfrage.
+  // Index of the first title of a letter in the (filtered) full list – via a count query.
   async function letterStartIndex(libraryId, letter) {
     if (!letter || letter === '#') return 0;
     let q;
@@ -221,10 +221,10 @@
     return 0;
   }
 
-  // Stale-Guard (Muster wie subtitleFetchToken im Player): Beim schnellen Durchschalten von
-  // Sortierung/Filter/Bibliothek dürfen nur Antworten der JÜNGSTEN Anfrage übernommen werden —
-  // sonst überschreibt eine langsame alte Antwort die neue Liste. Gilt auch für die
-  // Infinite-Scroll-Blöcke: ein überholter Append würde die Liste korrumpieren.
+  // Stale guard (pattern like subtitleFetchToken in the Player): when quickly switching
+  // sort/filter/library, only responses to the MOST RECENT request may be accepted —
+  // otherwise a slow old response overwrites the new list. Applies to the
+  // infinite-scroll blocks too: a superseded append would corrupt the list.
   let loadToken = 0;
 
   async function loadLibraryItems(lib, letter = null) {
@@ -262,7 +262,7 @@
     currentItems = [];
 
     const startIndex = letter !== null ? await letterStartIndex(lib.Id, letter) : 0;
-    if (myToken !== loadToken) return;   // während der Count-Abfrage kam eine neuere Anfrage
+    if (myToken !== loadToken) return;   // a newer request arrived during the count query
     firstLoadedIndex = startIndex;
 
     let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${lib.Id}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
@@ -270,7 +270,7 @@
 
     try {
       const res = await fetch(url, authOpts());
-      if (myToken !== loadToken) return;   // überholte Antwort verwerfen
+      if (myToken !== loadToken) return;   // discard a superseded response
       if (res.ok) {
         const data        = await res.json();
         if (myToken !== loadToken) return;
@@ -280,14 +280,14 @@
       }
       session.connectionLost = false;
     } catch { if (myToken === loadToken) session.connectionLost = true; }
-    // Spinner nur löschen, wenn wir noch aktuell sind — sonst killt eine alte Antwort das Skelett der neuen.
+    // Only clear the spinner if we're still current — otherwise an old response kills the new one's skeleton.
     finally { if (myToken === loadToken) isLoading = false; }
   }
 
   async function loadMoreLibraryItems() {
     if (isFetchingMore || firstLoadedIndex + currentItems.length >= totalLibraryItems || !currentLibraryId) return;
     isFetchingMore = true;
-    const myToken = loadToken;   // gehört zur AKTUELLEN Liste — nach einem Reload nicht mehr anhängen
+    const myToken = loadToken;   // belongs to the CURRENT list — don't append anymore after a reload
     const start = firstLoadedIndex + currentItems.length;
     let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}`;
     url += getFilterQuery();
@@ -302,11 +302,11 @@
     } catch { } finally { isFetchingMore = false; }
   }
 
-  // Aufwärts nachladen: Block VOR dem Fenster holen und voranstellen; Scroll um Höhenzuwachs korrigieren.
+  // Load upward: fetch the block BEFORE the window and prepend it; correct the scroll by the height gain.
   async function loadPreviousLibraryItems() {
     if (isFetchingPrev || firstLoadedIndex <= 0 || !currentLibraryId) return;
     isFetchingPrev = true;
-    const myToken = loadToken;   // gehört zur AKTUELLEN Liste — nach einem Reload nicht mehr voranstellen
+    const myToken = loadToken;   // belongs to the CURRENT list — don't prepend anymore after a reload
     const newStart = Math.max(0, firstLoadedIndex - libraryItemLimit);
     const count    = firstLoadedIndex - newStart;
     const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}`;
@@ -339,7 +339,7 @@
     } catch { }
   }
 
-  // ── Infinite-Scroll-Attachments ─────────────────────────────
+  // ── Infinite-scroll attachments ─────────────────────────────
   function infiniteScroll(node) {
     const obs = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) loadMoreLibraryItems(); },
@@ -357,7 +357,7 @@
     return () => obs.disconnect();
   }
 
-  // A-Z-Anzeige beim Scrollen mitführen (oberste sichtbare Karte bestimmt den aktiven Buchstaben).
+  // Keep the A-Z display in sync while scrolling (the topmost visible card determines the active letter).
   let scrollTimer;
   function handleLibraryScroll() {
     if (scrollTimer) clearTimeout(scrollTimer);
@@ -378,7 +378,7 @@
     }, 150);
   }
 
-  // ── Details öffnen: Scroll/Fokus merken, dann an App ────────
+  // ── Open details: remember scroll/focus, then to App ───────
   let savedScroll  = 0;
   let lastFocusedId = null;
   function openDetails(item) {
@@ -387,7 +387,7 @@
     onOpenDetails?.(item);
   }
 
-  // ── Von App via bind:this aufrufbar ─────────────────────────
+  // ── Callable from App via bind:this ─────────────────────────
   export async function restoreView() {
     await tick();
     if (libraryScrollContainer) libraryScrollContainer.scrollTop = savedScroll;
@@ -412,7 +412,7 @@
     return true;
   }
 
-  // ── Laden bei Bibliothekswechsel / reloadKey ────────────────
+  // ── Load on library change / reloadKey ──────────────────────
   let appliedKey = -1;
   async function focusFirstCard() {
     await tick();
@@ -427,20 +427,20 @@
     const newKey = rk !== appliedKey;
     if (!newLib && !newKey) return;
     appliedKey = rk;
-    if (newKey && !newLib) viewCache = {};            // Daten geändert → Cache verwerfen
+    if (newKey && !newLib) viewCache = {};            // data changed → discard the cache
     const ff = focusFirstOnLoad;
     loadLibraryItems(lib, newLib ? null : (currentLetter || null)).then(() => {
       if (newLib && ff) focusFirstCard();
     });
   });
 
-  // Gemeinsames Profil weg → "Gemeinsam schauen" aus (Schalter blendet ohnehin aus).
+  // Shared profile gone → turn "watch together" off (the toggle hides anyway).
   $effect(() => { if (!sharedReady) sharedWatchMode = false; });
 </script>
 
 <div class="flex h-full w-full relative">
 
-  <!-- Backdrop-Vorschau -->
+  <!-- Backdrop preview -->
   {#if previewBackdrop}
     <div class="absolute inset-0 z-0 pointer-events-none">
       {#key previewBackdrop}
@@ -451,7 +451,7 @@
     </div>
   {/if}
 
-  <!-- A-Z Sprung-Vorschau -->
+  <!-- A-Z jump preview -->
   {#if jumpLetterOverlay}
     <div class="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
       <div class="bg-black/70 backdrop-blur-md rounded-3xl w-40 h-40 flex items-center justify-center jump-overlay">
@@ -510,7 +510,7 @@
       </div>
     </div>
 
-    <!-- Schnellfilter-Chips: Favoriten + Sortierung -->
+    <!-- Quick-filter chips: favorites + sorting -->
     <div class="flex gap-3 mb-6 px-2 py-3 overflow-x-auto hide-scrollbar">
       <button onclick={() => toggleFilter('isFavorite')}
         class="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm whitespace-nowrap
@@ -585,9 +585,9 @@
             </div>
           </button>
         {/each}
-        <!-- Nachlade-Skelett: füllt die frei werdende Grid-Fläche mit Platzhaltern (gleiche Kacheln wie
-             das Initial-Skelett), damit man beim schnellen Runterscrollen nicht an der letzten Karte
-             „hängt", bis die nächsten 50 Elemente da sind. -->
+        <!-- Load-more skeleton: fills the freeing grid area with placeholders (same tiles as
+             the initial skeleton) so that when scrolling down fast you don't get "stuck" on the last
+             card until the next 50 items are there. -->
         {#if isFetchingMore}
           {#each Array(12).fill(0) as _}
             <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg animate-pulse"></div>
@@ -599,7 +599,7 @@
     {#if sharedWatchMode && !isLoading && currentItems.length > 0 && visibleLibraryItems.length === 0}
       <div class="text-center text-gray-400 py-24 text-lg">{i18n.t.watchTogetherEmpty}</div>
     {/if}
-    <!-- Leerzustand: leere Bibliothek bzw. 0 Treffer durch aktive Filter — statt stummem leerem Grid -->
+    <!-- Empty state: empty library or 0 hits due to active filters — instead of a mute empty grid -->
     {#if !isLoading && currentItems.length === 0}
       <div class="flex flex-col items-center justify-center py-24 text-center">
         <svg class="w-16 h-16 text-gray-700 mb-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z"/></svg>
@@ -619,7 +619,7 @@
     {/if}
   </div>
 
-  <!-- A-Z (nur bei Namenssortierung) -->
+  <!-- A-Z (only with name sorting) -->
   {#if showLetterBar}
   <div data-hbar class="w-16 shrink-0 bg-gradient-to-l from-gray-950/85 via-gray-950/55 to-transparent backdrop-blur-sm flex flex-col items-center justify-between py-6 overflow-y-auto hide-scrollbar z-10">
     {#each alphabet as letter}
@@ -636,7 +636,7 @@
   {/if}
 </div>
 
-<!-- SORTIER-MENÜ -->
+<!-- SORT MENU -->
 {#if showSortMenu}
   <div data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
     onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showSortMenu = false; } }}>
@@ -678,7 +678,7 @@
   </div>
 {/if}
 
-<!-- FILTER-MENÜ -->
+<!-- FILTER MENU -->
 {#if showFilterMenu}
   <div data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
     onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeFilterMenu(); } }}>
@@ -752,13 +752,13 @@
 {/if}
 
 <style>
-  /* Bei der Extraktion aus App.svelte verloren gegangen (Klassen blieben im Markup, die
-     Regeln nicht) — hier rekonstruiert. Komponenten-spezifisch, daher lokal statt app.css. */
-  /* Backdrop-Vorschau: sanft einblenden statt hart umschalten ({#key} remountet das <img>) */
+  /* Lost during the extraction from App.svelte (the classes stayed in the markup, the
+     rules didn't) — reconstructed here. Component-specific, so local instead of app.css. */
+  /* Backdrop preview: fade in gently instead of switching hard ({#key} remounts the <img>) */
   .preview-fade { animation: previewFadeIn 0.5s ease-out; }
   @keyframes previewFadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-  /* A-Z-Sprung-Overlay: kurzes Aufpoppen (Skalierung + Einblenden) */
+  /* A-Z jump overlay: a brief pop (scale + fade in) */
   .jump-overlay { animation: jumpPop 0.18s ease-out; }
   @keyframes jumpPop { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
 </style>

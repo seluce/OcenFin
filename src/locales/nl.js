@@ -380,7 +380,7 @@ export default {
     logQrHint: "Scan met je telefoon om de laatste regels over te zetten (bijv. per e-mail).",
     logBackToText: "Terug naar tekst",
 
-    // Untertitel-Styling (nur Text)
+    // Subtitle styling (text only)
     subtitleColor: "Kleur",
     subtitleEdge: "Rand",
     subtitleBackground: "Achtergrond",
@@ -397,14 +397,14 @@ export default {
     bgSemi: "Semi",
     bgSolid: "Vol",
 
-    // Teilen
+    // Share
     share: "Delen",
     shareHint: "Scan met je telefoon om de titel op te zoeken of te delen.",
 
-    // Untertitel-Versatz
+    // Subtitle offset
     subtitleOffset: "Verschuiving",
 
-    // Kennwort anzeigen/verbergen
+    // Show/hide password
     showPassword: "Wachtwoord tonen",
     hidePassword: "Wachtwoord verbergen",
 

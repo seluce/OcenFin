@@ -9,8 +9,8 @@
   let items     = $state([]);
   let isLoading = $state(false);
 
-  // Filmografie nach Typ gruppieren (nur Filme / Serien). Folgen werden bewusst weggelassen –
-  // wer in Serie X mitspielt, taucht sonst in dutzenden Folgen auf und überlagert alles.
+  // Group the filmography by type (movies / series only). Episodes are deliberately left out –
+  // someone in series X would otherwise appear in dozens of episodes and drown everything out.
   let groups = $derived([
     { label: i18n.t.movies, items: items.filter(i => i.Type === 'Movie') },
     { label: i18n.t.series, items: items.filter(i => i.Type === 'Series') },
@@ -22,7 +22,7 @@
     fav       = !!person.UserData?.IsFavorite;
     items     = [];
     isLoading = true;
-    // Person-Item separat holen → korrekter Favoritenstatus (aus Suche/Besetzung fehlt UserData oft)
+    // Fetch the person item separately → correct favorite status (from search/cast, UserData is often missing)
     fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${person.Id}`, { headers: getAuthHeaders() })
       .then(r => r.ok ? r.json() : null)
       .then(p => { if (p) fav = !!p.UserData?.IsFavorite; })
@@ -35,11 +35,11 @@
         { headers: getAuthHeaders() }
       );
       if (res.ok) items = (await res.json()).Items || [];
-    } catch { /* ignorieren */ }
+    } catch { /* ignore */ }
     finally { isLoading = false; }
   }
 
-  // Person als Favorit setzen/entfernen (optimistisch; bei Fehler zurückrollen)
+  // Set/remove the person as a favorite (optimistic; roll back on error)
   async function toggleFavorite() {
     const next = !fav;
     fav = next;
@@ -49,7 +49,7 @@
     } catch (e) { console.warn('[OcenFin] person favorite failed, rolled back:', e); fav = !next; }
   }
 
-  // Lädt beim Mounten und wenn eine andere Person geöffnet wird.
+  // Loads on mount and when a different person is opened.
   let loadedId = null;
   $effect(() => {
     if (person && person.Id !== loadedId) { loadedId = person.Id; loadPerson(); }

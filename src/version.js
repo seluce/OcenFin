@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// EINZIGE Versionsquelle: public/appinfo.json (das webOS-Manifest verlangt diese Datei ohnehin im
-// Paket-Root). Da Vite (ab v8) das Importieren von Assets aus public/ verbietet, wird die Version
-// NICHT mehr hier importiert, sondern in vite.config.js zur BUILD-ZEIT aus public/appinfo.json gelesen
-// und als globale Konstante __APP_VERSION__ eingespeist. Settings-Anzeige und Jellyfin-Auth-Header lesen
-// weiterhin ausschließlich von hier — beim Release also weiterhin NUR die "version" in appinfo.json zählen.
+// SINGLE version source: public/appinfo.json (the webOS manifest requires this file in the
+// package root anyway). Since Vite (from v8) forbids importing assets from public/, the version
+// is NO LONGER imported here, but read at BUILD TIME from public/appinfo.json in vite.config.js
+// and injected as the global constant __APP_VERSION__. The settings display and Jellyfin auth header
+// still read exclusively from here — so for a release, still ONLY the "version" in appinfo.json counts.
 //
-// webOS erwartet die Version ohne führende Nullen (z. B. 2026.6.28). Für Anzeige + Jellyfin normalisieren
-// wir Monat/Tag auf zwei Stellen: 2026.6.28 → 2026.06.28. (Annahme: Schema Jahr.Monat.Tag.)
+// webOS expects the version without leading zeros (e.g. 2026.6.28). For display + Jellyfin we
+// normalize month/day to two digits: 2026.6.28 → 2026.06.28. (Assumption: schema year.month.day.)
 // ─────────────────────────────────────────────────────────────────────────────
 /* global __APP_VERSION__ */
 const [year, month = '', day = ''] = String(__APP_VERSION__).split('.');

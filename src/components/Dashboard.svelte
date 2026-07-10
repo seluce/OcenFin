@@ -7,50 +7,50 @@
   let {
     selectedUser,
     apiCache,
-    reduceAnimations = false,   // steuert Hero-Auto-Rotation
-    showHero         = true,    // Hero-Banner anzeigen (Einstellung)
-    dashboardBackdrop = true,   // Backdrop des fokussierten Titels hinter dem Dashboard (Opt-out)
-    showLibraries    = true,    // "Meine Mediatheken"-Zeile anzeigen
-    showHistory      = true,    // "Zuletzt gesehen"-Zeile anzeigen
-    showNextUp       = true,    // "Als Nächstes"-Zeile anzeigen
-    showRecommendations = true, // "Weil du … gesehen hast"-Zeile anzeigen
-    recommendationRows   = 1,   // 1 oder 2 Empfehlungs-Reihen
-    showLatest       = true,    // "Zuletzt hinzugefügt" (Filme + Serien)
-    showCollections  = true,    // "Sammlungen" (BoxSets)
-    sharedSuggestions = [],     // "Für euch beide" — Titel, die zur gemeinsamen Vorliebe passen
-    showSharedSuggestions = false, // Reihe anzeigen (nur wenn gemeinsames Profil eingerichtet)
-    resumeStale = false,        // App: seit dem letzten Dashboard-Besuch lief eine Wiedergabe → Resume/NextUp frisch holen
-    onResumeRefreshed,          // () => void — App setzt das Flag zurück
-    onLibrariesLoaded, onOpenCollection, onOpenContext, onOpenDetails, onOpenLibrary,   // Callback-Props
+    reduceAnimations = false,   // controls the hero auto-rotation
+    showHero         = true,    // show the hero banner (setting)
+    dashboardBackdrop = true,   // backdrop of the focused title behind the dashboard (opt-out)
+    showLibraries    = true,    // show the "My Libraries" row
+    showHistory      = true,    // show the "Recently Watched" row
+    showNextUp       = true,    // show the "Up Next" row
+    showRecommendations = true, // show the "Because you watched …" row
+    recommendationRows   = 1,   // 1 or 2 recommendation rows
+    showLatest       = true,    // "Recently Added" (movies + series)
+    showCollections  = true,    // "Collections" (BoxSets)
+    sharedSuggestions = [],     // "For you both" — titles that match the shared preference
+    showSharedSuggestions = false, // show the row (only when a shared profile is set up)
+    resumeStale = false,        // App: playback happened since the last dashboard visit → fetch Resume/NextUp fresh
+    onResumeRefreshed,          // () => void — App resets the flag
+    onLibrariesLoaded, onOpenCollection, onOpenContext, onOpenDetails, onOpenLibrary,   // callback props
   } = $props();
 
   let isLoading        = $state(false);
   let libraries        = $state([]);
-  // An App melden, sobald die Mediatheken da sind (Cache-Hit oder Fetch) — speist die
-  // Sidebar/Navigation reaktiv, ohne dass App separat fetchen muss (verhindert Race).
+  // Report to App as soon as the libraries are there (cache hit or fetch) — feeds the
+  // sidebar/navigation reactively without App having to fetch separately (prevents a race).
   $effect(() => { if (libraries.length) onLibrariesLoaded?.(libraries); });
   let continueWatching = $state([]);
   let nextUp           = $state([]);
   let latestMovies     = $state([]);
   let latestSeries     = $state([]);
-  let recentlyWatched  = $state([]);   // "Zuletzt gesehen" (Verlauf)
-  let recommendations  = $state([]);   // [{ seedTitle, items }] — "Weil du X gesehen hast"
-  let collections      = $state([]);   // BoxSets ("Sammlungen")
+  let recentlyWatched  = $state([]);   // "Recently Watched" (history)
+  let recommendations  = $state([]);   // [{ seedTitle, items }] — "Because you watched X"
+  let collections      = $state([]);   // BoxSets ("Collections")
 
-  // "Weiterschauen" reaktiv ableiten: ein in-place als gesehen markiertes / zurückgesetztes Item
-  // (ContextMenu mutiert item.UserData direkt) verschwindet sofort aus der Zeile — ohne Reload.
+  // Derive "Continue Watching" reactively: an item marked/reset as watched in place
+  // (the ContextMenu mutates item.UserData directly) disappears from the row immediately — without a reload.
   let resumeRow = $derived(continueWatching.filter(
     i => !i.UserData?.Played && (i.UserData?.PlaybackPositionTicks || 0) > 0
   ));
 
-  // HERO-BANNER: rotierendes Featured-Item (Netflix-Stil)
+  // HERO BANNER: rotating featured item (Netflix style)
   let heroItems  = $state([]);
   let heroIndex  = $state(0);
-  let prevHeroIndex = $state(-1);   // vorheriges Bild bleibt beim Wechsel als Unterlage stehen (Crossfade statt Dip-to-Black)
+  let prevHeroIndex = $state(-1);   // the previous image stays as a base during the switch (crossfade instead of dip-to-black)
   let heroTimer;
-  let heroBuilt  = false;   // pro Laden: true, sobald der Hero einmal gebaut ist (verhindert Neu-Mischen beim zweiten Latest-Fetch)
-  let heroForYouPending = false;   // true, solange der "Für dich"-Fetch läuft → Neuzugangs-Fallback wartet, bis er entschieden hat
-  let heroLoading = $state(false);   // true, solange die Featured-Daten noch laden → Platz reservieren (kein Nachrücken)
+  let heroBuilt  = false;   // per load: true once the hero is built (prevents reshuffling on the second latest fetch)
+  let heroForYouPending = false;   // true while the "For You" fetch runs → the new-additions fallback waits until it has decided
+  let heroLoading = $state(false);   // true while the featured data is still loading → reserve the space (no shifting up)
   let heroCurrent = $derived(heroItems[heroIndex] || null);
 
   const skeletons = Array(6).fill(0);
@@ -58,13 +58,13 @@
   onMount(() => { loadDashboardData(); });
   onDestroy(() => { clearInterval(heroTimer); clearTimeout(previewTimer); clearTimeout(clearTimer); });
 
-  // ── Backdrop-Vorschau (wie in der Library): 700 ms nach Fokus auf einer Karte deren Backdrop
-  //    hinter dem Dashboard einblenden; beim Verlassen wieder weg. Opt-out via dashboardBackdrop. ──
+  // ── Backdrop preview (like in the Library): 700 ms after focusing a card, fade in its backdrop
+  //    behind the dashboard; remove it again on leaving. Opt-out via dashboardBackdrop. ──
   let previewBackdrop = $state("");
   let previewTimer, clearTimer;
   function previewItem(item) {
     if (!dashboardBackdrop || !item) return;
-    clearTimeout(clearTimer);   // folgt direkt ein Karten-Fokus → NICHT leeren (kein Flackern Karte→Karte)
+    clearTimeout(clearTimer);   // a card focus follows directly → do NOT clear (no card→card flicker)
     clearTimeout(previewTimer);
     previewTimer = setTimeout(() => {
       const tag  = item.BackdropImageTags?.[0];
@@ -73,28 +73,28 @@
       else if (pTag) previewBackdrop = `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${pTag}&maxWidth=1280&quality=70&format=webp`;
     }, 700);
   }
-  // Fokus verlässt eine Karte: Einblende-Timer stoppen und das Backdrop kurz verzögert leeren.
-  // Folgt sofort ein anderer Karten-Fokus (Karte→Karte), bricht previewItem das Leeren ab → kein
-  // Flackern. Geht der Fokus zum Hero, zu den Mediathek-Kacheln oder zur Navigation, bleibt es beim
-  // Leeren → kein Backdrop hinter dem Hero mehr (siehe Screenshot-Problem).
-  // Backdrop-Deckkraft an die Hero-Sichtbarkeit koppeln: ganz oben (Hero sichtbar) aus → kein
-  // Konflikt mit dem Hero-Bild; beim Runterscrollen blendet es ein, sobald der Hero das Bild
-  // verlässt. So bekommen auch Weiterschauen/Als Nächstes das Backdrop, nur eben erst beim Scrollen.
+  // Focus leaves a card: stop the fade-in timer and clear the backdrop with a short delay.
+  // If another card focus follows immediately (card→card), previewItem cancels the clearing → no
+  // flicker. If focus goes to the hero, the library tiles or the navigation, the clearing stands
+  // → no backdrop behind the hero anymore (see the screenshot problem).
+  // Couple the backdrop opacity to the hero visibility: at the very top (hero visible) off → no
+  // conflict with the hero image; on scrolling down it fades in as soon as the hero leaves the
+  // picture. This way Continue Watching/Up Next get the backdrop too, just only on scrolling.
   let bgOpacity = $state(0);
   function heroScrollFade(node) {
-    let sc = node.parentElement;   // scrollenden Vorfahren (App-Hauptbereich) suchen
+    let sc = node.parentElement;   // find the scrolling ancestor (App main area)
     while (sc && !(/(auto|scroll)/.test(getComputedStyle(sc).overflowY) && sc.scrollHeight > sc.clientHeight + 4)) sc = sc.parentElement;
     if (!sc) { bgOpacity = 1; return; }
     let raf = 0;
     const update = () => {
       raf = 0;
-      if (!showHero || !heroItems.length) { bgOpacity = 1; return; }   // kein Hero → kein Konflikt, voll zeigen
-      const heroH = sc.clientHeight * 0.44;   // entspricht der Hero-Höhe (h-[44vh])
+      if (!showHero || !heroItems.length) { bgOpacity = 1; return; }   // no hero → no conflict, show fully
+      const heroH = sc.clientHeight * 0.44;   // corresponds to the hero height (h-[44vh])
       bgOpacity = Math.min(1, Math.max(0, sc.scrollTop / heroH));
     };
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
     sc.addEventListener("scroll", onScroll, { passive: true });
-    update();   // Anfangswert sofort
+    update();   // initial value immediately
     return () => { sc.removeEventListener("scroll", onScroll); if (raf) cancelAnimationFrame(raf); };
   }
 
@@ -104,8 +104,8 @@
     clearTimer = setTimeout(() => { previewBackdrop = ""; }, 150);
   }
 
-  // Featured-Liste aus neuesten Filmen/Serien mit Backdrop bauen + Rotation starten
-  // Lädt das Bild des nächsten Hero-Items vorab → nahtloser Wechsel ohne Aufploppen.
+  // Build the featured list from the newest movies/series with a backdrop + start the rotation
+  // Preloads the image of the next hero item → seamless switch without popping in.
   function preloadHero(index) {
     const next = heroItems[index];
     if (!next) return;
@@ -113,23 +113,23 @@
     if (url) { const img = new Image(); img.src = url; }
   }
 
-  // Titel ausschließen, die bereits in "Weiterschauen" laufen (keine Dopplung); Serien auch über SeriesId.
+  // Exclude titles already in "Continue Watching" (no duplication); series also via SeriesId.
   function heroInProgressSet() {
     const inProgress = new Set();
     continueWatching.forEach(i => { inProgress.add(i.Id); if (i.SeriesId) inProgress.add(i.SeriesId); });
     return inProgress;
   }
 
-  // Rotation für die bereits gesetzten heroItems starten (gemeinsam für "Für dich" und Fallback).
+  // Start the rotation for the already-set heroItems (shared by "For You" and the fallback).
   function startHeroRotation() {
     heroIndex = 0;
     prevHeroIndex = -1;
     heroBuilt = true;
-    heroLoading = false;   // Hero steht → Skelett weg
+    heroLoading = false;   // hero is ready → skeleton gone
     clearInterval(heroTimer);
-    if (apiCache.dashboard) apiCache.dashboard.heroItems = heroItems;   // cache-fest: Dashboard-Wechsel lädt nicht neu
+    if (apiCache.dashboard) apiCache.dashboard.heroItems = heroItems;   // cache-proof: switching dashboards doesn't reload
     if (!reduceAnimations && heroItems.length > 1) {
-      preloadHero(1);   // nächstes Bild schon laden
+      preloadHero(1);   // preload the next image
       heroTimer = setInterval(() => {
         prevHeroIndex = heroIndex;
         heroIndex = (heroIndex + 1) % heroItems.length;
@@ -138,9 +138,9 @@
     }
   }
 
-  // "Für dich"-Pool (rating-sortiert) in den Hero übernehmen. Leicht durchmischen unter den
-  // Top-Bewerteten, damit Qualität oben bleibt, aber nicht immer dieselben 5 gleich sortiert stehen.
-  // false = Pool zu dünn → Aufrufer nutzt den Neuzugangs-Fallback.
+  // Take the "For You" pool (rating-sorted) into the hero. Shuffle slightly among the
+  // top-rated so quality stays on top, but not always the same 5 in the same order.
+  // false = pool too thin → the caller uses the new-additions fallback.
   function applyHeroPool(pool) {
     if (heroBuilt) return true;
     const inProgress = heroInProgressSet();
@@ -151,34 +151,34 @@
     return true;
   }
 
-  // Neuzugangs-Fallback: neueste Filme/Serien mit Backdrop, zufällig. Greift, wenn "Für dich"
-  // kein/zu dünnes Signal hatte (neues Profil, leere Genres) oder der Fetch fehlschlug.
+  // New-additions fallback: newest movies/series with a backdrop, random. Kicks in when "For You"
+  // had no/too thin a signal (new profile, empty genres) or the fetch failed.
   function buildHero() {
-    if (heroBuilt || heroForYouPending) return;   // schon gebaut ODER "Für dich" entscheidet noch
+    if (heroBuilt || heroForYouPending) return;   // already built OR "For You" is still deciding
     const inProgress = heroInProgressSet();
     const pool = [...latestMovies, ...latestSeries]
       .filter(i => i.BackdropImageTags?.length > 0 && !inProgress.has(i.Id));
-    if (pool.length === 0) return;   // noch keine brauchbaren Items → nächster Aufruf versucht es erneut
+    if (pool.length === 0) return;   // no usable items yet → the next call tries again
     heroItems = pool.sort(() => Math.random() - 0.5).slice(0, 5);
     startHeroRotation();
   }
 
   const getAuthHeaders = () => authHeaders(session.token);
   const FIELDS = "PrimaryImageAspectRatio,Overview,BackdropImageTags";
-  const ROW_LIMIT = 12;   // einheitliche Reihenlänge: Reihen sind Teaser, der Katalog ist die Bibliothek
-  const HERO_MIN = 3;     // "Für dich"-Pool erst ab so vielen brauchbaren Titeln nutzen, sonst Neuzugangs-Fallback
-                          // (Ausnahmen bewusst: Hero = 5er-Rotation, Sammlungen = kuratiert, ungekappt)
+  const ROW_LIMIT = 12;   // uniform row length: rows are teasers, the catalog is the library
+  const HERO_MIN = 3;     // use the "For You" pool only from this many usable titles on, otherwise new-additions fallback
+                          // (exceptions deliberate: hero = 5-item rotation, collections = curated, uncapped)
 
-  // NextUp um Titel bereinigen, die schon in "Weiterschauen" laufen (per Episode- oder Serien-Id).
+  // Clean NextUp of titles already in "Continue Watching" (by episode or series ID).
   function filterNextUp(raw) {
     const inProgress = new Set();
     continueWatching.forEach(i => { inProgress.add(i.Id); if (i.SeriesId) inProgress.add(i.SeriesId); });
     return raw.filter(i => !inProgress.has(i.Id) && !inProgress.has(i.SeriesId));
   }
 
-  // Nach einer Wiedergabe: NUR Resume + NextUp frisch holen und in den Cache mergen — die
-  // Sofort-Anzeige aus dem Cache bleibt, aber die eine Zeile, die sich wirklich geändert hat,
-  // stimmt wieder (Fortschritt/neuer Titel). Kein Vollreload, Hero bleibt stehen (kein Neu-Mischen).
+  // After playback: fetch ONLY Resume + NextUp fresh and merge them into the cache — the
+  // instant display from the cache stays, but the one row that actually changed is
+  // correct again (progress/new title). No full reload, the hero stays put (no reshuffle).
   async function refreshResume() {
     try {
       const uId  = selectedUser.Id;
@@ -192,22 +192,22 @@
       nextUp = filterNextUp(Array.isArray(dNext) ? dNext : (dNext.Items || []));
       if (apiCache.dashboard) { apiCache.dashboard.continueWatching = continueWatching; apiCache.dashboard.nextUp = nextUp; }
       onResumeRefreshed?.();
-    } catch { /* Flag bleibt gesetzt → nächster Dashboard-Besuch versucht es erneut */ }
+    } catch { /* the flag stays set → the next dashboard visit tries again */ }
   }
 
-  // Empfehlungen: Seeds aus zuletzt gesehenen Items, dann /Items/{id}/Similar.
-  // Best Practice (Netflix/Plex): direkt im Dashboard, kein eigener Tab.
+  // Recommendations: seeds from recently watched items, then /Items/{id}/Similar.
+  // Best practice (Netflix/Plex): right in the dashboard, no separate tab.
   async function loadRecommendations(uId, opts, fields) {
     try {
-      // Zuletzt gespielte Filme/Serien als Aufhänger holen
+      // Fetch recently played movies/series as the hook
       const res = await fetch(
         `${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
         `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=4&Fields=${fields}`, opts
       );
       const seeds = (await res.json()).Items || [];
 
-      // Bis zu zwei Reihen ähnlicher Titel (gecacht). Gerendert wird je nach
-      // Einstellung 1 oder 2 — so wirkt das Umschalten ohne Neuladen sofort.
+      // Up to two rows of similar titles (cached). Depending on the
+      // setting, 1 or 2 are rendered — so switching feels instant without a reload.
       const rows = [];
       for (const seed of seeds.slice(0, 2)) {
         const sim = await fetch(`${session.serverUrl}/Items/${seed.Id}/Similar?userId=${uId}&limit=${ROW_LIMIT}&Fields=${fields}`, opts);
@@ -216,35 +216,35 @@
       }
       recommendations = rows;
       if (apiCache.dashboard) apiCache.dashboard.recommendations = rows;
-    } catch { /* Empfehlungen sind optional */ }
+    } catch { /* recommendations are optional */ }
   }
 
-  // "Für dich"-Hero (Variante A): leitet aus zuletzt Gesehenem die häufigsten Genres ab und zieht
-  // daraus UNGESEHENE, gut bewertete Titel mit Backdrop — statt "neueste Neuzugänge, zufällig".
-  // Gibt den Kandidaten-Pool zurück (rating-sortiert). Leer = kein Signal / Fehler → der Aufrufer
-  // fällt auf die bisherige Neuzugangs-Logik zurück, damit der Hero nie leer wirkt.
-  // NOCH NICHT verdrahtet — Schritt 2 stellt buildHero darauf um.
+  // "For You" hero (variant A): derives the most frequent genres from recently watched and pulls
+  // UNWATCHED, well-rated titles with a backdrop from them — instead of "newest additions, random".
+  // Returns the candidate pool (rating-sorted). Empty = no signal / error → the caller
+  // falls back to the previous new-additions logic so the hero never looks empty.
+  // NOT wired up YET — step 2 switches buildHero over to it.
   async function loadHeroForYou(uId, opts) {
     try {
-      // 1) Geschmackssignal: zuletzt gesehene Filme/Serien MIT Genres (eigener Fetch, da FIELDS keine führt).
+      // 1) Taste signal: recently watched movies/series WITH genres (a separate fetch, since FIELDS carries none).
       const seedRes = await fetch(
         `${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
         `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=25&Fields=Genres&EnableTotalRecordCount=false`, opts
       );
       const seeds = (await seedRes.json()).Items || [];
 
-      // 2) Genres gewichtet auszählen — frisch Gesehenes (weiter oben in der DatePlayed-Liste) zählt etwas mehr.
+      // 2) Count genres weighted — recently watched (higher up in the DatePlayed list) counts a bit more.
       const counts = new Map();
       seeds.forEach((it, idx) => {
         const weight = 1 + (seeds.length - idx) / seeds.length;
         (it.Genres || []).forEach(g => counts.set(g, (counts.get(g) || 0) + weight));
       });
-      if (counts.size === 0) return [];   // kein Signal (neues Profil) → Fallback beim Aufrufer
+      if (counts.size === 0) return [];   // no signal (new profile) → fallback at the caller
 
       const topGenres = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([g]) => g);
 
-      // 3) "Für dich"-Pool: ungesehene, gut bewertete Titel aus diesen Genres, mit Backdrop.
-      //    Genres= ist pipe-getrennt (ODER-Verknüpfung).
+      // 3) "For You" pool: unwatched, well-rated titles from these genres, with a backdrop.
+      //    Genres= is pipe-separated (OR combination).
       const genreParam = topGenres.map(encodeURIComponent).join('|');
       const poolRes = await fetch(
         `${session.serverUrl}/Users/${uId}/Items?IncludeItemTypes=Movie,Series&Recursive=true` +
@@ -254,77 +254,77 @@
       const pool = ((await poolRes.json()).Items || []).filter(i => i.BackdropImageTags?.length > 0);
       return pool;
     } catch {
-      return [];   // Fehler → Neuzugangs-Fallback beim Aufrufer
+      return [];   // error → new-additions fallback at the caller
     }
   }
 
   async function loadDashboardData() {
-    heroBuilt = false;   // pro Laden neu bauen
-    // Cache-Hit: sofort aus Cache laden, kein Netzwerk
+    heroBuilt = false;   // rebuild per load
+    // Cache hit: load from cache immediately, no network
     if (apiCache.dashboard) {
       ({ libraries, continueWatching, nextUp, latestMovies, latestSeries, recentlyWatched, recommendations } = apiCache.dashboard);
       recentlyWatched = recentlyWatched || [];
       recommendations = recommendations || [];
       collections     = apiCache.dashboard.collections || [];
-      // Cache-Hit: die zuvor gebaute "Für dich"-Auswahl direkt übernehmen (instant, kein Netz);
-      // nur falls keine gecacht ist, den Neuzugangs-Fallback bauen.
+      // Cache hit: take the previously built "For You" selection directly (instant, no network);
+      // only if none is cached, build the new-additions fallback.
       if (apiCache.dashboard.heroItems?.length) { heroItems = apiCache.dashboard.heroItems; startHeroRotation(); }
       else buildHero();
-      if (resumeStale) refreshResume();   // Hintergrund-Refresh, UI steht bereits aus dem Cache
+      if (resumeStale) refreshResume();   // background refresh, the UI is already up from the cache
       return;
     }
 
     isLoading   = true;
-    heroLoading = true;   // Hero-Platz ab dem ersten Paint reservieren, bis die Featured-Daten da sind
+    heroLoading = true;   // reserve the hero space from the first paint until the featured data is there
     try {
       const uId   = selectedUser.Id;
       const opts  = { headers: getAuthHeaders() };
       const fields = FIELDS;
 
-      // Alle 5 Fetches gleichzeitig starten — kein sequentielles Warten
+      // Start all 5 fetches at once — no sequential waiting
       const pViews        = fetch(`${session.serverUrl}/Users/${uId}/Views`, opts);
       const pResume       = fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
       const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
       const pLatestMovies = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Movie&Limit=${ROW_LIMIT}&Fields=${fields}`, opts);
       const pLatestSeries = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Series&Limit=${ROW_LIMIT}&Fields=${fields}`, opts);
-      // Verlauf: zuletzt gesehene Filme/Folgen. Mehr holen (40), da Serien danach
-      // zu je einem Eintrag zusammengefasst werden (Puffer für eine gute Mischung).
+      // History: recently watched movies/episodes. Fetch more (40), since series are then
+      // collapsed to one entry each (buffer for a good mix).
       const pHistory      = fetch(`${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}&EnableTotalRecordCount=false`, opts);
-      // Sammlungen (BoxSets)
+      // Collections (BoxSets)
       const pCollections  = fetch(`${session.serverUrl}/Users/${uId}/Items?IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=50&EnableTotalRecordCount=false`, opts);
 
-      // Priorität: Views + Resume → UI sofort freigeben
+      // Priority: Views + Resume → release the UI immediately
       const [resViews, resResume] = await Promise.all([pViews, pResume]);
       libraries        = (await resViews.json()).Items  || [];
       continueWatching = (await resResume.json()).Items || [];
       isLoading        = false;
-      session.connectionLost = false;   // Server erreichbar
+      session.connectionLost = false;   // server reachable
 
-      // Cache früh befüllen → Sidebar-Navigation funktioniert sofort
+      // Fill the cache early → sidebar navigation works immediately
       apiCache.dashboard = { libraries, continueWatching, nextUp: [], latestMovies: [], latestSeries: [], recentlyWatched: [], recommendations: [], collections: [], heroItems: [] };
 
-      // Sammlungen unabhängig laden
+      // Load collections independently
       pCollections.then(r => r.json()).then(d => {
         collections = (Array.isArray(d) ? d : (d.Items || [])).filter(c => c.ChildCount !== 0);
         apiCache.dashboard.collections = collections;
       }).catch(() => {});
 
-      // Empfehlungen ("Weil du X gesehen hast") aus zuletzt Gesehenem ableiten
+      // Derive recommendations ("Because you watched X") from recently watched
       loadRecommendations(uId, opts, fields);
 
-      // "Für dich"-Hero (Variante A) parallel anstoßen: entscheidet zwischen Genre-Pool und
-      // Neuzugangs-Fallback. Bis dahin blockiert buildHero (heroForYouPending) — kurzer Skelett-
-      // Moment mehr, dafür der bessere Hero; der reservierte Platz verhindert ein Nachrücken.
+      // Kick off the "For You" hero (variant A) in parallel: it decides between the genre pool and
+      // the new-additions fallback. Until then buildHero is blocked (heroForYouPending) — a bit more
+      // skeleton time, but the better hero; the reserved space prevents shifting up.
       heroForYouPending = true;
       const pHeroForYou = loadHeroForYou(uId, opts)
         .then(pool => { heroForYouPending = false; if (!heroBuilt && !applyHeroPool(pool)) buildHero(); })
         .catch(() => { heroForYouPending = false; if (!heroBuilt) buildHero(); });
 
-      // Verlauf laden + nach Serie zusammenfassen
+      // Load history + collapse by series
       pHistory.then(r => r.json()).then(async d => {
-        let items = dedupeHistory(d.Items || []).slice(0, ROW_LIMIT);   // Reihenlänge vereinheitlicht; Kappen VOR der Anreicherung spart Serien-Lookups
-        // Serien wie in der Mediathek mit echtem Jahresbereich zeigen ("2016 – 2019" / "2024 – heute"):
-        // einmalig die echten Serien-Infos (Jahr/Status/EndDate) für alle Serien-Einträge nachladen.
+        let items = dedupeHistory(d.Items || []).slice(0, ROW_LIMIT);   // uniform row length; capping BEFORE the enrichment saves series lookups
+        // Show series with a real year range like in the library ("2016 – 2019" / "2024 – today"):
+        // load the real series info (year/status/EndDate) once for all series entries.
         const seriesIds = items.filter(i => i.Type === 'Series').map(i => i.Id);
         if (seriesIds.length) {
           try {
@@ -332,31 +332,31 @@
             const info = new Map(((await r2.json()).Items || []).map(s => [s.Id, s]));
             items = items.map(i => {
               const s = i.Type === 'Series' ? info.get(i.Id) : null;
-              // UserData der ECHTEN Serie mitnehmen: die Pseudo-Einträge aus dedupeHistory haben
-              // keine — ohne sie bleibt das Gesehen-Badge bei komplett geschauten Serien blind.
+              // Take the REAL series' UserData along: the pseudo-entries from dedupeHistory have
+              // none — without it the watched badge stays blind for fully watched series.
               return s ? { ...i, ProductionYear: s.ProductionYear, Status: s.Status, EndDate: s.EndDate, UserData: s.UserData } : i;
             });
-          } catch { /* Anreicherung optional — schlägt sie fehl, bleibt nur der Titel */ }
+          } catch { /* enrichment optional — if it fails, only the title remains */ }
         }
         recentlyWatched = items;
         apiCache.dashboard.recentlyWatched = recentlyWatched;
       }).catch(() => {});
 
-      // Sekundäre Sektionen unabhängig aktualisieren — schnellste kommt zuerst
-      // FIX: `|| d` entfernt (d wäre das Response-Objekt, nicht ein Array)
-      // FIX: .catch(() => {}) damit ein einzelner Fehler nicht alles blockiert
-      // /Items/Latest gibt ein DIREKTES Array zurück (nicht { Items: [...] })!
-      // Andere Endpunkte geben { Items, TotalRecordCount }. Beide Fälle abfangen.
+      // Update secondary sections independently — the fastest comes first
+      // FIX: removed `|| d` (d would be the response object, not an array)
+      // FIX: .catch(() => {}) so a single error doesn't block everything
+      // /Items/Latest returns a DIRECT array (not { Items: [...] })!
+      // Other endpoints return { Items, TotalRecordCount }. Handle both cases.
       pNextUp.then(r => r.json()).then(d => {
         const raw = Array.isArray(d) ? d : (d.Items || []);
-        // In-Progress-Titel ausschließen (stehen schon in "Weiterschauen") — wie die Jellyfin-App.
+        // Exclude in-progress titles (already in "Continue Watching") — like the Jellyfin app.
         nextUp = filterNextUp(raw);
         apiCache.dashboard.nextUp = nextUp;
       }).catch(() => {});
 
-      // Latest-Fetches UNABHÄNGIG verarbeiten: jede Reihe füllt sich sofort, und der Hero wird
-      // gebaut, sobald die ERSTEN brauchbaren Daten da sind — nicht erst, wenn der langsamere
-      // der beiden Fetches zurück ist (das war der eigentliche Skelett-Engpass).
+      // Process the latest fetches INDEPENDENTLY: each row fills immediately, and the hero is
+      // built as soon as the FIRST usable data is there — not only when the slower
+      // of the two fetches returns (that was the actual skeleton bottleneck).
       const pm = pLatestMovies.then(r => r.json()).catch(() => []);
       const ps = pLatestSeries.then(r => r.json()).catch(() => []);
       pm.then(d => {
@@ -369,21 +369,21 @@
         apiCache.dashboard.latestSeries = latestSeries;
         buildHero();
       });
-      // Sicherheitsnetz: Skelett erst beenden, wenn Latest UND "Für dich" entschieden haben
-      // (sonst verschwände der Platzhalter, während der Für-dich-Fetch noch läuft → Lücke/Sprung).
+      // Safety net: end the skeleton only once Latest AND "For You" have decided
+      // (otherwise the placeholder would vanish while the For-You fetch is still running → gap/jump).
       Promise.all([pm, ps, pHeroForYou]).then(() => { heroLoading = false; });
 
     } catch (err) {
       console.error("Dashboard load failed:", err);
       isLoading   = false;
       heroLoading = false;
-      session.connectionLost = true;   // Server nicht erreichbar → Banner
+      session.connectionLost = true;   // server unreachable → banner
     }
   }
 
-  // Verlauf nach Serie zusammenfassen: pro Serie nur die zuletzt gesehene Folge
-  // (Liste ist bereits nach Datum absteigend → die erste ist die neueste).
-  // Filme bleiben einzeln. Verhindert "10× dieselbe Serie" beim Binge-Watching.
+  // Collapse history by series: only the most recently watched episode per series
+  // (the list is already sorted by date descending → the first is the newest).
+  // Movies stay individual. Prevents "10× the same series" while binge-watching.
   function dedupeHistory(items) {
     const seenSeries = new Set();
     const out = [];
@@ -392,8 +392,8 @@
       if (it.Type === 'Episode' && it.SeriesId) {
         if (seenSeries.has(it.SeriesId)) continue;
         seenSeries.add(it.SeriesId);
-        // Verlauf: die Serie als EIN Eintrag zeigen (nicht die einzelne Folge). "Weiterschauen"
-        // deckt die konkrete Folge schon ab; hier zählt nur, welche Serie zuletzt lief.
+        // History: show the series as ONE entry (not the individual episode). "Continue Watching"
+        // already covers the specific episode; here only which series ran last matters.
         entry = {
           Id: it.SeriesId,
           Name: it.SeriesName,
@@ -409,7 +409,7 @@
     return out;
   }
 
-  // Verlauf-Karten einheitlich Hochkant: Folgen nutzen das Serien-Poster
+  // History cards uniformly portrait: episodes use the series poster
   function getHistoryImageUrl(item) {
     if (item.Type === 'Episode' && item.SeriesId && item.SeriesPrimaryImageTag)
       return `${session.serverUrl}/Items/${item.SeriesId}/Images/Primary?tag=${item.SeriesPrimaryImageTag}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
@@ -420,8 +420,8 @@
 
   function getItemImageUrl(item, format = 'portrait') {
     if (format === 'landscape') {
-      // Wie Jellyfin (preferThumb): Querformat-Artwork bevorzugen — eigenes Thumb, sonst
-      // Serien-/Eltern-Thumb, dann Backdrop (Folge → Serie), zuletzt der Folgen-Still.
+      // Like Jellyfin (preferThumb): prefer landscape artwork — own thumb, otherwise
+      // series/parent thumb, then backdrop (episode → series), lastly the episode still.
       if (item.ImageTags?.Thumb)
         return `${session.serverUrl}/Items/${item.Id}/Images/Thumb?tag=${item.ImageTags.Thumb}&maxWidth=600&quality=80&format=webp`;
       if (item.ParentThumbItemId && item.ParentThumbImageTag)
@@ -445,7 +445,7 @@
     return (item.Type === 'Episode' && item.SeriesName) ? item.SeriesName : item.Name;
   }
 
-  // Restzeit in Minuten für "Weiterschauen"
+  // Remaining time in minutes for "Continue Watching"
   function getRemainingMinutes(item) {
     if (!item.RunTimeTicks || !item.UserData?.PlaybackPositionTicks) return null;
     const remTicks = item.RunTimeTicks - item.UserData.PlaybackPositionTicks;
@@ -453,15 +453,15 @@
     return mins > 0 ? mins : null;
   }
 
-  // Hero-Backdrop in hoher Auflösung
+  // Hero backdrop in high resolution
   function getHeroBackdrop(item) {
     if (item?.BackdropImageTags?.length > 0)
       return `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=1920&quality=85&format=webp`;
     return null;
   }
 
-  // Logo-Bild (transparenter Titel-Schriftzug) — falls vorhanden, statt Text-Titel.
-  // Wirkt hochwertiger; ein zusätzliches Bild, kein Mehraufwand bei den Daten.
+  // Logo image (transparent title lettering) — if present, instead of the text title.
+  // Looks more premium; one extra image, no extra effort on the data side.
   function getHeroLogo(item) {
     if (item.ImageTags?.Logo)
       return `${session.serverUrl}/Items/${item.Id}/Images/Logo?tag=${item.ImageTags.Logo}&maxHeight=130&quality=90&format=webp`;
@@ -469,9 +469,9 @@
   }</script>
 
 <div class="relative">
-  <!-- Dashboard-Backdrop: Backdrop des fokussierten Titels, an der Viewport-Oberkante fixiert
-       (sticky, nicht absolute — das Dashboard scrollt im App-Container). -mb-[100vh] hebt die
-       Eigenhöhe wieder auf, sodass der Inhalt darüber liegt statt darunter zu rutschen. -->
+  <!-- Dashboard backdrop: backdrop of the focused title, pinned to the top of the viewport
+       (sticky, not absolute — the dashboard scrolls in the App container). -mb-[100vh] cancels its
+       own height again, so the content sits above it instead of sliding underneath. -->
   {#if dashboardBackdrop && previewBackdrop}
     <div {@attach heroScrollFade} style="opacity:{bgOpacity}" class="sticky top-0 h-screen w-full -mb-[100vh] z-0 pointer-events-none overflow-hidden">
       {#key previewBackdrop}
@@ -483,7 +483,7 @@
   {/if}
   <div class="relative z-10 px-10 pt-16 pb-20 flex flex-col gap-12">
 
-  <!-- Wiederverwendbare Card-Snippets (statt 8 fast identischer Blöcke) -->
+  <!-- Reusable card snippets (instead of 8 nearly identical blocks) -->
   {#snippet landscapeCard(item)}
     {@const img = getItemImageUrl(item, 'landscape')}
     {@const prog = itemProgress(item)}
@@ -579,8 +579,8 @@
     </button>
   {/snippet}
 
-  <!-- Hero-Skelett: reserviert Banner-Höhe + deutet Titel/Text/Button an. EIN Snippet für beide
-       Ladephasen (Erst-Skelett UND heroLoading), damit ab dem ersten Paint nichts nachrückt. -->
+  <!-- Hero skeleton: reserves the banner height + hints at the title/text/button. ONE snippet for both
+       loading phases (initial skeleton AND heroLoading) so nothing shifts up from the first paint. -->
   {#snippet heroSkeleton()}
     <div class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gradient-to-br from-gray-800/40 via-gray-900/70 to-gray-900">
       <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/40 to-transparent"></div>
@@ -596,8 +596,8 @@
 
 
   {#if isLoading}
-    <!-- Skeleton-Loader — spiegelt den echten Aufbau: erst Hero-Höhe (wenn aktiv), dann Reihen,
-         damit beim Fertigladen nichts nachspringt. -->
+    <!-- Skeleton loader — mirrors the real layout: first the hero height (when active), then rows,
+         so nothing jumps when loading finishes. -->
     {#if showHero}{@render heroSkeleton()}{/if}
     {#each [1, 2, 3] as _}
       <div>
@@ -615,8 +615,8 @@
     <!-- HERO-BANNER — rotierendes Featured-Item -->
     {#if showHero && heroCurrent}
       <div transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gray-900">
-        <!-- Vollflächiger Backdrop (Netflix-Stil): Crossfade — das VORHERIGE Bild bleibt als Unterlage
-             stehen, das neue blendet obendrauf ein (kein Dip-to-Black mehr). Blurhash → scharf. -->
+        <!-- Full-bleed backdrop (Netflix style): crossfade — the PREVIOUS image stays as a base,
+             the new one fades in on top (no more dip-to-black). Blurhash → sharp. -->
         {#if prevHeroIndex >= 0 && prevHeroIndex !== heroIndex && heroItems[prevHeroIndex] && getHeroBackdrop(heroItems[prevHeroIndex])}
           <img src={getHeroBackdrop(heroItems[prevHeroIndex])} alt="" aria-hidden="true" decoding="async"
             class="absolute inset-0 w-full h-full object-cover object-center" />
@@ -627,7 +627,7 @@
               class="absolute inset-0 w-full h-full object-cover object-center hero-fade" />
           {/if}
         {/key}
-        <!-- Verläufe: links für Textlesbarkeit, unten für nahtlosen Übergang in die Reihen darunter -->
+        <!-- Gradients: left for text legibility, bottom for a seamless transition into the rows below -->
         <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/50 to-transparent"></div>
         <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/50 to-transparent"></div>
 
@@ -661,7 +661,7 @@
               <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
               {i18n.t.play}
             </button>
-            <!-- Punkt-Indikatoren — nur wenn auch rotiert wird (bei reduzierter Bewegung: statischer Hero ohne Punkte) -->
+            <!-- Dot indicators — only when it also rotates (with reduced motion: a static hero without dots) -->
             {#if !reduceAnimations && heroItems.length > 1}
               <div class="flex gap-2 ml-2">
                 {#each heroItems as h, i (h.Id)}
@@ -676,7 +676,7 @@
       {@render heroSkeleton()}
     {/if}
 
-    <!-- MEDIATHEKEN -->
+    <!-- LIBRARIES -->
     {#if showLibraries && libraries.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-gray-400 mb-4 px-2">{i18n.t.myMedia}</h2>
@@ -701,7 +701,7 @@
       </div>
     {/if}
 
-    <!-- WEITERSCHAUEN -->
+    <!-- CONTINUE WATCHING -->
     {#if resumeRow.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.continueWatchingRow}</h2>
@@ -713,7 +713,7 @@
       </div>
     {/if}
 
-    <!-- ALS NÄCHSTES -->
+    <!-- UP NEXT -->
     {#if showNextUp && nextUp.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.nextUp}</h2>
@@ -725,7 +725,7 @@
       </div>
     {/if}
 
-    <!-- ZULETZT GESEHEN (Verlauf) -->
+    <!-- RECENTLY WATCHED (history) -->
     {#if showHistory && recentlyWatched.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.recentlyWatched}</h2>
@@ -737,7 +737,7 @@
       </div>
     {/if}
 
-    <!-- GEMEINSAME VORSCHLÄGE ("Für euch beide") — nur bei eingerichtetem gemeinsamen Profil -->
+    <!-- SHARED SUGGESTIONS ("For you both") — only with a shared profile set up -->
     {#if showSharedSuggestions && sharedSuggestions.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.sharedSuggestions}</h2>
@@ -749,7 +749,7 @@
       </div>
     {/if}
 
-    <!-- EMPFEHLUNGEN: "Weil du X gesehen hast" — personalisiert, daher weit oben -->
+    <!-- RECOMMENDATIONS: "Because you watched X" — personalized, hence near the top -->
     {#each (showRecommendations ? recommendations.slice(0, recommendationRows) : []) as rec}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
@@ -761,7 +761,7 @@
       </div>
     {/each}
 
-    <!-- ZULETZT HINZUGEFÜGTE FILME -->
+    <!-- RECENTLY ADDED MOVIES -->
     {#if showLatest && latestMovies.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestMovies}</h2>
@@ -773,7 +773,7 @@
       </div>
     {/if}
 
-    <!-- ZULETZT HINZUGEFÜGTE SERIEN -->
+    <!-- RECENTLY ADDED SERIES -->
     {#if showLatest && latestSeries.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestSeries}</h2>
@@ -785,7 +785,7 @@
       </div>
     {/if}
 
-    <!-- SAMMLUNGEN (BoxSets) — browse-orientiert, daher unten -->
+    <!-- COLLECTIONS (BoxSets) — browse-oriented, hence at the bottom -->
     {#if showCollections && collections.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.collections}</h2>
@@ -802,14 +802,14 @@
 </div>
 
 <style>
-  /* Backdrop-Vorschau: sanft einblenden statt hart umschalten ({#key} remountet das <img>) */
+  /* Backdrop preview: fade in gently instead of switching hard ({#key} remounts the <img>) */
   .preview-fade { animation: previewFadeIn 0.5s ease-out; }
   @keyframes previewFadeIn { from { opacity: 0; } to { opacity: 1; } }
-  /* Bewusst KEIN scroll-snap auf den Reihen: auf D-Pad-Geraeten scrollt ausschliesslich
-     der Fokus (scrollIntoView) — Proximity-Snapping zog dessen Position phasenabhaengig
-     zurueck und schnitt den skalierten Rahmen der Randkarte ab (webOS/B4). */
+  /* Deliberately NO scroll-snap on the rows: on D-pad devices only the focus scrolls
+     (scrollIntoView) — proximity snapping pulled its position back phase-dependently
+     and cut off the scaled border of the edge card (webOS/B4). */
 
-  /* Sanftes Einblenden beim Hero-Wechsel */
+  /* Gentle fade-in on the hero switch */
   .hero-fade { animation: heroFadeIn 1.2s ease; }
   @keyframes heroFadeIn { from { opacity: 0; } to { opacity: 1; } }
 </style>

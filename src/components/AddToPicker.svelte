@@ -1,7 +1,7 @@
 <script>
-  // Gemeinsamer Dialog: Titel zu einer Sammlung oder Wiedergabeliste hinzufügen.
-  // Wird von Details und Player verwendet. Steuerung über die Prop `mode`
-  // (null = geschlossen). Schließen meldet sich per 'close'-Event beim Eltern.
+  // Shared dialog: add a title to a collection or playlist.
+  // Used by Details and Player. Controlled via the `mode` prop
+  // (null = closed). Closing reports back to the parent via a 'close' event.
   import { i18n } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, dlog, uiFade, dropTrapOnOutro } from '../utils.js';
   import { session } from '../session.svelte.js';
@@ -9,20 +9,20 @@
 
   let { mode = null, item = null, selectedUser, getAuthHeaders, onCreated, onClose } = $props();
 
-  let items     = $state([]);              // vorhandene Sammlungen/Wiedergabelisten
+  let items     = $state([]);              // existing collections/playlists
   let loading   = $state(false);
   let newName   = $state('');
   let busy      = $state(false);
   let msg       = $state('');
-  let msgError  = $state(false);       // true → Meldung als Fehler (rot) darstellen, sonst Erfolg (grün)
-  let alreadyIn = new SvelteSet();         // reaktives Set: .add()/.clear() lösen Updates aus
-  let childrenOf = $state({});             // Ziel-ID → enthaltene Titel (Deep Reactivity)
+  let msgError  = $state(false);       // true → render the message as an error (red), otherwise success (green)
+  let alreadyIn = new SvelteSet();         // reactive set: .add()/.clear() trigger updates
+  let childrenOf = $state({});             // target ID → contained titles (deep reactivity)
 
-  // Bei jedem Öffnen frisch laden (Eltern setzt mode von null auf einen Wert)
+  // Load fresh on every open (the parent sets mode from null to a value)
   $effect(() => { if (mode) loadList(mode); });
 
-  // Stale-Guard (Muster wie in Suche/Details): Schnelles Schließen + Wiederöffnen des Dialogs
-  // kann zwei loadList-Läufe überlappen — nur der jüngste darf Liste/Spinner schreiben.
+  // Stale guard (pattern like in Search/Details): quickly closing + reopening the dialog
+  // can overlap two loadList runs — only the most recent may write the list/spinner.
   let loadListToken = 0;
 
   async function loadList(m) {
@@ -37,7 +37,7 @@
       if (res.ok) { const d = await res.json(); if (myToken !== loadListToken) return; items = d.Items || []; }
     } catch { }
     if (myToken !== loadListToken) return;
-    // Inhalte jedes Ziels holen → Mitgliedschaft (keine Duplikate) + Vorschau, was drin ist
+    // Fetch the contents of each target → membership (no duplicates) + a preview of what's inside
     await Promise.all(items.map(async (target) => {
       try {
         const url = m === 'collection'
@@ -57,7 +57,7 @@
   function close() { onClose?.(); }
 
   async function addTo(target) {
-    if (!item || busy || alreadyIn.has(target.Id)) return;   // keine Duplikate
+    if (!item || busy || alreadyIn.has(target.Id)) return;   // no duplicates
     busy = true;
     const url = mode === 'collection'
       ? `${session.serverUrl}/Collections/${target.Id}/Items?Ids=${item.Id}`
@@ -95,7 +95,7 @@
           childrenOf[created.Id] = [{ Id: item.Id, Name: item.Name }];
         }
         newName = '';
-        onCreated?.();   // Eltern können Mediatheken/Sidebar auffrischen
+        onCreated?.();   // the parent can refresh libraries/sidebar
       } else {
         console.warn('[OcenFin] create failed', mode, res.status, await res.text().catch(() => ''));
         msg = (mode === 'collection' && res.status === 403) ? i18n.t.collectionPermissionDenied : i18n.t.actionFailed; msgError = true;
@@ -124,7 +124,7 @@
           {msgError ? 'bg-red-600/20 border-red-600/40 text-red-300' : 'bg-green-600/20 border-green-600/40 text-green-300'}">{msg}</div>
       {/if}
 
-      <!-- Neu erstellen -->
+      <!-- Create new -->
       <div class="flex gap-2">
         <input bind:value={newName} placeholder={i18n.t.createNew} maxlength="100"
           class="flex-1 bg-gray-900 text-white text-lg px-4 py-3 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white placeholder-gray-500"/>
@@ -134,7 +134,7 @@
         </button>
       </div>
 
-      <!-- Vorhandene -->
+      <!-- Existing -->
       {#if loading}
         <div class="text-gray-400 py-4 text-center">…</div>
       {:else if items.length}

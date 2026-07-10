@@ -1,4 +1,4 @@
-// English — Referenzsprache (vollständige Key-Liste). Andere Sprachen fallen pro Key hierauf zurück.
+// English — reference language (complete key list). Other languages fall back to this per key.
 export default {
     // App / Server
     title: "OcenFin",
@@ -380,7 +380,7 @@ export default {
     logQrHint: "Scan with your phone to transfer the latest lines (e.g. by email).",
     logBackToText: "Back to text",
 
-    // Untertitel-Styling (nur Text)
+    // Subtitle styling (text only)
     subtitleColor: "Color",
     subtitleEdge: "Edge",
     subtitleBackground: "Background",
@@ -397,14 +397,14 @@ export default {
     bgSemi: "Semi",
     bgSolid: "Solid",
 
-    // Teilen
+    // Share
     share: "Share",
     shareHint: "Scan with your phone to look up or share the title.",
 
-    // Untertitel-Versatz
+    // Subtitle offset
     subtitleOffset: "Offset",
 
-    // Kennwort anzeigen/verbergen
+    // Show/hide password
     showPassword: "Show password",
     hidePassword: "Hide password",
 

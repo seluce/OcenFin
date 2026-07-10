@@ -5,9 +5,9 @@
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady } from '../syncplay.js';
   import { PgsRenderer, VobSubRenderer, initWasm } from 'libbitsub';
-  // ASS/SSA mit Original-Layout via assjs — schlanker DOM/CSS-Renderer (kein WASM/Worker). Synchronisiert
-  // sich ans <video> (nur Zeit + Maße, KEINE Pixel → kein cross-origin-Taint, kein crossorigin am <video>).
-  // Font-Fallback macht der Browser. Deckt fast alle ASS-Tags ab (Rest: VTT-Fallback über den Schalter).
+  // ASS/SSA with original layout via assjs — a lean DOM/CSS renderer (no WASM/worker). Syncs
+  // to the <video> (only time + dimensions, NO pixels → no cross-origin taint, no crossorigin on the <video>).
+  // The browser handles the font fallback. Covers almost all ASS tags (rest: VTT fallback via the toggle).
   import ASS from 'assjs';
   import { onMount, onDestroy, tick } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
@@ -16,39 +16,39 @@
     item,
     selectedAudioIndex = $bindable(),
     selectedSubtitleIndex = $bindable(),
-    mediaSourceId = null,   // gewählte Version (FullHD/4K); null = Server-Standard
+    mediaSourceId = null,   // chosen version (FullHD/4K); null = server default
     selectedUser,
     playbackPrefs = { autoSkipIntro: false, autoSkipCredits: false },
-    use24h = true,   // Uhrzeit-Format (aus Einstellung) für die Uhr im Player
-    showClock = true, // Uhr im Player anzeigen (folgt der Anzeige-Einstellung)
-    showChapters = false, // Kapitelmarken auf der Leiste (Opt-in)
-    seekStep = 30,        // Sprungweite der Vor-/Zurück-Buttons in Sekunden (pro Profil)
-    autoPlayStreak = 0,   // "Schaust du noch?": Folgen ohne Interaktion auto-gestartet (von App)
-    syncPlayOpen = false, // SyncPlay-Modal offen (von App) → Wiedergabe solange pausieren …
-    inSyncGroup  = false, // … außer in aktiver Gruppe: dann NICHT lokal pausieren
-    syncCommand = null,   // letztes empfangenes SyncPlayCommand (von App)
-    syncQueue   = null,   // aktueller Gruppen-Queue-Stand (von App)
-    queueActive = false,  // "Alle abspielen"-Queue aktiv (von App) → Vor/Zurück folgen der Queue
-    queueNext = null,     // nächstes Queue-Element (null = Queue-Ende → normales Wiedergabe-Ende)
-    queuePrev = null,     // vorheriges Queue-Element
-    remoteCommand = null, // Admin-Fernsteuerung (Dashboard) (von App)
-    serverVobSub = false, // Server liefert VobSub/DVD extern (.mks, Jellyfin 12.0+)?
-    onExit, onPrev, onNext, onSyncplay, onLibChanged,   // Callback-Props (statt Events)
-    onPlayState,          // meldet App den Wiedergabe-Status (für den Screensaver: pausiert → erlaubt)
+    use24h = true,   // time format (from the setting) for the clock in the Player
+    showClock = true, // show the clock in the Player (follows the display setting)
+    showChapters = false, // chapter markers on the bar (opt-in)
+    seekStep = 30,        // jump distance of the forward/back buttons in seconds (per profile)
+    autoPlayStreak = 0,   // "still watching?": episodes auto-started without interaction (from App)
+    syncPlayOpen = false, // SyncPlay modal open (from App) → pause playback meanwhile …
+    inSyncGroup  = false, // … except in an active group: then do NOT pause locally
+    syncCommand = null,   // last received SyncPlayCommand (from App)
+    syncQueue   = null,   // current group queue state (from App)
+    queueActive = false,  // "play all" queue active (from App) → next/prev follow the queue
+    queueNext = null,     // next queue element (null = end of queue → normal end of playback)
+    queuePrev = null,     // previous queue element
+    remoteCommand = null, // admin remote control (dashboard) (from App)
+    serverVobSub = false, // does the server deliver VobSub/DVD externally (.mks, Jellyfin 12.0+)?
+    onExit, onPrev, onNext, onSyncplay, onLibChanged,   // callback props (instead of events)
+    onPlayState,          // reports the playback status to App (for the screensaver: paused → allowed)
   } = $props();
 
-  // Darf dieses Profil Sammlungen verwalten? (Policy.EnableCollectionManagement kommt mit dem Login-User.
-  //  Nur bei explizitem false ausblenden → älterer Server/fehlendes Feld: sichtbar + 403-Fallback.)
+  // May this profile manage collections? (Policy.EnableCollectionManagement comes with the login user.
+  //  Only hide on an explicit false → older server/missing field: visible + 403 fallback.)
   const canManageCollections = $derived(selectedUser?.Policy?.EnableCollectionManagement !== false);
 
   let videoElement;
   let playerContainer;
-  let settingsPanel = $state();       // bind für Auto-Fokus auf WebOS
-  let playPauseBtn;        // bind: damit ▼ von der Leiste direkt hierher springt
-  let seekBarEl;           // bind: damit Links/Rechts bei verborgenem HUD direkt hierher springt
+  let settingsPanel = $state();       // bind for auto-focus on webOS
+  let playPauseBtn;        // bind: so ▼ from the bar jumps directly here
+  let seekBarEl;           // bind: so Left/Right jumps directly here when the HUD is hidden
   let isPlaying  = $state(false);
-  // Wiedergabe-Status nach außen melden (App unterdrückt den Screensaver nur bei AKTIVER Wiedergabe);
-  // beim Unmount/Verlassen des Players sicher false melden, egal über welchen Weg ausgestiegen wird.
+  // Report the playback status outward (App suppresses the screensaver only during ACTIVE playback);
+  // on unmount/leaving the Player report false reliably, no matter which way you exit.
   $effect(() => {
     onPlayState?.(isPlaying);
     return () => onPlayState?.(false);
@@ -59,11 +59,11 @@
   // Scrubbing
   let isSeeking  = $state(false);
   let seekTime   = $state(0);
-  let seekCommitTimer = null;   // gebündeltes Spulen: erst nach kurzer Pause EINMAL springen
+  let seekCommitTimer = null;   // batched seeking: jump ONCE only after a short pause
   let displayTime = $derived(isSeeking ? seekTime : currentTime);
   let seekPct = $derived(duration > 0 ? (displayTime / duration) * 100 : 0);
 
-  // Rechte Zeit-Anzeige: tippbar, wechselt Gesamtdauer → Restzeit → Endzeit (dezent, kein neues Element)
+  // Right time display: tappable, cycles total duration → remaining → end time (subtle, no new element)
   let timeMode = $state('total');
   function cycleTimeMode() {
     timeMode = timeMode === 'total' ? 'remaining' : timeMode === 'remaining' ? 'end' : 'total';
@@ -79,7 +79,7 @@
     return formatTime(duration);
   });
 
-  // Uhrzeit (oben rechts, nur sichtbar wenn Steuerung eingeblendet — schont OLED)
+  // Clock (top right, only visible when the controls are shown — saves OLED)
   let clockNow = $state('');
   let clockTimer;
   function updateClock() {
@@ -88,15 +88,15 @@
   }
   $effect(() => { i18n.lang; use24h; updateClock(); });
 
-  // Ladeanimation + Fehlerzustand
+  // Loading animation + error state
   let isBuffering = $state(true);
-  let playbackError = $state(false);     // zeigt Fehlermeldung statt endlosem Spinner
+  let playbackError = $state(false);     // shows an error message instead of an endless spinner
   let bufferWatchdog = null;
 
-  // Wenn die Wiedergabe WIRKLICH hängt (Stall ohne 'error'-Event), Fehler anzeigen.
-  // Wichtig: nur wenn die Zeit seit dem Start des Watchdogs NICHT vorangekommen ist —
-  // sonst würde ein kurzer Puffer-Moment mitten in laufender Wiedergabe fälschlich
-  // nach 30 s einen Fehler auslösen.
+  // If playback REALLY hangs (a stall without an 'error' event), show an error.
+  // Important: only if the time has NOT progressed since the watchdog started —
+  // otherwise a brief buffering moment in the middle of running playback would falsely
+  // trigger an error after 30 s.
   let watchdogAnchor = 0;
   function armBufferWatchdog() {
     clearTimeout(bufferWatchdog);
@@ -104,9 +104,9 @@
     bufferWatchdog = setTimeout(() => {
       const progressed = (videoElement?.currentTime ?? 0) > watchdogAnchor + 0.5;
       if (videoElement?.paused) {
-        isBuffering = false;          // pausiert ist KEIN Fehler (z.B. Nutzer-Pause am Anfang / Gruppen-Pause)
+        isBuffering = false;          // paused is NOT an error (e.g. user pause at the start / group pause)
       } else if (progressed) {
-        isBuffering = false;          // läuft doch → kein Fehler
+        isBuffering = false;          // it's playing after all → no error
       } else if (isBuffering) {
         playbackError = true; isBuffering = false;
       }
@@ -115,7 +115,7 @@
   }
   function clearBufferWatchdog() { clearTimeout(bufferWatchdog); bufferWatchdog = null; }
 
-  // Mini-Aussetzer (< ~300 ms) sollen den Spinner nicht aufblitzen lassen → verzögert einblenden.
+  // Micro-dropouts (< ~300 ms) shouldn't flash the spinner → show it delayed.
   let spinnerTimer = null;
   function clearSpinner() { if (spinnerTimer) { clearTimeout(spinnerTimer); spinnerTimer = null; } }
 
@@ -126,7 +126,7 @@
     clearBufferWatchdog();
   }
   function onWaiting() {             // waiting / stalled
-    if (videoElement?.paused) return;   // pausiert ist KEIN Puffern → kein Spinner
+    if (videoElement?.paused) return;   // paused is NOT buffering → no spinner
     armBufferWatchdog();
     if (isBuffering || spinnerTimer) return;
     spinnerTimer = setTimeout(() => {
@@ -134,23 +134,23 @@
       if (!videoElement?.paused) isBuffering = true;
     }, 300);
   }
-  // Diagnose-Logger für <video>-Lebenszyklus-Events
+  // Diagnostic logger for <video> lifecycle events
   function vlog(ev, extra) {
     dlog(`[OcenFin] video:${ev}`, { method: playMethod, t: Math.round(videoElement?.currentTime || 0), ...(extra || {}) });
   }
-  // Läuft die Zeit, läuft die Wiedergabe → Pufferzustand sicher aufheben.
+  // If the time is running, playback is running → clear the buffering state reliably.
   function onProgressTick() {
     clearSpinner();
     if (isBuffering) { isBuffering = false; clearBufferWatchdog(); }
   }
   function onVideoError() {
-    // MediaError-Code hilft bei der Diagnose: 3 = DECODE (Codec/Decoder),
-    // 4 = SRC_NOT_SUPPORTED (Format/Container), 2 = NETWORK.
+    // The MediaError code helps with diagnosis: 3 = DECODE (codec/decoder),
+    // 4 = SRC_NOT_SUPPORTED (format/container), 2 = NETWORK.
     const err = videoElement?.error;
     console.error('[OcenFin] <video> error:', { code: err?.code, message: err?.message, playMethod });
-    // Direct Play am Gerät gescheitert (z.B. MKV-Demux/Audio nicht abspielbar) →
-    // EINMALIG auf Transcode zurückfallen, statt sofort die Fehlerseite zu zeigen.
-    // Genau dieses "erst Direct Play versuchen, dann transkodieren" machen LiteFin/Breezefin.
+    // Direct Play failed on the device (e.g. MKV demux/audio not playable) →
+    // fall back to transcode ONCE instead of showing the error page immediately.
+    // Exactly this "try Direct Play first, then transcode" is what LiteFin/Breezefin do.
     if (playMethod !== 'Transcode' && !triedTranscodeFallback) {
       triedTranscodeFallback = true;
       console.warn('[OcenFin] Direct Play failed → forcing transcode fallback');
@@ -162,12 +162,12 @@
     clearBufferWatchdog();
     isBuffering = false;
     playbackError = true;
-    flushProgress();          // Position auch bei Wiedergabefehler sichern
+    flushProgress();          // also save the position on a playback error
   }
   function retryPlayback() {
     playbackError = false;
     isBuffering = true;
-    resumeApplied = false;          // beim Neuversuch ggf. wieder an die Position springen
+    resumeApplied = false;          // on retry, jump back to the position if needed
     if (videoElement) { videoElement.load(); videoElement.play(); }
     armBufferWatchdog();
   }
@@ -175,19 +175,19 @@
   // UI
   let showControls  = $state(true);
   let showSettings  = $state(false);
-  let controlOpener = null;        // Button, der Panel/Picker geöffnet hat → Fokus kehrt dorthin zurück
-  let pickerMode    = $state(null);        // null | 'collection' | 'playlist' – steuert <AddToPicker>
+  let controlOpener = null;        // button that opened the panel/picker → focus returns there
+  let pickerMode    = $state(null);        // null | 'collection' | 'playlist' – controls <AddToPicker>
   let wasPlayingBeforePicker = false;
-  // Beim Öffnen des "Hinzufügen"-Dialogs pausieren (läuft sonst im Hintergrund weiter).
+  // Pause when opening the "add" dialog (otherwise it keeps playing in the background).
   function openPicker(mode) {
     const el = document.activeElement;
-    if (el instanceof HTMLElement) controlOpener = el;   // Fokus später dorthin zurück
+    if (el instanceof HTMLElement) controlOpener = el;   // focus back there later
     wasPlayingBeforePicker = isPlaying;
     videoElement?.pause();
     pickerMode = mode;
   }
-  // SyncPlay-Modal offen → wie beim Picker pausieren — aber NICHT im aktiven Gruppen-Sync
-  // (dort würde ein lokales Pausieren den Gleichlauf stören). Resümee beim Schließen.
+  // SyncPlay modal open → pause like with the picker — but NOT during an active group sync
+  // (there a local pause would disturb the synchronization). Resume on close.
   let wasPlayingBeforeSync = false;
   let _prevSyncOpen = false;
   $effect(() => { if (syncPlayOpen !== _prevSyncOpen) { onSyncPlayToggle(syncPlayOpen); _prevSyncOpen = syncPlayOpen; } });
@@ -201,35 +201,35 @@
         videoElement?.play().catch(() => {});
         wasPlayingBeforeSync = false;
       }
-      // Fokus zurück in den Player + HUD zeigen. Ohne das bleibt der Fokus am
-      // geschlossenen SyncPlay-Dialog hängen und der Player nimmt keine Eingaben mehr an.
+      // Focus back into the Player + show the HUD. Without this the focus stays stuck on the
+      // closed SyncPlay dialog and the Player no longer accepts inputs.
       resetControlsTimeout();
       tick().then(() => playerContainer?.focus());
     }
   }
 
-  // ── SyncPlay-Engine (Phase 2a): lokale Aktionen senden + empfangene Kommandos anwenden ──
-  let syncReady        = false;   // erst nach echtem Wiedergabe-Start senden (verhindert Senden beim Resume-Seek/Autostart)
-  let syncQueueSet     = false;   // SetNewQueue für dieses Item bereits gesendet/bestätigt?
-  let syncSuppressUntil = 0;      // Ausgehende Sendungen kurz unterdrücken, während ein empfangenes Kommando wirkt
-  let _appliedSyncSeq  = 0;       // zuletzt angewendetes Kommando (Dedupe)
-  let _expectSeekEcho  = false;   // nächstes 'seeked' stammt von einem empfangenen Kommando → nicht zurücksenden (robust auch bei langsamem Seek)
-  let _groupWantsPaused = false;  // Gruppe hat zuletzt Pause befohlen → ungewolltes Auto-Play (Transcode-Neustart) zurücknehmen
-  let _userPlayIntent  = 0;       // Zeitstempel einer echten Nutzer-Play-Aktion (Backstop)
+  // ── SyncPlay engine (phase 2a): send local actions + apply received commands ──
+  let syncReady        = false;   // send only after a real playback start (prevents sending on the resume seek/autostart)
+  let syncQueueSet     = false;   // SetNewQueue for this item already sent/confirmed?
+  let syncSuppressUntil = 0;      // briefly suppress outgoing sends while a received command takes effect
+  let _appliedSyncSeq  = 0;       // last applied command (dedupe)
+  let _expectSeekEcho  = false;   // the next 'seeked' comes from a received command → don't send it back (robust even on a slow seek)
+  let _groupWantsPaused = false;  // the group last commanded pause → undo unwanted auto-play (transcode restart)
+  let _userPlayIntent  = 0;       // timestamp of a real user play action (backstop)
   function posTicks() { return Math.round((videoElement?.currentTime || 0) * 10000000); }
 
-  // Lokales Steuer-Ereignis an die Gruppe senden (außer es stammt gerade von einem empfangenen Kommando).
+  // Send a local control event to the group (unless it currently originates from a received command).
   function syncEmit(action) {
     if (!inSyncGroup || !syncReady) return;
     if (Date.now() < syncSuppressUntil) return;
     dlog('[SyncPlay] →', action, posTicks());
     sendSyncCommand(session.serverUrl, session.token, action, posTicks());
   }
-  // Erster Start in einer Gruppe legt die Queue fest (Server spielt für alle los); spätere Plays = Unpause.
+  // The first start in a group sets the queue (the server plays for everyone); later plays = Unpause.
   async function onLocalPlay() {
     if (!inSyncGroup) return;
-    // Transcode-Streams starten nach (Neu-)Laden ungewollt automatisch. Wenn die Gruppe pausiert ist
-    // und kein echter Nutzer-Play vorliegt → wieder anhalten, nicht an die Gruppe melden.
+    // Transcode streams start automatically (and unwanted) after (re)loading. If the group is paused
+    // and there's no real user play → pause again, don't report to the group.
     if (_groupWantsPaused && (Date.now() - _userPlayIntent) > 1500) {
       dlog('[SyncPlay] auto-play suppressed (group paused)');
       syncSuppressUntil = Date.now() + 600;
@@ -239,18 +239,18 @@
     _groupWantsPaused = false;
     if (syncQueueSet) { syncEmit('Unpause'); return; }
     syncQueueSet = true;
-    if (syncQueue && syncQueue.itemId === item.Id) { syncReady = true; return; }  // Gruppe spielt dieses Item bereits
+    if (syncQueue && syncQueue.itemId === item.Id) { syncReady = true; return; }  // the group already plays this item
     dlog('[SyncPlay] → SetNewQueue', item.Id, posTicks());
     await setSyncQueue(session.serverUrl, session.token, item.Id, posTicks());
     syncReady = true;
   }
   function onLocalPause() { syncEmit('Pause'); }
   function onLocalSeeked() {
-    if (_expectSeekEcho) { _expectSeekEcho = false; return; }   // Echo eines empfangenen Seeks → nicht zurücksenden
+    if (_expectSeekEcho) { _expectSeekEcho = false; return; }   // echo of a received seek → don't send it back
     syncEmit('Seek');
   }
 
-  // Puffer-Handshake: dem Server melden, ob wir bereit sind. Buffering → Gruppe wartet; Ready → Freigabe.
+  // Buffer handshake: tell the server whether we're ready. Buffering → the group waits; Ready → release.
   let _syncBuffering = false;
   let _syncReadySent = false;
   function syncReportBuffering() {
@@ -261,13 +261,13 @@
   }
   function syncReportReady() {
     if (!inSyncGroup || !syncQueue?.playlistItemId) return;
-    if (!_syncBuffering && _syncReadySent) return;   // nichts Neues seit dem letzten Ready
+    if (!_syncBuffering && _syncReadySent) return;   // nothing new since the last Ready
     _syncBuffering = false; _syncReadySent = true;
     dlog('[SyncPlay] → Ready', posTicks());
     sendSyncReady(session.serverUrl, session.token, posTicks(), true, syncQueue.playlistItemId);
   }
 
-  // Empfangenes Gruppen-Kommando anwenden (mit grobem Zeitbezug über "When"; Feinabgleich = Phase 2b).
+  // Apply a received group command (with a rough time reference via "When"; fine sync = phase 2b).
   function applySyncCommand(cmd) {
     if (!cmd || cmd._seq === _appliedSyncSeq || !videoElement) return;
     _appliedSyncSeq = cmd._seq;
@@ -275,7 +275,7 @@
     const pos   = (cmd.PositionTicks || 0) / 10000000;
     const when  = cmd.When ? new Date(cmd.When).getTime() : Date.now();
     const delay = Math.max(0, when - Date.now());
-    syncSuppressUntil = Date.now() + delay + 600;   // Backstop für Play/Pause-Folge-Events
+    syncSuppressUntil = Date.now() + delay + 600;   // backstop for play/pause follow-up events
     dlog('[SyncPlay] ← apply', command, 'pos', Math.round(pos), 'in', delay, 'ms');
     if (command === 'Seek') {
       _expectSeekEcho = true; videoElement.currentTime = pos; currentTime = pos;
@@ -294,8 +294,8 @@
   }
   $effect(() => { if (syncCommand && syncCommand._seq !== _appliedSyncSeq) applySyncCommand(syncCommand); });
 
-  // ---- Admin-Fernsteuerung (Jellyfin-Dashboard) -------------------------------------------
-  // Initial auf den aktuellen Stand setzen → vor dem Öffnen gesendete Befehle nicht nachträglich anwenden.
+  // ---- Admin remote control (Jellyfin dashboard) ------------------------------------------
+  // Initialize to the current state → don't retroactively apply commands sent before opening.
   let _appliedRemoteSeq = remoteCommand?._seq ?? 0;
   $effect(() => { if (remoteCommand && remoteCommand._seq !== _appliedRemoteSeq) applyRemoteCommand(remoteCommand); });
   function applyRemoteCommand(c) {
@@ -313,32 +313,32 @@
     }
     else if (cmd === 'nexttrack') { if (nextEpisode) goToNextEpisode(true); }
     else if (cmd === 'previoustrack') { if (prevEpisode) onPrev?.(prevEpisode); }
-    // Lautstärke/Stummschaltung (GeneralCommand)
+    // Volume/mute (GeneralCommand)
     else if (cmd === 'setvolume' && videoElement) { const v = parseInt(c.args?.Volume, 10); if (!isNaN(v)) videoElement.volume = Math.max(0, Math.min(1, v / 100)); }
     else if (cmd === 'volumeup'   && videoElement) videoElement.volume = Math.min(1, videoElement.volume + 0.1);
     else if (cmd === 'volumedown' && videoElement) videoElement.volume = Math.max(0, videoElement.volume - 0.1);
     else if ((cmd === 'mute' || cmd === 'unmute' || cmd === 'togglemute') && videoElement)
       videoElement.muted = cmd === 'mute' ? true : cmd === 'unmute' ? false : !videoElement.muted;
   }
-  let settingsTab   = $state('audio');     // 'audio' | 'subtitle' — welcher Bereich im Panel gezeigt wird
+  let settingsTab   = $state('audio');     // 'audio' | 'subtitle' — which section is shown in the panel
   let controlsTimeout;
   let isFavorite = $state(item.UserData?.IsFavorite || false);
 
   // Playback
   let progressTimer;
   let startTicks    = item.UserData?.PlaybackPositionTicks || 0;
-  let resumeApplied = false;   // Fortsetzen-Sprung nur einmal ausführen
-  let playSessionId = crypto.randomUUID();  // wird durch PlaybackInfo ersetzt
+  let resumeApplied = false;   // execute the resume jump only once
+  let playSessionId = crypto.randomUUID();  // replaced by PlaybackInfo
   let playMethod    = $state('DirectPlay');         // DirectPlay | DirectStream | Transcode
-  let triedTranscodeFallback = false;       // einmaliger Auto-Fallback wenn Direct Play am Gerät scheitert
-  let hls           = null;                 // hls.js-Instanz (nur bei Transcode/HLS)
-  let maxBitrate    = 120000000;            // 120 Mbit/s (lokales Netz) — Grenze für Direct Play
-  // Beim Transkodieren (z. B. erzwungene ASS-Untertitel ins Bild brennen) ist die Quell-Bitrate
-  // oft zu hoch (HEVC-Remuxe ~100+ Mbit/s) → Echtzeit-Transcode stockt (fragLoadTimeOut/bufferStalled).
-  // Daher das Transcode-Ziel deckeln; Direct Play bleibt unbegrenzt (B4 dekodiert nativ).
-  const TRANSCODE_MAX_BITRATE = 20000000;   // 20 Mbit/s — hohe 1080p-Qualität, gut transkodierbar
+  let triedTranscodeFallback = false;       // one-time auto fallback when Direct Play fails on the device
+  let hls           = null;                 // hls.js instance (only for transcode/HLS)
+  let maxBitrate    = 120000000;            // 120 Mbit/s (local network) — limit for Direct Play
+  // When transcoding (e.g. burning forced ASS subtitles into the picture) the source bitrate
+  // is often too high (HEVC remuxes ~100+ Mbit/s) → real-time transcode stutters (fragLoadTimeOut/bufferStalled).
+  // So cap the transcode target; Direct Play stays unlimited (the B4 decodes natively).
+  const TRANSCODE_MAX_BITRATE = 20000000;   // 20 Mbit/s — high 1080p quality, transcodes well
 
-  // Nach 'loadedmetadata' an die Fortsetzen-Position springen (Datei ist dann seekbar).
+  // After 'loadedmetadata', jump to the resume position (the file is seekable then).
   function seekToResume() {
     duration = videoElement?.duration ?? 0;
     if (!resumeApplied && startTicks > 0 && videoElement) {
@@ -349,11 +349,11 @@
 
   // Streams
   let mediaStreams   = $state([]);
-  let currentMediaSource = null;   // aktuell laufende Quelle – für den Instant-Switch von Textuntertiteln
+  let currentMediaSource = null;   // currently running source – for the instant switch of text subtitles
   let audioStreams = $derived(mediaStreams.filter(s => s.Type === 'Audio'));
   let subtitleStreams = $derived(mediaStreams.filter(s => s.Type === 'Subtitle'));
 
-  // --- Wiedergabeinfo-Overlay (opt-in via playbackPrefs.showPlaybackInfo) ---------------------
+  // --- Playback info overlay (opt-in via playbackPrefs.showPlaybackInfo) ----------------------
   let showInfoOverlay = $state(false);
   let infoInterval    = null;
   let liveStats       = $state({ bufferAhead: 0, dropped: 0, total: 0, width: 0, height: 0 });
@@ -381,22 +381,22 @@
     else if (infoInterval) { clearInterval(infoInterval); infoInterval = null; }
   }
 
-  // --- Trickplay: Vorschaubilder beim Spulen (Jellyfin 10.9+) -------------------------------
-  // Jellyfin liefert Kachel-Sheets (z. B. 10×10 Thumbnails/Bild). Wir berechnen pro Zeit das
-  // richtige Sheet + die Position darin und schneiden es per background-position aus. Sheets
-  // bleiben im Browser-Cache → flüssiges Scrubben, nur an Sheet-Grenzen wird neu geladen.
+  // --- Trickplay: preview thumbnails while seeking (Jellyfin 10.9+) -------------------------
+  // Jellyfin delivers tile sheets (e.g. 10×10 thumbnails/image). Per time we compute the
+  // correct sheet + the position within it and crop it via background-position. Sheets
+  // stay in the browser cache → smooth scrubbing, only reloaded at sheet boundaries.
   let trickplayInfo = $state(null);   // { width, Width, Height, TileWidth, TileHeight, ThumbnailCount, Interval }
   let trickplayMsId = null;
   function parseTrickplay(data) {
     trickplayInfo = null; trickplayMsId = null;
     const tp = data?.Trickplay;
     if (!tp) return;
-    // mediaSourceId-Schlüssel: bevorzugt die laufende Quelle, sonst der erste Eintrag.
+    // mediaSourceId key: prefers the running source, otherwise the first entry.
     const srcId = data.MediaSources?.[0]?.Id;
     const msId  = (srcId && tp[srcId]) ? srcId : Object.keys(tp)[0];
     const byWidth = msId && tp[msId];
     if (!byWidth) return;
-    const w = Object.keys(byWidth).map(Number).filter(n => !isNaN(n)).sort((a, b) => b - a)[0]; // größte Breite
+    const w = Object.keys(byWidth).map(Number).filter(n => !isNaN(n)).sort((a, b) => b - a)[0]; // largest width
     if (!w || !byWidth[String(w)]) return;
     trickplayInfo = { width: w, ...byWidth[String(w)] };
     trickplayMsId = msId;
@@ -418,19 +418,19 @@
   }
 
   // ============================================================
-  // WIEDERGABE-AUFBAU — PlaybackInfo entscheidet Direct Play vs. Transcode
+  // PLAYBACK SETUP — PlaybackInfo decides Direct Play vs. transcode
   // ============================================================
 
-  // Holt die Server-Entscheidung und hängt die passende Quelle ans <video>.
-  // Bei Fehlern: Fallback auf die alte Direct-Play-Logik (Verhalten wie zuvor).
+  // Fetches the server's decision and attaches the matching source to the <video>.
+  // On errors: fall back to the old Direct Play logic (behavior as before).
   async function setupPlayback(audioIndex, subtitleIndex, forceTranscode = false) {
     if (hls) { try { hls.destroy(); } catch {} hls = null; }
-    if (!forceTranscode) triedTranscodeFallback = false;   // frischer Versuch → Fallback wieder erlauben
+    if (!forceTranscode) triedTranscodeFallback = false;   // fresh attempt → allow the fallback again
     try {
-      // Für die Direct-Play-Entscheidung brauchen wir die Tonspuren des Titels. Beim Sprung über
-      // "nächste Folge" trägt das Episodenobjekt (aus der leichten Folgenliste) KEINE MediaStreams →
-      // einmalig nachladen, sonst schlägt die Standard-Audio-Erkennung fehl und es wird fälschlich
-      // transkodiert (während Direktstart aus den Details direkt läuft).
+      // For the Direct Play decision we need the title's audio tracks. When jumping via
+      // "next episode" the episode object (from the lightweight episode list) carries NO MediaStreams →
+      // load them once, otherwise the default-audio detection fails and it falsely
+      // transcodes (while a direct start from the details plays fine).
       let titleStreams = (item?.MediaStreams?.length ? item.MediaStreams : mediaStreams) || [];
       if (!titleStreams.length && item?.Id) {
         try {
@@ -438,40 +438,40 @@
           if (r.ok) { const full = await r.json(); if (full?.MediaStreams?.length) titleStreams = full.MediaStreams; }
         } catch {}
       }
-      // Audio gilt nur dann als "explizit" (→ Transcode, damit der Server die GEWÄHLTE Spur ausgibt),
-      // wenn die Standardspur BEKANNT ist UND die gewählte davon abweicht. Ist die Standardspur
-      // unbekannt (keine Streams), wird NICHT transkodiert — Direct Play hat Vorrang.
+      // Audio counts as "explicit" (→ transcode, so the server outputs the CHOSEN track) only
+      // when the default track is KNOWN AND the chosen one differs from it. If the default track
+      // is unknown (no streams), it does NOT transcode — Direct Play takes precedence.
       const allStreams = titleStreams;
       const audioTracks = allStreams.filter(s => s.Type === 'Audio');
       const defaultAudioIndex = (audioTracks.find(s => s.IsDefault) || audioTracks[0])?.Index ?? -1;
       const explicitAudio = audioIndex !== -1 && defaultAudioIndex !== -1 && audioIndex !== defaultAudioIndex;
-      // Ein Untertitel erzwingt nur dann einen Transcode, wenn er GEBRANNT wird:
-      // Textuntertitel nur bei aktiviertem Einbrennen, Grafikuntertitel (PGS/VobSub) immer.
-      // Externe Textuntertitel (VTT-Overlay) brauchen KEINEN Transcode → Direct Play bleibt möglich,
-      // und der Untertitelwechsel kann weich (ohne Neuladen) erfolgen.
+      // A subtitle forces a transcode only when it is BURNED IN:
+      // text subtitles only with burn-in enabled, graphic subtitles (PGS/VobSub) always.
+      // External text subtitles (VTT overlay) need NO transcode → Direct Play stays possible,
+      // and the subtitle switch can happen softly (without reloading).
       const subStreams = allStreams;
       const subStream  = subtitleIndex !== -1 ? subStreams.find(s => s.Index === subtitleIndex && s.Type === 'Subtitle') : null;
       const subCodec    = (subStream?.Codec || '').toLowerCase();
       const isPgsSub    = ['pgssub', 'pgs'].includes(subCodec);
-      const isVobSub    = ['dvdsub', 'vobsub', 'sub'].includes(subCodec);          // DVD/VobSub → .mks ab 12.0
+      const isVobSub    = ['dvdsub', 'vobsub', 'sub'].includes(subCodec);          // DVD/VobSub → .mks from 12.0
       const isGraphicSub = isPgsSub || isVobSub || ['dvbsub'].includes(subCodec);
-      // libbitsub rendert clientseitig (wenn aktiviert): PGS immer, VobSub erst wenn der Server
-      // .mks liefert (Jellyfin 12.0+). Sonst muss der Grafik-Untertitel gebrannt werden.
+      // libbitsub renders client-side (when enabled): PGS always, VobSub only once the server
+      // delivers .mks (Jellyfin 12.0+). Otherwise the graphic subtitle has to be burned in.
       const graphicClientRender = clientGraphicRender && (isPgsSub || (isVobSub && serverVobSub));
       const subWillBurn = subtitleIndex !== -1 && (playbackPrefs.burnSubtitles || (isGraphicSub && !graphicClientRender));
 
       const enableDirectPlay = !explicitAudio && !subWillBurn && !forceTranscode;
-      // Bei explizitem Audiowechsel/gebranntem Untertitel: DirectStream AUS + Audio NEU kodieren → der
-      // Server gibt garantiert die GEWÄHLTE Spur aus, statt die Standardspur (deutsch) zu kopieren.
+      // On an explicit audio switch/burned-in subtitle: DirectStream OFF + re-encode audio → the
+      // server is guaranteed to output the CHOSEN track instead of copying the default (German) track.
       const enableDirectStream = !explicitAudio && !subWillBurn && !forceTranscode;
       const allowAudioStreamCopy = !explicitAudio;
       dlog('[OcenFin] setupPlayback →', { item: item?.Name, audioIndex, subtitleIndex, enableDirectPlay, enableDirectStream, allowAudioStreamCopy, forceTranscode });
-      // Direct Play: volle Bitrate; Transcode: deckeln, damit der Server in Echtzeit mitkommt.
+      // Direct Play: full bitrate; transcode: cap it so the server keeps up in real time.
       const requestBitrate = enableDirectPlay ? maxBitrate : Math.min(maxBitrate, TRANSCODE_MAX_BITRATE);
       const info = await getPlaybackInfoFast({
         serverUrl: session.serverUrl, userId: selectedUser.Id, token: session.token, itemId: item.Id,
         audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex,
-        maxBitrate: requestBitrate, startTicks: 0,   // Resume passiert client-seitig (seekToResume)
+        maxBitrate: requestBitrate, startTicks: 0,   // resume happens client-side (seekToResume)
         enableDirectPlay, enableDirectStream, allowAudioStreamCopy,
         burnSubtitles: playbackPrefs.burnSubtitles,
         clientGraphicSubs: clientGraphicRender, serverVobSub,
@@ -479,13 +479,13 @@
       });
       if (info.playSessionId) playSessionId = info.playSessionId;
       const ms = info.mediaSource;
-      currentMediaSource = ms;   // für den fliegenden Untertitel-Wechsel merken
+      currentMediaSource = ms;   // remember for the on-the-fly subtitle switch
       const resolved = resolveStream({ serverUrl: session.serverUrl, token: session.token, itemId: item.Id, mediaSource: ms, audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex });
       playMethod = resolved.method;
       dlog('[OcenFin] resolveStream →', { method: resolved.method, isHls: resolved.isHls, url: resolved.url });
-      // Warum transkodiert der Server? TranscodeReasons nennt es direkt (VideoCodecNotSupported,
+      // Why does the server transcode? TranscodeReasons names it directly (VideoCodecNotSupported,
       // AudioCodecNotSupported, ContainerBitrateExceedsLimit, SubtitleCodecNotSupported …).
-      // Als warn → landet immer im Log-Puffer, auch ohne Debug-Modus.
+      // As warn → always lands in the log buffer, even without debug mode.
       if (resolved.method === 'Transcode') {
         const reasons = ms?.TranscodeReasons;
         console.warn('[OcenFin] Transcode —', (Array.isArray(reasons) && reasons.length) ? reasons.join(', ') : 'reason not reported');
@@ -501,7 +501,7 @@
     }
   }
 
-  // Hängt eine Quelle ans Video. HLS via hls.js, sofern der Browser HLS nicht nativ kann.
+  // Attaches a source to the video. HLS via hls.js, if the browser can't do HLS natively.
   async function attachSource(url, isHls) {
     if (!videoElement) return;
     isBuffering = true;
@@ -512,13 +512,13 @@
       try {
         const Hls = (await import('hls.js')).default;
         if (Hls.isSupported()) {
-          // Mehr Vorauspuffer (60 s, bis 120 s bei freiem Netz) → robuster gegen Aussetzer auf
-          // langsamem Netz/Server. backBufferLength klein halten (Speicher am TV schonen).
+          // More look-ahead buffer (60 s, up to 120 s on a free network) → more robust against dropouts on
+          // a slow network/server. Keep backBufferLength small (save memory on the TV).
           hls = new Hls({ maxBufferLength: 60, maxMaxBufferLength: 120, enableWorker: true, backBufferLength: 30 });
           hls.loadSource(url);
           hls.attachMedia(videoElement);
           hls.on(Hls.Events.ERROR, (_e, data) => {
-            // Ausführliche Diagnose: Typ, Detail, Codec-Hinweis, HTTP-Status
+            // Detailed diagnostics: type, detail, codec hint, HTTP status
             console.error('[OcenFin] hls.js error:', {
               type: data?.type, details: data?.details, fatal: data?.fatal,
               reason: data?.reason || data?.err?.message,
@@ -527,7 +527,7 @@
             if (data?.fatal) onVideoError();
           });
         } else {
-          videoElement.src = url;   // letzter Versuch nativ
+          videoElement.src = url;   // last attempt native
         }
       } catch (err) {
         console.error('hls.js could not be loaded:', err);
@@ -535,19 +535,19 @@
       }
     } else {
       videoElement.removeAttribute('src');
-      videoElement.src = url;       // Direct Play oder nativer HLS-Player
+      videoElement.src = url;       // Direct Play or native HLS player
       videoElement.load();
     }
     armBufferWatchdog();
     videoElement.play().catch(() => {});
   }
 
-  // Externe Textuntertitel selbst rendern: VTT per fetch holen (Jellyfin erlaubt CORS) und
-  // parsen, statt einen <track> zu setzen. Ein cross-origin <track> wird vom Browser blockiert,
-  // und webOS rendert native Cues ohnehin unzuverlässig. So haben wir volle Kontrolle.
-  let subtitleCues = $state([]);           // [{ start, end, text }] in Sekunden
-  // Untertitel-Versatz (nur Text-Overlay = VTT/SRT/ASS-zu-VTT). + = Untertitel später (verzögert),
-  // − = früher. Pro Spur/Titel zurückgesetzt; bewusst NICHT gespeichert (ist inhaltsspezifisch).
+  // Render external text subtitles ourselves: fetch the VTT (Jellyfin allows CORS) and
+  // parse it instead of setting a <track>. A cross-origin <track> is blocked by the browser,
+  // and webOS renders native cues unreliably anyway. This way we have full control.
+  let subtitleCues = $state([]);           // [{ start, end, text }] in seconds
+  // Subtitle offset (text overlay only = VTT/SRT/ASS-to-VTT). + = subtitles later (delayed),
+  // − = earlier. Reset per track/title; deliberately NOT saved (it's content-specific).
   let subtitleOffset = $state(0);
   function adjustSubtitleOffset(delta) {
     subtitleOffset = Math.round(Math.max(-10, Math.min(10, subtitleOffset + delta)) * 10) / 10;
@@ -555,17 +555,17 @@
   function formatOffset(s) {
     return (s > 0 ? '+' : '') + s.toFixed(1).replace('.', ',') + ' s';
   }
-  let subtitleFetchToken = 0;      // ignoriert Antworten eines überholten Wechsels
-  let graphicRenderer = $state(null);      // libbitsub-Instanz für das aktuell sichtbare Bild-Untertitel-Overlay
-  // Bild-Untertitel clientseitig rendern? Nur wenn aktiviert UND nicht ohnehin alles eingebrannt wird.
+  let subtitleFetchToken = 0;      // ignores responses from a superseded switch
+  let graphicRenderer = $state(null);      // libbitsub instance for the currently visible graphic-subtitle overlay
+  // Render graphic subtitles client-side? Only if enabled AND not everything is burned in anyway.
   let clientGraphicRender = $derived(playbackPrefs.pgsRendering && !playbackPrefs.burnSubtitles);
-  // ASS/SSA mit Original-Layout rendern (assjs)? Aus → schlichtes Text-Overlay, beides Direct Play.
+  // Render ASS/SSA with original layout (assjs)? Off → plain text overlay, both Direct Play.
   let assRenderer = null;
-  let assContainer = $state(null);  // Host-<div>; assjs injiziert hier sein DOM-Overlay (über dem Video)
+  let assContainer = $state(null);  // host <div>; assjs injects its DOM overlay here (over the video)
   let clientAssRender = $derived(playbackPrefs.assRendering && !playbackPrefs.burnSubtitles);
 
-  // Textuntertitel-Styling (NUR fürs .subtitle-box-Overlay = WebVTT/SRT). PGS/VobSub sind Bitmaps
-  // (nur skalierbar), ASS bringt sein eigenes Styling mit. Defaults = bisheriges Verhalten.
+  // Text subtitle styling (ONLY for the .subtitle-box overlay = WebVTT/SRT). PGS/VobSub are bitmaps
+  // (only scalable), ASS brings its own styling. Defaults = previous behavior.
   let subColor = $derived(({ white:'#ffffff', yellow:'#ffe14d', green:'#6dff6d', cyan:'#66e0ff' })[playbackPrefs.subtitleColor || 'white'] || '#ffffff');
   let subEdgeCss = $derived((playbackPrefs.subtitleEdge === 'outline')
         ? '-webkit-text-stroke:0.35vh #000;paint-order:stroke fill;text-shadow:0 0 3px rgba(0,0,0,.55);'
@@ -577,23 +577,23 @@
         : (playbackPrefs.subtitleBackground === 'semi')
         ? 'background:rgba(0,0,0,.6);padding:0.05em 0.5em;border-radius:0.5vh;'
         : 'background:transparent;');
-  // VTT-Schriftart — bewusst IMMER explizit gesetzt (auch bei 'system' → Browser-Standard-Stack),
-  // damit die UI-Schriftwahl (html-Ebene) nicht in die Untertitel durcherbt. ASS ist unberührt.
+  // VTT font — deliberately ALWAYS set explicitly (even for 'system' → browser default stack),
+  // so the UI font choice (html level) doesn't inherit through into the subtitles. ASS is untouched.
   let subFontCss = $derived(({ arimo: "font-family:'Arimo',sans-serif;",
                                noto:  "font-family:'Noto Sans',sans-serif;",
                                tinos: "font-family:'Tinos',serif;" })[playbackPrefs.subtitleFont]
         ?? 'font-family:ui-sans-serif,system-ui,sans-serif;');
-  // -webkit-text-fill-color zusätzlich zu color: bei gesetztem -webkit-text-stroke bestimmt auf webOS die
-  // FILL-Farbe das Rendering und fällt dort fälschlich auf Schwarz zurück, statt color zu erben → Untertitel
-  // sonst schwarz trotz Farbwahl. Explizit setzen erzwingt die gewählte Farbe (am Desktop ohnehin no-op).
+  // -webkit-text-fill-color in addition to color: with -webkit-text-stroke set, on webOS the
+  // FILL color determines the rendering and falsely falls back to black there instead of inheriting color → subtitles
+  // otherwise black despite the color choice. Setting it explicitly forces the chosen color (a no-op on desktop anyway).
   let subStyle = $derived(`color:${subColor};-webkit-text-fill-color:${subColor};${subFontCss}${subEdgeCss}${subBgCss}`);
 
-  // Untertitelgröße → libbitsub-Skalierung (Variante B: gilt für PGS UND VobSub, nicht nur VTT).
+  // Subtitle size → libbitsub scaling (variant B: applies to PGS AND VobSub, not just VTT).
   function graphicSubScale() {
     const s = playbackPrefs.subtitleSize || 'normal';
     return s === 'small' ? 0.85 : s === 'large' ? 1.25 : 1.0;
   }
-  // Dateiname-Hinweis, damit libbitsub das Format erkennt (PGS=.sup, VobSub=.mks via DeliveryUrl).
+  // Filename hint so libbitsub recognizes the format (PGS=.sup, VobSub=.mks via DeliveryUrl).
   function graphicSubFileName(url, stream) {
     const m = (url.split('?')[0] || '').match(/\.(\w+)$/);
     if (m) return `track.${m[1].toLowerCase()}`;
@@ -601,10 +601,10 @@
     return ['dvdsub', 'vobsub', 'sub'].includes(codec) ? 'track.mks' : 'track.sup';
   }
 
-  // Untertitel anwenden – routet je nach Codec: PGS/VobSub → libbitsub-Overlay, Text → VTT-Overlay.
+  // Apply subtitle – routes by codec: PGS/VobSub → libbitsub overlay, text → VTT overlay.
   function applySubtitleOverlay(index, ms) {
-    subtitleFetchToken++;   // laufende VTT-Fetches invalidieren (sonst Text-Overlay neben Grafik/ASS)
-    subtitleOffset = 0;     // neuer Spurwechsel → Versatz zurücksetzen (inhaltsspezifisch)
+    subtitleFetchToken++;   // invalidate in-flight VTT fetches (otherwise a text overlay next to graphic/ASS)
+    subtitleOffset = 0;     // new track switch → reset the offset (content-specific)
     if (index === -1 || !ms) { disposeGraphic(); clearAss(); subtitleCues = []; return; }
     const stream = (ms.MediaStreams || []).find(s => s.Index === index && s.Type === 'Subtitle');
     const codec  = (stream?.Codec || '').toLowerCase();
@@ -613,47 +613,47 @@
     const isAss = ['ass', 'ssa'].includes(codec);
     if (stream && clientGraphicRender && (isPgs || (isVob && serverVobSub))) {
       clearAss();
-      subtitleCues = [];                    // kein VTT-Overlay daneben
-      applyGraphicSubtitle(stream, ms);     // weicher Wechsel ohne Lücke (siehe unten)
+      subtitleCues = [];                    // no VTT overlay alongside
+      applyGraphicSubtitle(stream, ms);     // soft switch without a gap (see below)
     } else if (stream && isAss && clientAssRender && (stream.DeliveryMethod || '').toLowerCase() !== 'encode') {
       disposeGraphic();
-      subtitleCues = [];                    // assjs rendert selbst → kein VTT-Overlay daneben
-      applyAssSubtitle(stream, ms);         // Original-Layout (Positionen, Fonts, Typesetting)
+      subtitleCues = [];                    // assjs renders itself → no VTT overlay alongside
+      applyAssSubtitle(stream, ms);         // original layout (positions, fonts, typesetting)
     } else {
-      disposeGraphic();                     // verlässt Grafik/ASS → Overlay sofort entfernen
+      disposeGraphic();                     // leaving graphic/ASS → remove the overlay immediately
       clearAss();
-      applyExternalSubtitleIfNeeded(index, ms);   // Text → VTT (gebrannte Grafik → nichts zu tun)
+      applyExternalSubtitleIfNeeded(index, ms);   // text → VTT (burned-in graphic → nothing to do)
     }
   }
-  // ASS/SSA clientseitig mit vollem Styling rendern via assjs (DOM/CSS, kein WASM/Worker). assjs hängt sein
-  // Overlay in assContainer und synchronisiert Zeit + Größe selbst ans <video> (liest KEINE Pixel → kein
-  // cross-origin-Taint, kein crossorigin am <video>). Font-Fallback macht der Browser. resampling regelt das
-  // Verhalten bei Script-Auflösung (PlayResX/Y) ≠ Videoauflösung (Letterbox); Default 'video_height' passt meist.
-  // assjs kennt kein setTrack → Spurwechsel/Re-Apply per Neuaufbau (DOM-Overlay wird ent-/neu angehängt).
+  // Render ASS/SSA client-side with full styling via assjs (DOM/CSS, no WASM/worker). assjs mounts its
+  // overlay into assContainer and syncs time + size to the <video> itself (reads NO pixels → no
+  // cross-origin taint, no crossorigin on the <video>). The browser handles the font fallback. resampling controls the
+  // behavior when the script resolution (PlayResX/Y) ≠ video resolution (letterbox); the default 'video_height' usually fits.
+  // assjs has no setTrack → track switch/re-apply via rebuild (the DOM overlay is detached/re-attached).
   async function applyAssSubtitle(stream, ms) {
     if (!videoElement || !assContainer) return;
     const url = assSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
     try {
-      const res = await fetch(url);            // ApiKey steckt in der URL → einfacher GET, kein Preflight
+      const res = await fetch(url);            // the ApiKey is in the URL → a simple GET, no preflight
       if (!res.ok) { console.warn('[OcenFin] ASS fetch failed:', res.status); return; }
       const content = await res.text();
-      ensureVideoFrameCallback();               // webOS: rVFC-Polyfill aktiv, BEVOR assjs sie liest
-      disposeAss();                            // kein setTrack → altes Overlay entfernen, frisch aufbauen
+      ensureVideoFrameCallback();               // webOS: rVFC polyfill active BEFORE assjs reads it
+      disposeAss();                            // no setTrack → remove the old overlay, rebuild fresh
       assRenderer = new ASS(content, videoElement, { container: assContainer });
-      // assjs treibt seine Render-Schleife per requestAnimationFrame, gestartet übers 'play'/'playing'-
-      // Event des Videos. Bei einem Spurwechsel MITTEN in der Wiedergabe läuft das Video schon → es feuert
-      // kein erneutes Event → die Schleife liefe nie an und der Untertitel bliebe auf dem Stand vom Umschalten
-      // stehen. Darum einmalig anstoßen, wenn bereits abgespielt wird. ('playing' statt 'play': onplaying ist
-      // nebenwirkungsfrei, onplay würde an SyncPlay melden.)
+      // assjs drives its render loop via requestAnimationFrame, started by the video's 'play'/'playing'
+      // event. On a track switch in the MIDDLE of playback the video is already running → it fires
+      // no new event → the loop would never start and the subtitle would stay frozen at the state from
+      // the switch. So kick it once if playback is already running. ('playing' instead of 'play': onplaying is
+      // side-effect-free, onplay would report to SyncPlay.)
       if (!videoElement.paused) videoElement.dispatchEvent(new Event('playing'));
-      // Das Overlay wird ASYNCHRON aufgebaut — also NACH changeTrack, das den Fokus schon gesetzt hatte.
-      // Das Einhängen des assjs-DOM kann den Fokus verlieren; daher hier erneut sichern. Auf denselben
-      // Auslöser-Button wie changeTrack (sichtbar + konsistent), nicht auf den unsichtbaren Container.
+      // The overlay is built ASYNCHRONOUSLY — i.e. AFTER changeTrack, which had already set the focus.
+      // Mounting the assjs DOM can lose the focus; so secure it again here. Onto the same
+      // trigger button as changeTrack (visible + consistent), not onto the invisible container.
       if (!showSettings) restoreControlFocus();
       dlog('[OcenFin] ASS subtitle via assjs:', stream.Index, stream.Codec);
     } catch (e) { console.warn('[OcenFin] assjs error:', e?.message); }
   }
-  // ASS ausblenden (Wechsel zu PGS/Text/aus): Overlay entfernen.
+  // Hide ASS (switch to PGS/text/off): remove the overlay.
   function clearAss() { disposeAss(); }
   function disposeAss() {
     if (assRenderer) {
@@ -661,16 +661,16 @@
       assRenderer = null;
     }
   }
-  // webOS meldet requestVideoFrameCallback als vorhanden (Feature-Detection wahr), ruft den Callback aber
-  // NIE auf. Der Bug sitzt in LGs Media-Anbindung, nicht im Chromium → versionsunabhängig (am Desktop tritt
-  // er nicht auf). assjs treibt damit seine Render-Schleife → ASS-Untertitel laufen am Desktop, frieren auf
-  // dem TV aber auf dem Bild beim Aufbau ein. Darum auf webOS rVFC am <video> durch ein rAF-Polyfill
-  // ersetzen, das wirklich zurückruft (60 fps reichen fürs Untertitel-Timing locker). Nur webOS — Desktop
-  // behält seine native, bildgenaue rVFC. Idempotent.
+  // webOS reports requestVideoFrameCallback as present (feature detection true) but NEVER calls the
+  // callback. The bug is in LG's media integration, not in Chromium → version-independent (on desktop it
+  // doesn't occur). assjs drives its render loop with it → ASS subtitles run on desktop but freeze on
+  // the TV on the picture at setup time. So on webOS replace rVFC on the <video> with a rAF polyfill
+  // that really calls back (60 fps is plenty for subtitle timing). webOS only — desktop
+  // keeps its native, frame-accurate rVFC. Idempotent.
   let rvfcPatched = false;
   function ensureVideoFrameCallback() {
     if (rvfcPatched || !videoElement) return;
-    if (!window.webOSSystem && !window.webOS) { rvfcPatched = true; return; }  // kein webOS → native rVFC behalten
+    if (!window.webOSSystem && !window.webOS) { rvfcPatched = true; return; }  // no webOS → keep native rVFC
     videoElement.requestVideoFrameCallback = function (cb) {
       return requestAnimationFrame((now) => cb(now, {
         presentationTime: now, expectedDisplayTime: now,
@@ -686,9 +686,9 @@
     if (!videoElement) return;
     const url = graphicSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
     if (!url) { disposeGraphic(); dlog('[OcenFin] image subtitle not available (server does not provide it externally):', stream.Index); return; }
-    // TV-freundlich: STRENG SEQUENZIELL. Erst den alten Renderer restlos zerstören (Worker/WASM freigeben),
-    // dann den neuen erzeugen. Auf WebOS sind zwei gleichzeitige WASM-Worker riskant (Limit → libbitsub
-    // flüchtet in den Main-Thread → 2–3 s Freeze). Eine kurze Lücke beim manuellen Wechsel ist akzeptabel.
+    // TV-friendly: STRICTLY SEQUENTIAL. First fully destroy the old renderer (free worker/WASM),
+    // then create the new one. On webOS two concurrent WASM workers are risky (limit → libbitsub
+    // falls back to the main thread → 2–3 s freeze). A short gap on a manual switch is acceptable.
     disposeGraphic();
     const codec = (stream?.Codec || '').toLowerCase();
     const opts = {
@@ -697,31 +697,31 @@
       onWarning: (w) => dlog('[OcenFin] libbitsub notice:', w?.code || w?.message || w),
       onError: (e) => { dlog('[OcenFin] libbitsub error:', e?.code || '', e?.message || e); disposeGraphic(); },
       onEvent: (ev) => {
-        // backend 'worker' = off-main-thread (gut); alles andere = Main-Thread-Fallback (Freeze-Ursache auf TV).
-        // Beides immer ins Protokoll (console.warn), damit der B4-Backend-Zustand auch ohne Debug sichtbar ist.
+        // backend 'worker' = off-main-thread (good); anything else = main-thread fallback (freeze cause on TV).
+        // Always log both (console.warn) so the B4 backend state is visible even without debug.
         if (ev?.type === 'renderer-change') console.warn('[OcenFin] libbitsub backend:', ev.renderer);
         else if (ev?.type === 'worker-state') console.warn('[OcenFin] libbitsub worker-state:', ev.state ?? ev);
         else if (ev?.type === 'loaded') dlog('[OcenFin] libbitsub loaded:', ev.format, 'cues=' + (ev.metadata?.cueCount ?? '?'));
       },
     };
     try {
-      // Codec ist bekannt → expliziten Renderer wählen (keine Format-Auto-Erkennung nötig).
+      // The codec is known → pick the explicit renderer (no format auto-detection needed).
       graphicRenderer = ['pgssub', 'pgs'].includes(codec)
         ? new PgsRenderer(opts)
-        : new VobSubRenderer({ ...opts, fileName: graphicSubFileName(url, stream) });   // VobSub/DVD: .mks-Container
+        : new VobSubRenderer({ ...opts, fileName: graphicSubFileName(url, stream) });   // VobSub/DVD: .mks container
       dlog('[OcenFin] image subtitle via libbitsub:', stream.Index, stream.Codec);
     } catch (e) { dlog('[OcenFin] libbitsub renderer error:', e?.message); disposeGraphic(); }
   }
   function disposeGraphic() {
     if (graphicRenderer) { try { graphicRenderer.dispose(); } catch {} graphicRenderer = null; }
   }
-  // Größenänderung zur Laufzeit live auf den laufenden Renderer anwenden.
+  // Apply a size change at runtime live to the running renderer.
   $effect(() => { if (graphicRenderer && (playbackPrefs.subtitleSize || 'normal')) {
     const sc = graphicSubScale();
     try { graphicRenderer.setDisplaySettings({ scale: sc }); } catch {}
   } });
 
-  // VTT-Zeitstempel "HH:MM:SS.mmm" oder "MM:SS.mmm" → Sekunden
+  // VTT timestamp "HH:MM:SS.mmm" or "MM:SS.mmm" → seconds
   function parseVttTime(t) {
     const p = t.split(':');
     if (p.length === 3) return (+p[0]) * 3600 + (+p[1]) * 60 + parseFloat(p[2]);
@@ -744,7 +744,7 @@
     return cues;
   }
 
-  // Aktiven Cue aus der aktuellen Zeit ableiten (reaktiv, folgt currentTime)
+  // Derive the active cue from the current time (reactive, follows currentTime)
   let currentSubtitleText = $derived(subtitleCues.length
     ? (subtitleCues.find(c => (currentTime - subtitleOffset) >= c.start && (currentTime - subtitleOffset) <= c.end)?.text ?? '')
     : '');
@@ -758,12 +758,12 @@
     if (!stream) return;
     const method = (stream.DeliveryMethod || '').toLowerCase();
     const graphic = ['pgssub', 'dvdsub', 'pgs', 'dvbsub', 'vobsub', 'sub'].includes((stream.Codec || '').toLowerCase());
-    if (method === 'encode' || graphic) return;   // gebrannt oder Grafik-Untertitel → kein VTT-Overlay
+    if (method === 'encode' || graphic) return;   // burned in or graphic subtitle → no VTT overlay
 
     const url = externalSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
     try {
       const res = await fetch(url);
-      if (!res.ok || myToken !== subtitleFetchToken) return;   // überholt oder Fehler
+      if (!res.ok || myToken !== subtitleFetchToken) return;   // superseded or error
       const text = await res.text();
       if (myToken !== subtitleFetchToken) return;
       subtitleCues = parseVtt(text);
@@ -773,31 +773,31 @@
 
   // Intro Skipper / Media Segments
   let introData = $state(null);
-  let segmentsChecked = $state(false);     // Plugin-APIs abgefragt → Kapitel-Fallback darf greifen
+  let segmentsChecked = $state(false);     // plugin APIs queried → chapter fallback may kick in
   let chapterFallbackDone = false;
   let showSkipIntro = $derived(introData?.Introduction?.Valid
     && currentTime >= (introData.Introduction.ShowSkipPromptAt ?? 0)
     && currentTime <= (introData.Introduction.HideSkipPromptAt ?? 0));
 
-  // Outro/Abspann (Media-Segments-/Plugin-Daten) — Auslöser für Auto-Skip & Auto-Play-Countdown
+  // Outro/credits (media-segments/plugin data) — trigger for auto-skip & auto-play countdown
   let showSkipCredits = $derived(introData?.Credits?.Valid
     && currentTime >= (introData.Credits.ShowSkipPromptAt ?? Infinity));
 
-  // Auto-Play der nächsten Folge mit Countdown-Overlay (Netflix-Prinzip).
-  // Startet nahe dem Ende; "Abspann automatisch überspringen" hat Vorrang (sofortiger Sprung).
+  // Auto-play the next episode with a countdown overlay (Netflix principle).
+  // Starts near the end; "auto-skip credits" takes precedence (immediate jump).
   let chapters          = $state([]);
-  let nextCountdown     = $state(null);   // verbleibende Sekunden (ganzzahlig, für den Text), null = inaktiv
-  let countdownProgress = $state(0);      // 1 → 0, treibt den Balken
+  let nextCountdown     = $state(null);   // remaining seconds (integer, for the text), null = inactive
+  let countdownProgress = $state(0);      // 1 → 0, drives the bar
   let countdownTimer    = null;
   let countdownEnd      = 0;
-  let countdownDismissed = false; // pro Folge: nach Abbruch nicht erneut starten
-  let outroDismissed = $state(false); // manueller Outro-Prompt für DIESE Folge weggeklickt → dranbleiben
+  let countdownDismissed = false; // per episode: don't restart after a cancel
+  let outroDismissed = $state(false); // manual outro prompt for THIS episode dismissed → stay put
   const COUNTDOWN_FROM  = 20;
-  const OUTRO_FALLBACK  = 45;     // ohne Kapitel/Segment-Daten: "Nächste Folge"-Karte in den letzten X s zeigen
-  const STILL_WATCHING_TIMEOUT = 120;  // "Schaust du noch?": schließt den Player nach X s ohne Reaktion (NAS entlasten)
+  const OUTRO_FALLBACK  = 45;     // without chapter/segment data: show the "next episode" card in the last X s
+  const STILL_WATCHING_TIMEOUT = 120;  // "still watching?": closes the Player after X s without a reaction (relieve the NAS)
 
-  // Kapitel-Fallback für Intro/Abspann: greift reaktiv, sobald die Plugin-APIs nichts lieferten
-  // UND die Kapitel geladen sind (nur eindeutig benannte Kapitel, sonst kein Prompt).
+  // Chapter fallback for intro/credits: kicks in reactively once the plugin APIs returned nothing
+  // AND the chapters are loaded (only clearly named chapters, otherwise no prompt).
   $effect(() => { if (segmentsChecked && !chapterFallbackDone && introData === null && chapters.length) {
     chapterFallbackDone = true;
     introData = chaptersToIntroData(chapters);
@@ -806,24 +806,24 @@
   let nearEnd = $derived(duration > 0 && currentTime > 0 && (
     showSkipCredits || (duration - currentTime) <= COUNTDOWN_FROM
   ));
-  // "Nächste Folge"-Karte (manuell) zeigen: bei echten Abspann-Daten ab Abspannbeginn, sonst
-  // als zuverlässiger Fallback in den letzten OUTRO_FALLBACK Sekunden (auch ohne Kapitel/Segmente).
-  // Der Auto-Play-Countdown (nearEnd, 20 s) bleibt davon unberührt, damit nie Inhalt abgeschnitten wird.
+  // Show the "next episode" card (manual): with real credits data from credits start, otherwise
+  // as a reliable fallback in the last OUTRO_FALLBACK seconds (even without chapters/segments).
+  // The auto-play countdown (nearEnd, 20 s) stays unaffected so content is never cut off.
   let outroPromptActive = $derived(duration > 0 && currentTime > 0 && (
     showSkipCredits || (duration - currentTime) <= OUTRO_FALLBACK
   ));
-  // Ein interaktives Overlay ist offen → OK soll dessen fokussierten Button auslösen, nicht pausieren.
+  // An interactive overlay is open → OK should trigger its focused button, not pause.
   let overlayActive = $derived(showSkipIntro || showStillWatching || (outroPromptActive && !!nextEpisode));
-  // Genau dann ist EIN Outro-Entscheidungsprompt sichtbar (Timer ODER manuell) → Fokus dort einsperren.
+  // Exactly then ONE outro decision prompt is visible (timer OR manual) → trap focus there.
   let outroPromptShowing = $derived(!!nextEpisode && (nextCountdown !== null || (outroPromptActive && !outroDismissed)));
   $effect(() => { if (playbackPrefs.autoPlayNext && !stopAfterThis && nextEpisode && !playbackPrefs.autoSkipCredits
          && nearEnd && nextCountdown === null && !countdownDismissed) {
     startCountdown();
   } });
 
-  // Nächste Folge leicht vorladen (nur PlaybackInfo/Stream-URL, kein Video-Pre-Buffering),
-  // damit der Wechsel den Roundtrip spart. Greift nur, wenn die Parameter beim Wechsel passen.
-  // Gemeinsamer Helfer für BEIDE Wechselpfade: Countdown UND Auto-Skip-Abspann.
+  // Lightly prefetch the next episode (only PlaybackInfo/stream URL, no video pre-buffering)
+  // so the switch saves the round-trip. Applies only when the parameters match at switch time.
+  // Shared helper for BOTH switch paths: countdown AND auto-skip credits.
   function prefetchNextEpisode() {
     if (!nextEpisode?.Id) return;
     prefetchPlaybackInfo({
@@ -836,10 +836,10 @@
 
   function startCountdown() {
     prefetchNextEpisode();
-    nextCountdown = COUNTDOWN_FROM;   // sofort sichtbar → Karte erscheint
+    nextCountdown = COUNTDOWN_FROM;   // immediately visible → the card appears
     countdownProgress = 1;
     countdownEnd = Date.now() + COUNTDOWN_FROM * 1000;
-    // setInterval (im Projekt zuverlässig) alle 100 ms → Text sekündlich, Balken flüssig.
+    // setInterval (reliable in this project) every 100 ms → text per second, bar smooth.
     countdownTimer = setInterval(() => {
       const remainingMs = countdownEnd - Date.now();
       if (remainingMs <= 0) { stopCountdown(); goToNextEpisode(); return; }
@@ -854,22 +854,22 @@
   }
   function cancelCountdown() {
     stopCountdown();
-    countdownDismissed = true;   // für diese Folge nicht erneut zeigen
+    countdownDismissed = true;   // don't show again for this episode
     resetControlsTimeout();
   }
   function onVideoEnded() {
-    // "Nur noch diese Folge": am Ende NICHT weiterschalten, sondern den Player schließen
-    // (zurück zu der gerade gesehenen Folge) — das eigentliche Einschlaf-Verhalten.
+    // "Only this episode": at the end do NOT advance, but close the Player
+    // (back to the just-watched episode) — the actual sleep behavior.
     if (stopAfterThis) { onExit?.(); return; }
-    // Sonst am Ende automatisch weiter, sofern aktiviert und nicht abgebrochen
+    // Otherwise advance automatically at the end, if enabled and not cancelled
     if (playbackPrefs.autoPlayNext && nextEpisode && !countdownDismissed) {
       stopCountdown();
       goToNextEpisode();
     }
   }
 
-  // Aktueller Kapitelname (für Anzeige beim Spulen). Nichtssagende Auto-Namen (Zeitstempel,
-  // "Chapter N", reine Nummern) werden durch ein sauberes "Kapitel N" ersetzt.
+  // Current chapter name (for display while seeking). Meaningless auto-names (timestamps,
+  // "Chapter N", plain numbers) are replaced by a clean "Chapter N".
   let currentChapterName = $derived.by(() => {
     if (!chapters?.length) return null;
     let idx = -1;
@@ -879,14 +879,14 @@
     if (idx < 0) return null;
     const raw = (chapters[idx].Name || '').trim();
     const junk = !raw
-      || /^\(?\d+\)?[\s:.]*\d{1,2}[:.]\d{2}([:.]\d{2})?([:.]\d{1,3})?$/.test(raw)   // (01)00:00:00:000 u. ä.
+      || /^\(?\d+\)?[\s:.]*\d{1,2}[:.]\d{2}([:.]\d{2})?([:.]\d{1,3})?$/.test(raw)   // (01)00:00:00:000 etc.
       || /^(chapter|kapitel|chapitre|capitolo|cap[ií]tulo)\b/i.test(raw)
       || /^\d{1,3}$/.test(raw);
     return junk ? `${i18n.t.chapter} ${idx + 1}` : raw;
   });
 
-  // Auto-Skip (abhängig von Einstellung + installiertem Intro-Skipper-Plugin).
-  // Flags verhindern wiederholtes Springen; werden beim Episodenwechsel via {#key}-Remount zurückgesetzt.
+  // Auto-skip (depends on the setting + installed intro-skipper plugin).
+  // Flags prevent repeated jumping; reset on episode change via the {#key} remount.
   let introAutoSkipped   = false;
   let creditsAutoSkipped = false;
   $effect(() => { if (playbackPrefs.autoSkipIntro && showSkipIntro && !introAutoSkipped && videoElement) {
@@ -895,42 +895,42 @@
   } });
   $effect(() => { if (playbackPrefs.autoSkipCredits && !stopAfterThis && showSkipCredits && !creditsAutoSkipped && nextEpisode) {
     creditsAutoSkipped = true;
-    prefetchNextEpisode();   // dieser Pfad umgeht den Countdown → Fetch läuft parallel zum Player-Remount
+    prefetchNextEpisode();   // this path bypasses the countdown → the fetch runs parallel to the Player remount
     goToNextEpisode();
   } });
 
-  // Serien-Episoden (alle Staffeln) für zuverlässige Vor/Zurück-Navigation über Staffelgrenzen hinweg
+  // Series episodes (all seasons) for reliable next/prev navigation across season boundaries
   let seriesEpisodes = $state([]);
   let episodeIndex   = $state(-1);
-  // "Alle abspielen"-Queue (von App): aktiv ersetzt sie die Serien-Sequenz als Quelle für
-  // Vor/Zurück. Die GESAMTE Weiterschalt-Maschinerie (Outro-Prompt, Countdown, Auto-Play,
-  // onVideoEnded, nexttrack-Fernbedienung, Buttons) hängt an diesen zwei Ableitungen und
-  // folgt damit automatisch der Queue. queueNext === null am Queue-Ende → endet normal.
+  // "Play all" queue (from App): when active it replaces the series sequence as the source for
+  // next/prev. The ENTIRE advancing machinery (outro prompt, countdown, auto-play,
+  // onVideoEnded, nexttrack remote, buttons) hangs on these two derivations and
+  // thus follows the queue automatically. queueNext === null at the end of the queue → ends normally.
   let prevEpisode = $derived(queueActive ? queuePrev : (episodeIndex > 0 ? seriesEpisodes[episodeIndex - 1] : null));
   let nextByIndex = $derived(queueActive ? queueNext : (episodeIndex >= 0 && episodeIndex < seriesEpisodes.length - 1
                    ? seriesEpisodes[episodeIndex + 1] : null));
-  let nextEpisode = $derived(nextByIndex);   // Auto-Play/Outro nutzen dieselbe sequentielle nächste Folge (auch zur nächsten Staffel)
+  let nextEpisode = $derived(nextByIndex);   // auto-play/outro use the same sequential next episode (also into the next season)
 
-  // "Nur noch diese Folge" — Einschlaf-Einmalschalter (opt-in via playbackPrefs.sleepButton).
-  // Blockiert NUR die automatischen Übergänge (Outro-Countdown, Videoende, Auto-Skip-Abspann);
-  // manuelles Weiterschalten (Button/Fernbedienung) bleibt erlaubt. Der {#key}-Remount pro Folge
-  // setzt das Flag von selbst zurück → echtes Einmal-Verhalten ohne Aufräumen.
+  // "Only this episode" — one-shot sleep switch (opt-in via playbackPrefs.sleepButton).
+  // Blocks ONLY the automatic transitions (outro countdown, video end, auto-skip credits);
+  // manual advancing (button/remote) stays allowed. The {#key} remount per episode
+  // resets the flag by itself → real one-shot behavior without cleanup.
   let stopAfterThis = $state(false);
-  // Button nur zeigen, wenn er etwas bewirken kann: es gibt ein nächstes Element UND
-  // irgendein Auto-Weiter ist aktiv (Auto-Play ODER Auto-Skip-Abspann, die unabhängig schalten).
+  // Only show the button if it can do something: there is a next element AND
+  // some auto-advance is active (auto-play OR auto-skip credits, which switch independently).
   let autoAdvanceOn = $derived(!!nextEpisode && (playbackPrefs.autoPlayNext || playbackPrefs.autoSkipCredits));
   function toggleStopAfter() {
     stopAfterThis = !stopAfterThis;
-    if (stopAfterThis) stopCountdown();   // laufenden Auto-Play-Countdown sofort anhalten
+    if (stopAfterThis) stopCountdown();   // immediately stop a running auto-play countdown
     resetControlsTimeout();
   }
-  // Position in der Staffel für die Anzeige oben links: "Folge X von Y"
+  // Position in the season for the top-left display: "Episode X of Y"
   let seasonTotal = $derived((item?.Type === 'Episode' && item.ParentIndexNumber != null)
                    ? seriesEpisodes.filter(e => e.ParentIndexNumber === item.ParentIndexNumber).length : 0);
   let episodePosition = $derived((item?.Type === 'Episode' && item.IndexNumber != null && seasonTotal > 0)
                    ? `${i18n.t.episode} ${item.IndexNumber} ${i18n.t.of} ${seasonTotal}` : '');
 
-  // Infozeile zur nächsten Folge: "S2 · E1 · 52 Min · endet um 11:59"
+  // Info line for the next episode: "S2 · E1 · 52 min · ends at 11:59"
   let nextEpisodeMeta = $derived.by(() => {
     if (!nextEpisode) return '';
     const parts = [];
@@ -949,24 +949,24 @@
   // LIFECYCLE
   // ============================================================
 
-  // "Schaust du noch?" – Best Practice (Netflix-Stil): NICHT zeitbasiert, sondern nach
-  // mehreren automatisch abgespielten Folgen in Folge ohne Interaktion. Greift damit nur bei
-  // Serien-Auto-Play (Einschlaf-Schutz) und unterbricht nie einen Film oder eine aktiv geschaute Folge.
-  // Der Zähler (autoPlayStreak) lebt in App.svelte, weil der Player pro Folge neu aufsetzt.
+  // "Still watching?" – best practice (Netflix style): NOT time-based, but after
+  // several auto-played episodes in a row without interaction. So it only applies to
+  // series auto-play (sleep protection) and never interrupts a movie or an actively watched episode.
+  // The counter (autoPlayStreak) lives in App.svelte, because the Player resets per episode.
   let showStillWatching = $state(false);
-  let interacted = false;   // hat der Nutzer in DIESER Folge etwas getan? (Tastendruck/Remote/Klick)
+  let interacted = false;   // did the user do anything in THIS episode? (keypress/remote/click)
   function markInteraction() { interacted = true; }
   function resumeFromStillWatching() {
     showStillWatching = false;
-    // Nutzer ist wach → weiter zur nächsten Folge; Zähler in App zurücksetzen.
+    // The user is awake → advance to the next episode; reset the counter in App.
     if (nextEpisode) onNext?.({ episode: nextEpisode, resetStreak: true });
   }
 
-  // Reagiert niemand auf "Schaust du noch?", ist der Nutzer mit hoher Wahrscheinlichkeit
-  // eingeschlafen (der Prompt kommt erst nach mehreren Folgen ohne Interaktion). Dann den
-  // Player schließen statt die Nacht über offen zu lassen — das meldet Stopp und trennt die
-  // Session, damit die NAS nicht dauerhaft aktiv bleibt. Der Effekt-Cleanup räumt den Timer
-  // bei "Weiter" (showStillWatching → false), Folgenwechsel oder Unmount automatisch weg.
+  // If no one reacts to "still watching?", the user has most likely
+  // fallen asleep (the prompt only comes after several episodes without interaction). Then
+  // close the Player instead of leaving it open all night — this reports stop and disconnects the
+  // session so the NAS doesn't stay active permanently. The effect cleanup clears the timer
+  // on "continue" (showStillWatching → false), episode change or unmount automatically.
   $effect(() => {
     if (!showStillWatching) return;
     const t = setTimeout(() => onExit?.(), STILL_WATCHING_TIMEOUT * 1000);
@@ -977,24 +977,24 @@
     resetControlsTimeout();
     if (playerContainer) playerContainer.focus();
 
-    // libbitsub-WASM früh kompilieren (dedupliziert, non-blocking) → der erste PGS/VobSub-Sub muss nicht
-    // erst auf den WASM-Compile warten. Schlägt es fehl, fällt libbitsub später ohnehin sauber zurück.
+    // Compile the libbitsub WASM early (deduplicated, non-blocking) → the first PGS/VobSub sub doesn't
+    // have to wait for the WASM compile. If it fails, libbitsub falls back cleanly later anyway.
     initWasm().then(() => dlog('[OcenFin] libbitsub WASM ready')).catch((e) => dlog('[OcenFin] libbitsub WASM init failed:', e?.message));
 
     fetchMediaSources();
     fetchIntroTimestamps();
-    fetchSeriesEpisodes();   // Vor/Zurück + Auto-Play + Positionsanzeige (über alle Staffeln)
+    fetchSeriesEpisodes();   // next/prev + auto-play + position display (across all seasons)
 
-    // Interaktions-Tracking für "Schaust du noch?": jede bewusste Eingabe markiert den Nutzer als wach.
+    // Interaction tracking for "still watching?": every deliberate input marks the user as awake.
     window.addEventListener('keydown', markInteraction);
     window.addEventListener('pointermove', markInteraction);
     window.addEventListener('click', markInteraction);
-    // Position auch bei App-Suspend (webOS Home) / Schließen / Neuladen sichern.
+    // Also save the position on app suspend (webOS Home) / close / reload.
     document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('pagehide', onPageHide);
 
-    // PlaybackInfo entscheidet Direct Play vs. Transcode; setzt Quelle + ggf. HLS.
-    // Resume (startTicks) passiert client-seitig nach 'loadedmetadata' (seekToResume).
+    // PlaybackInfo decides Direct Play vs. transcode; sets the source + HLS if needed.
+    // Resume (startTicks) happens client-side after 'loadedmetadata' (seekToResume).
     await setupPlayback(selectedAudioIndex, selectedSubtitleIndex);
 
     await reportPlaybackStart();
@@ -1038,8 +1038,8 @@
       if (res.ok) {
         const data = await res.json();
         chapters = data.Chapters || [];
-        // Spurenliste nur für die Auswahl-UI (Audio/Untertitel). Die tatsächliche
-        // Lieferung (Spur vs. eingebrannt) entscheidet PlaybackInfo in setupPlayback.
+        // Track list only for the selection UI (audio/subtitle). The actual
+        // delivery (track vs. burned in) is decided by PlaybackInfo in setupPlayback.
         if (data.MediaSources?.[0]?.MediaStreams) mediaStreams = data.MediaSources[0].MediaStreams;
         parseTrickplay(data);
       }
@@ -1048,8 +1048,8 @@
 
   async function fetchIntroTimestamps() {
     if (item.Type !== 'Episode') return;
-    // 1) Moderne Media-Segments-API (Intro Skipper ab Jellyfin 10.9 liefert hierüber).
-    //    Ohne Typ-Filter abfragen und selbst filtern — robuster gegen Server-/Versionsunterschiede.
+    // 1) Modern Media Segments API (Intro Skipper from Jellyfin 10.9 delivers via this).
+    //    Query without a type filter and filter ourselves — more robust against server/version differences.
     try {
       const res = await fetch(`${session.serverUrl}/MediaSegments/${item.Id}`, { headers: getAuthHeaders() });
       if (res.ok) {
@@ -1061,11 +1061,11 @@
           introData = d; return;
         }
       } else {
-        dlog('[OcenFin] media segments HTTP', res.status);   // z. B. 404 = Endpunkt fehlt, 401 = Auth
+        dlog('[OcenFin] media segments HTTP', res.status);   // e.g. 404 = endpoint missing, 401 = auth
       }
     } catch (e) { dlog('[OcenFin] media segments error:', e?.message); }
-    // 2) Ältere ConfusedPolarBear-Plugin-API. Manche Versionen liefern das Intro flach
-    //    ({ Valid, IntroStart, … }), andere als { Introduction, Credits } → beide Formen abfangen.
+    // 2) Older ConfusedPolarBear plugin API. Some versions deliver the intro flat
+    //    ({ Valid, IntroStart, … }), others as { Introduction, Credits } → handle both shapes.
     try {
       const res = await fetch(`${session.serverUrl}/Episode/${item.Id}/IntroTimestamps/v1`, { headers: getAuthHeaders() });
       if (res.ok) {
@@ -1077,12 +1077,12 @@
         dlog('[OcenFin] IntroTimestamps/v1 HTTP', res.status);
       }
     } catch (e) { dlog('[OcenFin] IntroTimestamps/v1 error:', e?.message); }
-    // 3) Kein Plugin-Treffer → Kapitel-Fallback (greift reaktiv, sobald Kapitel geladen sind)
+    // 3) No plugin hit → chapter fallback (kicks in reactively once chapters are loaded)
     dlog('[OcenFin] no media segments / plugin data → chapter fallback');
     segmentsChecked = true;
   }
 
-  // Wandelt Media-Segments (Ticks) in die introData-Struktur (Sekunden). Null, wenn weder Intro noch Outro.
+  // Converts media segments (ticks) into the introData structure (seconds). Null if neither intro nor outro.
   function segmentsToIntroData(segs) {
     const T = 10000000;
     const intro = segs.find(s => s.Type === 'Intro');
@@ -1096,7 +1096,7 @@
     return { Introduction: mk(intro), Credits: mk(outro) };
   }
 
-  // Fallback aus benannten Kapiteln — nur eindeutige Treffer, sonst null (kein falscher Prompt).
+  // Fallback from named chapters — only unambiguous hits, otherwise null (no false prompt).
   function chaptersToIntroData(chs) {
     const T = 10000000;
     const list = chs.map(c => ({ name: (c.Name || '').toLowerCase(), start: c.StartPositionTicks / T }));
@@ -1115,7 +1115,7 @@
     return (intro.Valid || credits.Valid) ? { Introduction: intro, Credits: credits } : null;
   }
 
-  // Alle Episoden der Serie (staffelübergreifend, in Reihenfolge) – für Vor/Zurück, Auto-Play und Positionsanzeige
+  // All episodes of the series (across seasons, in order) – for next/prev, auto-play and position display
   async function fetchSeriesEpisodes() {
     if (item.Type !== 'Episode' || !item.SeriesId) return;
     try {
@@ -1177,9 +1177,9 @@
     } catch { }
   }
 
-  // Aktuelle Position sofort sichern (auch pausiert) — `keepalive` lässt den Request den App-Suspend/
-  // Teardown überleben und behält den Auth-Header. Für visibilitychange→hidden und Wiedergabefehler,
-  // damit die Position nie verloren geht (ohne die Session zu beenden — daher Progress, nicht Stopped).
+  // Save the current position immediately (even paused) — `keepalive` lets the request survive the app suspend/
+  // teardown and keeps the auth header. For visibilitychange→hidden and playback errors,
+  // so the position is never lost (without ending the session — hence Progress, not Stopped).
   function flushProgress() {
     if (!videoElement || !playSessionId) return;
     try {
@@ -1197,20 +1197,20 @@
     } catch { }
   }
 
-  // App wird in den Hintergrund geschickt/suspendiert (webOS Home, Tab-Wechsel): Position flushen.
-  // pagehide = endgültiges Schließen/Neuladen → sauberes Stopped (keepalive überlebt den Teardown).
+  // The app is backgrounded/suspended (webOS Home, tab switch): flush the position.
+  // pagehide = final close/reload → clean Stopped (keepalive survives the teardown).
   function onVisibilityChange() { if (document.hidden) flushProgress(); }
   function onPageHide() { reportPlaybackStopped(true); }
 
   // ============================================================
-  // TRACK WECHSEL
+  // TRACK SWITCHING
   // ============================================================
 
   async function changeTrack(type, index) {
-    // Panel-Trap SOFORT lösen, bevor Zustand mutiert und der Fokus zurückkehrt. Sonst zieht onFocusIn der
-    // Spatial-Nav den Fokus zurück in das noch ausblendende Panel (transition:uiFade → erst nach dem Outro
-    // weg), das gleich darauf unmountet → Fokus landet im Nichts. Beim Schließen tritt das nicht auf, weil
-    // dort kein panel-interner Zustand mehr mutiert und dropTrapOnOutro den Trap rechtzeitig entfernt.
+    // Release the panel trap IMMEDIATELY, before state mutates and focus returns. Otherwise the spatial
+    // nav's onFocusIn pulls focus back into the still-fading panel (transition:uiFade → gone only after the
+    // outro), which unmounts right after → focus lands nowhere. On close this doesn't happen, because
+    // there no panel-internal state mutates anymore and dropTrapOnOutro removes the trap in time.
     settingsPanel?.removeAttribute('data-focus-trap');
     showSettings = false;
     resetControlsTimeout();
@@ -1218,17 +1218,17 @@
     if (type === 'subtitle') {
       const oldStream = mediaStreams.find(s => s.Index === selectedSubtitleIndex && s.Type === 'Subtitle');
       const newStream = mediaStreams.find(s => s.Index === index && s.Type === 'Subtitle');
-      // Weicher Wechsel möglich, wenn der Untertitel NICHT gebrannt werden muss: "Aus", oder
-      // ein Textuntertitel (egal ob extern geliefert oder eingebettet → wir holen ihn als VTT).
+      // A soft switch is possible when the subtitle doesn't need to be burned in: "Off", or
+      // a text subtitle (whether delivered externally or embedded → we fetch it as VTT).
       const graphicCodecs = ['pgssub', 'dvdsub', 'pgs', 'dvbsub', 'vobsub', 'sub'];
       const isSoftSub = (s, idx) => {
         if (idx === -1) return true;
         if (!s) return false;
-        if ((s.DeliveryMethod || '').toLowerCase() === 'encode') return false;      // gebrannt → Neuladen
+        if ((s.DeliveryMethod || '').toLowerCase() === 'encode') return false;      // burned in → reload
         const codec = (s.Codec || '').toLowerCase();
-        if (['pgssub', 'pgs'].includes(codec)) return clientGraphicRender;          // PGS: clientseitig → weich, sonst gebrannt
-        if (['dvdsub', 'vobsub', 'sub'].includes(codec)) return clientGraphicRender && serverVobSub;  // VobSub: weich ab Jellyfin 12.0
-        if (graphicCodecs.includes(codec)) return false;                            // andere Grafik → nicht als VTT
+        if (['pgssub', 'pgs'].includes(codec)) return clientGraphicRender;          // PGS: client-side → soft, otherwise burned in
+        if (['dvdsub', 'vobsub', 'sub'].includes(codec)) return clientGraphicRender && serverVobSub;  // VobSub: soft from Jellyfin 12.0
+        if (graphicCodecs.includes(codec)) return false;                            // other graphic → not as VTT
         return true;
       };
       const oldIsExternal = isSoftSub(oldStream, selectedSubtitleIndex);
@@ -1236,14 +1236,14 @@
 
       selectedSubtitleIndex = index;
 
-      // Instant-Switch: müssen weder alter noch neuer Untertitel ins Bild gebrannt werden
-      // (Text, PGS-clientseitig oder "Aus"), tauschen wir nur das Overlay aus – ohne Neuladen.
+      // Instant switch: if neither the old nor the new subtitle needs burning into the picture
+      // (text, PGS client-side or "Off"), we just swap the overlay – without reloading.
       if (oldIsExternal && newIsExternal && currentMediaSource) {
         applySubtitleOverlay(index, currentMediaSource);
-        // Fokus ERST NACH allen reaktiven Änderungen (selectedSubtitleIndex, subtitleCues, Panel-Outro)
-        // zurückgeben — sonst wirft der nachgelagerte Re-Render ihn wieder weg. Exakt wie der Schließen-Pfad,
-        // der nach restoreControlFocus() nichts mehr mutiert. (ASS sichert den Fokus zusätzlich nach dem
-        // assjs-Einhängen in applyAssSubtitle erneut.)
+        // Return focus ONLY AFTER all reactive changes (selectedSubtitleIndex, subtitleCues, panel outro)
+        // — otherwise the subsequent re-render throws it away again. Exactly like the close path,
+        // which mutates nothing after restoreControlFocus(). (ASS additionally secures the focus again after
+        // mounting assjs in applyAssSubtitle.)
         await tick();
         restoreControlFocus();
         return;
@@ -1252,41 +1252,41 @@
       selectedAudioIndex = index;
     }
 
-    // Hard-Reload (Fallback): Audiowechsel oder gebrannte Untertitel erfordern einen neuen
-    // Server-Stream. Position sichern → seekToResume stellt sie nach dem Neuaufbau wieder her.
+    // Hard reload (fallback): an audio switch or burned-in subtitles require a new
+    // server stream. Save the position → seekToResume restores it after the rebuild.
     const savedPosition = videoElement?.currentTime ?? 0;
     startTicks    = Math.round(savedPosition * 10000000);
     resumeApplied = false;
     await setupPlayback(selectedAudioIndex, selectedSubtitleIndex);
     await tick();
-    restoreControlFocus();   // auch nach Hard-Reload (Audiowechsel / gebrannter Untertitel) auf den Auslöser
+    restoreControlFocus();   // also after a hard reload (audio switch / burned-in subtitle) onto the trigger
   }
 
   // ============================================================
-  // AKTIONEN
+  // ACTIONS
   // ============================================================
 
   function skipIntro() {
     if (!videoElement || !introData?.Introduction?.IntroEnd) return;
     videoElement.currentTime = introData.Introduction.IntroEnd;
-    // Beim Überspringen NICHT die Steuerung einblenden — man will direkt weiterschauen. Fokus auf den
-    // Player legen, da der Skip-Button gleich verschwindet → Tastendrücke greifen weiterhin.
+    // On skip do NOT show the controls — you want to keep watching directly. Put focus on the
+    // Player, since the skip button vanishes shortly → keypresses keep working.
     playerContainer?.focus();
   }
 
-  // manual=true → vom Nutzer ausgelöst (Button/Prompt); manual=false → Auto-Play (Countdown/Ende/Credits).
+  // manual=true → triggered by the user (button/prompt); manual=false → auto-play (countdown/end/credits).
   function goToNextEpisode(manual = false) {
     stopCountdown();
     if (!nextEpisode) return;
     const awake = manual || interacted;
-    // Einschlaf-Schutz: nur bei Serien-Auto-Play, wenn der Nutzer länger nichts getan hat.
+    // Sleep protection: only for series auto-play, when the user hasn't done anything for a while.
     if (!awake && playbackPrefs.stillWatching && item.Type === 'Episode'
         && autoPlayStreak >= (playbackPrefs.stillWatchingEpisodes || 3)) {
       videoElement?.pause();
       showStillWatching = true;
       return;
     }
-    // resetStreak: wach → Zähler in App auf 0; sonst hochzählen.
+    // resetStreak: awake → counter in App to 0; otherwise increment.
     onNext?.({ episode: nextEpisode, resetStreak: awake });
   }
 
@@ -1308,7 +1308,7 @@
   function onSeekStart() {
     isSeeking = true;
     seekTime  = currentTime;
-    if (controlsTimeout) clearTimeout(controlsTimeout); // Controls bleiben sichtbar
+    if (controlsTimeout) clearTimeout(controlsTimeout); // controls stay visible
   }
 
   function onSeekInput(e) {
@@ -1342,8 +1342,8 @@
     resetControlsTimeout();
   }
 
-  // Spulen wie bei Netflix/Jellyfin: mehrfaches schnelles Drücken verschiebt nur die VORSCHAU
-  // und springt erst nach einer kurzen Pause EINMAL an die Stelle — nicht bei jedem Druck neu laden.
+  // Seeking like Netflix/Jellyfin: several fast presses only move the PREVIEW
+  // and jump to the spot ONCE only after a short pause — no reload on every press.
   function skip(seconds) {
     if (!videoElement || !duration) return;
     if (!isSeeking) { isSeeking = true; seekTime = currentTime; }
@@ -1356,11 +1356,11 @@
     if (seekCommitTimer) { clearTimeout(seekCommitTimer); seekCommitTimer = null; }
     if (!isSeeking) return;
     if (videoElement) videoElement.currentTime = seekTime;
-    currentTime = seekTime;   // sofort übernehmen, kein kurzes Zurückspringen bis zum timeupdate
+    currentTime = seekTime;   // apply immediately, no brief jump-back until the timeupdate
     isSeeking = false;
   }
 
-  // Kapitel-Sprünge — nur sinnvoll/sichtbar wenn das Video echte Kapitelmarken hat
+  // Chapter jumps — only useful/visible when the video has real chapter markers
   let hasChapterNav = $derived(showChapters && chapters.length > 1);
   function chapterStartsSorted() {
     return chapters.map(c => c.StartPositionTicks / 10000000).sort((a, b) => a - b);
@@ -1368,7 +1368,7 @@
   function chapterPrev() {
     if (!videoElement) return;
     const t = videoElement.currentTime;
-    // 3 s Toleranz: kurz nach einem Kapitelstart springt man zum vorigen Kapitel
+    // 3 s tolerance: shortly after a chapter start you jump to the previous chapter
     const target = [...chapterStartsSorted()].reverse().find(s => s < t - 3);
     videoElement.currentTime = target ?? 0;
     resetControlsTimeout();
@@ -1381,18 +1381,18 @@
     resetControlsTimeout();
   }
 
-  // Fokus nach Panel-Schließen/Spurwechsel zurück auf den auslösenden Button (Untertitel/Audio/Zahnrad),
-  // damit ein SICHTBARES Steuerelement fokussiert ist — nicht der unsichtbare Container. Fällt auf den
-  // Player-Container zurück, falls der Button nicht (mehr) existiert (Erststart, Hard-Reload).
+  // Focus after closing the panel/switching tracks back onto the triggering button (subtitle/audio/gear),
+  // so a VISIBLE control is focused — not the invisible container. Falls back to the
+  // Player container if the button doesn't (any longer) exist (first start, hard reload).
   function restoreControlFocus() {
     if (controlOpener && document.contains(controlOpener)) controlOpener.focus();
     else playerContainer?.focus();
   }
 
-  // FIX: Settings Panel auto-fokussieren für WebOS D-Pad
+  // FIX: auto-focus the settings panel for the webOS D-pad
   async function toggleSettings() {
     if (!showSettings) {
-      // Öffnenden Button merken (sofern er außerhalb des Panels liegt)
+      // Remember the opening button (if it's outside the panel)
       const el = document.activeElement;
       if (el instanceof HTMLElement && !settingsPanel?.contains(el)) controlOpener = el;
     }
@@ -1400,23 +1400,23 @@
     if (showSettings) {
       if (controlsTimeout) clearTimeout(controlsTimeout);
       await tick();
-      // Ersten Button im Settings-Panel fokussieren
+      // Focus the first button in the settings panel
       const firstBtn = settingsPanel?.querySelector('button');
       if (firstBtn) firstBtn.focus();
     } else {
       resetControlsTimeout();
       await tick();
-      // Fokus zurück auf den auslösenden Button (Audio/Untertitel/Zahnrad), sonst auf den Player
+      // Focus back onto the triggering button (audio/subtitle/gear), otherwise onto the Player
       restoreControlFocus();
       controlOpener = null;
     }
   }
 
-  // Öffnet das Panel direkt auf Audio- oder Untertitel-Bereich (eigene Buttons statt Zahnrad).
-  // Gleiche Taste bei offenem, gleichem Tab → schließen.
+  // Opens the panel directly on the audio or subtitle section (dedicated buttons instead of the gear).
+  // Same key with the same tab open → close.
   async function openSettings(tab) {
     if (showSettings && settingsTab === tab) { toggleSettings(); return; }
-    // Auch beim Tab-Wechsel den aktiven Button merken (z. B. von Audio auf Untertitel)
+    // Remember the active button on a tab switch too (e.g. from audio to subtitle)
     const el = document.activeElement;
     if (el instanceof HTMLElement && !settingsPanel?.contains(el)) controlOpener = el;
     settingsTab = tab;
@@ -1424,25 +1424,25 @@
     else { await tick(); settingsPanel?.querySelector('button')?.focus(); }
   }
 
-  // Schieberegler: Links/Rechts spulen (±10 s), Hoch/Runter verlässt die Leiste
-  // (das native Wertändern bei Hoch/Runter wird unterdrückt; die Gruppen-Navigation
-  // übernimmt den Sprung zu den Steuer-Buttons).
+  // Slider: Left/Right seek (±10 s), Up/Down leaves the bar
+  // (the native value change on Up/Down is suppressed; the group navigation
+  // takes over the jump to the control buttons).
   function onSeekKey(e) {
     if (e.key === 'ArrowLeft')      { e.preventDefault(); e.stopPropagation(); skip(-10); resetControlsTimeout(); }
     else if (e.key === 'ArrowRight'){ e.preventDefault(); e.stopPropagation(); skip(10);  resetControlsTimeout(); }
-    // OK auf der Leiste: ausstehenden Sprung sofort übernehmen, dann Wiedergabe/Pause umschalten.
+    // OK on the bar: apply the pending jump immediately, then toggle play/pause.
     else if (e.key === 'Enter' || e.keyCode === 13) {
       e.preventDefault(); e.stopPropagation();
       if (isSeeking) commitSeek();
       togglePlay();
     }
-    // ▼ springt direkt auf Wiedergabe/Pause (häufigster Fall) statt auf den linken Zurückspul-Button.
+    // ▼ jumps directly to play/pause (the most common case) instead of the left rewind button.
     else if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); if (isSeeking) commitSeek(); playPauseBtn?.focus(); resetControlsTimeout(); }
-    else if (e.key === 'ArrowUp')   { e.preventDefault(); /* nach oben per FocusManager */ }
+    else if (e.key === 'ArrowUp')   { e.preventDefault(); /* upward via the FocusManager */ }
   }
 
   function handleKeyDown(e) {
-    // Fehler-Overlay offen: Pfeile/OK steuern nur die zwei Buttons (Spatial-Nav + Button-Klick), Zurück verlässt.
+    // Error overlay open: arrows/OK control only the two buttons (spatial nav + button click), Back exits.
     if (playbackError) {
       if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); onExit?.(); }
       return;
@@ -1451,7 +1451,7 @@
       if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); toggleSettings(); }
       return;
     }
-    // Läuft der Auto-Play-Countdown, bricht Zurück erst diesen ab (statt den Player zu verlassen)
+    // If the auto-play countdown is running, Back cancels it first (instead of leaving the Player)
     if (nextCountdown !== null && isBackKey(e)) {
       e.preventDefault(); e.stopPropagation();
       cancelCountdown();
@@ -1463,15 +1463,15 @@
       onExit?.();
       return;
     }
-    // Outro-Entscheidungsprompt offen: Pfeile bewegen NUR zwischen dessen Buttons (Spatial-Nav im
-    // data-focus-trap des Prompts) — nicht zur Wiedergabeleiste, und ohne das HUD einzublenden.
+    // Outro decision prompt open: arrows move ONLY between its buttons (spatial nav in the
+    // prompt's data-focus-trap) — not to the playback bar, and without showing the HUD.
     if (outroPromptShowing && (e.key === 'ArrowLeft' || e.key === 'ArrowRight'
                             || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
       return;
     }
-    // HUD verborgen (man schaut gerade) → OK pausiert/spielt direkt und fokussiert Play/Pause,
-    // damit ein erneutes OK sofort fortsetzt. Bei offenem Overlay NICHT eingreifen — dort soll
-    // OK den fokussierten Button (Intro/Outro überspringen, Weiterschauen) auslösen.
+    // HUD hidden (you're watching) → OK pauses/plays directly and focuses play/pause,
+    // so another OK resumes immediately. With an overlay open do NOT intervene — there
+    // OK should trigger the focused button (skip intro/outro, keep watching).
     if ((e.key === 'Enter' || e.keyCode === 13) && !showControls && !overlayActive) {
       e.preventDefault();
       togglePlay();
@@ -1479,7 +1479,7 @@
       playPauseBtn?.focus();
       return;
     }
-    // HUD verborgen + Links/Rechts → Wiedergabeleiste fokussieren und spulen (wie bei Jellyfin).
+    // HUD hidden + Left/Right → focus the playback bar and seek (like Jellyfin).
     if (!showControls && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault(); e.stopPropagation();
       resetControlsTimeout();
@@ -1487,8 +1487,8 @@
       skip(e.key === 'ArrowLeft' ? -10 : 10);
       return;
     }
-    // Pfeiltasten/Enter werden sonst von der Gruppen-Navigation bzw. den fokussierten
-    // Buttons verarbeitet — hier nur die Steuerung wieder einblenden.
+    // Arrow keys/Enter are otherwise handled by the group navigation or the focused
+    // buttons — here just show the controls again.
     resetControlsTimeout();
   }
 
@@ -1537,11 +1537,11 @@
     onclick={togglePlay}
   ></video>
 
-  <!-- ASS/SSA-Untertitel: assjs injiziert hier sein DOM-Overlay, synchron zum <video> (liest KEINE Pixel
-       → kein Taint). Container überlappt das Video (absolute inset-0); z unter Spinner/Controls. -->
+  <!-- ASS/SSA subtitles: assjs injects its DOM overlay here, synced to the <video> (reads NO pixels
+       → no taint). The container overlaps the video (absolute inset-0); z below spinner/controls. -->
   <div bind:this={assContainer} class="absolute inset-0 pointer-events-none z-[20]"></div>
 
-  <!-- LADEANIMATION — sichtbar solange Video puffert oder NAS aufwacht -->
+  <!-- LOADING ANIMATION — visible while the video buffers or the NAS wakes up -->
   {#if isBuffering && !playbackError}
     <div class="absolute inset-0 flex items-center justify-center z-[30] pointer-events-none">
       <div class="flex flex-col items-center gap-5">
@@ -1551,7 +1551,7 @@
     </div>
   {/if}
 
-  <!-- FEHLER — statt endlosem Spinner: klare Meldung + Aktionen -->
+  <!-- ERROR — instead of an endless spinner: a clear message + actions -->
   {#if playbackError}
     <div data-focus-trap class="absolute inset-0 flex items-center justify-center z-[80] bg-black/80">
       <div class="flex flex-col items-center gap-5 max-w-md text-center px-8">
@@ -1574,7 +1574,7 @@
     </div>
   {/if}
 
-  <!-- WIEDERGABEINFO-OVERLAY (opt-in, vom Info-Button getoggelt) -->
+  <!-- PLAYBACK INFO OVERLAY (opt-in, toggled by the info button) -->
   {#if showInfoOverlay}
     <div transition:uiFade class="absolute top-8 left-8 z-[55] bg-black/75 backdrop-blur-md border border-gray-700 rounded-xl px-6 py-5 text-lg shadow-2xl pointer-events-none max-w-md">
       <div class="text-gray-400 uppercase tracking-wider text-sm font-bold mb-3">{i18n.t.playbackInfo}</div>
@@ -1618,12 +1618,12 @@
     </div>
   {/if}
 
-  <!-- HAUPT-OVERLAY — Klick auf die leere Bildfläche (|self, nicht auf Buttons) pausiert/spielt -->
+  <!-- MAIN OVERLAY — clicking the empty picture area (|self, not on buttons) pauses/plays -->
   <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/50 flex flex-col justify-between p-10 transition-opacity duration-500 z-50
               {showControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}"
        onclick={(e) => { if (e.target === e.currentTarget) togglePlay(); }}>
 
-    <!-- OBEN: Titel + Uhrzeit -->
+    <!-- TOP: title + clock -->
     <div class="flex items-start justify-between gap-6">
       <div>
         <h1 class="text-3xl font-bold drop-shadow-lg">{item.Name}</h1>
@@ -1649,10 +1649,10 @@
       </div>
     </div>
 
-    <!-- UNTEN: Progress + Buttons -->
+    <!-- BOTTOM: progress + buttons -->
     <div class="w-full flex flex-col gap-6">
 
-      <!-- PROGRESS BAR — sauberes Scrubbing, Kapitelmarken nur wenn aktiviert -->
+      <!-- PROGRESS BAR — clean scrubbing, chapter markers only when enabled -->
       <div class="flex items-center gap-4 w-full">
         <span class="text-xl font-mono w-24 tabular-nums">{formatTime(displayTime)}</span>
         <div class="relative flex-1 flex items-center">
@@ -1670,11 +1670,11 @@
             class="seekbar w-full h-1.5 rounded-full appearance-none cursor-pointer focus:outline-none"
           />
           {#if isSeeking}
-            <!-- Vorschau folgt dem Scrubber; Kapitelname (falls vorhanden) darüber gestapelt → keine Überlappung -->
+            <!-- Preview follows the scrubber; chapter name (if any) stacked above → no overlap -->
             <div class="absolute bottom-full mb-4 -translate-x-1/2 pointer-events-none whitespace-nowrap flex flex-col items-center gap-0.5"
                  style="left: {Math.min(96, Math.max(4, seekPct))}%;">
               {#if trickplayTile}
-                <!-- Trickplay-Vorschaubild: aus dem Kachel-Sheet ausgeschnitten -->
+                <!-- Trickplay preview image: cropped from the tile sheet -->
                 <div class="rounded-lg overflow-hidden shadow-2xl ring-1 ring-white/25 mb-1.5"
                      style="width:{trickplayTile.w}px; height:{trickplayTile.h}px;
                             background-image:url('{trickplayTile.url}');
@@ -1711,19 +1711,19 @@
       <div class="flex justify-between items-center w-full px-4">
         <div class="flex items-center gap-6">
 
-          <!-- Vorige Folge: |◄ — Transport-Navigation (sequentiell) -->
+          <!-- Previous episode: |◄ — transport navigation (sequential) -->
           <button onclick={() => prevEpisode && onPrev?.(prevEpisode)}
             disabled={!prevEpisode}
             class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none disabled:opacity-30"
             title={i18n.t.prevEpisode}>
-            <!-- |◄ : bar links + Dreieck zeigt LINKS -->
+            <!-- |◄ : bar on the left + triangle points LEFT -->
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/>
             </svg>
           </button>
 
-          <!-- Kapitel zurück — nur wenn aktiviert UND Kapitelmarken vorhanden.
-               Icon bewusst ANDERS als Folgen-Skip: Chevron auf einen Punkt (= Kapitelmarke). -->
+          <!-- Chapter back — only when enabled AND chapter markers exist.
+               Icon deliberately DIFFERENT from the episode skip: chevron onto a dot (= chapter marker). -->
           {#if hasChapterNav}
             <button onclick={chapterPrev} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={i18n.t.chapterPrev}>
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1754,8 +1754,8 @@
             </svg>
           </button>
 
-          <!-- Kapitel vor — nur wenn aktiviert UND Kapitelmarken vorhanden.
-               Icon bewusst ANDERS als Folgen-Skip: Chevron auf einen Punkt (= Kapitelmarke). -->
+          <!-- Chapter forward — only when enabled AND chapter markers exist.
+               Icon deliberately DIFFERENT from the episode skip: chevron onto a dot (= chapter marker). -->
           {#if hasChapterNav}
             <button onclick={chapterNext} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={i18n.t.chapterNext}>
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1765,12 +1765,12 @@
             </button>
           {/if}
 
-          <!-- Nächste Folge: ►| — Transport-Navigation (sequentiell), zählt als bewusste Aktion -->
+          <!-- Next episode: ►| — transport navigation (sequential), counts as a deliberate action -->
           <button onclick={() => goToNextEpisode(true)}
             disabled={!nextByIndex}
             class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none disabled:opacity-30"
             title={i18n.t.nextEpisode}>
-            <!-- ►| : Dreieck zeigt RECHTS + bar rechts -->
+            <!-- ►| : triangle points RIGHT + bar on the right -->
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M16 6h2v12h-2zm-10 0l9 6-9 6V6z"/>
             </svg>
@@ -1779,8 +1779,8 @@
 
         <div class="flex items-center gap-4">
 
-          <!-- NUR NOCH DIESE FOLGE — Einschlaf-Einmalschalter (opt-in), erster der rechten Gruppe.
-               Nur sichtbar, wenn freigeschaltet UND ein Auto-Weiter aktiv ist (sonst wirkungslos). -->
+          <!-- ONLY THIS EPISODE — one-shot sleep switch (opt-in), first of the right group.
+               Only visible when enabled AND an auto-advance is active (otherwise pointless). -->
           {#if playbackPrefs.sleepButton && autoAdvanceOn}
             <button onclick={(e) => { e.stopPropagation(); toggleStopAfter(); }} title={i18n.t.stopAfterEpisode} aria-label={i18n.t.stopAfterEpisode}
               class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
@@ -1790,7 +1790,7 @@
               </svg>
             </button>
           {/if}
-          <!-- Favorit -->
+          <!-- Favorite -->
           <button onclick={toggleFavorite}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors {isFavorite ? 'text-red-500' : 'text-gray-400 hover:text-white focus:text-white'}">
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
@@ -1798,21 +1798,21 @@
             </svg>
           </button>
 
-          <!-- Zur Wiedergabeliste hinzufügen -->
+          <!-- Add to playlist -->
           <button onclick={(e) => { e.stopPropagation(); openPicker('playlist'); }} title={i18n.t.addToPlaylist} aria-label={i18n.t.addToPlaylist}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors text-gray-400 hover:text-white focus:text-white">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h13M3 12h9m-9 6h9m4-3v6m3-3h-6"/></svg>
           </button>
 
           {#if canManageCollections}
-          <!-- Zur Sammlung hinzufügen -->
+          <!-- Add to collection -->
           <button onclick={(e) => { e.stopPropagation(); openPicker('collection'); }} title={i18n.t.addToCollection} aria-label={i18n.t.addToCollection}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors text-gray-400 hover:text-white focus:text-white">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
           </button>
           {/if}
 
-          <!-- AUDIO — nur Icon (ersetzt das Zahnrad) -->
+          <!-- AUDIO — icon only (replaces the gear) -->
           <button onclick={(e) => { e.stopPropagation(); openSettings('audio'); }} title={i18n.t.audio} aria-label={i18n.t.audio}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                    {showSettings && settingsTab === 'audio' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
@@ -1821,7 +1821,7 @@
             </svg>
           </button>
 
-          <!-- UNTERTITEL — nur Icon -->
+          <!-- SUBTITLES — icon only -->
           <button onclick={(e) => { e.stopPropagation(); openSettings('subtitle'); }} title={i18n.t.subtitles} aria-label={i18n.t.subtitles}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                    {showSettings && settingsTab === 'subtitle' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
@@ -1831,7 +1831,7 @@
             </svg>
           </button>
 
-          <!-- WIEDERGABEINFOS — nur wenn in den Einstellungen freigeschaltet -->
+          <!-- PLAYBACK INFO — only when enabled in the settings -->
           {#if playbackPrefs.showPlaybackInfo}
             <button onclick={(e) => { e.stopPropagation(); toggleInfoOverlay(); }} title={i18n.t.playbackInfo} aria-label={i18n.t.playbackInfo}
               class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
@@ -1848,7 +1848,7 @@
       </div>
     </div>
 
-    <!-- EINSTELLUNGS-PANEL — bind:this für WebOS D-Pad Fokus -->
+    <!-- SETTINGS PANEL — bind:this for webOS D-pad focus -->
     {#if showSettings}
       <div bind:this={settingsPanel} data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro}
         class="absolute bottom-32 right-12 bg-gray-900/95 backdrop-blur-md border border-gray-700 rounded-2xl shadow-2xl z-[60] p-6 flex flex-col gap-6 w-96 max-h-[60vh]">
@@ -1907,11 +1907,11 @@
     {/if}
 
   </div>
-  <!-- ENDE HAUPT-OVERLAY -->
+  <!-- END MAIN OVERLAY -->
 
 
-  <!-- UNTERTITEL-OVERLAY — eigener VTT-Renderer (native Track-Anzeige ist auf webOS unzuverlässig).
-       Rückt nach oben, wenn die Steuerleiste sichtbar ist, damit nichts überdeckt wird. -->
+  <!-- SUBTITLE OVERLAY — our own VTT renderer (native track display is unreliable on webOS).
+       Moves up when the control bar is visible so nothing is covered. -->
   {#if currentSubtitleText}
     <div class="absolute inset-x-0 z-[65] flex justify-center px-[8%] pointer-events-none transition-all duration-200
                 {showControls ? 'bottom-44' : 'bottom-[7%]'}">
@@ -1920,7 +1920,7 @@
   {/if}
 
 
-  <!-- INTRO ÜBERSPRINGEN — unten links -->
+  <!-- SKIP INTRO — bottom left -->
   {#if showSkipIntro}
     <div transition:uiFade class="absolute bottom-36 left-12 z-[70]">
       <button onclick={skipIntro} {@attach focusOnMount()}
@@ -1928,7 +1928,7 @@
                px-8 py-4 rounded-xl flex items-center gap-3 shadow-2xl
                hover:bg-white hover:text-black focus:bg-white focus:text-black
                focus:outline-none transition-all duration-200">
-        <!-- Doppelpfeil rechts für "überspringen" -->
+        <!-- Double arrow right for "skip" -->
         <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
           <path d="M5.59 7.41L10.18 12l-4.59 4.59L7 18l6-6-6-6zM16 6h2v12h-2z"/>
         </svg>
@@ -1938,8 +1938,8 @@
   {/if}
 
 
-  <!-- NÄCHSTE FOLGE — unten rechts -->
-  <!-- AUTO-PLAY COUNTDOWN — Netflix-Stil, mit "Jetzt abspielen" / "Abbrechen" -->
+  <!-- NEXT EPISODE — bottom right -->
+  <!-- AUTO-PLAY COUNTDOWN — Netflix style, with "Play now" / "Cancel" -->
   {#if nextCountdown !== null && nextEpisode}
     <div transition:uiFade data-focus-trap class="absolute bottom-36 right-12 z-[70]">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-5 w-80 flex flex-col gap-3">
@@ -1966,8 +1966,8 @@
     </div>
   {/if}
 
-  <!-- Manueller "Nächste Folge"-Prompt (kein Countdown): erscheint bei deaktiviertem Auto-Play ODER nach
-       Abbruch des Timers. Der Nutzer entscheidet selbst — "Abbrechen" bleibt bei der aktuellen Folge (Outro). -->
+  <!-- Manual "next episode" prompt (no countdown): appears with auto-play disabled OR after
+       cancelling the timer. The user decides — "Cancel" stays on the current episode (outro). -->
   {#if outroPromptActive && nextEpisode && nextCountdown === null && !outroDismissed}
     <div transition:uiFade data-focus-trap class="absolute bottom-36 right-12 z-[70]">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-5 w-80 flex flex-col gap-3">
@@ -1991,7 +1991,7 @@
     </div>
   {/if}
 
-  <!-- "Schaust du noch?" – nach Inaktivität pausiert -->
+  <!-- "Still watching?" – paused after inactivity -->
   {#if showStillWatching}
     <div transition:uiFade onoutrostart={dropTrapOnOutro} class="absolute inset-0 z-[120] bg-black/85 flex items-center justify-center">
       <div class="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl p-12 flex flex-col items-center gap-7 max-w-md text-center">
@@ -2013,14 +2013,14 @@
 
 </div>
 
-<!-- Zur Sammlung / Wiedergabeliste hinzufügen (gemeinsame Komponente) -->
+<!-- Add to collection / playlist (shared component) -->
 <AddToPicker mode={pickerMode} {item} {selectedUser} {getAuthHeaders}
   onCreated={() => onLibChanged?.()}
   onClose={async () => { pickerMode = null; if (wasPlayingBeforePicker) videoElement?.play().catch(() => {}); wasPlayingBeforePicker = false; await tick(); if (controlOpener && document.contains(controlOpener)) controlOpener.focus(); else playerContainer?.focus(); controlOpener = null; }} />
 
 <style>
-  /* Wiedergabeleiste — gesehener Teil blau, Rest hell (konsistent in allen Browsern),
-     weißer Griff, dezente Fokus-Aura statt kräftigem Ring (moderner Player-Stil). */
+  /* Seek bar — watched part blue, rest light (consistent across all browsers),
+     white handle, subtle focus aura instead of a strong ring (modern player style). */
   :global(.seekbar) { -webkit-appearance: none; appearance: none; }
   :global(.seekbar::-webkit-slider-thumb) {
     -webkit-appearance: none; appearance: none;
@@ -2041,12 +2041,12 @@
     box-shadow: 0 0 0 5px var(--color-blue-500, #3b82f6), 0 0 16px 3px rgba(59,130,246,.55);
   }
 
-  /* Untertitelgröße (skaliert die nativen VTT-Cues; vh für TV-Abstand) */
+  /* Subtitle size (scales the native VTT cues; vh for TV distance) */
   :global(.subs-small video::cue)  { font-size: 2.6vh; }
   :global(.subs-normal video::cue) { font-size: 3.4vh; }
   :global(.subs-large video::cue)  { font-size: 4.8vh; }
 
-  /* Eigener Untertitel-Overlay-Renderer (externe VTT) — kein Kasten, nur kräftiger Schatten */
+  /* Our own subtitle overlay renderer (external VTT) — no box, just a strong shadow */
   .subtitle-box {
     white-space: pre-line; text-align: center; color: #fff; font-weight: 600; line-height: 1.35;
     text-shadow: 0 1px 2px #000, 0 2px 8px rgba(0,0,0,.95), 0 0 4px rgba(0,0,0,.9);

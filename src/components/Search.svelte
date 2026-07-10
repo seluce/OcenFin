@@ -15,7 +15,7 @@
   let searchHistory  = $state([]);
   const MAX_HISTORY  = 8;
 
-  // FIX: Nur ein einziges onMount — lädt Verlauf UND fokussiert das Eingabefeld
+  // FIX: only a single onMount — loads the history AND focuses the input field
   onMount(() => {
     if (searchInput) searchInput.focus();
     try {
@@ -55,11 +55,11 @@
 
   const getAuthHeaders = () => authHeaders(session.token);
 
-  // Stale-Guard (Muster wie subtitleFetchToken im Player): Nur die JÜNGSTE Suche darf Ergebnisse
-  // übernehmen. Ohne das kann eine frühere, langsame Antwort eine spätere überschreiben —
-  // man sieht dann Treffer zum vorletzten Suchbegriff.
+  // Stale guard (pattern like subtitleFetchToken in the Player): only the MOST RECENT search may accept
+  // results. Without it an earlier, slow response can overwrite a later one —
+  // you'd then see hits for the second-to-last search term.
   let searchToken = 0;
-  const personHasTitles = new Map();   // personId → boolean; lebt nur so lange wie diese Ansicht gemountet ist
+  const personHasTitles = new Map();   // personId → boolean; lives only as long as this view is mounted
 
   function onSearchInput() {
     clearTimeout(searchTimeout);
@@ -71,27 +71,27 @@
   async function performSearch() {
     const myToken = ++searchToken;
     try {
-      // Titel + Personen parallel suchen
+      // Search titles + people in parallel
       const [itemsRes, peopleRes] = await Promise.all([
         fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items?searchTerm=${encodeURIComponent(query)}&Recursive=true&IncludeItemTypes=Movie,Series,Episode&Limit=24&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName&EnableTotalRecordCount=false`,
           { headers: getAuthHeaders() }),
         fetch(`${session.serverUrl}/Persons?searchTerm=${encodeURIComponent(query)}&Limit=10&userId=${selectedUser.Id}&EnableTotalRecordCount=false`,
           { headers: getAuthHeaders() })
       ]);
-      if (myToken !== searchToken) return;   // inzwischen neue Suche → diese Antwort verwerfen
+      if (myToken !== searchToken) return;   // a new search meanwhile → discard this response
       if (itemsRes.ok) {
         const items = (await itemsRes.json()).Items || [];
         if (myToken !== searchToken) return;
         results = items;
       }
 
-      // Personen: nur behalten, die tatsächlich in der Mediathek vorkommen.
-      // Jellyfins /Persons liefert auch Namen, die in keinem eigenen Titel mitspielen —
-      // daher pro Person eine schnelle Zähl-Abfrage (Limit=0 = nur TotalRecordCount).
-      // Ergebnis pro Person cachen (Lebensdauer = geöffnete Such-Ansicht): beim Tippen
-      // liefern aufeinanderfolgende Debounce-Suchen größtenteils dieselben Personen —
-      // ohne Cache je ein voller Abfrage-Burst. Die Titel-Suche ist davon unabhängig
-      // und immer frisch; Fehler werden bewusst NICHT gecacht.
+      // People: keep only those that actually appear in the library.
+      // Jellyfin's /Persons also returns names that don't appear in any own title —
+      // hence a quick count query per person (Limit=0 = only TotalRecordCount).
+      // Cache the result per person (lifetime = the open search view): while typing,
+      // consecutive debounced searches mostly return the same people —
+      // without a cache that's a full query burst each time. The title search is independent
+      // and always fresh; errors are deliberately NOT cached.
       if (peopleRes.ok) {
         const found = (await peopleRes.json()).Items || [];
         const checked = await Promise.all(found.map(async p => {
@@ -112,8 +112,8 @@
 
       if (query.trim().length >= 2 && (results.length > 0 || people.length > 0)) saveToHistory(query);
     } catch (e) { console.error("search failed:", e); }
-    // isLoading nur zurücksetzen, wenn wir noch die aktuelle Suche sind — sonst würde eine
-    // alte Antwort den Spinner der bereits laufenden neuen Suche vorzeitig löschen.
+    // Only reset isLoading if we're still the current search — otherwise an
+    // old response would clear the spinner of the already-running new search prematurely.
     finally     { if (myToken === searchToken) isLoading = false; }
   }
 
@@ -134,7 +134,7 @@
 
 <div class="p-10 pt-16 h-full flex flex-col">
 
-  <!-- SUCHFELD -->
+  <!-- SEARCH FIELD -->
   <div class="mb-8 relative shrink-0">
     <svg class="w-8 h-8 absolute left-6 top-1/2 -translate-y-1/2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
@@ -150,7 +150,7 @@
     />
   </div>
 
-  <!-- SUCHVERLAUF -->
+  <!-- SEARCH HISTORY -->
   {#if query.trim().length < 2 && searchHistory.length > 0}
     <div class="mb-8 flex flex-col gap-4">
       <div class="px-2">
@@ -164,8 +164,8 @@
             {term}
           </button>
         {/each}
-        <!-- Verlauf löschen: als LETZTES Element der Pill-Reihe → per D-Pad rechts vom letzten
-             Begriff erreichbar (vorher oben rechts in der Kopfzeile, dorthin kam man nicht). -->
+        <!-- Clear history: as the LAST element of the pill row → reachable via D-pad to the right of the
+             last term (previously top right in the header, which you couldn't reach). -->
         <button onclick={clearHistory}
           class="flex items-center gap-2 bg-gray-800 hover:bg-red-900/80 focus:bg-red-900/80 text-gray-400 hover:text-red-200 focus:text-red-200
                  px-6 py-3 rounded-full text-sm font-bold transition-all focus:outline-none focus:ring-4 focus:ring-red-500 border border-gray-700 shrink-0">
@@ -178,7 +178,7 @@
     </div>
   {/if}
 
-  <!-- ERGEBNISSE -->
+  <!-- RESULTS -->
   {#if isLoading}
     <div class="flex-1 flex justify-center mt-20">
       <div class="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
@@ -246,7 +246,7 @@
         </div>
       {/if}
 
-      <!-- PERSONEN (ganz unten) -->
+      <!-- PEOPLE (at the very bottom) -->
       {#if people.length > 0}
         <div>
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.people}</h2>

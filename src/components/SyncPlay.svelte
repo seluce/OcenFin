@@ -3,10 +3,10 @@
   import { focusOnMount, uiFade, dropTrapOnOutro } from '../utils.js';
 
   let {
-    group   = null,   // aktuelle Gruppe { GroupId, GroupName, Participants: [name] } oder null
-    groups  = [],     // verfügbare Gruppen
+    group   = null,   // current group { GroupId, GroupName, Participants: [name] } or null
+    groups  = [],     // available groups
     loading = false,
-    onClose, onLeave, onCreate, onRefresh, onJoin,   // Callback-Props (statt Events)
+    onClose, onLeave, onCreate, onRefresh, onJoin,   // callback props (instead of events)
   } = $props();
 </script>
 
@@ -28,7 +28,7 @@
     </div>
 
     {#if group}
-      <!-- In einer Gruppe: Mitglieder + Verlassen -->
+      <!-- In a group: members + leave -->
       <div class="bg-gray-800/70 border border-gray-700 rounded-xl p-5 flex flex-col gap-3">
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{i18n.t.syncGroupActive}</span>
         <span class="text-xl font-bold text-white">{group.GroupName}</span>
@@ -45,7 +45,7 @@
         {i18n.t.leaveGroup}
       </button>
     {:else}
-      <!-- Nicht in einer Gruppe: erstellen oder beitreten -->
+      <!-- Not in a group: create or join -->
       <button onclick={() => onCreate?.()} {@attach focusOnMount()}
         class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-xl py-4 rounded-xl
                focus:outline-none focus:ring-4 focus:ring-white transition-colors flex items-center justify-center gap-3">

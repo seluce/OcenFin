@@ -380,7 +380,7 @@ export default {
     logQrHint: "Zeskanuj telefonem, aby przenieść ostatnie wiersze (np. e-mailem).",
     logBackToText: "Powrót do tekstu",
 
-    // Untertitel-Styling (nur Text)
+    // Subtitle styling (text only)
     subtitleColor: "Kolor",
     subtitleEdge: "Krawędź",
     subtitleBackground: "Tło",
@@ -397,14 +397,14 @@ export default {
     bgSemi: "Półprzezr.",
     bgSolid: "Pełne",
 
-    // Teilen
+    // Share
     share: "Udostępnij",
     shareHint: "Zeskanuj telefonem, aby wyszukać lub udostępnić tytuł.",
 
-    // Untertitel-Versatz
+    // Subtitle offset
     subtitleOffset: "Przesunięcie",
 
-    // Kennwort anzeigen/verbergen
+    // Show/hide password
     showPassword: "Pokaż hasło",
     hidePassword: "Ukryj hasło",
 

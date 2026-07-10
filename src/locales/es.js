@@ -380,7 +380,7 @@ export default {
     logQrHint: "Escanea con el móvil para transferir las últimas líneas (p. ej. por correo).",
     logBackToText: "Volver al texto",
 
-    // Untertitel-Styling (nur Text)
+    // Subtitle styling (text only)
     subtitleColor: "Color",
     subtitleEdge: "Borde",
     subtitleBackground: "Fondo",
@@ -397,14 +397,14 @@ export default {
     bgSemi: "Semi",
     bgSolid: "Sólido",
 
-    // Teilen
+    // Share
     share: "Compartir",
     shareHint: "Escanea con el móvil para consultar o compartir el título.",
 
-    // Untertitel-Versatz
+    // Subtitle offset
     subtitleOffset: "Desfase",
 
-    // Kennwort anzeigen/verbergen
+    // Show/hide password
     showPassword: "Mostrar contraseña",
     hidePassword: "Ocultar contraseña",
 
