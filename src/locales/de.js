@@ -127,6 +127,7 @@ export default {
     moreFromSeason: "Mehr von",
     trailer: "Trailer",
     similar: "Ähnliches",
+    extras: "Extras",
     seasons: "Staffeln",
     audio: "Audio",
     subtitles: "Untertitel",

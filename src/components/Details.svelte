@@ -20,6 +20,7 @@
   let fullItem     = $state(null);
   let relatedItems = $state([]);
   let similarItems = $state([]);
+  let extras       = $state([]);   // special features (making-ofs, deleted scenes, …)
   let isLoading    = $state(true);
 
   let selectedAudioIndex    = $state(-1);
@@ -265,6 +266,7 @@
     fullItem     = null;
     relatedItems = [];
     similarItems = [];
+    extras = [];
     selectedAudioIndex    = -1;
     selectedSubtitleIndex = -1;
     selectedMediaSourceId = null;
@@ -292,6 +294,7 @@
           ? (fullItem.SeriesId || itemId)
           : itemId;
         loadSimilarItems(similarId, myToken);
+        loadExtras(itemId, myToken);
         if (fullItem.Type === 'Episode' && fullItem.SeasonId) {
           loadRelatedItems(fullItem.SeasonId, myToken);
         } else if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
@@ -301,6 +304,18 @@
     } catch (e) { console.error(e); }
     // Only clear the spinner if we're still current — otherwise an old response kills the new one's.
     finally     { if (myToken === detailToken) isLoading = false; }
+  }
+
+  // Extras / special features of the opened item (movie, series or season).
+  // NOTE: the endpoint returns a DIRECT array (like /Items/Latest), not { Items }.
+  async function loadExtras(itemId, myToken) {
+    try {
+      const res = await fetch(
+        `${session.serverUrl}/Items/${itemId}/SpecialFeatures?userId=${selectedUser.Id}`,
+        { headers: getAuthHeaders() }
+      );
+      if (res.ok) { const d = await res.json(); if (myToken !== detailToken) return; extras = Array.isArray(d) ? d : (d.Items || []); }
+    } catch { /* extras are optional */ }
   }
 
   async function loadSimilarItems(itemId, myToken) {
@@ -805,6 +820,31 @@
                 <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full">
                   {#if ep.IndexNumber && ep.Type !== 'Season'}{ep.IndexNumber}.&nbsp;{/if}{ep.Name}
                 </span>
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
+      <!-- EXTRAS (special features) — play directly, extras have no own detail page -->
+      {#if extras.length > 0}
+        <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-extras">
+          <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.extras}</h2>
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
+            {#each extras as ex (ex.Id)}
+              <button onclick={() => onPlayVideo?.({ item: ex, audioIndex: -1, subtitleIndex: -1 })}
+                class="shrink-0 w-80 scroll-m-4 group flex flex-col focus:outline-none text-left">
+                <div class="aspect-video w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-transform duration-200">
+                  {#if getItemImageUrl(ex, 'landscape')}
+                    <img src={getItemImageUrl(ex, 'landscape')} {@attach blurUp(itemBlurHash(ex))} alt={ex.Name} class="w-full h-full object-cover" loading="lazy" />
+                  {:else}
+                    <div class="w-full h-full flex items-center justify-center text-gray-600">
+                      <svg class="w-12 h-12" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    </div>
+                  {/if}
+                </div>
+                <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full">{ex.Name}</span>
+                {#if ex.RunTimeTicks}<span class="text-xs text-gray-500">{getRuntimeMinutes(ex.RunTimeTicks)}</span>{/if}
               </button>
             {/each}
           </div>
