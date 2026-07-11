@@ -320,6 +320,7 @@ export default {
     // Quick Connect
     quickConnect: "Quick Connect",
     qcInstruction: "Introduza este código na sua aplicação Jellyfin (telemóvel/web) em «Quick Connect»:",
+    qcQrHint: "Digitalize com um telemóvel ligado ao Jellyfin.",
     qcCancel: "Cancelar",
     qcAuthInstruction: "Introduza um código de 6 dígitos de outro dispositivo para o autorizar:",
     qcAuthorizeBtn: "Autorizar dispositivo",
@@ -376,6 +377,8 @@ export default {
     clear: "Limpar",
     logShow: "Mostrar registo",
     logShowDesc: "Ver, copiar ou partilhar os registos atuais como código QR.",
+    helpFaq: "Ajuda e FAQ",
+    helpFaqHint: "Digitalize com o telemóvel para abrir a wiki e as FAQ do OcenFin.",
     logTitle: "Registo",
     logEmpty: "Ainda sem entradas.",
     logQrButton: "Código QR",

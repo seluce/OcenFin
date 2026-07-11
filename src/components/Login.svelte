@@ -52,6 +52,7 @@
   let loginError         = $state('');
   let password           = $state('');
   let qcCode    = $state(null);
+  let qcQrSvg   = $state(null);
   let qcSecret  = null;
   let qcPolling = null;
 
@@ -275,6 +276,12 @@
         const data = await res.json();
         qcCode   = data.Code;
         qcSecret = data.Secret;
+        // QR that opens the Jellyfin web Quick Connect page with the code pre-filled — a phone that
+        // is already signed in to the web client then only has to confirm, no typing of the code.
+        try {
+          const { renderSVG } = await import('uqr');
+          qcQrSvg = renderSVG(`${session.serverUrl}/web/#/quickconnect?code=${encodeURIComponent(data.Code)}`, { ecc: 'M', border: 1 });
+        } catch (e) { console.warn('[OcenFin] QC QR generation failed', e); qcQrSvg = null; }
         qcPolling = setInterval(async () => {
           try {
             const poll = await fetch(`${session.serverUrl}/QuickConnect/Connect?Secret=${qcSecret}`, {
@@ -290,7 +297,7 @@
               });
               if (authRes.ok) {
                 const authData = await authRes.json();
-                qcCode = null;
+                qcCode = qcQrSvg = null;
                 onDone?.(authData.User, authData.AccessToken);
               }
             }
@@ -304,7 +311,7 @@
 
   function cancelQuickConnect() {
     clearInterval(qcPolling);
-    qcCode = qcSecret = null;
+    qcCode = qcSecret = qcQrSvg = null;
   }
 </script>
 
@@ -505,11 +512,24 @@
 
       <!-- QC login: show the code -->
       {#if qcCode}
-        <div class="bg-gray-800 p-10 rounded-2xl shadow-xl max-w-xl w-full text-center border border-gray-700">
-          <h2 class="text-3xl font-bold text-white mb-4">{i18n.t.quickConnect}</h2>
-          <p class="text-gray-400 mb-6 text-xl">{i18n.t.qcInstruction}</p>
-          <div class="bg-gray-900 border-2 border-blue-500 rounded-lg py-6 mb-6">
-            <span class="text-6xl font-mono font-bold text-white tracking-widest">{qcCode}</span>
+        <div class="bg-gray-800 p-10 rounded-2xl shadow-xl w-full {qcQrSvg ? 'max-w-3xl' : 'max-w-xl'} text-center border border-gray-700">
+          <h2 class="text-3xl font-bold text-white mb-8">{i18n.t.quickConnect}</h2>
+          <div class="flex items-center justify-center gap-10 mb-8">
+            <!-- Code method (left) -->
+            <div class="flex-1 flex flex-col items-center gap-4">
+              <div class="bg-gray-900 border-2 border-blue-500 rounded-lg py-6 px-6 w-full">
+                <span class="text-6xl font-mono font-bold text-white tracking-widest">{qcCode}</span>
+              </div>
+              <p class="text-gray-400 text-base leading-snug">{i18n.t.qcInstruction}</p>
+            </div>
+            {#if qcQrSvg}
+              <!-- QR method (right) -->
+              <div class="flex flex-col items-center gap-3 shrink-0">
+                <div class="rounded-xl bg-white p-3 [&>svg]:block [&>svg]:w-full [&>svg]:h-full"
+                     style="width:240px;height:240px;">{@html qcQrSvg}</div>
+                <p class="text-gray-400 text-base leading-snug max-w-[240px]">{i18n.t.qcQrHint}</p>
+              </div>
+            {/if}
           </div>
           <button onclick={cancelQuickConnect}
             class="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-4 rounded-xl

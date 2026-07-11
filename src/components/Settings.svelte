@@ -234,6 +234,20 @@
     } catch (e) { console.warn('[OcenFin] QR generation failed', e); }
   }
 
+  // Help / FAQ: QR to the OcenFin wiki — scan with a phone instead of typing the URL on the TV.
+  let showWikiQr = $state(false);
+  let wikiQrSvg  = $state(null);
+  const WIKI_URL = 'https://github.com/seluce/OcenFin/wiki';
+  async function openWikiQr() {
+    modalFocus.capture();
+    wikiQrSvg = null;
+    showWikiQr = true;
+    try {
+      const { renderSVG } = await import('uqr');
+      wikiQrSvg = renderSVG(WIKI_URL, { ecc: 'M', border: 1 });
+    } catch (e) { console.warn('[OcenFin] Wiki QR generation failed', e); }
+  }
+
   // Versions for the status page (Chromium from UA, hls.js/libbitsub from package.json) — static.
   const envVersions = runtimeVersions();
 
@@ -366,7 +380,7 @@
 
   // After closing a modal (whichever/however), put focus back on the triggering button.
   $effect(() => {
-    const anyModalOpen = !!activeModal || avatarModalOpen || showLog;
+    const anyModalOpen = !!activeModal || avatarModalOpen || showLog || showWikiQr;
     if (!anyModalOpen && modalFocus.pending) modalFocus.restore();
   });
 
@@ -1536,6 +1550,17 @@
         <svg class="w-7 h-7 text-gray-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
       </button>
 
+      <!-- Help / FAQ: QR to the wiki (scan with a phone) -->
+      <button onclick={openWikiQr}
+        class="flex items-center justify-between w-full px-6 py-5 bg-gray-800/80 border border-gray-700 rounded-2xl
+               hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+        <div class="pr-4">
+          <span class="text-2xl text-white font-medium block">{i18n.t.helpFaq}</span>
+          <span class="text-gray-400 mt-0.5 block text-sm">{i18n.t.helpFaqHint}</span>
+        </div>
+        <svg class="w-7 h-7 text-gray-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z"/><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 6.75h.008v.008H6.75V6.75zM6.75 16.5h.008v.008H6.75V16.5zM16.5 6.75h.008v.008H16.5V6.75zM13.5 13.5h.008v.008H13.5V13.5zM13.5 19.5h.008v.008H13.5V19.5zM19.5 13.5h.008v.008H19.5V13.5zM19.5 19.5h.008v.008H19.5V19.5zM16.5 16.5h.008v.008H16.5V16.5z"/></svg>
+      </button>
+
       <!-- Status groups: collapsible. Focusable headers give the D-pad steps downward
            (fixes scrolling) and a Right jump target from the menu. -->
 
@@ -1711,6 +1736,28 @@
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">{i18n.t.clear}</button>
         </div>
       {/if}
+    </div>
+  </div>
+{/if}
+
+<!-- ══════════════════════════════════════════
+     MODAL (help / FAQ QR)
+══════════════════════════════════════════ -->
+{#if showWikiQr}
+  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
+    transition:uiFade onoutrostart={dropTrapOnOutro}>
+    <div data-modal data-focus-trap role="dialog" tabindex="-1"
+      onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showWikiQr = false; } }}
+      class="bg-gray-800 border border-gray-700 p-8 rounded-2xl w-full max-w-lg flex flex-col items-center gap-5 shadow-2xl text-center">
+      <h2 class="text-4xl text-white font-bold">{i18n.t.helpFaq}</h2>
+      {#if wikiQrSvg}
+        <div class="rounded-xl bg-white p-3 [&>svg]:block [&>svg]:w-full [&>svg]:h-full"
+             style="width:320px;height:320px;max-width:40vh;max-height:40vh;">{@html wikiQrSvg}</div>
+      {/if}
+      <p class="text-gray-400 text-lg max-w-md">{i18n.t.helpFaqHint}</p>
+      <button onclick={() => showWikiQr = false} {@attach focusOnMount()}
+        class="px-6 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
+               focus:outline-none focus:ring-4 focus:ring-white transition-colors">{i18n.t.close}</button>
     </div>
   </div>
 {/if}
