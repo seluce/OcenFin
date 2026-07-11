@@ -1313,7 +1313,7 @@
                     <button onclick={() => { avatarPoster = t; hasEditedAvatar = true; }} title={t.name}
                       class="aspect-square rounded-xl overflow-hidden focus:outline-none focus:ring-4 focus:ring-white transition-all
                              {avatarPoster?.id === t.id ? 'ring-4 ring-blue-500' : 'hover:opacity-80'}">
-                      <img src={t.imageUrl} alt={t.name} class="w-full h-full object-cover" />
+                      <img src={t.imageUrl} alt={t.name} class="w-full h-full object-cover" loading="lazy" decoding="async" />
                     </button>
                   {/each}
                 </div>

@@ -233,7 +233,7 @@
         {#each items as item, i (item.PlaylistItemId)}
           <div class="flex items-center gap-4 bg-gray-800/60 rounded-xl p-3">
             <div class="w-14 h-20 shrink-0 bg-gray-900 rounded-lg overflow-hidden">
-              {#if getItemImageUrl(item)}<img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover"/>{/if}
+              {#if getItemImageUrl(item)}<img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>{/if}
             </div>
             <div class="flex-1 min-w-0">
               {#if item.Type === 'Episode'}
