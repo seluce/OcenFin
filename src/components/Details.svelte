@@ -601,6 +601,7 @@
             {/if}
 
             <button onclick={togglePlayed}
+              aria-label={fullItem.UserData?.Played ? i18n.t.markUnwatched : i18n.t.markWatched}
               class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg
                      {fullItem.UserData?.Played ? 'bg-green-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
@@ -609,6 +610,7 @@
             </button>
 
             <button onclick={toggleFavorite}
+              aria-label={fullItem.UserData?.IsFavorite ? i18n.t.removeFavorite : i18n.t.addFavorite}
               class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg
                      {fullItem.UserData?.IsFavorite ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
@@ -862,6 +864,8 @@
 {#if trailerEmbedUrl}
   <div
     data-focus-trap
+    role="dialog"
+    tabindex="-1"
     class="fixed inset-0 bg-black z-[200] flex items-center justify-center"
     onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeTrailer(); } }}
   >
@@ -869,6 +873,7 @@
     <button
       onclick={closeTrailer}
       {@attach focusOnMount()}
+      aria-label={i18n.t.close}
       class="absolute top-6 right-8 z-10 text-white/80 hover:text-white focus:text-white
              bg-black/50 rounded-full p-3 focus:outline-none focus:ring-4 focus:ring-white transition-colors"
     >
@@ -887,7 +892,7 @@
         title={i18n.t.trailer}
       ></iframe>
     {:else}
-      <!-- svelte-ignore a11y-media-has-caption -->
+      <!-- svelte-ignore a11y_media_has_caption -->
       <video
         src={trailerEmbedUrl}
         class="w-full h-full object-contain"
@@ -900,7 +905,7 @@
 
 <!-- MEDIA INFO MODAL (codec, bitrate, languages, …) -->
 {#if showMediaInfo && fullItem?.MediaSources?.length}
-  <div data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8"
+  <div data-focus-trap role="dialog" tabindex="-1" transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8"
     onkeydown={(e) => {
       if (isBackKey(e)) { e.stopPropagation(); showMediaInfo = false; return; }
       if (e.key === 'ArrowDown')    { e.preventDefault(); e.stopPropagation(); mediaInfoScroll?.scrollBy({ top: 160, behavior: 'smooth' }); }
@@ -909,7 +914,7 @@
     <div bind:this={mediaInfoScroll} class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl">
       <div class="flex justify-between items-center p-8 pb-4 sticky top-0 bg-gray-800 z-10">
         <h2 class="text-4xl text-white font-bold">{i18n.t.mediaInfo}</h2>
-        <button onclick={() => showMediaInfo = false} {@attach focusOnMount()}
+        <button onclick={() => showMediaInfo = false} {@attach focusOnMount()} aria-label={i18n.t.close}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
@@ -956,7 +961,7 @@
 
 <!-- Share: QR code with a title link (IMDb/TMDb) to scan -->
 {#if showShare}
-  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
+  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8" role="dialog" tabindex="-1"
     transition:uiFade onoutrostart={dropTrapOnOutro}
     onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showShare = false; } }}>
     <div data-modal data-focus-trap

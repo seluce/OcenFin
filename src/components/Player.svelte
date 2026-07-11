@@ -9,7 +9,7 @@
   // to the <video> (only time + dimensions, NO pixels → no cross-origin taint, no crossorigin on the <video>).
   // The browser handles the font fallback. Covers almost all ASS tags (rest: VTT fallback via the toggle).
   import ASS from 'assjs';
-  import { onMount, onDestroy, tick } from 'svelte';
+  import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
 
   let {
@@ -296,7 +296,7 @@
 
   // ---- Admin remote control (Jellyfin dashboard) ------------------------------------------
   // Initialize to the current state → don't retroactively apply commands sent before opening.
-  let _appliedRemoteSeq = remoteCommand?._seq ?? 0;
+  let _appliedRemoteSeq = untrack(() => remoteCommand?._seq ?? 0);
   $effect(() => { if (remoteCommand && remoteCommand._seq !== _appliedRemoteSeq) applyRemoteCommand(remoteCommand); });
   function applyRemoteCommand(c) {
     if (!c || c._seq === _appliedRemoteSeq) return;
@@ -322,11 +322,11 @@
   }
   let settingsTab   = $state('audio');     // 'audio' | 'subtitle' — which section is shown in the panel
   let controlsTimeout;
-  let isFavorite = $state(item.UserData?.IsFavorite || false);
+  let isFavorite = $state(untrack(() => item.UserData?.IsFavorite || false));
 
   // Playback
   let progressTimer;
-  let startTicks    = item.UserData?.PlaybackPositionTicks || 0;
+  let startTicks    = untrack(() => item.UserData?.PlaybackPositionTicks || 0);
   let resumeApplied = false;   // execute the resume jump only once
   let playSessionId = crypto.randomUUID();  // replaced by PlaybackInfo
   let playMethod    = $state('DirectPlay');         // DirectPlay | DirectStream | Transcode
@@ -1503,6 +1503,11 @@
   }
 </script>
 
+<!-- Player container: a full-screen focus trap with a bespoke D-pad/keyboard model. tabindex="0" is
+     required so it receives keys; the key handler drives all playback controls. An interactive role
+     (e.g. application) would override the app's own spatial navigation. -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   bind:this={playerContainer}
   data-focus-trap
@@ -1619,6 +1624,8 @@
   {/if}
 
   <!-- MAIN OVERLAY — clicking the empty picture area (|self, not on buttons) pauses/plays -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/50 flex flex-col justify-between p-10 transition-opacity duration-500 z-50
               {showControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}"
        onclick={(e) => { if (e.target === e.currentTarget) togglePlay(); }}>
@@ -1791,7 +1798,7 @@
             </button>
           {/if}
           <!-- Favorite -->
-          <button onclick={toggleFavorite}
+          <button onclick={toggleFavorite} aria-label={isFavorite ? i18n.t.removeFavorite : i18n.t.addFavorite}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors {isFavorite ? 'text-red-500' : 'text-gray-400 hover:text-white focus:text-white'}">
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
@@ -1855,7 +1862,7 @@
 
         <div class="flex justify-between items-center">
           <h2 class="text-2xl font-bold text-white">{settingsTab === 'audio' ? i18n.t.audio : i18n.t.subtitles}</h2>
-          <button onclick={toggleSettings} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
+          <button onclick={toggleSettings} aria-label={i18n.t.close} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
             </svg>

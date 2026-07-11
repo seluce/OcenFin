@@ -66,6 +66,10 @@
      reflow on expand (the main source of jank). The visible bar sits
      absolutely on top and overlaps the content when expanded (like modern TV apps). -->
 <div class="h-full w-24 shrink-0 relative z-40">
+<!-- The sidebar expands on focus/hover of its child buttons (a container-level enhancement) and
+     delegates D-pad keys to the nav manager. It stays a <nav> landmark; an interactive role would
+     misrepresent a navigation region that holds multiple buttons. -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <nav
   data-focus-group="sidebar"
   class="absolute top-0 left-0 h-full bg-gray-900 border-r border-gray-800 flex flex-col pt-8 pb-8 [contain:layout]

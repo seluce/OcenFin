@@ -2,16 +2,16 @@
   import { i18n } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, authHeaders } from '../utils.js';
   import { session } from '../session.svelte.js';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
 
   let { item, userId, selectedUser, onChanged, onOpenDetails, onAddToList, onAddToCollection, onClose } = $props();
 
   // Local (optimistic) states — toggled immediately on click so the
   // label/icons in the menu show the change directly. Initialized from the item.
-  let played    = $state(!!item?.UserData?.Played);
-  let favorite  = $state(!!item?.UserData?.IsFavorite);
-  let hasResume = $state((item?.UserData?.PlaybackPositionTicks || 0) > 0
-                  && item?.Type !== 'Series' && item?.Type !== 'Season');
+  let played    = $state(untrack(() => !!item?.UserData?.Played));
+  let favorite  = $state(untrack(() => !!item?.UserData?.IsFavorite));
+  let hasResume = $state(untrack(() => (item?.UserData?.PlaybackPositionTicks || 0) > 0
+                  && item?.Type !== 'Series' && item?.Type !== 'Season'));
 
   // "Arming": if the menu is opened by holding OK long, the key is still
   // pressed. We only accept input AFTER release (keyup or pointerup) —
@@ -80,7 +80,10 @@
 
 <svelte:window onkeydowncapture={handleKeyDown} />
 
-<!-- Overlay -->
+<!-- Overlay: backdrop click-to-close is a pointer-only convenience; keyboard/remote users close via
+     the back key or by picking an action. A role/key handler on the backdrop would fight the focus trap. -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
 <div data-focus-trap class="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-center justify-center p-8"
      onclick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
 

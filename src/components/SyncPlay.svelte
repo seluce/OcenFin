@@ -10,6 +10,11 @@
   } = $props();
 </script>
 
+<!-- Backdrop: click-outside-to-close is a pointer-only convenience and duplicates the Close
+     button below; keyboard/remote users close via that button or the back key. A role + key
+     handler on a full-screen backdrop would be semantically wrong and fight the focus trap. -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
 <div class="fixed inset-0 z-[130] bg-black/85 flex items-center justify-center p-8"
      transition:uiFade onoutrostart={dropTrapOnOutro}
      onclick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>

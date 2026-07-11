@@ -790,13 +790,13 @@
           <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-2xl max-w-xl w-full">
             <div class="flex justify-between items-center mb-5">
               <h3 class="text-2xl font-bold text-white">{i18n.t.chooseIcon}</h3>
-              <button onclick={() => iconPickerFor = null} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
+              <button onclick={() => iconPickerFor = null} aria-label={i18n.t.close} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
                 <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
             <div bind:this={iconGridEl} class="grid grid-cols-5 gap-3 max-h-[58vh] overflow-y-auto hide-scrollbar p-2">
               {#each NAV_ICON_KEYS as key}
-                <button onclick={() => pickIcon(key)}
+                <button onclick={() => pickIcon(key)} aria-label={key}
                   class="aspect-square flex items-center justify-center rounded-xl bg-gray-700 hover:bg-gray-600 focus:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
                   <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d={NAV_ICON_PALETTE[key]}/></svg>
                 </button>
@@ -1272,7 +1272,7 @@
           <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-2xl max-w-2xl w-full flex flex-col gap-5">
             <div class="flex justify-between items-center">
               <h3 class="text-2xl font-bold text-white">{i18n.t.profilePicture}</h3>
-              <button onclick={() => avatarModalOpen = false} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
+              <button onclick={() => avatarModalOpen = false} aria-label={i18n.t.close} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
                 <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
@@ -1326,7 +1326,7 @@
               <div class="flex gap-5 items-start">
                 <div class="grid grid-cols-6 gap-3 flex-1 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 scroll-py-3 content-start">
                   {#each AVATAR_ICON_KEYS as key}
-                    <button onclick={() => { avatarIcon = key; hasEditedAvatar = true; }}
+                    <button onclick={() => { avatarIcon = key; hasEditedAvatar = true; }} aria-label={key}
                       class="aspect-square flex items-center justify-center rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-all
                              {effectiveIcon === key ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}">
                       <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[key]}/></svg>
@@ -1689,7 +1689,7 @@
      LOG VIEWER (own modal, wider than the standard modals)
 ══════════════════════════════════════════ -->
 {#if showLog}
-  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
+  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8" role="dialog" tabindex="-1"
     transition:uiFade onoutrostart={dropTrapOnOutro}
     onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); if (qrSvg) hideQr(); else showLog = false; } }}>
 
@@ -1766,7 +1766,7 @@
      MODAL (language / password / Quick Connect)
 ══════════════════════════════════════════ -->
 {#if activeModal}
-  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
+  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8" role="dialog" tabindex="-1"
     transition:uiFade onoutrostart={dropTrapOnOutro}
     onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeModal(); } }}>
 

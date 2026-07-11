@@ -638,12 +638,12 @@
 
 <!-- SORT MENU -->
 {#if showSortMenu}
-  <div data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
+  <div data-focus-trap role="dialog" tabindex="-1" transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
     onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showSortMenu = false; } }}>
     <div class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full max-w-xl flex flex-col gap-4 shadow-2xl">
       <div class="flex justify-between items-center mb-2">
         <h2 class="text-4xl text-white font-bold">{i18n.t.sortBy}</h2>
-        <button onclick={() => showSortMenu = false} {@attach focusOnMount()}
+        <button onclick={() => showSortMenu = false} {@attach focusOnMount()} aria-label={i18n.t.close}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
@@ -680,13 +680,13 @@
 
 <!-- FILTER MENU -->
 {#if showFilterMenu}
-  <div data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
+  <div data-focus-trap role="dialog" tabindex="-1" transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
     onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeFilterMenu(); } }}>
     <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
 
       <div class="flex justify-between items-center p-8 pb-4 shrink-0">
         <h2 class="text-4xl text-white font-bold">{i18n.t.filter}</h2>
-        <button onclick={closeFilterMenu} {@attach focusOnMount()}
+        <button onclick={closeFilterMenu} {@attach focusOnMount()} aria-label={i18n.t.close}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
