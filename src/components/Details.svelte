@@ -555,7 +555,7 @@
 
           <p class="text-xl text-gray-300 mb-10 line-clamp-4 leading-relaxed">{fullItem.Overview || i18n.t.noDescription}</p>
 
-          <!-- AKTIONS-BUTTONS -->
+          <!-- ACTION BUTTONS -->
           <div class="flex items-center gap-4 mb-12">
             <button onclick={handlePlay} {@attach focusOnMount()}
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-2xl px-12 py-4 rounded-xl
@@ -853,7 +853,7 @@
       {/if}
 
       </div>
-      <!-- ════ /INHALT ════ -->
+      <!-- ════ /CONTENT ════ -->
     </div>
   {/if}
 </div>
@@ -898,7 +898,7 @@
   </div>
 {/if}
 
-<!-- MEDIENINFORMATIONEN-MODAL (Codec, Bitrate, Sprachen, …) -->
+<!-- MEDIA INFO MODAL (codec, bitrate, languages, …) -->
 {#if showMediaInfo && fullItem?.MediaSources?.length}
   <div data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8"
     onkeydown={(e) => {
@@ -930,7 +930,7 @@
             {/if}
           </div>
 
-          <!-- Einzelne Spuren -->
+          <!-- Individual tracks -->
           {#each (src.MediaStreams || []) as s (s.Index)}
             <div class="bg-gray-900 rounded-xl p-4 border border-gray-700/50">
               <div class="flex items-center gap-3 mb-2">

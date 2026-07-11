@@ -579,8 +579,8 @@
   }
 
   /**
-   * Einmalige Migration vom alten Format (einzelner Server, flache Token-Map).
-   * Läuft einmalig und entfernt dann die alten Keys.
+   * One-time migration from the old format (single server, flat token map).
+   * Runs once and then removes the old keys.
    */
   function migrateOldData() {
     const oldUrl = localStorage.getItem('jellyfin_url');
@@ -769,7 +769,7 @@
     } catch (e) { console.warn('[Server] could not load user list:', e); }
   }
 
-  // ── Gemeinsames Schauen: Mitglieder & Datenbasis ───────────────────────────
+  // ── Watch together: members & data basis ──────────────────────────────────
   function toggleSharedEnabled() {
     sharedProfile = { ...sharedProfile, enabled: !sharedProfile.enabled };
     if (!sharedProfile.enabled) { librarySharedOn = false; partnersPlayedIds = null; partnersPlayedCache = {}; }

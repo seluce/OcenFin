@@ -720,7 +720,7 @@
     {/if}
 
     <!-- ══════════════════════════════════════════
-         NAVIGATION (Sidebar-Einträge anordnen/ausblenden)
+         NAVIGATION (arrange/hide sidebar entries)
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'navigation'}
     <section class="flex flex-col gap-3">
@@ -748,7 +748,7 @@
               title={i18n.t.chooseIcon}>
               <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d={entry.icon}/></svg>
             </button>
-            <!-- Sichtbarkeit -->
+            <!-- Visibility -->
             {#if entry.locked}
               <div class="p-3 text-gray-600" title={i18n.t.navAlwaysVisible}>
                 <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
@@ -795,7 +795,7 @@
     {/if}
 
     <!-- ══════════════════════════════════════════
-         2. OLED-SCHUTZ
+         2. OLED PROTECTION
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'oled'}
     <section class="flex flex-col gap-4">
@@ -819,7 +819,7 @@
 
         <!-- Timeout (only when active) -->
         {#if screensaverSettings.enabled}
-          <!-- Aktivierung nach -->
+          <!-- Activate after -->
           <div class="h-px bg-gray-700"></div>
           <div class="p-6">
             <span class="text-base text-gray-400 font-medium block mb-3">{i18n.t.screensaverAfter}</span>
@@ -887,14 +887,14 @@
     {/if}
 
     <!-- ══════════════════════════════════════════
-         WIEDERGABE — Standard-Sprachen
+         PLAYBACK — default languages
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'playback'}
     <section class="flex flex-col gap-4">
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{i18n.t.playback}</h2>
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
-        <!-- Standard-Audiosprache -->
+        <!-- Default audio language -->
         <button onclick={() => openModal('audioLang')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -985,7 +985,7 @@
           </div>
         </button>
 
-        <!-- Wiedergabeinfos – Info-Button im Player freischalten (Live-Details als Overlay) -->
+        <!-- Playback info – unlock the info button in the Player (live details as an overlay) -->
         <button onclick={() => togglePlaybackPref('showPlaybackInfo')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -1093,7 +1093,7 @@
           </div>
         </button>
 
-        <!-- Untertitel einbrennen -->
+        <!-- Burn in subtitles -->
         <button onclick={() => togglePlaybackPref('burnSubtitles')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -1262,7 +1262,7 @@
                 <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
-            <!-- Umschalter: zuletzt gesehene Titel ↔ Symbole -->
+            <!-- Toggle: recently watched titles ↔ symbols -->
             <div class="flex gap-2 bg-gray-900/60 p-1 rounded-xl">
               <button onclick={() => avatarTab = 'recent'}
                 class="flex-1 py-2.5 rounded-lg font-bold text-sm focus:outline-none focus:ring-4 focus:ring-white transition-colors
@@ -1275,7 +1275,7 @@
                 {i18n.t.avatarTabSymbols}
               </button>
             </div>
-            <!-- Live-Vorschau -->
+            <!-- Live preview -->
             <div class="flex justify-center">
               <div class="w-24 h-24 rounded-full overflow-hidden flex items-center justify-center shadow-md"
                    style="background:{(avatarTab === 'recent' && avatarPoster) ? 'transparent' : effectiveColor}">
@@ -1293,7 +1293,7 @@
                   <div class="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
                 </div>
               {:else if recentTitles.length}
-                <!-- Poster zuletzt gesehener Titel (neueste zuerst), mittig in den runden Avatar zugeschnitten -->
+                <!-- Posters of recently watched titles (newest first), cropped centered into the round avatar -->
                 <div class="grid grid-cols-6 gap-3 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 scroll-py-3 content-start">
                   {#each recentTitles as t (t.id)}
                     <button onclick={() => { avatarPoster = t; hasEditedAvatar = true; }} title={t.name}
@@ -1441,7 +1441,7 @@
     {/if}
 
     <!-- ══════════════════════════════════════════
-         5. KONTO & SERVER
+         5. ACCOUNT & SERVER
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'account'}
     <section class="flex flex-col gap-4">
@@ -1469,7 +1469,7 @@
         </svg>
       </button>
 
-      <!-- Benutzer wechseln / Abmelden -->
+      <!-- Switch user / sign out -->
       <div class="grid grid-cols-2 gap-5">
         <button onclick={() => onSwitchUser?.()}
           class="flex flex-col items-center justify-center p-7 bg-gray-800 border border-gray-700 rounded-2xl
@@ -1502,7 +1502,7 @@
     {/if}
 
     <!-- ══════════════════════════════════════════
-         STATUS / LOGS — Diagnose
+         STATUS / LOGS — diagnostics
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'status'}
     <section class="flex flex-col gap-4">
@@ -1661,7 +1661,7 @@
 </div>
 
 <!-- ══════════════════════════════════════════
-     PROTOKOLL-VIEWER (eigenes Modal, breiter als die Standard-Modals)
+     LOG VIEWER (own modal, wider than the standard modals)
 ══════════════════════════════════════════ -->
 {#if showLog}
   <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
@@ -1716,7 +1716,7 @@
 {/if}
 
 <!-- ══════════════════════════════════════════
-     MODAL (Sprache / Passwort / Quick Connect)
+     MODAL (language / password / Quick Connect)
 ══════════════════════════════════════════ -->
 {#if activeModal}
   <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"

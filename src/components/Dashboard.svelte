@@ -612,7 +612,7 @@
 
   {:else}
 
-    <!-- HERO-BANNER — rotierendes Featured-Item -->
+    <!-- HERO BANNER — rotating featured item -->
     {#if showHero && heroCurrent}
       <div transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gray-900">
         <!-- Full-bleed backdrop (Netflix style): crossfade — the PREVIOUS image stays as a base,
@@ -631,7 +631,7 @@
         <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/50 to-transparent"></div>
         <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/50 to-transparent"></div>
 
-        <!-- Inhalt -->
+        <!-- Content -->
         <div class="absolute bottom-0 left-0 p-10 pb-8 max-w-3xl flex flex-col gap-3">
           {#if getHeroLogo(heroCurrent)}
             <img src={getHeroLogo(heroCurrent)} alt={getItemTitle(heroCurrent)}

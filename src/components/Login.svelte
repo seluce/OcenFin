@@ -455,7 +455,7 @@
             </div>
           {/if}
 
-          <!-- Trennlinie -->
+          <!-- Divider -->
           <div class="flex items-center gap-3">
             <div class="flex-1 h-px bg-gray-700"></div>
             <span class="text-gray-500 text-sm">{i18n.t.serverManualEntry}</span>
@@ -584,11 +584,11 @@
           {#if loginError}<p class="text-red-400 mt-4 font-semibold">{loginError}</p>{/if}
         </div>
 
-      <!-- Profilauswahl -->
+      <!-- Profile selection -->
       {:else}
         <h1 class="text-5xl font-bold text-white">{i18n.t.selectUser}</h1>
 
-        <!-- Profile -->
+        <!-- Profiles -->
         {#if users.length > 0}
           <div class="flex flex-wrap justify-center gap-10">
             {#each users as user, i (user.Id)}
@@ -608,7 +608,7 @@
           </div>
         {/if}
 
-        <!-- Trennlinie -->
+        <!-- Divider -->
         <div class="flex items-center gap-4 w-full max-w-xl mt-4">
           <div class="flex-1 h-px bg-gray-800"></div>
           <span class="text-gray-600 text-sm">oder</span>
