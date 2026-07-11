@@ -1580,8 +1580,10 @@
   {/if}
 
   <!-- PLAYBACK INFO OVERLAY (opt-in, toggled by the info button) -->
+  <!-- No backdrop-blur: it sits over the running video, so every video frame would force a
+       re-sample (expensive on the B4). Slightly higher opacity keeps the text readable. -->
   {#if showInfoOverlay}
-    <div transition:uiFade class="absolute top-8 left-8 z-[55] bg-black/75 backdrop-blur-md border border-gray-700 rounded-xl px-6 py-5 text-lg shadow-2xl pointer-events-none max-w-md">
+    <div transition:uiFade class="absolute top-8 left-8 z-[55] bg-black/85 border border-gray-700 rounded-xl px-6 py-5 text-lg shadow-2xl pointer-events-none max-w-md">
       <div class="text-gray-400 uppercase tracking-wider text-sm font-bold mb-3">{i18n.t.playbackInfo}</div>
       <div class="flex flex-col gap-2">
         <div class="flex justify-between gap-8">
@@ -1856,9 +1858,11 @@
     </div>
 
     <!-- SETTINGS PANEL — bind:this for webOS D-pad focus -->
+    <!-- No backdrop-blur: at 95% opacity the blur is practically invisible, but over the
+         running video it would still force a re-sample per video frame (expensive on the B4). -->
     {#if showSettings}
       <div bind:this={settingsPanel} data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro}
-        class="absolute bottom-32 right-12 bg-gray-900/95 backdrop-blur-md border border-gray-700 rounded-2xl shadow-2xl z-[60] p-6 flex flex-col gap-6 w-96 max-h-[60vh]">
+        class="absolute bottom-32 right-12 bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl z-[60] p-6 flex flex-col gap-6 w-96 max-h-[60vh]">
 
         <div class="flex justify-between items-center">
           <h2 class="text-2xl font-bold text-white">{settingsTab === 'audio' ? i18n.t.audio : i18n.t.subtitles}</h2>
