@@ -495,7 +495,7 @@
       class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
                   border-4 border-transparent group-focus:border-white group-focus:scale-105
-                  transition-all duration-200 shadow-xl relative">
+                  transition-transform duration-200 shadow-xl relative">
         {#if img}
           <img src={img} {@attach blurUp(itemBlurHash(item, 'Backdrop'))} alt={item.Name}
             class="w-full h-full object-cover" loading="lazy" />
@@ -534,7 +534,7 @@
       class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                   border-4 border-transparent group-focus:border-white group-focus:scale-105
-                  transition-all duration-200 shadow-xl">
+                  transition-transform duration-200 shadow-xl">
         {#if img}
           <img src={img} {@attach blurUp(blur)} alt={item.Name}
             class="w-full h-full object-cover" loading="lazy" />
@@ -565,7 +565,7 @@
       class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                   border-4 border-transparent group-focus:border-white group-focus:scale-105
-                  transition-all duration-200 shadow-xl">
+                  transition-transform duration-200 shadow-xl">
         {#if img}
           <img src={img} {@attach blurUp(itemBlurHash(col))} alt={col.Name}
             class="w-full h-full object-cover" loading="lazy" />
@@ -686,7 +686,7 @@
               class="shrink-0 scroll-mt-24 scroll-mx-4 group flex flex-col items-center focus:outline-none">
               <div class="w-64 h-36 bg-gray-800 rounded-xl flex items-center justify-center
                           border-4 border-transparent group-focus:border-white group-focus:scale-105 group-hover:border-gray-400
-                          transition-all duration-200 shadow-lg overflow-hidden">
+                          transition-transform duration-200 shadow-lg overflow-hidden">
                 {#if getItemImageUrl(library)}
                   <img src={getItemImageUrl(library)} {@attach blurUp(itemBlurHash(library))} alt={library.Name}
                     class="w-full h-full object-cover opacity-80 group-focus:opacity-100" loading="lazy" />

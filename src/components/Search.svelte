@@ -193,7 +193,7 @@
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each series as s (s.Id)}
               <button onclick={() => onOpenDetails?.(s)} class="shrink-0 w-48 scroll-m-4 group focus:outline-none text-left">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl">
                   {#if getItemImageUrl(s, 'portrait')}<img src={getItemImageUrl(s, 'portrait')} {@attach blurUp(itemBlurHash(s))} alt={s.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
@@ -212,7 +212,7 @@
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each movies as m (m.Id)}
               <button onclick={() => onOpenDetails?.(m)} class="shrink-0 w-48 scroll-m-4 group focus:outline-none text-left">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl">
                   {#if getItemImageUrl(m, 'portrait')}<img src={getItemImageUrl(m, 'portrait')} {@attach blurUp(itemBlurHash(m))} alt={m.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
@@ -231,7 +231,7 @@
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each episodes as ep (ep.Id)}
               <button onclick={() => onOpenDetails?.(ep)} class="shrink-0 w-80 scroll-m-4 group focus:outline-none text-left">
-                <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl">
+                <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl">
                   {#if getItemImageUrl(ep, 'landscape')}<img src={getItemImageUrl(ep, 'landscape')} {@attach blurUp(itemBlurHash(ep))} alt={ep.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
@@ -253,7 +253,7 @@
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each people as p (p.Id)}
               <button onclick={() => onOpenPerson?.(p)} class="shrink-0 w-40 scroll-m-4 group focus:outline-none text-center">
-                <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl mx-auto">
+                <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl mx-auto">
                   {#if personImageUrl(session.serverUrl, p)}
                     <img src={personImageUrl(session.serverUrl, p)} {@attach blurUp(itemBlurHash(p))} alt={p.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}

@@ -555,7 +555,11 @@
             onfocus={() => previewItem(item)} onblur={cancelPreview}
             {@attach longPress()} onlongpress={() => onContextMenu?.(item)}
             class="group focus:outline-none text-left scroll-my-4">
-            <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl relative">
+            <!-- transition-transform (not -all): animating border-color alongside the scale would
+                 invalidate paint on every interpolation step, re-rasterizing the card incl. its
+                 shadow-xl per frame (B4). With transform-only the card rasterizes once and the
+                 scale runs purely on the compositor; the focus border switches instantly. -->
+            <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
               {#if item.Type === 'Playlist' && item.ChildCount === 0}
                 <div class="w-full h-full flex items-center justify-center text-gray-600">
                   <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>

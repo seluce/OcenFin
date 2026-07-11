@@ -99,7 +99,7 @@
               <button onclick={() => onOpenDetails(item)}
                 {@attach longPress()} onlongpress={() => onContextMenu(item)}
                 class="group focus:outline-none text-left scroll-my-4">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl relative">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
                   {#if badge}
                     <div class="absolute top-2 left-2 z-10 min-w-[1.6rem] h-[1.6rem] px-1.5 rounded-full flex items-center justify-center bg-blue-600/90 text-white text-xs font-bold shadow-md pointer-events-none">
                       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
@@ -133,7 +133,7 @@
             <button onclick={() => onOpenDetails(item)}
               {@attach longPress()} onlongpress={() => onContextMenu(item)}
               class="group focus:outline-none text-left scroll-my-4">
-              <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl relative">
+              <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
                 {#if getItemImageUrl(item, 'landscape')}
                   <img src={getItemImageUrl(item, 'landscape')} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                 {/if}
@@ -155,7 +155,7 @@
         <div data-focus-group data-enter-first class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-6 pr-4 mb-12">
           {#each favPersons as p (p.Id)}
             <button onclick={() => onOpenPerson(p)} class="group focus:outline-none text-center scroll-my-4">
-              <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl">
+              <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl">
                 {#if personImageUrl(session.serverUrl, p)}
                   <img src={personImageUrl(session.serverUrl, p)} {@attach blurUp(itemBlurHash(p))} alt={p.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                 {:else}
