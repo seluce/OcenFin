@@ -230,7 +230,18 @@ export function createFocusManager(isEnabled) {
       if (!within && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
         const loose = pickGeometric(e.key, from, focusablesIn(scope), active, false);
         const top = loose?.closest('[data-enter-top]');
-        if (top && !top.contains(active)) within = focusablesIn(top)[0] || null;
+        if (top && !top.contains(active)) {
+          within = focusablesIn(top)[0] || null;
+        } else {
+          // Leaving a start-at-top content area toward a jump bar (data-hbar) in the SAME group —
+          // e.g. Left from the settings detail area back to the category navigation. Content rows
+          // below the last bar item find no vertically overlapping target, so the strict-row pick
+          // returns nothing; without this the group transition would jump past the bar straight to
+          // the sidebar. Enter the bar at its current item instead.
+          const bar = loose?.closest('[data-hbar]');
+          if (bar && !bar.contains(active))
+            within = bar.querySelector('[data-hbar-current]') || focusablesIn(bar)[0] || null;
+        }
       }
       // Entering a jump bar from outside (via Left/Right): jump directly onto the currently
       // marked element (data-hbar-current, e.g. the selected letter) instead of the
