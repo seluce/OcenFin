@@ -187,7 +187,7 @@
        the playlist/collection name is (otherwise they'd be pushed out of view). -->
   <div class="flex items-center gap-4 mb-10">
     <svg class="w-10 h-10 shrink-0 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
-    <h1 class="text-4xl font-bold text-white min-w-0 truncate">{name}</h1>
+    <h1 class="text-4xl font-bold text-white min-w-0 truncate">{name === 'Watchlist' ? i18n.t.watchlist : name}</h1>
     {#if items.length > 0 && !playlistEditMode}
       <button onclick={playAll}
         class="ml-4 shrink-0 bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold px-6 py-3 rounded-xl

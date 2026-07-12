@@ -3,6 +3,7 @@
   import { fade } from 'svelte/transition';
   import { isBackKey, focusOnMount, itemProgress, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, uiFade, dropTrapOnOutro, getItemSubtitle, getItemImageUrl } from './utils.js';
   import { session } from './session.svelte.js';
+  import { initWatchlist, handlePlaylistDeleted } from './watchlist.svelte.js';
   import { APP_VERSION } from './version.js';
   import { createFocusManager } from './spatialnav.js';
   import { i18n, setLang, detectUiLang } from './i18n.svelte.js';
@@ -139,7 +140,7 @@
   let reduceAnimations = $state(false);
 
   // Display elements (clock, hero banner, episode count, libraries) — individually toggleable
-  let displaySettings = $state({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
+  let displaySettings = $state({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
 
   // Default audio/subtitle language
   let playbackPrefs = $state({ audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true });
@@ -150,6 +151,9 @@
   // last chosen device language ('app_language') applies. The screensaver
   // stays device-wide (protects the physical OLED panel, user-independent).
   let activeUserId = $state(null);
+
+  // Load (or reset) the user's watchlist whenever the active profile changes.
+  $effect(() => { if (activeUserId) initWatchlist(activeUserId); });
   let prefsReady   = false;   // prevents saving during the initial load
   let applyingPrefs = false;  // prevents saving DURING applyUserPrefs (otherwise a half-finished state)
 
@@ -198,7 +202,7 @@
       setLang(p.language);
       localStorage.setItem('app_language', p.language);   // update "last used"
     }
-    displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
+    displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
     playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, ...(p.playbackPrefs || {}) };
     reduceAnimations = p.reduceAnimations ?? false;
     librarySorts     = p.librarySorts || {};   // remembered sort per library
@@ -1110,6 +1114,7 @@
   function onCollectionChildCount(id, count) { libraryRef?.updateChildCount(id, count); }
   function onCollectionRenamed(id, name) { libraryRef?.renamePlaylist(id, name); refreshLibraries(); }
   async function onCollectionDeleted(id) {
+    handlePlaylistDeleted(id);    // if it was the watchlist: clear its in-memory state
     libraryRef?.removeItem(id);   // immediately out of the grid
     await refreshLibraries();   // reload sidebar/menu (playlist disappears)
     // If it was the last playlist, Jellyfin removes the whole "Playlists" library.
@@ -1552,6 +1557,7 @@
             showLibraries={displaySettings.libraries}
             showHistory={displaySettings.history}
             showNextUp={displaySettings.nextUp}
+            showWatchlist={displaySettings.watchlist}
             showRecommendations={displaySettings.recommendations}
             recommendationRows={displaySettings.recommendationRows}
             showLatest={displaySettings.latest}

@@ -16,6 +16,9 @@
   let msg       = $state('');
   let msgError  = $state(false);       // true → render the message as an error (red), otherwise success (green)
   let alreadyIn = new SvelteSet();         // reactive set: .add()/.clear() trigger updates
+
+  // The fixed-name watchlist playlist is shown with its localized label.
+  const displayName = (t) => t.Name === 'Watchlist' ? i18n.t.watchlist : t.Name;
   let childrenOf = $state({});             // target ID → contained titles (deep reactivity)
 
   // Load fresh on every open (the parent sets mode from null to a value)
@@ -34,7 +37,9 @@
         `${session.serverUrl}/Users/${selectedUser.Id}/Items?Recursive=true&IncludeItemTypes=${type}&SortBy=SortName&SortOrder=Ascending&EnableTotalRecordCount=false`,
         { headers: getAuthHeaders() }
       );
-      if (res.ok) { const d = await res.json(); if (myToken !== loadListToken) return; items = d.Items || []; }
+      // The watchlist has its own dedicated button — offering it here as a target again
+      // would be confusing duplication, so it is hidden from the playlist picker.
+      if (res.ok) { const d = await res.json(); if (myToken !== loadListToken) return; items = (d.Items || []).filter(t => m === 'collection' || t.Name !== 'Watchlist'); }
     } catch { }
     if (myToken !== loadListToken) return;
     // Fetch the contents of each target → membership (no duplicates) + a preview of what's inside
@@ -65,7 +70,7 @@
     try {
       const res = await fetch(url, { method: 'POST', headers: getAuthHeaders() });
       if (res.ok) {
-        msg = `${i18n.t.added}: ${target.Name}`; msgError = false;
+        msg = `${i18n.t.added}: ${displayName(target)}`; msgError = false;
         alreadyIn.add(target.Id);
         childrenOf[target.Id] = [...(childrenOf[target.Id] || []), { Id: item.Id, Name: item.Name }];
       } else {
@@ -148,7 +153,7 @@
                 {#if has}<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>{:else}<path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>{/if}
               </svg>
               <div class="flex-1 min-w-0">
-                <div class="text-lg truncate {has ? 'text-gray-300' : ''}">{target.Name}</div>
+                <div class="text-lg truncate {has ? 'text-gray-300' : ''}">{displayName(target)}</div>
                 {#if childrenOf[target.Id]?.length}
                   <div class="text-sm text-gray-500 truncate">{childrenOf[target.Id].slice(0, 10).map(c => c.Name).join(', ')}</div>
                 {/if}

@@ -473,6 +473,7 @@
     { key: 'hero',            label: i18n.t.displayHero },
     { key: 'libraries',       label: i18n.t.displayLibraries },
     { key: 'nextUp',          label: i18n.t.nextUp },
+    { key: 'watchlist',       label: i18n.t.watchlist },
     { key: 'history',         label: i18n.t.displayHistory },
     ...(sharedSetUp ? [{ key: 'sharedSuggestions', label: i18n.t.sharedSuggestions }] : []),
     { key: 'recommendations', label: i18n.t.displayRecommendations },

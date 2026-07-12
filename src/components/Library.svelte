@@ -296,6 +296,9 @@
       if (res.ok && myToken === loadToken) {
         const data   = await res.json();
         if (myToken !== loadToken) return;
+        // Empty response although the total says more should exist → the count is stale
+        // (e.g. items deleted server-side). Correct it so the sentinel stops re-firing.
+        if (!(data.Items || []).length) totalLibraryItems = firstLoadedIndex + currentItems.length;
         currentItems = [...currentItems, ...(data.Items || [])];
         if (isCacheableView()) cacheLibraryView(currentLibraryId, { items: currentItems, total: totalLibraryItems });
       }
@@ -396,7 +399,14 @@
       if (btn) btn.focus();
     }
   }
-  export function removeItem(id) { currentItems = currentItems.filter(i => i.Id !== id); }
+  export function removeItem(id) {
+    const before = currentItems.length;
+    currentItems = currentItems.filter(i => i.Id !== id);
+    // Keep the total in sync — otherwise the infinite-scroll sentinel keeps requesting
+    // the "missing" item forever (empty responses → endless load-more skeleton).
+    totalLibraryItems = Math.max(0, totalLibraryItems - (before - currentItems.length));
+    if (isCacheableView()) cacheLibraryView(currentLibraryId, { items: currentItems, total: totalLibraryItems });
+  }
   export function updateChildCount(id, count) {
     const gi = currentItems.find(x => x.Id === id);
     if (gi) { gi.ChildCount = count; currentItems = [...currentItems]; }

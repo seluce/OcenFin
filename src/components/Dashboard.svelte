@@ -2,6 +2,7 @@
   import { i18n } from '../i18n.svelte.js';
   import { itemProgress, itemBadge, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle } from '../utils.js';
   import { session } from '../session.svelte.js';
+  import { watchlist } from '../watchlist.svelte.js';
   import { onMount, onDestroy } from 'svelte';
 
   let {
@@ -13,6 +14,7 @@
     showLibraries    = true,    // show the "My Libraries" row
     showHistory      = true,    // show the "Recently Watched" row
     showNextUp       = true,    // show the "Up Next" row
+    showWatchlist    = true,    // show the watchlist row (unwatched titles only)
     showRecommendations = true, // show the "Because you watched …" row
     recommendationRows   = 1,   // 1 or 2 recommendation rows
     showLatest       = true,    // "Recently Added" (movies + series)
@@ -33,7 +35,27 @@
   let nextUp           = $state([]);
   let latestMovies     = $state([]);
   let latestSeries     = $state([]);
-  let recentlyWatched  = $state([]);   // "Recently Watched" (history)
+  let recentlyWatched  = $state([]);
+  // Watchlist row: watched titles are hidden here but stay in the playlist until removed
+  // manually. Series are stored as ONE representative episode (see watchlist.svelte.js)
+  // and are displayed as the series itself (poster + name, opens the series details).
+  let watchlistDisplay = $derived.by(() => {
+    const seen = new Set(); const out = [];
+    for (const it of (watchlist.items || [])) {
+      if (it.UserData?.Played) continue;
+      if (it.Type === 'Episode' && it.SeriesId) {
+        if (seen.has(it.SeriesId)) continue;
+        seen.add(it.SeriesId);
+        out.push({ Id: it.SeriesId, Type: 'Series', Name: it.SeriesName || it.Name,
+          _imgUrl: `${session.serverUrl}/Items/${it.SeriesId}/Images/Primary?fillHeight=400&fillWidth=266&quality=80&format=webp${it.SeriesPrimaryImageTag ? `&tag=${it.SeriesPrimaryImageTag}` : ''}` });
+      } else {
+        if (seen.has(it.Id)) continue;
+        seen.add(it.Id);
+        out.push(it);
+      }
+    }
+    return out;
+  });   // "Recently Watched" (history)
   let recommendations  = $state([]);   // [{ seedTitle, items }] — "Because you watched X"
   let collections      = $state([]);   // BoxSets ("Collections")
 
@@ -720,6 +742,18 @@
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each nextUp as item (item.Id)}
             {@render landscapeCard(item)}
+          {/each}
+        </div>
+      </div>
+    {/if}
+
+    <!-- WATCHLIST — the user-curated "watch later" playlist (see watchlist.svelte.js) -->
+    {#if showWatchlist && watchlistDisplay.length > 0}
+      <div>
+        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.watchlist}</h2>
+        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+          {#each watchlistDisplay as item (item.Id)}
+            {@render portraitCard(item, item._imgUrl || getItemImageUrl(item), itemBlurHash(item))}
           {/each}
         </div>
       </div>
