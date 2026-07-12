@@ -531,7 +531,7 @@
               </div>
             {/if}
           </div>
-          <button onclick={cancelQuickConnect}
+          <button onclick={cancelQuickConnect} {@attach focusOnMount()}
             class="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-4 rounded-xl
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">
             {i18n.t.qcCancel}
