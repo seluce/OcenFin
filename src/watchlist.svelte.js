@@ -70,6 +70,18 @@ export function handlePlaylistDeleted(playlistId) {
   watchlist.items = [];
 }
 
+// Re-sync with the server: refreshes Played states and drops entries that were
+// removed elsewhere (e.g. edited in the playlist view). Called on dashboard load.
+export function refreshWatchlist() {
+  if (currentUserId && watchlist.playlistId) refreshEntries(currentUserId);
+}
+
+// Called by App when a playlist's members changed in the UI (remove in the playlist
+// view). If it was the watchlist, re-sync so icons and the dashboard row stay honest.
+export function handlePlaylistItemsChanged(playlistId) {
+  if (playlistId && playlistId === watchlist.playlistId) refreshWatchlist();
+}
+
 export function inWatchlist(itemId) {
   if (watchlist.entries[itemId]) return true;
   return watchlist.items.some(it => it.SeriesId === itemId || it.SeasonId === itemId);

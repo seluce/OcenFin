@@ -3,7 +3,7 @@
   import { fade } from 'svelte/transition';
   import { isBackKey, focusOnMount, itemProgress, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, uiFade, dropTrapOnOutro, getItemSubtitle, getItemImageUrl } from './utils.js';
   import { session } from './session.svelte.js';
-  import { initWatchlist, handlePlaylistDeleted } from './watchlist.svelte.js';
+  import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
   import { APP_VERSION } from './version.js';
   import { createFocusManager } from './spatialnav.js';
   import { i18n, setLang, detectUiLang } from './i18n.svelte.js';
@@ -1111,7 +1111,10 @@
   }
 
   // Cross effects from the collection view onto the library grid / sidebar:
-  function onCollectionChildCount(id, count) { libraryRef?.updateChildCount(id, count); }
+  function onCollectionChildCount(id, count) {
+    handlePlaylistItemsChanged(id);            // watchlist edited in the playlist view → re-sync
+    libraryRef?.updateChildCount(id, count);
+  }
   function onCollectionRenamed(id, name) { libraryRef?.renamePlaylist(id, name); refreshLibraries(); }
   async function onCollectionDeleted(id) {
     handlePlaylistDeleted(id);    // if it was the watchlist: clear its in-memory state

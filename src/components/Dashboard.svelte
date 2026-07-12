@@ -2,7 +2,7 @@
   import { i18n } from '../i18n.svelte.js';
   import { itemProgress, itemBadge, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle } from '../utils.js';
   import { session } from '../session.svelte.js';
-  import { watchlist } from '../watchlist.svelte.js';
+  import { watchlist, refreshWatchlist } from '../watchlist.svelte.js';
   import { onMount, onDestroy } from 'svelte';
 
   let {
@@ -285,6 +285,9 @@
   }
 
   async function loadDashboardData() {
+    // Fire-and-forget re-sync: picks up Played changes made outside the watchlist flows
+    // (e.g. marked as watched via the context menu) so the row hides them reliably.
+    refreshWatchlist();
     heroBuilt = false;   // rebuild per load
     // Cache hit: load from cache immediately, no network
     if (apiCache.dashboard) {
