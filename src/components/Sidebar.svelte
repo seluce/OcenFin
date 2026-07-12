@@ -157,13 +157,16 @@
   <!-- NAV BUTTONS — activeNavId is $: reactive, the class is updated correctly -->
   <!-- flex-1 + min-h-0 + overflow-y-auto: with more entries than space, the list scrolls
        so even the bottom entry (e.g. Settings) always stays reachable. -->
-  <div class="w-full flex-1 min-h-0 overflow-y-auto hide-scrollbar flex flex-col gap-2 px-4 py-1">
+  <!-- py-2 + scroll-my-2 on the buttons: the focus ring (ring-4) extends beyond the button
+       box; without padding AND scroll-margin the ring gets clipped at the very first/last
+       entry once the list scrolls (scrollIntoView aligns the box flush with the edge). -->
+  <div class="w-full flex-1 min-h-0 overflow-y-auto hide-scrollbar flex flex-col gap-2 px-4 py-2">
     {#each navItems as navItem (navItem.id)}
       <button
         onclick={() => activate(navItem)}
         data-group-current={activeNavId === navItem.id ? '' : null}
         onfocus={(e) => e.currentTarget.scrollIntoView({ block: 'nearest' })}
-        class="w-full flex items-center gap-6 px-4 py-3.5 rounded-xl transition-colors focus:outline-none shrink-0
+        class="w-full flex items-center gap-6 px-4 py-3.5 rounded-xl transition-colors focus:outline-none shrink-0 scroll-my-2
                {activeNavId === navItem.id
                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 focus:ring-4 focus:ring-white'
                  : 'text-gray-400 hover:bg-gray-800 hover:text-white focus:bg-gray-800 focus:text-white focus:ring-4 focus:ring-white'}"
