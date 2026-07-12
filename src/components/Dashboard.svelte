@@ -47,6 +47,10 @@
         if (seen.has(it.SeriesId)) continue;
         seen.add(it.SeriesId);
         out.push({ Id: it.SeriesId, Type: 'Series', Name: it.SeriesName || it.Name,
+          // Same as in dedupeHistory: carry the episode's inherited series backdrop along
+          // so the focus backdrop preview works for series entries too.
+          ParentBackdropItemId: it.ParentBackdropItemId ?? it.SeriesId,
+          ParentBackdropImageTags: it.ParentBackdropImageTags,
           _imgUrl: `${session.serverUrl}/Items/${it.SeriesId}/Images/Primary?fillHeight=400&fillWidth=266&quality=80&format=webp${it.SeriesPrimaryImageTag ? `&tag=${it.SeriesPrimaryImageTag}` : ''}` });
       } else {
         if (seen.has(it.Id)) continue;
@@ -423,6 +427,11 @@
           ImageTags: it.SeriesPrimaryImageTag ? { Primary: it.SeriesPrimaryImageTag } : undefined,
           PrimaryImageAspectRatio: 0.6667,
           ImageBlurHashes: it.ImageBlurHashes,
+          // Carry the episode's INHERITED series backdrop along — the focus backdrop
+          // preview (previewItem) builds its URL from BackdropImageTags/Parent*; without
+          // these the preview silently keeps showing the previous title's backdrop.
+          ParentBackdropItemId: it.ParentBackdropItemId ?? it.SeriesId,
+          ParentBackdropImageTags: it.ParentBackdropImageTags,
         };
       }
       out.push(entry);
