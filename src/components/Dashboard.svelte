@@ -58,7 +58,7 @@
         out.push(it);
       }
     }
-    return out;
+    return out.slice(0, ROW_LIMIT);   // uniform row length, like the other dashboard rows
   });   // "Recently Watched" (history)
   let recommendations  = $state([]);   // [{ seedTitle, items }] — "Because you watched X"
   let collections      = $state([]);   // BoxSets ("Collections")
