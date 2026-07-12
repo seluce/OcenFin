@@ -327,8 +327,8 @@
     <div class="flex flex-col gap-10 pr-4">
       {#each groups as group (group.label)}
         <div>
-          {#if groups.length > 1 && group.label}
-            <h2 class="text-2xl font-bold text-gray-400 mb-4">{group.label}</h2>
+          {#if group.label}
+            <h2 class="text-3xl font-bold text-white mb-6 px-2">{group.label}</h2>
           {/if}
           <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
             {#each group.items as item (item.PlaylistItemId ?? item.Id)}
