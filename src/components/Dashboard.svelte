@@ -713,7 +713,7 @@
     <!-- LIBRARIES -->
     {#if showLibraries && libraries.length > 0}
       <div>
-        <h2 class="text-2xl font-bold text-gray-400 mb-4 px-2">{i18n.t.myMedia}</h2>
+        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.myMedia}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each libraries as library (library.Id)}
             <button onclick={() => onOpenLibrary?.(library)}
