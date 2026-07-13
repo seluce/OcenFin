@@ -10,17 +10,17 @@
   let isLoadingFavorites = $state(false);
   let favoritesGrid = $state();
 
-  // Gruppierung wie in der Suche: Filme / Serien / Staffeln / Sammlungen (leere Gruppen entfallen im Template)
+  // Grouping like in search: movies / series / seasons / collections (empty groups are dropped in the template)
   let favGroups = $derived([
     { key: 'movies',      label: i18n.t.movies,      items: favoriteItems.filter(i => i.Type === 'Movie'  && i.UserData?.IsFavorite) },
     { key: 'series',      label: i18n.t.series,      items: favoriteItems.filter(i => i.Type === 'Series' && i.UserData?.IsFavorite) },
     { key: 'seasons',     label: i18n.t.seasons,     items: favoriteItems.filter(i => i.Type === 'Season' && i.UserData?.IsFavorite) },
     { key: 'collections', label: i18n.t.collections, items: favoriteItems.filter(i => i.Type === 'BoxSet' && i.UserData?.IsFavorite) },
   ]);
-  // Personen separat (runde Karten, eigene Sektion)
+  // People separately (round cards, their own section)
   let favPersons = $derived(favoriteItems.filter(i => i.Type === 'Person'));
-  // Episoden separat (Landscape-Karten, eigene Sektion) — nach Serie → Staffel → Folge sortiert,
-  // damit Folgen derselben Serie beieinanderstehen.
+  // Episodes separately (landscape cards, their own section) — sorted by series → season → episode
+  // so episodes of the same series stay together.
   let favEpisodes = $derived(
     favoriteItems
       .filter(i => i.Type === 'Episode' && i.UserData?.IsFavorite)
@@ -37,8 +37,8 @@
     isLoadingFavorites = true;
     favoriteItems = [];
     try {
-      // Personen sind KEINE Bibliothekselemente → die /Items-Abfrage (Recursive) liefert sie nie.
-      // Stattdessen der dedizierte /Persons-Endpunkt mit IsFavorite-Filter (UserId für den Kontext).
+      // People are NOT library items → the /Items query (Recursive) never returns them.
+      // Instead the dedicated /Persons endpoint with the IsFavorite filter (UserId for the context).
       const [contentRes, personRes] = await Promise.all([
         fetch(
           `${session.serverUrl}/Users/${selectedUser.Id}/Items?Filters=IsFavorite&Recursive=true` +
@@ -62,7 +62,7 @@
     if (card) card.focus(); else onFocusFallback?.();
   }
 
-  // Lädt beim Mounten und immer, wenn der Eltern-Reload-Schlüssel sich ändert (z.B. nach Favoriten-Änderung in den Details).
+  // Loads on mount and whenever the parent reload key changes (e.g. after a favorite change in the details).
   let loadedKey = -1;
   $effect(() => {
     if (reloadKey !== loadedKey) { loadedKey = reloadKey; loadFavorites(); }
@@ -75,7 +75,7 @@
     <h1 class="text-4xl font-bold text-white">{i18n.t.favorites}</h1>
   </div>
 
-  <!-- Leerzustand: noch keine Favoriten — freundlicher Hinweis statt leerer Seite -->
+  <!-- Empty state: no favorites yet — a friendly hint instead of a blank page -->
   {#if !isLoadingFavorites && favoriteItems.length === 0}
     <div class="flex flex-col items-center justify-center py-24 text-center">
       <svg class="w-16 h-16 text-gray-700 mb-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"/></svg>
@@ -99,7 +99,7 @@
               <button onclick={() => onOpenDetails(item)}
                 {@attach longPress()} onlongpress={() => onContextMenu(item)}
                 class="group focus:outline-none text-left scroll-my-4">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl relative">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
                   {#if badge}
                     <div class="absolute top-2 left-2 z-10 min-w-[1.6rem] h-[1.6rem] px-1.5 rounded-full flex items-center justify-center bg-blue-600/90 text-white text-xs font-bold shadow-md pointer-events-none">
                       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
@@ -133,7 +133,7 @@
             <button onclick={() => onOpenDetails(item)}
               {@attach longPress()} onlongpress={() => onContextMenu(item)}
               class="group focus:outline-none text-left scroll-my-4">
-              <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl relative">
+              <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
                 {#if getItemImageUrl(item, 'landscape')}
                   <img src={getItemImageUrl(item, 'landscape')} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                 {/if}
@@ -155,7 +155,7 @@
         <div data-focus-group data-enter-first class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-6 pr-4 mb-12">
           {#each favPersons as p (p.Id)}
             <button onclick={() => onOpenPerson(p)} class="group focus:outline-none text-center scroll-my-4">
-              <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl">
+              <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl">
                 {#if personImageUrl(session.serverUrl, p)}
                   <img src={personImageUrl(session.serverUrl, p)} {@attach blurUp(itemBlurHash(p))} alt={p.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                 {:else}

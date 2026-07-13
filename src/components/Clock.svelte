@@ -2,8 +2,8 @@
   import { i18n } from '../i18n.svelte.js';
   import { onMount, onDestroy } from 'svelte';
 
-  // viewState wird übergeben um bei Bibliothek-Ansicht (A-Z-Leiste) nach links zu rücken
-  let { viewState = '', use24h = true } = $props();   // use24h: Zeitformat aus Einstellung
+  // viewState is passed to shift left in the library view (A-Z bar)
+  let { viewState = '', use24h = true } = $props();   // use24h: time format from the setting
 
   let timeString = $state('');
   let ticker;
@@ -16,16 +16,16 @@
     );
   }
 
-  // Sprache + Format reaktiv: $effect verfolgt die Lesezugriffe in updateTime (i18n.lang, use24h)
-  // und formatiert die Zeit bei jeder Änderung neu.
+  // Language + format reactive: $effect tracks the reads in updateTime (i18n.lang, use24h)
+  // and reformats the time on every change.
   $effect(() => { updateTime(); });
 
-  // A-Z-Leiste ist w-16 (64px). Im Library-View Uhrzeit nach links versetzen.
+  // The A-Z bar is w-16 (64px). Shift the clock left in the library view.
   let rightClass = $derived(viewState === 'library' ? 'right-20' : 'right-8');
 
   onMount(() => {
     updateTime();
-    // Auf volle Sekunde synchronisieren
+    // Sync to the full second
     const delay = 1000 - (Date.now() % 1000);
     const init  = setTimeout(() => {
       updateTime();

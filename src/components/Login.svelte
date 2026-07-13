@@ -1,16 +1,16 @@
 <script>
   // ============================================================
-  // LOGIN / ONBOARDING — Server-Auswahl, Discovery, Profilwahl,
-  // Passwort- / manuelle / Quick-Connect-Anmeldung.
+  // LOGIN / ONBOARDING — server selection, discovery, profile choice,
+  // password / manual / Quick Connect sign-in.
   //
-  // Bewusst lazy geladen (App: lazyLogin) — der Auto-Login-Pfad
-  // mountet diese Komponente nie. Aller Flow-Zustand lebt hier und
-  // stirbt mit dem Unmount; ein Profil-/Serverwechsel mountet frisch.
+  // Deliberately lazy-loaded (App: lazyLogin) — the auto-login path
+  // never mounts this component. All flow state lives here and
+  // dies with the unmount; a profile/server switch mounts fresh.
   //
-  // App behält die langlebigen Wahrheiten: session, selectedServer,
-  // users (Settings braucht die Liste), savedServers/savedTokens
-  // (Startup / Schnellwechsel / Gemeinsam-Profil) sowie finishLogin.
-  // Diese Komponente meldet Ergebnisse über schmale Callbacks.
+  // App keeps the long-lived truths: session, selectedServer,
+  // users (Settings needs the list), savedServers/savedTokens
+  // (startup / quick switch / shared profile) and finishLogin.
+  // This component reports results via narrow callbacks.
   // ============================================================
   import { onDestroy } from 'svelte';
   import { i18n } from '../i18n.svelte.js';
@@ -18,33 +18,33 @@
   import { focusOnMount, dlog } from '../utils.js';
 
   let {
-    phase = $bindable('servers'), // 'servers' | 'users' — App steuert den Einstieg (Startup/Profilwechsel/Logout)
-    server = null,                // aktuell verbundener Server (App-owned; speist dort session.serverUrl)
-    users = [],                   // öffentliche Profile (App-owned — Settings braucht die Liste später)
-    savedServers = [],            // gespeicherte Server (App-owned — der Startup liest sie fürs Auto-Login)
-    clientAuthHeader = '',        // Auth-Header ohne Nutzerbezug (Quick Connect Initiate)
-    authHeaderFor,                // (name) => Auth-Header mit nutzerspezifischer DeviceId
-    getStoredToken,               // (serverId, userId) => token | undefined (Schnellwechsel)
+    phase = $bindable('servers'), // 'servers' | 'users' — App controls the entry point (startup/profile switch/logout)
+    server = null,                // currently connected server (App-owned; feeds session.serverUrl there)
+    users = [],                   // public profiles (App-owned — Settings needs the list later)
+    savedServers = [],            // saved servers (App-owned — startup reads them for auto-login)
+    clientAuthHeader = '',        // auth header without a user reference (Quick Connect Initiate)
+    authHeaderFor,                // (name) => auth header with a user-specific DeviceId
+    getStoredToken,               // (serverId, userId) => token | undefined (quick switch)
     onValidateToken,              // (token) => Promise<boolean>
-    onServerConnected,            // (server) => void — App setzt selectedServer
-    onFetchUsers,                 // () => Promise<void> — füllt users (App-State)
-    onSaveServer,                 // (server) => void — anhängen + persistieren
-    onRemoveServer,               // (id) => void — entfernen + Tokens dieses Servers löschen
-    onRenameServer,               // (id, name) => void — Servername vom Server übernommen
-    onTokenRefreshed,             // (serverId, userId, token) => void — App aktualisiert nur bei aktivem Speichern
-    onSwitchServer,               // () => void — zurück zur Server-Auswahl (App: handleLogout)
+    onServerConnected,            // (server) => void — App sets selectedServer
+    onFetchUsers,                 // () => Promise<void> — fills users (App state)
+    onSaveServer,                 // (server) => void — append + persist
+    onRemoveServer,               // (id) => void — remove + delete this server's tokens
+    onRenameServer,               // (id, name) => void — server name adopted from the server
+    onTokenRefreshed,             // (serverId, userId, token) => void — App updates only when saving is active
+    onSwitchServer,               // () => void — back to the server selection (App: handleLogout)
     onDone,                       // (user, token) => void — App: finishLogin
   } = $props();
 
-  // ── Flow-Zustand: lebt nur hier und endet mit dem Unmount ──
+  // ── Flow state: lives only here and ends with the unmount ──
   let serverConnectError = $state('');
   let isConnecting       = $state(false);
-  let showAddServer      = $state(false); // Panel "Neuen Server hinzufügen"
+  let showAddServer      = $state(false); // "Add new server" panel
   let isDiscovering      = $state(false);
   let discoveredServers  = $state([]);
   let newServerUrl       = $state('');
-  let pendingServer      = $state(null);  // Eintrag, der gerade verbindet (Spinner / Retry / Fehler-Zurück)
-  let pendingUser        = $state(null);  // Profil, für das das Passwort abgefragt wird
+  let pendingServer      = $state(null);  // entry currently connecting (spinner / retry / error back)
+  let pendingUser        = $state(null);  // profile the password is being requested for
   let showPasswordForm   = $state(false);
   let showManualLogin    = $state(false);
   let manualUsername     = $state('');
@@ -52,18 +52,19 @@
   let loginError         = $state('');
   let password           = $state('');
   let qcCode    = $state(null);
+  let qcQrSvg   = $state(null);
   let qcSecret  = null;
   let qcPolling = null;
 
-  // Einstieg direkt auf der Profilwahl (Profilwechsel oder abgelaufener Auto-Login-Token):
-  // users kann dann leer sein → einmalig nachladen.
+  // Entry directly on the profile choice (profile switch or expired auto-login token):
+  // users can be empty then → load once.
   $effect(() => { if (phase === 'users' && server && users.length === 0) onFetchUsers?.(); });
 
-  // QC-Polling überlebt die Ansicht nie (Login-Erfolg oder Wechsel unmountet die Komponente)
+  // QC polling never outlives the view (login success or switch unmounts the component)
   onDestroy(() => clearInterval(qcPolling));
 
-  /** Zurück-Taste, von App.handleGlobalBack gerufen (Muster wie Collection.handleBackKey):
-   *  true = hier verbraucht (Unterdialog geschlossen), false = App geht zur Server-Auswahl. */
+  /** Back key, called by App.handleGlobalBack (pattern like Collection.handleBackKey):
+   *  true = consumed here (sub-dialog closed), false = App goes to the server selection. */
   export function handleBackKey() {
     if (showPasswordForm || showManualLogin || qcCode) {
       showPasswordForm = false;
@@ -133,18 +134,18 @@
     discoveredServers = results
       .filter(r => r.status === 'fulfilled' && r.value)
       .map(r => r.value)
-      .filter(d => !savedServers.find(s => s.url === d.url)); // bereits gespeicherte rausfiltern
+      .filter(d => !savedServers.find(s => s.url === d.url)); // filter out already saved ones
 
     isDiscovering = false;
   }
 
   // ============================================================
-  // SERVER VERBINDEN / HINZUFÜGEN
+  // CONNECT / ADD SERVER
   // ============================================================
 
   async function connectToServer(srv) {
     pendingServer      = srv;
-    onServerConnected?.(srv);   // App: selectedServer = srv → $effect.pre speist session.serverUrl
+    onServerConnected?.(srv);   // App: selectedServer = srv → $effect.pre feeds session.serverUrl
     serverConnectError = '';
     isConnecting       = true;
     loginError         = '';
@@ -159,7 +160,7 @@
 
       if (res.ok) {
         const data = await res.json();
-        // Servernamen aktualisieren wenn geändert
+        // Update the server name if it changed
         if (data.ServerName && data.ServerName !== srv.name) {
           onRenameServer?.(srv.id, data.ServerName);
         }
@@ -181,11 +182,11 @@
     if (!url.trim()) return;
     const cleanUrl = url.trim().replace(/\/$/, '');
 
-    // Schon vorhanden?
+    // Already present?
     const existing = savedServers.find(s => s.url === cleanUrl);
     if (existing) { await connectToServer(existing); return; }
 
-    // Neuer Server: testen, dann speichern
+    // New server: test, then save
     serverConnectError = '';
     isConnecting       = true;
     try {
@@ -212,10 +213,10 @@
   }
 
   // ============================================================
-  // ANMELDUNG
+  // SIGN-IN
   // ============================================================
 
-  /** Profil angeklickt — ggf. Schnellanmeldung per gespeichertem Token */
+  /** Profile clicked — quick sign-in via a saved token if available */
   async function handleUserClick(user) {
     loginError      = '';
     password        = '';
@@ -233,13 +234,13 @@
         onDone?.(user, storedToken);
         return;
       } else {
-        // Token abgelehnt: Eintrag NICHT löschen — er steht für den Speicher-Wunsch des Nutzers.
-        // Nach erfolgreicher Passwort-Anmeldung frischt ihn App via onTokenRefreshed auf.
+        // Token rejected: do NOT delete the entry — it represents the user's wish to save.
+        // After a successful password sign-in, App refreshes it via onTokenRefreshed.
         dlog('[auth] stored token rejected for', user.Name, '— save preference kept, refreshed after password login');
       }
     }
 
-    // Passwort-Eingabe anzeigen
+    // Show the password entry
     showPasswordForm = true;
   }
 
@@ -253,7 +254,7 @@
       });
       if (res.ok) {
         const data = await res.json();
-        // Gespeicherten Token auffrischen — ob Speichern aktiv ist, prüft App
+        // Refresh the saved token — whether saving is active is checked by App
         onTokenRefreshed?.(server?.id, data.User.Id, data.AccessToken);
         onDone?.(data.User, data.AccessToken);
       } else {
@@ -262,7 +263,7 @@
     } catch { loginError = i18n.t.errOffline; }
   }
 
-  // Quick Connect — Login-Flow (Code auf TV, Handy bestätigt)
+  // Quick Connect — login flow (code on the TV, confirmed on the phone)
   async function startQuickConnect() {
     loginError = '';
     showPasswordForm = false;
@@ -275,6 +276,12 @@
         const data = await res.json();
         qcCode   = data.Code;
         qcSecret = data.Secret;
+        // QR that opens the Jellyfin web Quick Connect page with the code pre-filled — a phone that
+        // is already signed in to the web client then only has to confirm, no typing of the code.
+        try {
+          const { renderSVG } = await import('uqr');
+          qcQrSvg = renderSVG(`${session.serverUrl}/web/#/quickconnect?code=${encodeURIComponent(data.Code)}`, { ecc: 'M', border: 1 });
+        } catch (e) { console.warn('[OcenFin] QC QR generation failed', e); qcQrSvg = null; }
         qcPolling = setInterval(async () => {
           try {
             const poll = await fetch(`${session.serverUrl}/QuickConnect/Connect?Secret=${qcSecret}`, {
@@ -290,7 +297,7 @@
               });
               if (authRes.ok) {
                 const authData = await authRes.json();
-                qcCode = null;
+                qcCode = qcQrSvg = null;
                 onDone?.(authData.User, authData.AccessToken);
               }
             }
@@ -304,12 +311,12 @@
 
   function cancelQuickConnect() {
     clearInterval(qcPolling);
-    qcCode = qcSecret = null;
+    qcCode = qcSecret = qcQrSvg = null;
   }
 </script>
 
 <!-- ============================================================
-     PHASE: SERVER-AUSWAHL
+     PHASE: SERVER SELECTION
 ============================================================ -->
 {#if phase === 'servers'}
   <div class="h-full flex items-center justify-center p-8">
@@ -320,10 +327,10 @@
         <p class="text-gray-400">{i18n.t.serverSelectPrompt}</p>
       </div>
 
-      <!-- Gespeicherte Server + Fehlermeldung: eigene Fokus-Gruppe -->
+      <!-- Saved servers + error message: own focus group -->
       <div data-focus-group="servers" class="flex flex-col gap-6">
 
-      <!-- Gespeicherte Server -->
+      <!-- Saved servers -->
       {#if savedServers.length > 0}
         <div class="flex flex-col gap-3">
           <p class="text-sm text-gray-400 uppercase tracking-wider font-bold ml-1">{i18n.t.savedServers}</p>
@@ -348,7 +355,7 @@
                   </svg>
                 {/if}
               </button>
-              <!-- Server entfernen -->
+              <!-- Remove server -->
               <button
                 onclick={() => onRemoveServer?.(server.id)}
                 class="p-3 text-gray-600 hover:text-red-400 focus:text-red-400 focus:outline-none focus:ring-2 focus:ring-red-500 rounded-lg transition-colors"
@@ -363,7 +370,7 @@
         </div>
       {/if}
 
-      <!-- Fehlermeldung + Retry -->
+      <!-- Error message + retry -->
       {#if serverConnectError}
         <div class="bg-red-900/40 border border-red-700 rounded-xl p-5 flex flex-col gap-4">
           <div class="flex items-center gap-3">
@@ -392,14 +399,14 @@
         </div>
       {/if}
 
-      </div><!-- Ende Fokus-Gruppe "servers" -->
+      </div><!-- end focus group "servers" -->
 
-      <!-- "Server hinzufügen"-Flow (Toggle + Panel): eigene Gruppe; Eintritt immer auf den Toggle,
-           damit Hoch/Runter sauber Toggle → Suche → Manuell durchläuft (nicht das vollbreite Toggle
-           gegen das eingerückte Panel ausspielt). -->
+      <!-- "Add server" flow (toggle + panel): own group; entry always on the toggle,
+           so Up/Down cleanly runs toggle → discovery → manual (rather than pitting the full-width
+           toggle against the indented panel). -->
       <div data-focus-group="addserver" data-enter-first class="flex flex-col gap-6">
 
-      <!-- Neuen Server hinzufügen (Toggle-Panel) -->
+      <!-- Add new server (toggle panel) -->
       <button
         onclick={() => { showAddServer = !showAddServer; if (showAddServer) discoverJellyfinServers(); }}
         class="w-full flex items-center justify-center gap-3 py-4 rounded-xl border-2 transition-all
@@ -433,7 +440,7 @@
             {/if}
           </button>
 
-          <!-- Gefundene (neue) Server -->
+          <!-- Discovered (new) servers -->
           {#if discoveredServers.length > 0}
             <div class="flex flex-col gap-2">
               <p class="text-xs text-gray-400 uppercase tracking-wider font-bold">{i18n.t.serverFound}</p>
@@ -455,7 +462,7 @@
             </div>
           {/if}
 
-          <!-- Trennlinie -->
+          <!-- Divider -->
           <div class="flex items-center gap-3">
             <div class="flex-1 h-px bg-gray-700"></div>
             <span class="text-gray-500 text-sm">{i18n.t.serverManualEntry}</span>
@@ -484,41 +491,54 @@
 
         </div>
       {/if}
-      </div><!-- Ende Fokus-Gruppe "addserver" -->
+      </div><!-- end focus group "addserver" -->
 
     </div>
   </div>
 
 <!-- ============================================================
-     PHASE: BENUTZER-AUSWAHL
+     PHASE: USER SELECTION
 ============================================================ -->
 {:else if phase === 'users'}
   <div class="h-full flex items-center justify-center p-8">
     <div data-focus-group="users" class="w-full max-w-6xl flex flex-col items-center gap-10">
 
-      <!-- Server-Name als Kontext -->
+      <!-- Server name as context -->
       {#if server}
         <p class="text-gray-500 text-lg font-medium tracking-wide">
           {server.name} · <span class="text-gray-600">{server.url}</span>
         </p>
       {/if}
 
-      <!-- QC-Login: Code anzeigen -->
+      <!-- QC login: show the code -->
       {#if qcCode}
-        <div class="bg-gray-800 p-10 rounded-2xl shadow-xl max-w-xl w-full text-center border border-gray-700">
-          <h2 class="text-3xl font-bold text-white mb-4">{i18n.t.quickConnect}</h2>
-          <p class="text-gray-400 mb-6 text-xl">{i18n.t.qcInstruction}</p>
-          <div class="bg-gray-900 border-2 border-blue-500 rounded-lg py-6 mb-6">
-            <span class="text-6xl font-mono font-bold text-white tracking-widest">{qcCode}</span>
+        <div class="bg-gray-800 p-10 rounded-2xl shadow-xl w-full {qcQrSvg ? 'max-w-3xl' : 'max-w-xl'} text-center border border-gray-700">
+          <h2 class="text-3xl font-bold text-white mb-8">{i18n.t.quickConnect}</h2>
+          <div class="flex items-center justify-center gap-10 mb-8">
+            <!-- Code method (left) -->
+            <div class="flex-1 flex flex-col items-center gap-4">
+              <div class="bg-gray-900 border-2 border-blue-500 rounded-lg py-6 px-6 w-full">
+                <span class="text-6xl font-mono font-bold text-white tracking-widest">{qcCode}</span>
+              </div>
+              <p class="text-gray-400 text-base leading-snug">{i18n.t.qcInstruction}</p>
+            </div>
+            {#if qcQrSvg}
+              <!-- QR method (right) -->
+              <div class="flex flex-col items-center gap-3 shrink-0">
+                <div class="rounded-xl bg-white p-3 [&>svg]:block [&>svg]:w-full [&>svg]:h-full"
+                     style="width:240px;height:240px;">{@html qcQrSvg}</div>
+                <p class="text-gray-400 text-base leading-snug max-w-[240px]">{i18n.t.qcQrHint}</p>
+              </div>
+            {/if}
           </div>
-          <button onclick={cancelQuickConnect}
+          <button onclick={cancelQuickConnect} {@attach focusOnMount()}
             class="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-4 rounded-xl
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">
             {i18n.t.qcCancel}
           </button>
         </div>
 
-      <!-- Passwort-Eingabe für ausgewähltes Profil -->
+      <!-- Password entry for the selected profile -->
       {:else if showPasswordForm && pendingUser}
         <div class="bg-gray-800 p-10 rounded-2xl shadow-xl max-w-xl w-full text-center border border-gray-700">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.passwordPrompt} {pendingUser.Name}</h2>
@@ -535,7 +555,7 @@
                    focus:outline-none focus:ring-4 focus:ring-white">
             {i18n.t.loginText}
           </button>
-          <!-- Alternative: Quick Connect (falls Kennwort nicht gespeichert/getippt werden soll) -->
+          <!-- Alternative: Quick Connect (if the password shouldn't be saved/typed) -->
           <button onclick={startQuickConnect}
             class="w-full flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold text-lg py-3.5 rounded-xl mb-4
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">
@@ -550,7 +570,7 @@
           {#if loginError}<p class="text-red-400 mt-4 font-semibold">{loginError}</p>{/if}
         </div>
 
-      <!-- Manuelle Anmeldung -->
+      <!-- Manual sign-in -->
       {:else if showManualLogin}
         <div class="bg-gray-800 p-10 rounded-2xl shadow-xl max-w-xl w-full text-center border border-gray-700">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.manualLogin}</h2>
@@ -584,16 +604,16 @@
           {#if loginError}<p class="text-red-400 mt-4 font-semibold">{loginError}</p>{/if}
         </div>
 
-      <!-- Profilauswahl -->
+      <!-- Profile selection -->
       {:else}
         <h1 class="text-5xl font-bold text-white">{i18n.t.selectUser}</h1>
 
-        <!-- Profile -->
+        <!-- Profiles -->
         {#if users.length > 0}
           <div class="flex flex-wrap justify-center gap-10">
             {#each users as user, i (user.Id)}
               <button onclick={() => handleUserClick(user)} {@attach focusOnMount(i === 0)} class="flex flex-col items-center group focus:outline-none">
-                <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 shadow-xl transition-all duration-200">
+                <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 shadow-xl transition-transform duration-200">
                   {#if user.PrimaryImageTag}
                     <img src="{session.serverUrl}/Users/{user.Id}/Images/Primary?tag={user.PrimaryImageTag}&fillWidth=300&fillHeight=300&quality=90&format=webp" alt={user.Name} class="w-full h-full object-cover"/>
                   {:else}
@@ -608,14 +628,14 @@
           </div>
         {/if}
 
-        <!-- Trennlinie -->
+        <!-- Divider -->
         <div class="flex items-center gap-4 w-full max-w-xl mt-4">
           <div class="flex-1 h-px bg-gray-800"></div>
           <span class="text-gray-600 text-sm">oder</span>
           <div class="flex-1 h-px bg-gray-800"></div>
         </div>
 
-        <!-- Manuelle Anmeldung + Quick Connect Buttons (wie original Jellyfin) -->
+        <!-- Manual sign-in + Quick Connect buttons (like original Jellyfin) -->
         <div class="flex gap-4">
           <button
             onclick={() => { showManualLogin = true; loginError = ''; }}
@@ -642,7 +662,7 @@
           </button>
         </div>
 
-        <!-- Anderen Server wählen -->
+        <!-- Choose a different server -->
         <button
           onclick={onSwitchServer}
           class="text-gray-600 hover:text-gray-400 focus:text-gray-400 focus:outline-none text-sm font-medium mt-2"

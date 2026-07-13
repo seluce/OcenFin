@@ -1,10 +1,10 @@
-// Runes-native i18n (ersetzt die frühere Svelte-Store-Variante). `lang` ist $state, `i18n.t` ein
-// reaktiver Getter auf die Übersetzungstabelle — Komponenten lesen `i18n.t.key` bzw. `i18n.lang`
-// und re-rendern bei Sprachwechsel automatisch, genau nach dem Muster von session.svelte.js.
-// Kein Svelte-Store mehr im Projekt.
+// Runes-native i18n (replaces the earlier Svelte-store variant). `lang` is $state, `i18n.t` a
+// reactive getter on the translation table — components read `i18n.t.key` or `i18n.lang`
+// and re-render automatically on language change, exactly following the pattern of session.svelte.js.
+// No Svelte store in the project anymore.
 
-// Übersetzungen liegen pro Sprache in /locales. en ist die Referenz (vollständige Key-Liste);
-// jede andere Sprache fällt PRO KEY auf en zurück, falls dort mal ein String fehlt.
+// Translations live per language in /locales. en is the reference (complete key list);
+// every other language falls back PER KEY to en in case a string is ever missing there.
 import en from './locales/en.js';
 import de from './locales/de.js';
 import fr from './locales/fr.js';
@@ -14,7 +14,7 @@ import it from './locales/it.js';
 import pt from './locales/pt.js';
 import pl from './locales/pl.js';
 
-// Jede Sprache über en gelegt → fehlende Keys erben automatisch den englischen Text (nie undefined).
+// Each language layered over en → missing keys automatically inherit the English text (never undefined).
 const withFallback = (lang) => ({ ...en, ...lang });
 
 export const translations = {
@@ -28,8 +28,8 @@ export const translations = {
   pl: withFallback(pl),
 };
 
-// Auswahlliste fürs Sprach-Menü. `codes` mappt 2-/3-Buchstaben-Sprachcodes (z. B. "ger"/"deu"/"de")
-// auf den internen Key, damit die Geräteerkennung greift.
+// Selection list for the language menu. `codes` maps 2-/3-letter language codes (e.g. "ger"/"deu"/"de")
+// to the internal key so device detection works.
 export const LANGUAGES = [
   { key: 'de', name: 'Deutsch',     flag: '🇩🇪', codes: ['ger', 'deu', 'de'] },
   { key: 'en', name: 'English',     flag: '🇬🇧', codes: ['eng', 'en'] },
@@ -41,10 +41,10 @@ export const LANGUAGES = [
   { key: 'pl', name: 'Polski',      flag: '🇵🇱', codes: ['pol', 'pl'] },
 ];
 
-// Erkennt die UI-Sprache beim Start: zuletzt gewählte Sprache → sonst Gerätesprache des
-// TVs/Browsers (z. B. "de-DE" → "de") → sonst Englisch. Gematcht wird gegen die VORHANDENEN
-// Übersetzungen (Object.keys(translations)), damit neu hinzugefügte Sprachen automatisch greifen
-// und alles Unbekannte sauber auf Englisch zurückfällt.
+// Detects the UI language at startup: last chosen language → otherwise the device language of the
+// TV/browser (e.g. "de-DE" → "de") → otherwise English. Matched against the EXISTING
+// translations (Object.keys(translations)) so newly added languages take effect automatically
+// and anything unknown falls back cleanly to English.
 export function detectUiLang() {
   const supported = Object.keys(translations);
   try {
@@ -57,24 +57,24 @@ export function detectUiLang() {
   for (const raw of navLangs) {
     if (!raw) continue;
     const sub = String(raw).toLowerCase().split('-')[0];          // "de-DE" -> "de"
-    if (supported.includes(sub)) return sub;                      // direkter Treffer (2-Buchstaben)
-    const viaCode = LANGUAGES.find(l => l.codes.includes(sub));   // 3-Buchstaben-Codes (ger/eng ...) mappen
+    if (supported.includes(sub)) return sub;                      // direct hit (2 letters)
+    const viaCode = LANGUAGES.find(l => l.codes.includes(sub));   // map 3-letter codes (ger/eng ...)
     if (viaCode && supported.includes(viaCode.key)) return viaCode.key;
   }
-  return supported.includes('en') ? 'en' : supported[0];          // Fallback: Englisch
+  return supported.includes('en') ? 'en' : supported[0];          // fallback: English
 }
 
-// --- Reaktiver Zustand (Runes) ---
+// --- Reactive state (runes) ---
 let lang = $state(detectUiLang());
 
-// Reaktiver Zugriff für Komponenten: i18n.t.key (Übersetzung) und i18n.lang (aktueller Code).
-// Beide Getter lesen `lang` ($state) → Lesezugriffe in Templates/$effects sind automatisch reaktiv.
+// Reactive access for components: i18n.t.key (translation) and i18n.lang (current code).
+// Both getters read `lang` ($state) → reads in templates/$effects are automatically reactive.
 export const i18n = {
   get lang() { return lang; },
   get t()    { return translations[lang] || translations.en; },
 };
 
-// Sprache wechseln (validiert gegen vorhandene Übersetzungen; Persistenz erfolgt im Aufrufer).
+// Change language (validated against existing translations; persistence happens in the caller).
 export function setLang(code) {
   if (translations[code]) lang = code;
 }

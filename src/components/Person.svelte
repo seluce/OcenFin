@@ -9,12 +9,32 @@
   let items     = $state([]);
   let isLoading = $state(false);
 
-  // Filmografie nach Typ gruppieren (nur Filme / Serien). Folgen werden bewusst weggelassen –
-  // wer in Serie X mitspielt, taucht sonst in dutzenden Folgen auf und überlagert alles.
-  let groups = $derived([
-    { label: i18n.t.movies, items: items.filter(i => i.Type === 'Movie') },
-    { label: i18n.t.series, items: items.filter(i => i.Type === 'Series') },
-  ].filter(g => g.items.length > 0));
+  // Group the filmography by type. Episodes are COLLAPSED per series into a single
+  // "Series (N episodes)" tile — so guest stars (only credited on individual episodes,
+  // not on the series) finally show up, without a main-cast actor drowning the page in
+  // hundreds of episode tiles. A collapsed tile opens the series (see onOpenDetails).
+  let groups = $derived.by(() => {
+    const movies = items.filter(i => i.Type === 'Movie');
+    const directSeries = items.filter(i => i.Type === 'Series');
+    const directIds = new Set(directSeries.map(x => x.Id));
+    const guest = new Map();   // SeriesId -> synthetic series tile
+    for (const ep of items) {
+      if (ep.Type !== 'Episode' || !ep.SeriesId) continue;
+      if (directIds.has(ep.SeriesId)) continue;   // person is regular cast → series tile already shown
+      const hit = guest.get(ep.SeriesId);
+      if (hit) { hit._episodeCount++; continue; }
+      guest.set(ep.SeriesId, {
+        Id: ep.SeriesId, Type: 'Series', Name: ep.SeriesName || ep.Name,
+        ImageTags: ep.SeriesPrimaryImageTag ? { Primary: ep.SeriesPrimaryImageTag } : undefined,
+        ProductionYear: ep.SeriesProductionYear,
+        _episodeCount: 1,
+      });
+    }
+    return [
+      { label: i18n.t.movies, items: movies },
+      { label: i18n.t.series, items: [...directSeries, ...guest.values()] },
+    ].filter(g => g.items.length > 0);
+  });
 
   const getAuthHeaders = () => authHeaders(session.token);
 
@@ -22,24 +42,29 @@
     fav       = !!person.UserData?.IsFavorite;
     items     = [];
     isLoading = true;
-    // Person-Item separat holen → korrekter Favoritenstatus (aus Suche/Besetzung fehlt UserData oft)
+    // Fetch the person item separately → correct favorite status (from search/cast, UserData is often missing)
     fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${person.Id}`, { headers: getAuthHeaders() })
       .then(r => r.ok ? r.json() : null)
       .then(p => { if (p) fav = !!p.UserData?.IsFavorite; })
       .catch(() => {});
+    // Two parallel fetches: main filmography (movies/series) and episodes (for guest roles),
+    // so a long-running series' episodes can never crowd movies/series out of a single limit.
+    const base = `${session.serverUrl}/Users/${selectedUser.Id}/Items?PersonIds=${person.Id}` +
+      `&Recursive=true&SortBy=PremiereDate&SortOrder=Descending` +
+      `&Fields=PrimaryImageAspectRatio,SeriesName&EnableTotalRecordCount=false`;
     try {
-      const res = await fetch(
-        `${session.serverUrl}/Users/${selectedUser.Id}/Items?PersonIds=${person.Id}` +
-        `&Recursive=true&IncludeItemTypes=Movie,Series&SortBy=PremiereDate&SortOrder=Descending` +
-        `&Limit=100&Fields=PrimaryImageAspectRatio,SeriesName&EnableTotalRecordCount=false`,
-        { headers: getAuthHeaders() }
-      );
-      if (res.ok) items = (await res.json()).Items || [];
-    } catch { /* ignorieren */ }
+      const [mainRes, epRes] = await Promise.all([
+        fetch(`${base}&IncludeItemTypes=Movie,Series&Limit=100`, { headers: getAuthHeaders() }),
+        fetch(`${base}&IncludeItemTypes=Episode&Limit=200`, { headers: getAuthHeaders() }),
+      ]);
+      const main = mainRes.ok ? ((await mainRes.json()).Items || []) : [];
+      const eps  = epRes.ok  ? ((await epRes.json()).Items  || []) : [];
+      items = [...main, ...eps];
+    } catch { /* ignore */ }
     finally { isLoading = false; }
   }
 
-  // Person als Favorit setzen/entfernen (optimistisch; bei Fehler zurückrollen)
+  // Set/remove the person as a favorite (optimistic; roll back on error)
   async function toggleFavorite() {
     const next = !fav;
     fav = next;
@@ -49,7 +74,7 @@
     } catch (e) { console.warn('[OcenFin] person favorite failed, rolled back:', e); fav = !next; }
   }
 
-  // Lädt beim Mounten und wenn eine andere Person geöffnet wird.
+  // Loads on mount and when a different person is opened.
   let loadedId = null;
   $effect(() => {
     if (person && person.Id !== loadedId) { loadedId = person.Id; loadPerson(); }
@@ -91,7 +116,7 @@
           <button onclick={() => onOpenDetails(item)}
             {@attach longPress()} onlongpress={() => onContextMenu(item)}
             class="group focus:outline-none text-left scroll-my-4">
-            <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl relative">
+            <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
                   {#if badge}
                     <div class="absolute top-2 left-2 z-10 min-w-[1.6rem] h-[1.6rem] px-1.5 rounded-full flex items-center justify-center bg-blue-600/90 text-white text-xs font-bold shadow-md pointer-events-none">
                       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
@@ -109,7 +134,9 @@
             <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">
               {item.Type === 'Episode' && item.SeriesName ? item.SeriesName : item.Name}
             </span>
-            {#if item.Type === 'Episode'}
+            {#if item._episodeCount}
+              <span class="text-xs text-gray-500 block truncate w-full">{item._episodeCount} {i18n.t.episodes}</span>
+            {:else if item.Type === 'Episode'}
               <span class="text-xs text-gray-500 block truncate w-full">{item.Name}</span>
             {:else if item.ProductionYear}
               <span class="text-xs text-gray-500 block truncate w-full">{item.ProductionYear}</span>

@@ -1,4 +1,4 @@
-// English — Referenzsprache (vollständige Key-Liste). Andere Sprachen fallen pro Key hierauf zurück.
+// English — reference language (complete key list). Other languages fall back to this per key.
 export default {
     // App / Server
     title: "OcenFin",
@@ -121,12 +121,16 @@ export default {
     markUnwatched: "Mark as unwatched",
     addFavorite: "Add to favorites",
     removeFavorite: "Remove from favorites",
+    watchlist: "Watchlist",
+    addToWatchlist: "Add to watchlist",
+    removeFromWatchlist: "Remove from watchlist",
     resetProgress: "Reset progress",
     openDetails: "Open details",
     options: "Options",
     moreFromSeason: "More from",
     trailer: "Trailer",
     similar: "Similar",
+    extras: "Extras",
     seasons: "Seasons",
     audio: "Audio",
     subtitles: "Subtitles",
@@ -135,6 +139,8 @@ export default {
     mins: "min",
 
     // Player
+    unknown: "Unknown",
+    source: "Source",
     playback: "Playback",
     prevEpisode: "Previous Episode",
     nextEpisode: "Next Episode",
@@ -318,6 +324,7 @@ export default {
     // Quick Connect
     quickConnect: "Quick Connect",
     qcInstruction: "Enter this code in your Jellyfin app (Phone/Web) under 'Quick Connect':",
+    qcQrHint: "Scan with a phone signed in to Jellyfin.",
     qcCancel: "Cancel",
     qcAuthInstruction: "Enter a 6-digit code from another device to authorize it:",
     qcAuthorizeBtn: "Authorize Device",
@@ -374,13 +381,15 @@ export default {
     clear: "Clear",
     logShow: "Show log",
     logShowDesc: "View, copy or share the current logs as a QR code.",
+    helpFaq: "Help & FAQ",
+    helpFaqHint: "Scan with your phone to open the OcenFin wiki & FAQ.",
     logTitle: "Log",
     logEmpty: "No entries yet.",
     logQrButton: "QR code",
     logQrHint: "Scan with your phone to transfer the latest lines (e.g. by email).",
     logBackToText: "Back to text",
 
-    // Untertitel-Styling (nur Text)
+    // Subtitle styling (text only)
     subtitleColor: "Color",
     subtitleEdge: "Edge",
     subtitleBackground: "Background",
@@ -397,14 +406,14 @@ export default {
     bgSemi: "Semi",
     bgSolid: "Solid",
 
-    // Teilen
+    // Share
     share: "Share",
     shareHint: "Scan with your phone to look up or share the title.",
 
-    // Untertitel-Versatz
+    // Subtitle offset
     subtitleOffset: "Offset",
 
-    // Kennwort anzeigen/verbergen
+    // Show/hide password
     showPassword: "Show password",
     hidePassword: "Hide password",
 

@@ -1,15 +1,15 @@
-// SyncPlay — Gruppen-Wiedergabe über Jellyfins /SyncPlay-API.
-// Phase 1: Gruppen verwalten (auflisten/erstellen/beitreten/verlassen) per REST + Polling.
-// Phase 2 (später): Echtzeit-Synchronisation der Wiedergabe über WebSocket-Kommandos.
+// SyncPlay — group playback via Jellyfin's /SyncPlay API.
+// Phase 1: manage groups (list/create/join/leave) via REST + polling.
+// Phase 2 (later): real-time playback synchronization via WebSocket commands.
 
 import { authHeaders } from './utils.js';
 
-// Ein Auth-Schema, eine Quelle: utils.authHeaders. Lokaler Alias bleibt, damit die
-// vielen Aufrufstellen unverändert bleiben (headers(token) statt überall umzubauen).
+// One auth scheme, one source: utils.authHeaders. The local alias stays so the
+// many call sites remain unchanged (headers(token) instead of rewriting everywhere).
 const headers = (token) => authHeaders(token);
 
-// Registriert die Sitzung als steuerbar — Voraussetzung dafür, dass SyncPlay die Sitzung
-// in einer Gruppe ansprechen darf. Idempotent; einmal nach dem Login genügt.
+// Registers the session as controllable — a prerequisite for SyncPlay to address the session
+// within a group. Idempotent; once after login is enough.
 export async function registerSession(serverUrl, token) {
   try {
     await fetch(`${serverUrl}/Sessions/Capabilities/Full`, {
@@ -26,7 +26,7 @@ export async function registerSession(serverUrl, token) {
   } catch { return false; }
 }
 
-// Verfügbare Gruppen inkl. Teilnehmer. Liefert [] bei Fehler.
+// Available groups incl. participants. Returns [] on error.
 export async function listSyncGroups(serverUrl, token) {
   try {
     const res = await fetch(`${serverUrl}/SyncPlay/List`, { headers: headers(token) });
@@ -60,17 +60,17 @@ export async function leaveSyncGroup(serverUrl, token) {
   } catch { return false; }
 }
 
-// WebSocket-URL für Echtzeit-Updates (Gruppen-Status + Wiedergabe-Kommandos).
-// http→ws, https→wss. Jellyfin schiebt darüber SyncPlayGroupUpdate / SyncPlayCommand.
+// WebSocket URL for real-time updates (group status + playback commands).
+// http→ws, https→wss. Jellyfin pushes SyncPlayGroupUpdate / SyncPlayCommand over it.
 export function syncSocketUrl(serverUrl, token, deviceId) {
   const base = serverUrl.replace(/^http/i, 'ws');
   return `${base}/socket?ApiKey=${encodeURIComponent(token)}&deviceId=${encodeURIComponent(deviceId)}`;
 }
 
-// ── Phase 2: Wiedergabe-Synchronisation ──────────────────────────────────────
+// ── Phase 2: playback synchronization ────────────────────────────────────────
 
-// Gruppe so einstellen, dass der Server NICHT auf den Buffer-Handshake aller
-// Clients wartet → Kommandos werden sofort verteilt. (Feinabstimmung = Phase 2b.)
+// Configure the group so the server does NOT wait for the buffer handshake of all
+// clients → commands are distributed immediately. (Fine-tuning = phase 2b.)
 export async function setSyncIgnoreWait(serverUrl, token, ignore = true) {
   try {
     await fetch(`${serverUrl}/SyncPlay/SetIgnoreWait`, {
@@ -80,8 +80,8 @@ export async function setSyncIgnoreWait(serverUrl, token, ignore = true) {
   } catch { return false; }
 }
 
-// Setzt die abzuspielende Gruppen-Queue (ein Item). Der Server verteilt daraufhin
-// ein PlayQueue-Update an alle Mitglieder.
+// Sets the group queue to play (one item). The server then distributes
+// a PlayQueue update to all members.
 export async function setSyncQueue(serverUrl, token, itemId, startPositionTicks) {
   try {
     const res = await fetch(`${serverUrl}/SyncPlay/SetNewQueue`, {
@@ -92,8 +92,8 @@ export async function setSyncQueue(serverUrl, token, itemId, startPositionTicks)
   } catch { return false; }
 }
 
-// Sendet ein lokales Steuer-Ereignis an die Gruppe. action: 'Pause' | 'Unpause' | 'Seek' | 'Stop'.
-// Nur 'Seek' trägt eine Position; der Server verteilt das Kommando an alle (inkl. Absender).
+// Sends a local control event to the group. action: 'Pause' | 'Unpause' | 'Seek' | 'Stop'.
+// Only 'Seek' carries a position; the server distributes the command to all (incl. the sender).
 export async function sendSyncCommand(serverUrl, token, action, positionTicks) {
   try {
     const body = action === 'Seek' ? JSON.stringify({ PositionTicks: positionTicks }) : undefined;
@@ -102,7 +102,7 @@ export async function sendSyncCommand(serverUrl, token, action, positionTicks) {
   } catch { return false; }
 }
 
-// Puffer-Handshake (Phase 2b): „ich puffere/spule, bin NICHT bereit" → Gruppe wartet.
+// Buffer handshake (phase 2b): "I'm buffering/seeking, NOT ready" → the group waits.
 export async function sendSyncBuffering(serverUrl, token, positionTicks, isPlaying, playlistItemId) {
   try {
     await fetch(`${serverUrl}/SyncPlay/Buffering`, {
@@ -112,7 +112,7 @@ export async function sendSyncBuffering(serverUrl, token, positionTicks, isPlayi
     return true;
   } catch { return false; }
 }
-// „ich bin bereit (an dieser Position)" → wenn alle bereit sind, gibt der Server die Wiedergabe frei (Unpause).
+// "I'm ready (at this position)" → when all are ready, the server releases playback (Unpause).
 export async function sendSyncReady(serverUrl, token, positionTicks, isPlaying, playlistItemId) {
   try {
     await fetch(`${serverUrl}/SyncPlay/Ready`, {

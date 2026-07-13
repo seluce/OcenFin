@@ -14,23 +14,23 @@
     reduceAnimations    = false,
     displaySettings     = { clock: true, hero: true, episodeCount: true },
     playbackPrefs       = { audioLanguage: 'default', subtitleLanguage: 'default', subtitleSize: 'normal' },
-    serverVersion       = '',      // Jellyfin-Serverversion (Status-Seite)
-    serverVobSub        = false,   // liefert der Server Bild-Untertitel clientseitig aus?
-    libraries           = [],      // echte Mediatheken (für den Navigations-Editor)
-    publicUsers         = [],      // wählbare Profile (öffentliche Liste vom Server)
+    serverVersion       = '',      // Jellyfin server version (status page)
+    serverVobSub        = false,   // does the server deliver graphic subtitles client-side?
+    libraries           = [],      // real libraries (for the navigation editor)
+    publicUsers         = [],      // selectable profiles (public list from the server)
     sharedProfile       = { enabled: false, members: [] },
-    sharedTokens        = {},      // eigener Token-Speicher fürs gemeinsame Schauen
+    sharedTokens        = {},      // own token store for watch together
     onSharedToggle       = () => {},
     onSharedSetMember    = async () => 'error',   // (slot, user, pw) → 'ok'|'needPassword'|'error'
     onSharedRemoveMember = () => {},
-    // Callback-Props (ersetzen die früheren Events)
+    // Callback props (replace the former events)
     onToggleSave, onSwitchUser, onLogout, onScreensaverChange, onReduceAnimationsChange,
     onDisplayChange, onReorderingChange, onProfileImageChanged, onPlaybackPrefsChange, onClearCache,
   } = $props();
 
-  let showDisplayOptions = $state(false);   // Unterpunkt ein-/ausklappen
+  let showDisplayOptions = $state(false);   // expand/collapse the sub-item
 
-  // Audio-/Untertitel-Sprachoptionen für die Modals
+  // Audio/subtitle language options for the modals
   let audioLangOptions = $derived([
     { key: 'default', name: i18n.t.langDefault },
     ...LANGUAGES
@@ -59,7 +59,7 @@
   function setSubtitleSize(size) {
     onPlaybackPrefsChange?.({ ...playbackPrefs, subtitleSize: size });
   }
-  // Generisch für die Text-Styling-Selektoren (Farbe/Rand/Hintergrund).
+  // Generic for the text styling selectors (color/edge/background).
   function setSubtitlePref(key, val) {
     onPlaybackPrefsChange?.({ ...playbackPrefs, [key]: val });
   }
@@ -68,8 +68,8 @@
     onPlaybackPrefsChange?.({ ...playbackPrefs, stillWatchingEpisodes: n });
   }
 
-  // Version: YYYYMMDD — bei Updates hier anpassen
-  // APP_VERSION kommt jetzt zentral aus version.js (Quelle: appinfo.json)
+  // Version: YYYYMMDD — adjust here on updates
+  // APP_VERSION now comes centrally from version.js (source: appinfo.json)
 
   let isCurrentUserSaved = $derived(!!(
     selectedUser && selectedServer &&
@@ -77,19 +77,19 @@
   ));
 
   let activeModal  = $state(null);
-  const modalFocus = makeFocusReturn();   // Auslöser-Button, auf den der Fokus nach dem Schließen zurückkehrt
+  const modalFocus = makeFocusReturn();   // trigger button that focus returns to after closing
   let currentPw    = $state('');
-  let showCurrentPw = $state(false);  // Augen-Umschalter fürs aktuelle Kennwort
+  let showCurrentPw = $state(false);  // eye toggle for the current password
   let newPw        = $state('');
-  let showNewPw    = $state(false);   // Augen-Umschalter: neues Kennwort kurz einblenden zum Prüfen
+  let showNewPw    = $state(false);   // eye toggle: briefly reveal the new password to check it
   let pwMessage    = $state('');
   let qcCode       = $state('');
   let qcMessage    = $state('');
-  let modalTimeout = null;  // für Memory-Leak-freies setTimeout
+  let modalTimeout = null;  // for a memory-leak-free setTimeout
 
-  // Gemeinsames Schauen — Picker-Zustand
-  let sharedPickerSlot = $state(null);   // 0 | 1 (welcher Steckplatz wird gefüllt)
-  let sharedPickerUser = $state(null);   // gewähltes Profil (Passwort-Schritt)
+  // Watch together — picker state
+  let sharedPickerSlot = $state(null);   // 0 | 1 (which slot is being filled)
+  let sharedPickerUser = $state(null);   // chosen profile (password step)
   let sharedPw    = $state('');
   let sharedBusy  = $state(false);
   let sharedError = $state('');
@@ -121,8 +121,8 @@
     activeModal = null;
   }
 
-  // ── Gemeinsames Schauen ────────────────────────────────────────────────────
-  // Wählbar: nicht das eigene (Gemeinsam-)Profil, nicht das im anderen Steckplatz.
+  // ── Watch together ─────────────────────────────────────────────────────────
+  // Selectable: not one's own (shared) profile, not the one in the other slot.
   function pickableUsers(slot) {
     const otherId = sharedMembers[slot === 0 ? 1 : 0]?.id;
     return publicUsers.filter(u => u.Id !== selectedUser?.Id && u.Id !== otherId);
@@ -135,12 +135,12 @@
     sharedError = '';
     const sid = selectedServer?.id;
     const hasToken = !!(sharedTokens[sid]?.[user.Id] || savedTokens[sid]?.[user.Id]);
-    if (user.HasPassword && !hasToken) {        // Passwort nötig → Eingabeschritt
+    if (user.HasPassword && !hasToken) {        // password needed → entry step
       sharedPickerUser = user; sharedPw = '';
       await openModal('sharedPassword');
       return;
     }
-    await commitSharedUser(user, '');           // sonst sofort (vorhandener Token / kein Passwort)
+    await commitSharedUser(user, '');           // otherwise immediately (existing token / no password)
   }
   async function commitSharedUser(user, pw) {
     sharedBusy = true;
@@ -149,13 +149,13 @@
     sharedBusy = false;
     if (r === 'ok') {
       closeModal();
-      await tick();   // Slot zeigt jetzt den Entfernen-Button → Fokus dorthin (statt verloren an die Sidebar)
+      await tick();   // the slot now shows the remove button → focus there (instead of lost to the sidebar)
       document.querySelector(`[data-slot-btn="${slot}"]`)?.focus();
     }
     else if (r === 'needPassword')  { sharedPickerUser = user; await openModal('sharedPassword'); }
     else                            sharedError = i18n.t.errLogin;
   }
-  // Mitglied entfernen + Fokus auf den dann erscheinenden „Profil wählen"-Button desselben Slots.
+  // Remove the member + focus onto the "choose profile" button of the same slot that then appears.
   async function removeMember(slot) {
     await onSharedRemoveMember(slot);
     await tick();
@@ -164,7 +164,7 @@
 
   function setLanguage(lang) {
     setLang(lang);
-    try { localStorage.setItem('app_language', lang); } catch {}   // Wahl überlebt den Neustart
+    try { localStorage.setItem('app_language', lang); } catch {}   // the choice survives a restart
     closeModal();
   }
   let currentLangName = $derived((LANGUAGES.find(l => l.key === i18n.lang) || {}).name || 'English');
@@ -202,8 +202,8 @@
     onScreensaverChange?.({ ...screensaverSettings, ...patch });
   }
 
-  // Diagnose-Logging: geräteweiter Opt-in-Schalter (wie der Bildschirmschoner nicht profilgebunden).
-  // setDebug wirkt sofort auf alle dlog-Aufrufe (geteiltes utils-Modul); localStorage hält es fest.
+  // Diagnostic logging: a device-wide opt-in switch (like the screensaver, not tied to a profile).
+  // setDebug takes effect immediately on all dlog calls (shared utils module); localStorage persists it.
   let debugLogging = $state(localStorage.getItem('ocenfin_debug') === '1');
   function toggleDebugLogging() {
     debugLogging = !debugLogging;
@@ -211,35 +211,49 @@
     setDebug(debugLogging);
   }
 
-  // In-App-Log-Viewer: Puffer anzeigen, leeren, als QR (letzte Zeilen) teilen.
-  // Kein "Kopieren": Auf dem TV gibt es kein Ziel zum Einfügen — QR (aufs Handy) und
-  // Abfotografieren sind die sinnvollen Wege.
+  // In-app log viewer: show the buffer, clear it, share it as a QR (last lines).
+  // No "copy": on the TV there's no target to paste into — QR (to the phone) and
+  // taking a photo are the sensible ways.
   let showLog = $state(false);
   let logText = $state('');
   let qrSvg = $state(null);
-  let qrBtnEl = $state();   // für Fokus-Rückgabe beim Verlassen der QR-Ansicht
-  let logEl = $state(null);   // <pre> mit den Log-Zeilen (für Auto-Scroll + Blättern)
-  // Neueste Einträge stehen unten → beim Öffnen ans Ende springen.
+  let qrBtnEl = $state();   // for focus return when leaving the QR view
+  let logEl = $state(null);   // <pre> with the log lines (for auto-scroll + paging)
+  // Newest entries are at the bottom → jump to the end on open.
   function scrollLogToBottom() { if (logEl) logEl.scrollTop = logEl.scrollHeight; }
-  // D-Pad-Blättern: ~85 % der sichtbaren Höhe pro Druck, Fokus bleibt auf dem Button.
+  // D-pad paging: ~85% of the visible height per press, focus stays on the button.
   function scrollLog(dir) { logEl?.scrollBy({ top: dir * logEl.clientHeight * 0.85, behavior: 'smooth' }); }
   async function openLog()  { modalFocus.capture(); logText = formatLog(); qrSvg = null; showLog = true; await tick(); scrollLogToBottom(); }
   function clearLog() { clearLogBuffer(); logText = formatLog(); qrSvg = null; }
   function hideQr()   { qrSvg = null; tick().then(() => { qrBtnEl?.focus(); scrollLogToBottom(); }); }
   async function showLogQr() {
     try {
-      const { renderSVG } = await import('uqr');   // dynamisch → nicht im Start-Bundle, zero-dependency
-      const tail = formatLog(1200);                 // nur die jüngsten ~1200 Zeichen (QR-Kapazität)
-      qrSvg = renderSVG(tail || ' ', { ecc: 'L', border: 1 });   // Vektor statt PNG → gestochen scharf
+      const { renderSVG } = await import('uqr');   // dynamic → not in the startup bundle, zero-dependency
+      const tail = formatLog(1200);                 // only the most recent ~1200 chars (QR capacity)
+      qrSvg = renderSVG(tail || ' ', { ecc: 'L', border: 1 });   // vector instead of PNG → razor sharp
     } catch (e) { console.warn('[OcenFin] QR generation failed', e); }
   }
 
-  // Versionen für die Status-Seite (Chromium aus UA, hls.js/libbitsub aus package.json) — statisch.
+  // Help / FAQ: QR to the OcenFin wiki — scan with a phone instead of typing the URL on the TV.
+  let showWikiQr = $state(false);
+  let wikiQrSvg  = $state(null);
+  const WIKI_URL = 'https://github.com/seluce/OcenFin/wiki';
+  async function openWikiQr() {
+    modalFocus.capture();
+    wikiQrSvg = null;
+    showWikiQr = true;
+    try {
+      const { renderSVG } = await import('uqr');
+      wikiQrSvg = renderSVG(WIKI_URL, { ecc: 'M', border: 1 });
+    } catch (e) { console.warn('[OcenFin] Wiki QR generation failed', e); }
+  }
+
+  // Versions for the status page (Chromium from UA, hls.js/libbitsub from package.json) — static.
   const envVersions = runtimeVersions();
 
-  // Fernseher-Fähigkeiten für die Status-Seite: Panel-Flags (deviceInfo) + Codec-Probe (Browser).
+  // TV capabilities for the status page: panel flags (deviceInfo) + codec probe (browser).
   let tvInfo = $state(null);        // { available, modelName, uhd, uhd8K, oled, hdr10, dolbyVision, dolbyAtmos, ... }
-  let codecs = $state({});          // { h264, hevc, vp9, av1 } – laut Browser-Decoder
+  let codecs = $state({});          // { h264, hevc, vp9, av1 } – according to the browser decoder
   onMount(async () => {
     codecs = probeBrowserCodecs();
     tvInfo = await getTvDeviceInfo();
@@ -248,16 +262,16 @@
        : tvInfo.uhd8K === true ? '8K'
        : tvInfo.uhd === true ? '4K (UHD)'
        : (tvInfo.screenWidth ? `${tvInfo.screenWidth}×${tvInfo.screenHeight}` : null));
-  // Tri-State: true → Ja (grün), false → Nein (grau), undefined → Unbekannt (gedämpft)
+  // Tri-state: true → yes (green), false → no (gray), undefined → unknown (muted)
   const capText  = (v) => v === true ? i18n.t.statusYes : v === false ? i18n.t.statusNo : i18n.t.statusUnknown;
   const capClass = (v) => v === true ? 'text-green-400' : v === false ? 'text-gray-400' : 'text-gray-600';
-  // Einklappbare Status-Gruppen (fokussierbare Kopfzeilen → D-Pad kann nach unten wandern/scrollen).
-  // Alle standardmäßig zugeklappt: kürzere Liste, und von jedem Untertitel-Menüpunkt kommt man ohne
-  // dazwischenliegende Inhalte sauber per Rechts in die Einstellungen.
+  // Collapsible status groups (focusable headers → the D-pad can move down/scroll).
+  // All collapsed by default: a shorter list, and from each subtitle menu item you reach
+  // the settings cleanly via Right without intervening content.
   let openStatus = $state({ tv: false, runtime: false, components: false });
   const toggleStatus = (k) => { openStatus = { ...openStatus, [k]: !openStatus[k] }; };
-  // Beim Fokussieren einer Kopfzeile die ganze Karte (inkl. Inhalt) sichtbar scrollen — sonst
-  // bliebe der Inhalt der untersten offenen Gruppe verdeckt (kein fokussierbares Element darunter).
+  // When focusing a header, scroll the whole card (incl. content) into view — otherwise
+  // the content of the lowest open group would stay hidden (no focusable element below it).
   const scrollGroupIntoView = (e) => {
     const card = e.currentTarget?.parentElement;
     if (card?.scrollIntoView) card.scrollIntoView({ block: 'nearest' });
@@ -291,25 +305,25 @@
     onDisplayChange?.({ ...displaySettings, seekStep: sec });
   }
 
-  // ---- Navigations-Editor (Sidebar-Einträge anordnen/ausblenden, pro Profil) ----
-  // Gemeinsame Quelle wie die Sidebar; zeigt hier ALLE Einträge inkl. ausgeblendeter.
+  // ---- Navigation editor (arrange/hide sidebar entries, per profile) ----
+  // Same source as the sidebar; shows ALL entries here incl. hidden ones.
   let navEntries = $derived(applyNavConfig(buildNavEntries(libraries, i18n.t, displaySettings.navIcons || {}), displaySettings.navOrder || [], displaySettings.navHidden || []));
-  let grabbedId = $state(null);   // angehobener Eintrag (Greifen-Modus) – null = keiner
-  let navListEl = $state();          // bind: zum Refokussieren nach dem Verschieben
-  let lastGrabToggle = 0; // gegen Auto-Repeat: gehaltene OK-Taste = ein Umschalten
-  let iconPickerFor = $state(null);   // Eintrags-Id, für die gerade ein Icon gewählt wird (null = zu)
-  let iconGridEl = $state();             // bind: Auto-Fokus im Icon-Wähler
+  let grabbedId = $state(null);   // lifted entry (grab mode) – null = none
+  let navListEl = $state();          // bind: to refocus after moving
+  let lastGrabToggle = 0; // against auto-repeat: a held OK key = one toggle
+  let iconPickerFor = $state(null);   // entry ID for which an icon is being chosen (null = closed)
+  let iconGridEl = $state();             // bind: auto-focus in the icon picker
 
-  // grabbedId zentral setzen + App melden, damit der Fokus-Manager die Sidebar währenddessen sperrt.
+  // Set grabbedId centrally + report to App so the focus manager locks the sidebar meanwhile.
   function setGrabbed(id) {
     grabbedId = id;
     onReorderingChange?.(id !== null);
   }
   function toggleGrab(entry) {
     const now = Date.now();
-    if (now - lastGrabToggle < 350) return;   // gehaltene OK-Taste nicht 100× auslösen
+    if (now - lastGrabToggle < 350) return;   // don't trigger a held OK key 100×
     lastGrabToggle = now;
-    setGrabbed(grabbedId === entry.id ? null : entry.id);   // OK hebt an / legt ab
+    setGrabbed(grabbedId === entry.id ? null : entry.id);   // OK lifts / drops
   }
   async function moveGrabbed(dir) {
     const ids = navEntries.map(e => e.id);
@@ -319,7 +333,7 @@
     [ids[i], ids[j]] = [ids[j], ids[i]];
     onDisplayChange?.({ ...displaySettings, navOrder: ids });
     await tick();
-    navListEl?.querySelector(`[data-nav-id="${grabbedId}"]`)?.focus();   // Fokus folgt dem Eintrag
+    navListEl?.querySelector(`[data-nav-id="${grabbedId}"]`)?.focus();   // focus follows the entry
   }
   function toggleHidden(entry) {
     if (entry.locked) return;
@@ -327,7 +341,7 @@
     hidden.has(entry.id) ? hidden.delete(entry.id) : hidden.add(entry.id);
     onDisplayChange?.({ ...displaySettings, navHidden: [...hidden] });
   }
-  // --- Icon-Wähler ---
+  // --- Icon picker ---
   async function openIconPicker(entry) {
     iconPickerFor = entry.id;
     await tick();
@@ -341,37 +355,37 @@
     if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); iconPickerFor = null; }
   }
 
-  // --- Profilbild (Symbol-Avatar ODER Poster eines zuletzt gesehenen Titels → Jellyfin) ---
-  let avatarIcon  = $state(null);                  // null = noch nichts gewählt (kein Avatar markiert)
-  let avatarColor = $state(null);                  // null = noch nichts gewählt (keine Farbe markiert)
+  // --- Profile picture (symbol avatar OR poster of a recently watched title → Jellyfin) ---
+  let avatarIcon  = $state(null);                  // null = nothing chosen yet (no avatar marked)
+  let avatarColor = $state(null);                  // null = nothing chosen yet (no color marked)
   let avatarSaving = $state(false);
-  let avatarSaved  = $state(false);                // kurzer Bestätigungshinweis nach dem Hochladen
-  let hasEditedAvatar = $state(false);             // false → Vorschau zeigt das echte aktuelle Profilbild
-  let avatarModalOpen = $state(false);             // „Anpassen"-Modal
-  let avatarTab = $state('recent');                // 'recent' = Poster zuletzt gesehener Titel, 'symbols' = Icon+Farbe
-  let recentTitles = $state([]);                   // [{ id, name, imageUrl }] – neueste zuerst, dedupliziert
+  let avatarSaved  = $state(false);                // brief confirmation hint after uploading
+  let hasEditedAvatar = $state(false);             // false → the preview shows the real current profile picture
+  let avatarModalOpen = $state(false);             // "customize" modal
+  let avatarTab = $state('recent');                // 'recent' = posters of recently watched titles, 'symbols' = icon+color
+  let recentTitles = $state([]);                   // [{ id, name, imageUrl }] – newest first, deduplicated
   let recentLoading = $state(false);
-  let avatarPoster = $state(null);                 // im 'recent'-Tab gewähltes Poster (sonst null)
+  let avatarPoster = $state(null);                 // poster chosen in the 'recent' tab (otherwise null)
   function onAvatarModalKey(e) {
     if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); avatarModalOpen = false; }
   }
-  // Effektive Werte nur fürs Rendern/Hochladen (Fallback auf Standard), Markierung bleibt an den Rohwerten.
+  // Effective values only for rendering/uploading (fallback to default); the marking stays on the raw values.
   let effectiveIcon  = $derived(avatarIcon  || AVATAR_ICON_KEYS[0]);
   let effectiveColor = $derived(avatarColor || AVATAR_COLORS[0]);
-  // Beim Verlassen von "Profil & Sicherheit" ohne Speichern → Vorschau/Auswahl zurücksetzen.
+  // When leaving "profile & security" without saving → reset the preview/selection.
   $effect(() => { if (activeCategory !== 'security' && hasEditedAvatar) {
     hasEditedAvatar = false; avatarIcon = null; avatarColor = null; avatarPoster = null;
   } });
   $effect(() => { if (activeCategory !== 'security' && avatarModalOpen) avatarModalOpen = false; });
 
-  // Nach dem Schließen eines Modals (egal welches/wie) den Fokus auf den auslösenden Button zurücklegen.
+  // After closing a modal (whichever/however), put focus back on the triggering button.
   $effect(() => {
-    const anyModalOpen = !!activeModal || avatarModalOpen || showLog;
+    const anyModalOpen = !!activeModal || avatarModalOpen || showLog || showWikiQr;
     if (!anyModalOpen && modalFocus.pending) modalFocus.restore();
   });
 
-  // Zuletzt gesehene Filme/Serien als Avatar-Vorschläge holen: neueste zuerst, Episoden → Serie,
-  // dedupliziert, max. so viele wie es Symbole gibt. Bei jedem Öffnen frisch (aktuelle Reihenfolge).
+  // Fetch recently watched movies/series as avatar suggestions: newest first, episodes → series,
+  // deduplicated, at most as many as there are symbols. Fresh on every open (current order).
   async function loadRecentTitles() {
     recentLoading = true;
     try {
@@ -402,7 +416,7 @@
     } catch { recentTitles = []; }
     finally {
       recentLoading = false;
-      avatarTab = recentTitles.length ? 'recent' : 'symbols';   // Neu-Nutzer ohne Historie → Symbole
+      avatarTab = recentTitles.length ? 'recent' : 'symbols';   // new user without history → symbols
     }
   }
   function openAvatarModal() { modalFocus.capture(); avatarModalOpen = true; loadRecentTitles(); }
@@ -421,7 +435,7 @@
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       avatarSaved = true;
-      onProfileImageChanged?.();     // App lädt selectedUser neu → Sidebar zeigt es sofort
+      onProfileImageChanged?.();     // App reloads selectedUser → the sidebar shows it immediately
       setTimeout(() => avatarSaved = false, 2500);
     } catch (e) {
       console.error('[OcenFin] avatar upload failed:', e);
@@ -429,17 +443,17 @@
       avatarSaving = false;
     }
   }
-  // Im Greifen-Modus ▲/▼ abfangen (vor dem Fokus-Manager, bubble-Phase) und verschieben.
-  // OK (Klick) legt ab; Zurück bricht den Greifen-Modus ab.
+  // In grab mode intercept ▲/▼ (before the focus manager, bubble phase) and move.
+  // OK (click) drops; Back cancels grab mode.
   function onNavRowKey(e, entry) {
     if (grabbedId !== entry.id) return;
     if (e.key === 'ArrowUp')        { e.preventDefault(); e.stopPropagation(); moveGrabbed(-1); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); moveGrabbed(1); }
-    else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); } // im Greif-Modus nicht verlassen
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); } // don't leave in grab mode
     else if (isBackKey(e))          { e.preventDefault(); e.stopPropagation(); setGrabbed(null); }
   }
 
-  // Akzentfarben (Vorschaufarbe = der 500er-Ton). OLED-freundliche, kräftige Töne.
+  // Accent colors (preview color = the 500 tone). OLED-friendly, vivid tones.
   const themeSwatches = [
     { id: 'blue',    color: '#3b82f6', label: i18n.t.themeBlue },
     { id: 'sky',     color: '#0ea5e9', label: i18n.t.themeSky },
@@ -453,12 +467,13 @@
     { id: 'amber',   color: '#f59e0b', label: i18n.t.themeAmber },
   ];
 
-  // Anzeige-Elemente gruppiert: Startseiten-Zeilen vs. allgemeine Oberfläche
+  // Display elements grouped: home rows vs. general interface
   let sharedSetUp = $derived(sharedProfile.enabled && sharedProfile.members.filter(m => m && m.id).length >= 1);
   let homeToggles = $derived([
     { key: 'hero',            label: i18n.t.displayHero },
     { key: 'libraries',       label: i18n.t.displayLibraries },
     { key: 'nextUp',          label: i18n.t.nextUp },
+    { key: 'watchlist',       label: i18n.t.watchlist },
     { key: 'history',         label: i18n.t.displayHistory },
     ...(sharedSetUp ? [{ key: 'sharedSuggestions', label: i18n.t.sharedSuggestions }] : []),
     { key: 'recommendations', label: i18n.t.displayRecommendations },
@@ -478,9 +493,9 @@
     { key: 'spoilerProtection', label: i18n.t.spoilerProtection },
   ]);
 
-  // Zwei-Spalten-Navigation: Kategorie links wählen, Inhalt rechts (kein langes Scrollen)
+  // Two-column navigation: pick the category on the left, content on the right (no long scrolling)
   let activeCategory = $state('appearance');
-  // Unterpunkt "Anzeige-Elemente" schließen, sobald man den Darstellungs-Reiter verlässt
+  // Close the "display elements" sub-item as soon as you leave the appearance tab
   $effect(() => { if (activeCategory !== 'appearance') showDisplayOptions = false; });
   let categories = $derived([
     { id: 'appearance', label: i18n.t.settingsDisplay,    icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
@@ -496,8 +511,8 @@
 
 <div class="flex h-full">
 
-  <!-- LINKS: Kategorie-Navigation. data-hbar: per Links/Rechts betreten, Hoch/Runter bewegt sich
-       innerhalb; beim Eintritt von rechts landet der Fokus auf der aktiven Kategorie (data-hbar-current). -->
+  <!-- LEFT: category navigation. data-hbar: enter via Left/Right, Up/Down moves
+       within; when entering from the right, focus lands on the active category (data-hbar-current). -->
   <nav data-hbar class="w-72 shrink-0 bg-gray-900/60 border-r border-gray-800 p-6 pt-16 flex flex-col gap-2 overflow-y-auto hide-scrollbar">
     <h1 class="text-3xl font-bold text-white mb-4 ml-2">{i18n.t.settings}</h1>
     {#each categories as cat}
@@ -517,19 +532,19 @@
     </div>
   </nav>
 
-  <!-- RECHTS: Inhalt der aktiven Kategorie. data-enter-top: beim Wechsel von links startet der
-       Fokus immer am obersten Element der jeweiligen Kategorie, nicht geometrisch in der Mitte. -->
+  <!-- RIGHT: content of the active category. data-enter-top: when switching from the left, focus
+       always starts at the top element of the respective category, not geometrically in the middle. -->
   <div data-enter-top class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16">
     <div class="max-w-4xl flex flex-col gap-10 pb-32">
     <!-- ══════════════════════════════════════════
-         1. DARSTELLUNG
+         1. APPEARANCE
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'appearance'}
     <section class="flex flex-col gap-4">
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{i18n.t.settingsDisplay}</h2>
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
-        <!-- Sprache -->
+        <!-- Language -->
         <button onclick={() => openModal('lang')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -542,7 +557,7 @@
 
         <div class="h-px bg-gray-700"></div>
 
-        <!-- Animationen reduzieren -->
+        <!-- Reduce animations -->
         <button onclick={toggleReduceAnimations}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -559,7 +574,7 @@
 
         <div class="h-px bg-gray-700"></div>
 
-        <!-- Oberflächengröße — eigener Punkt, skaliert die gesamte App -->
+        <!-- Interface size — its own item, scales the entire app -->
         <div class="p-6">
           <span class="text-2xl text-white font-medium block">{i18n.t.uiSize}</span>
           <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.uiSizeDesc}</span>
@@ -576,9 +591,9 @@
 
         <div class="h-px bg-gray-700"></div>
 
-        <!-- Schriftart — eigener Punkt, gilt für die gesamte Oberfläche. ASS-Untertitel sind
-             ausgenommen (bringen ihre eigenen Schriften mit); die VTT-Anzeige erbt die Wahl.
-             Die Buttons zeigen sich jeweils in ihrer eigenen Schrift (Vorschau). -->
+        <!-- Font — its own item, applies to the entire interface. ASS subtitles are
+             excluded (they bring their own fonts); the VTT display inherits the choice.
+             The buttons each show themselves in their own font (preview). -->
         <div class="p-6">
           <span class="text-2xl text-white font-medium block">{i18n.t.uiFont}</span>
           <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.uiFontDesc}</span>
@@ -596,7 +611,7 @@
 
         <div class="h-px bg-gray-700"></div>
 
-        <!-- Akzentfarbe — eigener Punkt, ändert die Hervorhebungsfarbe -->
+        <!-- Accent color — its own item, changes the highlight color -->
         <div class="p-6">
           <span class="text-2xl text-white font-medium block">{i18n.t.accentColor}</span>
           <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.accentColorDesc}</span>
@@ -618,7 +633,7 @@
 
         <div class="h-px bg-gray-700"></div>
 
-        <!-- ANZEIGE-ELEMENTE — ausklappbarer Unterpunkt, hält das Menü schlank -->
+        <!-- DISPLAY ELEMENTS — expandable sub-item, keeps the menu lean -->
         <button onclick={() => showDisplayOptions = !showDisplayOptions}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -633,7 +648,7 @@
         </button>
 
         {#if showDisplayOptions}
-          <!-- Gruppe: Oberfläche (allgemeine Elemente) -->
+          <!-- Group: interface (general elements) -->
           <div class="pl-10 pr-6 pt-4 pb-2 bg-gray-900/50">
             <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{i18n.t.groupInterface}</h3>
           </div>
@@ -650,7 +665,7 @@
             </button>
           {/each}
 
-          <!-- Zeitformat (gilt für beide Uhren) -->
+          <!-- Time format (applies to both clocks) -->
           <div class="pl-10 pr-6 py-4 bg-gray-900/50">
             <span class="text-lg text-gray-200 block mb-3">{i18n.t.clockFormat}</span>
             <div class="flex gap-2">
@@ -664,7 +679,7 @@
             </div>
           </div>
 
-          <!-- Gruppe: Startseite (Dashboard-Zeilen) -->
+          <!-- Group: home (dashboard rows) -->
           <div class="pl-10 pr-6 pt-5 pb-2 bg-gray-900/50 border-t border-gray-700/40">
             <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{i18n.t.groupHome}</h3>
           </div>
@@ -681,7 +696,7 @@
             </button>
           {/each}
 
-          <!-- Anzahl Empfehlungs-Reihen — nur relevant wenn Empfehlungen aktiv -->
+          <!-- Number of recommendation rows — only relevant when recommendations are active -->
           {#if displaySettings.recommendations}
             <div class="pl-10 pr-6 py-4 bg-gray-900/50">
               <span class="text-lg text-gray-200 block mb-3">{i18n.t.recommendationRows}</span>
@@ -697,7 +712,7 @@
             </div>
           {/if}
 
-          <!-- Gruppe: Details (Detailseite eines Films/einer Serie) -->
+          <!-- Group: details (detail page of a movie/series) -->
           <div class="pl-10 pr-6 pt-5 pb-2 bg-gray-900/50 border-t border-gray-700/40">
             <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{i18n.t.groupDetails}</h3>
           </div>
@@ -720,7 +735,7 @@
     {/if}
 
     <!-- ══════════════════════════════════════════
-         NAVIGATION (Sidebar-Einträge anordnen/ausblenden)
+         NAVIGATION (arrange/hide sidebar entries)
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'navigation'}
     <section class="flex flex-col gap-3">
@@ -729,7 +744,7 @@
       <div bind:this={navListEl} class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl flex flex-col">
         {#each navEntries as entry (entry.id)}
           <div class="flex items-center gap-2 px-3 py-1.5 border-b border-gray-700/40 last:border-b-0 {entry.hidden ? 'opacity-50' : ''}">
-            <!-- Anheben / Verschieben (OK greift, ▲▼ bewegt) -->
+            <!-- Lift / move (OK grabs, ▲▼ moves) -->
             <button data-nav-id={entry.id} onclick={() => toggleGrab(entry)} onkeydown={(e) => onNavRowKey(e, entry)}
               class="flex-1 flex items-center gap-4 p-3 rounded-xl text-left focus:outline-none transition-all
                      {grabbedId === entry.id
@@ -742,13 +757,13 @@
                 <span class="text-sm font-medium opacity-90 whitespace-nowrap">{i18n.t.navGrabbedHint}</span>
               {/if}
             </button>
-            <!-- Icon wählen -->
+            <!-- Choose icon -->
             <button onclick={() => openIconPicker(entry)}
               class="p-3 rounded-xl text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors"
               title={i18n.t.chooseIcon}>
               <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d={entry.icon}/></svg>
             </button>
-            <!-- Sichtbarkeit -->
+            <!-- Visibility -->
             {#if entry.locked}
               <div class="p-3 text-gray-600" title={i18n.t.navAlwaysVisible}>
                 <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
@@ -769,20 +784,20 @@
         {/each}
       </div>
 
-      <!-- Icon-Wähler (Modal, D-Pad-Grid) -->
+      <!-- Icon picker (modal, D-pad grid) -->
       {#if iconPickerFor}
         <div class="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-8"
              data-focus-trap onkeydown={onIconPickerKey} role="dialog" tabindex="-1">
           <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-2xl max-w-xl w-full">
             <div class="flex justify-between items-center mb-5">
               <h3 class="text-2xl font-bold text-white">{i18n.t.chooseIcon}</h3>
-              <button onclick={() => iconPickerFor = null} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
+              <button onclick={() => iconPickerFor = null} aria-label={i18n.t.close} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
                 <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
             <div bind:this={iconGridEl} class="grid grid-cols-5 gap-3 max-h-[58vh] overflow-y-auto hide-scrollbar p-2">
               {#each NAV_ICON_KEYS as key}
-                <button onclick={() => pickIcon(key)}
+                <button onclick={() => pickIcon(key)} aria-label={key}
                   class="aspect-square flex items-center justify-center rounded-xl bg-gray-700 hover:bg-gray-600 focus:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
                   <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d={NAV_ICON_PALETTE[key]}/></svg>
                 </button>
@@ -795,7 +810,7 @@
     {/if}
 
     <!-- ══════════════════════════════════════════
-         2. OLED-SCHUTZ
+         2. OLED PROTECTION
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'oled'}
     <section class="flex flex-col gap-4">
@@ -817,9 +832,9 @@
           </div>
         </button>
 
-        <!-- Timeout (nur wenn aktiv) -->
+        <!-- Timeout (only when active) -->
         {#if screensaverSettings.enabled}
-          <!-- Aktivierung nach -->
+          <!-- Activate after -->
           <div class="h-px bg-gray-700"></div>
           <div class="p-6">
             <span class="text-base text-gray-400 font-medium block mb-3">{i18n.t.screensaverAfter}</span>
@@ -834,7 +849,7 @@
             </div>
           </div>
 
-          <!-- Stil: Uhr vs. Art-Mode -->
+          <!-- Style: clock vs. art mode -->
           <div class="h-px bg-gray-700"></div>
           <div class="p-6">
             <span class="text-base text-gray-400 font-medium block mb-3">{i18n.t.screensaverStyle}</span>
@@ -850,7 +865,7 @@
             </div>
           </div>
 
-          <!-- Backdrop-Quelle (nur im Art-Mode) -->
+          <!-- Backdrop source (only in art mode) -->
           {#if screensaverSettings.mode === 'art'}
             <div class="h-px bg-gray-700"></div>
             <div class="p-6">
@@ -865,7 +880,7 @@
                 {/each}
               </div>
             </div>
-            <!-- Helligkeit (nur Art-Mode) -->
+            <!-- Brightness (art mode only) -->
             <div class="h-px bg-gray-700"></div>
             <div class="p-6">
               <span class="text-base text-gray-400 font-medium block mb-3">{i18n.t.screensaverBrightness}</span>
@@ -887,14 +902,14 @@
     {/if}
 
     <!-- ══════════════════════════════════════════
-         WIEDERGABE — Standard-Sprachen
+         PLAYBACK — default languages
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'playback'}
     <section class="flex flex-col gap-4">
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{i18n.t.playback}</h2>
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
-        <!-- Standard-Audiosprache -->
+        <!-- Default audio language -->
         <button onclick={() => openModal('audioLang')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -904,7 +919,7 @@
 
         <div class="h-px bg-gray-700"></div>
 
-        <!-- Sprungweite der Vor-/Zurück-Buttons (gestapelt + flex-1, damit per D-Pad erreichbar) -->
+        <!-- Jump distance of the forward/back buttons (stacked + flex-1 so it's reachable via D-pad) -->
         <div class="p-6">
           <span class="text-2xl text-white font-medium block">{i18n.t.seekInterval}</span>
           <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.seekIntervalDesc}</span>
@@ -921,7 +936,7 @@
 
         <div class="h-px bg-gray-700"></div>
 
-        <!-- Kapitelmarken im Player anzeigen (Player-Anzeige-Element → gehört zur Wiedergabe) -->
+        <!-- Show chapter markers in the Player (a Player display element → belongs to playback) -->
         <button onclick={() => toggleDisplay('showChapters')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
@@ -970,7 +985,7 @@
           </div>
         </button>
 
-        <!-- Nächste Folge automatisch -->
+        <!-- Next episode automatically -->
         <button onclick={() => togglePlaybackPref('autoPlayNext')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -985,7 +1000,7 @@
           </div>
         </button>
 
-        <!-- Wiedergabeinfos – Info-Button im Player freischalten (Live-Details als Overlay) -->
+        <!-- Playback info – unlock the info button in the Player (live details as an overlay) -->
         <button onclick={() => togglePlaybackPref('showPlaybackInfo')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -1000,7 +1015,7 @@
           </div>
         </button>
 
-        <!-- Nur-noch-diese-Folge – Einschlaf-Knopf im Player freischalten (stoppt Auto-Play nach der Folge) -->
+        <!-- Only-this-episode – unlock the sleep button in the Player (stops auto-play after the episode) -->
         <button onclick={() => togglePlaybackPref('sleepButton')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -1015,7 +1030,7 @@
           </div>
         </button>
 
-        <!-- Vorschaubilder beim Spulen (Trickplay) – opt-out, fällt auf Kapitel/Zeit zurück -->
+        <!-- Preview images while seeking (Trickplay) – opt-out, falls back to chapters/time -->
         <button onclick={() => togglePlaybackPref('trickplay')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -1030,7 +1045,7 @@
           </div>
         </button>
 
-        <!-- Schaust du noch? – Wiedergabe nach Inaktivität pausieren -->
+        <!-- Still watching? – pause playback after inactivity -->
         <button onclick={() => togglePlaybackPref('stillWatching')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -1069,7 +1084,7 @@
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{i18n.t.subtitles}</h2>
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
-        <!-- Standard-Untertitel: welche Spur automatisch gewählt wird -->
+        <!-- Default subtitle: which track is chosen automatically -->
         <button onclick={() => openModal('subtitleLang')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl">
@@ -1077,8 +1092,8 @@
           <span class="text-xl font-bold text-gray-300">{subtitleLangName}</span>
         </button>
 
-        <!-- Erzwungene/Standard-BILD-Untertitel (DVDSUB) automatisch wählen — braucht Transcode (kein Direct Play).
-             Text- und PGS-Untertitel werden ohnehin ohne Transcode automatisch gewählt. -->
+        <!-- Automatically choose forced/default GRAPHIC subtitles (DVDSUB) — needs transcode (no Direct Play).
+             Text and PGS subtitles are chosen automatically without a transcode anyway. -->
         <button onclick={() => togglePlaybackPref('forcedGraphicSubs')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -1093,7 +1108,7 @@
           </div>
         </button>
 
-        <!-- Untertitel einbrennen -->
+        <!-- Burn in subtitles -->
         <button onclick={() => togglePlaybackPref('burnSubtitles')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -1108,7 +1123,7 @@
           </div>
         </button>
 
-        <!-- PGS-Rendering + Untertitelgröße sind irrelevant, wenn alles eingebrannt wird → dann ausblenden -->
+        <!-- PGS rendering + subtitle size are irrelevant when everything is burned in → then hide them -->
         {#if !playbackPrefs.burnSubtitles}
           <button onclick={() => togglePlaybackPref('pgsRendering')}
             class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
@@ -1124,7 +1139,7 @@
             </div>
           </button>
 
-          <!-- ASS/SSA mit Original-Layout (assjs) — aus: schlichtes Text-Overlay, beides Direct Play -->
+          <!-- ASS/SSA with original layout (assjs) — off: plain text overlay, both Direct Play -->
           <button onclick={() => togglePlaybackPref('assRendering')}
             class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
                    focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -1153,8 +1168,8 @@
             </div>
           </div>
 
-          <!-- VTT-Schriftart — nur Textuntertitel, bewusst getrennt von der UI-Schrift (Darstellung).
-               Buttons zeigen sich in ihrer eigenen Schrift (Vorschau); Tinos = Serife, nur hier wählbar. -->
+          <!-- VTT font — text subtitles only, deliberately separate from the UI font (appearance).
+               Buttons show themselves in their own font (preview); Tinos = serif, selectable only here. -->
           <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
             <span class="text-2xl text-white font-medium block">{i18n.t.subtitleFont}</span>
             <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleFontDesc}</span>
@@ -1170,7 +1185,7 @@
             </div>
           </div>
 
-          <!-- Textuntertitel-Styling (Farbe/Rand/Hintergrund) — nur WebVTT/SRT, nicht PGS/VobSub -->
+          <!-- Text subtitle styling (color/edge/background) — only WebVTT/SRT, not PGS/VobSub -->
           <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
             <span class="text-2xl text-white font-medium block">{i18n.t.subtitleColor}</span>
             <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleStyleHint}</span>
@@ -1220,11 +1235,11 @@
     <section class="flex flex-col gap-4">
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{i18n.t.profileSecurity}</h2>
 
-      <!-- Profilbild: Preset-Avatar + Hintergrundfarbe, wird als Jellyfin-Profilbild hochgeladen -->
+      <!-- Profile picture: preset avatar + background color, uploaded as the Jellyfin profile picture -->
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-6 shadow-xl flex flex-col gap-5">
         <div class="flex items-center gap-5">
           <div class="w-20 h-20 rounded-full overflow-hidden flex items-center justify-center shrink-0 shadow-md" style="background:{(hasEditedAvatar && avatarTab === 'recent' && avatarPoster) || (!hasEditedAvatar && selectedUser?.PrimaryImageTag) ? 'transparent' : effectiveColor}">
-            <!-- Spiegelt EXAKT die Speicher-Bedingung (avatarTab + avatarPoster): Vorschau = was gespeichert wuerde -->
+            <!-- Mirrors EXACTLY the save condition (avatarTab + avatarPoster): preview = what would be saved -->
             {#if hasEditedAvatar && avatarTab === 'recent' && avatarPoster}
               <img src={avatarPoster.imageUrl} alt={avatarPoster.name} class="w-full h-full object-cover" />
             {:else if !hasEditedAvatar && selectedUser?.PrimaryImageTag}
@@ -1251,18 +1266,18 @@
         </div>
       </div>
 
-      <!-- „Anpassen"-Modal: Live-Vorschau + Icon-Raster + Farb-Swatches (Padding p-2 → Fokus-Ringe am Rand nicht abgeschnitten) -->
+      <!-- "Customize" modal: live preview + icon grid + color swatches (padding p-2 → focus rings at the edge not cut off) -->
       {#if avatarModalOpen}
         <div class="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-8"
              data-focus-trap onkeydown={onAvatarModalKey} role="dialog" tabindex="-1">
           <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-2xl max-w-2xl w-full flex flex-col gap-5">
             <div class="flex justify-between items-center">
               <h3 class="text-2xl font-bold text-white">{i18n.t.profilePicture}</h3>
-              <button onclick={() => avatarModalOpen = false} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
+              <button onclick={() => avatarModalOpen = false} aria-label={i18n.t.close} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
                 <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
-            <!-- Umschalter: zuletzt gesehene Titel ↔ Symbole -->
+            <!-- Toggle: recently watched titles ↔ symbols -->
             <div class="flex gap-2 bg-gray-900/60 p-1 rounded-xl">
               <button onclick={() => avatarTab = 'recent'}
                 class="flex-1 py-2.5 rounded-lg font-bold text-sm focus:outline-none focus:ring-4 focus:ring-white transition-colors
@@ -1275,7 +1290,7 @@
                 {i18n.t.avatarTabSymbols}
               </button>
             </div>
-            <!-- Live-Vorschau -->
+            <!-- Live preview -->
             <div class="flex justify-center">
               <div class="w-24 h-24 rounded-full overflow-hidden flex items-center justify-center shadow-md"
                    style="background:{(avatarTab === 'recent' && avatarPoster) ? 'transparent' : effectiveColor}">
@@ -1293,13 +1308,13 @@
                   <div class="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
                 </div>
               {:else if recentTitles.length}
-                <!-- Poster zuletzt gesehener Titel (neueste zuerst), mittig in den runden Avatar zugeschnitten -->
+                <!-- Posters of recently watched titles (newest first), cropped centered into the round avatar -->
                 <div class="grid grid-cols-6 gap-3 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 scroll-py-3 content-start">
                   {#each recentTitles as t (t.id)}
                     <button onclick={() => { avatarPoster = t; hasEditedAvatar = true; }} title={t.name}
                       class="aspect-square rounded-xl overflow-hidden focus:outline-none focus:ring-4 focus:ring-white transition-all
                              {avatarPoster?.id === t.id ? 'ring-4 ring-blue-500' : 'hover:opacity-80'}">
-                      <img src={t.imageUrl} alt={t.name} class="w-full h-full object-cover" />
+                      <img src={t.imageUrl} alt={t.name} class="w-full h-full object-cover" loading="lazy" decoding="async" />
                     </button>
                   {/each}
                 </div>
@@ -1307,12 +1322,12 @@
                 <div class="text-center text-gray-400 py-10 px-4">{i18n.t.avatarRecentEmpty}</div>
               {/if}
             {:else}
-              <!-- Icons links (volle 6er-Reihen) · Farben rechts als schmale 2er-Spalte → per D-Pad
-                   mit einem Rechts-Druck erreichbar, ohne durch alle Icon-Reihen zu navigieren. -->
+              <!-- Icons on the left (full rows of 6) · colors on the right as a narrow 2-column strip → reachable
+                   via the D-pad with a single Right press, without navigating through all icon rows. -->
               <div class="flex gap-5 items-start">
                 <div class="grid grid-cols-6 gap-3 flex-1 max-h-[42vh] overflow-y-auto hide-scrollbar p-2 scroll-py-3 content-start">
                   {#each AVATAR_ICON_KEYS as key}
-                    <button onclick={() => { avatarIcon = key; hasEditedAvatar = true; }}
+                    <button onclick={() => { avatarIcon = key; hasEditedAvatar = true; }} aria-label={key}
                       class="aspect-square flex items-center justify-center rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-all
                              {effectiveIcon === key ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}">
                       <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[key]}/></svg>
@@ -1338,7 +1353,7 @@
 
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
-        <!-- Kennwort speichern / Schnellwechsel (vormals eigene Kategorie "Profil") -->
+        <!-- Save password / quick switch (formerly its own "Profile" category) -->
         <button onclick={() => onToggleSave?.()}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -1355,7 +1370,7 @@
 
         <div class="h-px bg-gray-700"></div>
 
-        <!-- Passwort ändern -->
+        <!-- Change password -->
         <button onclick={() => openModal('password')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -1370,7 +1385,7 @@
 
         <div class="h-px bg-gray-700"></div>
 
-        <!-- Quick Connect (Gerät autorisieren) -->
+        <!-- Quick Connect (authorize a device) -->
         <button onclick={() => openModal('quickConnect')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -1385,7 +1400,7 @@
 
       </div>
 
-      <!-- Gemeinsames Schauen: zwei Profile zusammenführen -->
+      <!-- Watch together: merge two profiles -->
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
         <button onclick={onSharedToggle}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
@@ -1441,13 +1456,13 @@
     {/if}
 
     <!-- ══════════════════════════════════════════
-         5. KONTO & SERVER
+         5. ACCOUNT & SERVER
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'account'}
     <section class="flex flex-col gap-4">
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{i18n.t.settingsAccount}</h2>
 
-      <!-- Server-Info -->
+      <!-- Server info -->
       {#if selectedServer}
         <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-5">
           <p class="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">{i18n.t.connectedServer}</p>
@@ -1456,7 +1471,7 @@
         </div>
       {/if}
 
-      <!-- Cache leeren (direkt unter der Server-Adresse) -->
+      <!-- Clear cache (directly below the server address) -->
       <button onclick={() => onClearCache?.()}
         class="bg-gray-800/80 border border-gray-700 rounded-2xl shadow-xl flex items-center justify-between w-full p-6
                hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-4 focus:ring-white transition-all text-left">
@@ -1469,7 +1484,7 @@
         </svg>
       </button>
 
-      <!-- Benutzer wechseln / Abmelden -->
+      <!-- Switch user / sign out -->
       <div class="grid grid-cols-2 gap-5">
         <button onclick={() => onSwitchUser?.()}
           class="flex flex-col items-center justify-center p-7 bg-gray-800 border border-gray-700 rounded-2xl
@@ -1502,13 +1517,13 @@
     {/if}
 
     <!-- ══════════════════════════════════════════
-         STATUS / LOGS — Diagnose
+         STATUS / LOGS — diagnostics
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'status'}
     <section class="flex flex-col gap-4">
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{i18n.t.statusSection}</h2>
 
-      <!-- Diagnose-Logging Toggle (geräteweit, opt-in) -->
+      <!-- Diagnostic logging toggle (device-wide, opt-in) -->
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
         <button onclick={toggleDebugLogging}
           class="flex items-center justify-between w-full px-6 py-5 hover:bg-gray-700 focus:bg-gray-700
@@ -1525,7 +1540,7 @@
         </button>
       </div>
 
-      <!-- Protokoll anzeigen: In-App-Log-Viewer (kein ares inspect nötig) -->
+      <!-- Show log: in-app log viewer (no ares inspect needed) -->
       <button onclick={openLog}
         class="flex items-center justify-between w-full px-6 py-5 bg-gray-800/80 border border-gray-700 rounded-2xl
                hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
@@ -1536,10 +1551,21 @@
         <svg class="w-7 h-7 text-gray-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
       </button>
 
-      <!-- Status-Gruppen: einklappbar. Fokussierbare Kopfzeilen geben dem D-Pad Stufen nach unten
-           (behebt das Scrollen) und ein Rechts-Sprungziel aus dem Menü. -->
+      <!-- Help / FAQ: QR to the wiki (scan with a phone) -->
+      <button onclick={openWikiQr}
+        class="flex items-center justify-between w-full px-6 py-5 bg-gray-800/80 border border-gray-700 rounded-2xl
+               hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+        <div class="pr-4">
+          <span class="text-2xl text-white font-medium block">{i18n.t.helpFaq}</span>
+          <span class="text-gray-400 mt-0.5 block text-sm">{i18n.t.helpFaqHint}</span>
+        </div>
+        <svg class="w-7 h-7 text-gray-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z"/><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 6.75h.008v.008H6.75V6.75zM6.75 16.5h.008v.008H6.75V16.5zM16.5 6.75h.008v.008H16.5V6.75zM13.5 13.5h.008v.008H13.5V13.5zM13.5 19.5h.008v.008H13.5V19.5zM19.5 13.5h.008v.008H19.5V13.5zM19.5 19.5h.008v.008H19.5V19.5zM16.5 16.5h.008v.008H16.5V16.5z"/></svg>
+      </button>
 
-      <!-- Fernseher (standardmäßig zugeklappt): Panel-Fähigkeiten (deviceInfo) + Codec-Probe -->
+      <!-- Status groups: collapsible. Focusable headers give the D-pad steps downward
+           (fixes scrolling) and a Right jump target from the menu. -->
+
+      <!-- TV (collapsed by default): panel capabilities (deviceInfo) + codec probe -->
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
         <button onclick={() => toggleStatus('tv')} onfocus={scrollGroupIntoView}
           class="flex items-center justify-between w-full p-6 rounded-t-2xl {openStatus.tv ? '' : 'rounded-b-2xl'} hover:bg-gray-700/50 focus:bg-gray-700/50 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-colors text-left gap-4">
@@ -1625,7 +1651,7 @@
         {/if}
       </div>
 
-      <!-- Komponenten — relevant beim Melden von Wiedergabe-/Untertitel-Problemen -->
+      <!-- Components — relevant when reporting playback/subtitle issues -->
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
         <button onclick={() => toggleStatus('components')} onfocus={scrollGroupIntoView}
           class="flex items-center justify-between w-full p-6 rounded-t-2xl {openStatus.components ? '' : 'rounded-b-2xl'} hover:bg-gray-700/50 focus:bg-gray-700/50 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-colors text-left">
@@ -1661,10 +1687,10 @@
 </div>
 
 <!-- ══════════════════════════════════════════
-     PROTOKOLL-VIEWER (eigenes Modal, breiter als die Standard-Modals)
+     LOG VIEWER (own modal, wider than the standard modals)
 ══════════════════════════════════════════ -->
 {#if showLog}
-  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
+  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8" role="dialog" tabindex="-1"
     transition:uiFade onoutrostart={dropTrapOnOutro}
     onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); if (qrSvg) hideQr(); else showLog = false; } }}>
 
@@ -1716,10 +1742,32 @@
 {/if}
 
 <!-- ══════════════════════════════════════════
-     MODAL (Sprache / Passwort / Quick Connect)
+     MODAL (help / FAQ QR)
+══════════════════════════════════════════ -->
+{#if showWikiQr}
+  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
+    transition:uiFade onoutrostart={dropTrapOnOutro}>
+    <div data-modal data-focus-trap role="dialog" tabindex="-1"
+      onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showWikiQr = false; } }}
+      class="bg-gray-800 border border-gray-700 p-8 rounded-2xl w-full max-w-lg flex flex-col items-center gap-5 shadow-2xl text-center">
+      <h2 class="text-4xl text-white font-bold">{i18n.t.helpFaq}</h2>
+      {#if wikiQrSvg}
+        <div class="rounded-xl bg-white p-3 [&>svg]:block [&>svg]:w-full [&>svg]:h-full"
+             style="width:320px;height:320px;max-width:40vh;max-height:40vh;">{@html wikiQrSvg}</div>
+      {/if}
+      <p class="text-gray-400 text-lg max-w-md">{i18n.t.helpFaqHint}</p>
+      <button onclick={() => showWikiQr = false} {@attach focusOnMount()}
+        class="px-6 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
+               focus:outline-none focus:ring-4 focus:ring-white transition-colors">{i18n.t.close}</button>
+    </div>
+  </div>
+{/if}
+
+<!-- ══════════════════════════════════════════
+     MODAL (language / password / Quick Connect)
 ══════════════════════════════════════════ -->
 {#if activeModal}
-  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
+  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8" role="dialog" tabindex="-1"
     transition:uiFade onoutrostart={dropTrapOnOutro}
     onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeModal(); } }}>
 

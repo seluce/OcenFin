@@ -3,13 +3,18 @@
   import { focusOnMount, uiFade, dropTrapOnOutro } from '../utils.js';
 
   let {
-    group   = null,   // aktuelle Gruppe { GroupId, GroupName, Participants: [name] } oder null
-    groups  = [],     // verfügbare Gruppen
+    group   = null,   // current group { GroupId, GroupName, Participants: [name] } or null
+    groups  = [],     // available groups
     loading = false,
-    onClose, onLeave, onCreate, onRefresh, onJoin,   // Callback-Props (statt Events)
+    onClose, onLeave, onCreate, onRefresh, onJoin,   // callback props (instead of events)
   } = $props();
 </script>
 
+<!-- Backdrop: click-outside-to-close is a pointer-only convenience and duplicates the Close
+     button below; keyboard/remote users close via that button or the back key. A role + key
+     handler on a full-screen backdrop would be semantically wrong and fight the focus trap. -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
 <div class="fixed inset-0 z-[130] bg-black/85 flex items-center justify-center p-8"
      transition:uiFade onoutrostart={dropTrapOnOutro}
      onclick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
@@ -28,7 +33,7 @@
     </div>
 
     {#if group}
-      <!-- In einer Gruppe: Mitglieder + Verlassen -->
+      <!-- In a group: members + leave -->
       <div class="bg-gray-800/70 border border-gray-700 rounded-xl p-5 flex flex-col gap-3">
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{i18n.t.syncGroupActive}</span>
         <span class="text-xl font-bold text-white">{group.GroupName}</span>
@@ -45,7 +50,7 @@
         {i18n.t.leaveGroup}
       </button>
     {:else}
-      <!-- Nicht in einer Gruppe: erstellen oder beitreten -->
+      <!-- Not in a group: create or join -->
       <button onclick={() => onCreate?.()} {@attach focusOnMount()}
         class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-xl py-4 rounded-xl
                focus:outline-none focus:ring-4 focus:ring-white transition-colors flex items-center justify-center gap-3">

@@ -121,12 +121,16 @@ export default {
     markUnwatched: "Als niet-bekeken markeren",
     addFavorite: "Aan favorieten toevoegen",
     removeFavorite: "Uit favorieten verwijderen",
+    watchlist: "Kijklijst",
+    addToWatchlist: "Toevoegen aan kijklijst",
+    removeFromWatchlist: "Verwijderen uit kijklijst",
     resetProgress: "Voortgang resetten",
     openDetails: "Details openen",
     options: "Opties",
     moreFromSeason: "Meer uit",
     trailer: "Trailer",
     similar: "Vergelijkbaar",
+    extras: "Extra's",
     seasons: "Seizoenen",
     audio: "Audio",
     subtitles: "Ondertitels",
@@ -135,6 +139,8 @@ export default {
     mins: "min",
 
     // Player
+    unknown: "Onbekend",
+    source: "Bron",
     playback: "Afspelen",
     prevEpisode: "Vorige aflevering",
     nextEpisode: "Volgende aflevering",
@@ -318,6 +324,7 @@ export default {
     // Quick Connect
     quickConnect: "Quick Connect",
     qcInstruction: "Voer deze code in je Jellyfin-app (telefoon/web) in onder 'Quick Connect':",
+    qcQrHint: "Scan met een bij Jellyfin aangemeld toestel.",
     qcCancel: "Annuleren",
     qcAuthInstruction: "Voer een 6-cijferige code van een ander apparaat in om het te autoriseren:",
     qcAuthorizeBtn: "Apparaat autoriseren",
@@ -374,13 +381,15 @@ export default {
     clear: "Wissen",
     logShow: "Logboek tonen",
     logShowDesc: "Huidige logs bekijken, kopiëren of delen als QR-code.",
+    helpFaq: "Help & FAQ",
+    helpFaqHint: "Scan met je telefoon om de OcenFin-wiki & FAQ te openen.",
     logTitle: "Logboek",
     logEmpty: "Nog geen vermeldingen.",
     logQrButton: "QR-code",
     logQrHint: "Scan met je telefoon om de laatste regels over te zetten (bijv. per e-mail).",
     logBackToText: "Terug naar tekst",
 
-    // Untertitel-Styling (nur Text)
+    // Subtitle styling (text only)
     subtitleColor: "Kleur",
     subtitleEdge: "Rand",
     subtitleBackground: "Achtergrond",
@@ -397,14 +406,14 @@ export default {
     bgSemi: "Semi",
     bgSolid: "Vol",
 
-    // Teilen
+    // Share
     share: "Delen",
     shareHint: "Scan met je telefoon om de titel op te zoeken of te delen.",
 
-    // Untertitel-Versatz
+    // Subtitle offset
     subtitleOffset: "Verschuiving",
 
-    // Kennwort anzeigen/verbergen
+    // Show/hide password
     showPassword: "Wachtwoord tonen",
     hidePassword: "Wachtwoord verbergen",
 

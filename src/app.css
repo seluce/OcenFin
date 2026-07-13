@@ -1,11 +1,11 @@
 @import "tailwindcss";
-/* Scrollbalken global ausblenden — überall dort, wo .hide-scrollbar gesetzt ist. */
-.hide-scrollbar::-webkit-scrollbar { display: none; }                 /* Chromium / WebKit (auch webOS) */
-.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }  /* Firefox / Edge-Legacy */
+/* Hide scrollbars globally — everywhere .hide-scrollbar is set. */
+.hide-scrollbar::-webkit-scrollbar { display: none; }                 /* Chromium / WebKit (also webOS) */
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }  /* Firefox / Edge legacy */
 
-/* LEKTION content-visibility: Die frueheren .cv-auto/.cv-card-Klassen (content-visibility:
-   auto) wurden aus allen Grid-/Dashboard-Karten entfernt und NICHT wieder eingefuehrt.
-   Grund: content-visibility erzwingt Paint-Containment — sobald der Karteninhalt bei Fokus
-   skaliert (group-focus:scale-105), wird alles, was ueber die Button-Box hinauswaechst,
-   abgeschnitten (sichtbar als "Rahmen nur unten"). cv also nie auf skalierende Karten legen.
-   Falls grosse Grids auf dem B4 je wieder Render-Hilfe brauchen: overflow-clip-margin pruefen. */
+/* LESSON content-visibility: the former .cv-auto/.cv-card classes (content-visibility:
+   auto) were removed from all grid/dashboard cards and NOT reintroduced.
+   Reason: content-visibility forces paint containment — as soon as the card content scales
+   on focus (group-focus:scale-105), everything growing beyond the button box gets
+   clipped (visible as a "border only at the bottom"). So never put cv on scaling cards.
+   If large grids on the B4 ever need render help again: check overflow-clip-margin. */

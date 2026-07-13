@@ -121,12 +121,16 @@ export default {
     markUnwatched: "Marcar como não visto",
     addFavorite: "Adicionar aos favoritos",
     removeFavorite: "Remover dos favoritos",
+    watchlist: "Minha lista",
+    addToWatchlist: "Adicionar à minha lista",
+    removeFromWatchlist: "Remover da minha lista",
     resetProgress: "Repor progresso",
     openDetails: "Abrir detalhes",
     options: "Opções",
     moreFromSeason: "Mais de",
     trailer: "Trailer",
     similar: "Semelhantes",
+    extras: "Extras",
     seasons: "Temporadas",
     audio: "Áudio",
     subtitles: "Legendas",
@@ -135,6 +139,8 @@ export default {
     mins: "min",
 
     // Player
+    unknown: "Desconhecido",
+    source: "Fonte",
     playback: "Reprodução",
     prevEpisode: "Episódio anterior",
     nextEpisode: "Episódio seguinte",
@@ -318,6 +324,7 @@ export default {
     // Quick Connect
     quickConnect: "Quick Connect",
     qcInstruction: "Introduza este código na sua aplicação Jellyfin (telemóvel/web) em «Quick Connect»:",
+    qcQrHint: "Digitalize com um telemóvel ligado ao Jellyfin.",
     qcCancel: "Cancelar",
     qcAuthInstruction: "Introduza um código de 6 dígitos de outro dispositivo para o autorizar:",
     qcAuthorizeBtn: "Autorizar dispositivo",
@@ -374,13 +381,15 @@ export default {
     clear: "Limpar",
     logShow: "Mostrar registo",
     logShowDesc: "Ver, copiar ou partilhar os registos atuais como código QR.",
+    helpFaq: "Ajuda e FAQ",
+    helpFaqHint: "Digitalize com o telemóvel para abrir a wiki e as FAQ do OcenFin.",
     logTitle: "Registo",
     logEmpty: "Ainda sem entradas.",
     logQrButton: "Código QR",
     logQrHint: "Digitalize com o telemóvel para transferir as últimas linhas (p. ex. por e-mail).",
     logBackToText: "Voltar ao texto",
 
-    // Untertitel-Styling (nur Text)
+    // Subtitle styling (text only)
     subtitleColor: "Cor",
     subtitleEdge: "Borda",
     subtitleBackground: "Fundo",
@@ -397,14 +406,14 @@ export default {
     bgSemi: "Semi",
     bgSolid: "Sólido",
 
-    // Teilen
+    // Share
     share: "Partilhar",
     shareHint: "Digitalize com o telemóvel para consultar ou partilhar o título.",
 
-    // Untertitel-Versatz
+    // Subtitle offset
     subtitleOffset: "Desfasamento",
 
-    // Kennwort anzeigen/verbergen
+    // Show/hide password
     showPassword: "Mostrar palavra-passe",
     hidePassword: "Ocultar palavra-passe",
 

@@ -1,19 +1,19 @@
-// Gemeinsame Hilfsfunktionen (geteilt zwischen App und Komponenten)
+// Shared helper functions (used by App and components)
 import { tick } from 'svelte';
 import { fade } from 'svelte/transition';
-import { dependencies as deps } from '../package.json';   // für Versions-Anzeige auf der Status-Seite
-import { session } from './session.svelte.js';   // Server-URL zentral für getItemImageUrl
+import { dependencies as deps } from '../package.json';   // for the version display on the status page
+import { session } from './session.svelte.js';   // server URL centralized for getItemImageUrl
 
-// Ein-/Ausblenden für Overlays, das den "Animationen reduzieren"-Schalter respektiert (App pflegt
-// body.dataset.reduceMotion). Bei reduzierter Bewegung: Dauer 0 → sofort sichtbar/weg, keine Animation.
+// Fade in/out for overlays that respects the "reduce animations" toggle (App maintains
+// body.dataset.reduceMotion). With reduced motion: duration 0 → instantly visible/gone, no animation.
 export function uiFade(node, params = {}) {
   const reduced = document.body.dataset.reduceMotion === '1';
   return fade(node, { ...params, duration: reduced ? 0 : (params.duration ?? 150) });
 }
 
-// Beim Outro-Start die Fokus-Trap im Teilbaum entfernen. Während ein Modal ~150 ms ausblendet, bleibt
-// es im DOM; ohne dies würde der via makeFocusReturn zurückkehrende Fokus von onFocusIn wieder ins
-// ausblendende Modal gezogen. Nach dem Entfernen ist die Trap sofort inaktiv, das Modal blendet aus.
+// On outro start, remove the focus trap in the subtree. While a modal fades out (~150 ms) it stays
+// in the DOM; without this the focus returning via makeFocusReturn would be pulled by onFocusIn back
+// into the fading modal. After removal the trap is immediately inactive and the modal fades out.
 export function dropTrapOnOutro(e) {
   const root = e?.currentTarget;
   if (!root) return;
@@ -21,10 +21,10 @@ export function dropTrapOnOutro(e) {
   root.querySelectorAll?.('[data-focus-trap]').forEach((el) => el.removeAttribute('data-focus-trap'));
 }
 
-// Fokus-Rückgabe nach dem Schließen eines Modals/Overlays: beim Öffnen den Auslöser merken,
-// beim Schließen dorthin zurückspringen. capture()/restore() (inkl. tick-Timing) sind hier
-// vereinheitlicht; WANN restore() läuft, entscheidet jede Komponente über ihre eigene Reactive,
-// weil sich die Schließ-Bedingung unterscheidet (ein Bool vs. mehrere Menüs).
+// Focus return after closing a modal/overlay: on open remember the trigger, on close
+// jump back to it. capture()/restore() (incl. tick timing) are unified here;
+// WHEN restore() runs is decided by each component via its own reactive statement,
+// because the close condition differs (a single bool vs. several menus).
 export function makeFocusReturn() {
   let saved = null;
   return {
@@ -37,9 +37,9 @@ export function makeFocusReturn() {
   };
 }
 
-// Erkennt die "Zurück"-Aktion: Escape, Backspace ODER die webOS-Fernbedienung
-// (Magic Remote "Zurück" sendet keyCode 461). Backspace in einem Texteingabefeld
-// löscht ein Zeichen und gilt deshalb NICHT als Zurück.
+// Detects the "back" action: Escape, Backspace OR the webOS remote
+// (Magic Remote "Back" sends keyCode 461). Backspace in a text input field
+// deletes a character and therefore does NOT count as back.
 export function isBackKey(e) {
   if (e.key === 'Escape' || e.keyCode === 461) return true;
   if (e.key === 'Backspace') {
@@ -50,15 +50,15 @@ export function isBackKey(e) {
   return false;
 }
 
-// Svelte-Attachment (Factory): fokussiert das Element beim Einblenden (für WebOS-D-Pad-Navigation)
+// Svelte attachment (factory): focuses the element on mount (for webOS D-pad navigation)
 export function focusOnMount(enabled = true) {
   return (node) => { if (enabled) node.focus(); };
 }
 
-// Svelte-Attachment: Auf dem TV öffnet ein fokussiertes <input> SOFORT die Bildschirm-
-// tastatur — auch wenn man nur hin navigiert. Dieses Attachment hält das Feld readonly
-// (Fokus öffnet keine Tastatur) und macht es erst bei OK/Enter beschreibbar; dann
-// öffnet die Tastatur. Verliert das Feld den Fokus, wird es wieder readonly.
+// Svelte attachment: On the TV a focused <input> opens the on-screen keyboard
+// IMMEDIATELY — even when you only navigate to it. This attachment keeps the field readonly
+// (focus opens no keyboard) and only makes it writable on OK/Enter; then
+// the keyboard opens. When the field loses focus, it becomes readonly again.
 export function tvKeyboard(node) {
   let activating = false;
   node.readOnly = true;
@@ -67,7 +67,7 @@ export function tvKeyboard(node) {
     activating = true;
     node.readOnly = false;
     node.blur();
-    node.focus();          // editierbar + fokussiert → webOS öffnet die Tastatur
+    node.focus();          // editable + focused → webOS opens the keyboard
     activating = false;
   }
   function onKeyDown(e) {
@@ -76,8 +76,8 @@ export function tvKeyboard(node) {
       activate();
     }
   }
-  // Touch / Maus / Magic-Remote-Klick: Feld direkt editierbar machen, damit man tippen kann.
-  // Reiner D-pad-Fokus bleibt schreibgeschützt (pointerdown feuert dabei nicht) → OK aktiviert.
+  // Touch / mouse / Magic Remote click: make the field editable directly so you can type.
+  // Pure D-pad focus stays read-only (pointerdown doesn't fire there) → OK activates it.
   function onPointerDown() { if (node.readOnly) node.readOnly = false; }
   function onBlur() { if (!activating) node.readOnly = true; }
   node.addEventListener('keydown', onKeyDown);
@@ -90,14 +90,14 @@ export function tvKeyboard(node) {
   };
 }
 
-// Svelte-Attachment (Factory): erkennt "langes Drücken" (OK halten bzw. Maus/Touch halten).
-// PROBLEM: Enter auf einem fokussierten <button> löst auf webOS SOFORT — und beim
-// Gedrückthalten WIEDERHOLT — einen Klick aus. Ein Timer kommt dagegen nie an.
-// LÖSUNG: den automatischen Klick per preventDefault unterbinden und die Aktion selbst
-// steuern. Das 'longpress'-Event feuert per Timer schon WÄHREND des Haltens (gewünschtes
-// Verhalten). Damit die weiterhin gehaltene OK-Taste nicht sofort den ersten Menüeintrag
-// auslöst, "schärft" das Kontextmenü sich erst nach dem Loslassen/kurzer Zeit.
-// Verlässt das Element den Fokus (Menü öffnet), wird der Druckzustand zurückgesetzt.
+// Svelte attachment (factory): detects a "long press" (holding OK, or holding mouse/touch).
+// PROBLEM: Enter on a focused <button> fires a click on webOS IMMEDIATELY — and REPEATEDLY
+// while held down. A timer never gets a chance against that.
+// SOLUTION: suppress the automatic click via preventDefault and drive the action
+// ourselves. The 'longpress' event fires via a timer already WHILE holding (the desired
+// behavior). So that the still-held OK key doesn't immediately trigger the first menu entry,
+// the context menu only "arms" itself after release / a short delay.
+// When the element loses focus (menu opens), the press state is reset.
 export function longPress(duration = 500) {
   return (node) => {
     let pressing = false;
@@ -111,11 +111,11 @@ export function longPress(duration = 500) {
     }
     function reset() { pressing = false; fired = false; clearTimeout(timer); timer = null; }
 
-    // ── Tastatur (OK im 5-Wege-Modus) ──────────────────────────
+    // ── Keyboard (OK in 5-way mode) ────────────────────────────
     function onKeyDown(e) {
       if (e.key !== 'Enter' && e.keyCode !== 13) return;
-      e.preventDefault();          // unterbindet den automatischen / wiederholten Klick
-      if (pressing) return;        // Auto-Repeat ignorieren
+      e.preventDefault();          // suppresses the automatic / repeated click
+      if (pressing) return;        // ignore auto-repeat
       pressing = true; fired = false;
       startTimer();
     }
@@ -125,15 +125,15 @@ export function longPress(duration = 500) {
       clearTimeout(timer);
       const wasLong = fired;
       pressing = false; fired = false;
-      if (!wasLong) node.click();  // kurzer Druck → normale Aktion (langer hat schon 'longpress')
+      if (!wasLong) node.click();  // short press → normal action (long already fired 'longpress')
     }
 
-    // ── Zeiger (Magic-Remote-Cursor / Maus) ────────────────────
+    // ── Pointer (Magic Remote cursor / mouse) ──────────────────
     function onPointerDown() { pressing = true; fired = false; suppressClick = false; startTimer(); }
     function onPointerUp() {
       if (!pressing) return;
       clearTimeout(timer);
-      if (fired) suppressClick = true;   // langer Zeiger-Druck → folgenden Klick schlucken
+      if (fired) suppressClick = true;   // long pointer press → swallow the following click
       pressing = false; fired = false;
     }
     function onClickCapture(e) {
@@ -145,8 +145,8 @@ export function longPress(duration = 500) {
     node.addEventListener('pointerdown', onPointerDown);
     node.addEventListener('pointerup', onPointerUp);
     node.addEventListener('pointerleave', reset);
-    node.addEventListener('blur', reset);                    // Fokus weg (Menü öffnet) → Zustand klären
-    node.addEventListener('click', onClickCapture, true);    // Capture-Phase: vor dem normalen Klick
+    node.addEventListener('blur', reset);                    // focus gone (menu opens) → clear state
+    node.addEventListener('click', onClickCapture, true);    // capture phase: before the normal click
 
     return () => {
       clearTimeout(timer);
@@ -161,8 +161,8 @@ export function longPress(duration = 500) {
   };
 }
 
-// Personen-Bild-URL. Die Suche (/Persons) liefert ImageTags.Primary,
-// die Besetzung (item.People) liefert PrimaryImageTag — beide Felder werden geprüft.
+// Person image URL. The search (/Persons) returns ImageTags.Primary,
+// the cast (item.People) returns PrimaryImageTag — both fields are checked.
 export function personImageUrl(serverUrl, person) {
   const tag = person.PrimaryImageTag || person.ImageTags?.Primary;
   return tag
@@ -170,9 +170,9 @@ export function personImageUrl(serverUrl, person) {
     : null;
 }
 
-// Karten-Bild-URL für Grid-Items (Mediathek, Favoriten, Person, Collection). 'portrait' = 2:3-Poster,
-// 'landscape' = 16:9-Still (Folgen-Primary, sonst Serien-Thumb als Rückfall). Zentral, weil in mehreren
-// Grids zuvor identisch dupliziert. (Die Suche nutzt bewusst eine eigene Variante mit Backdrop-Fallback.)
+// Card image URL for grid items (Library, Favorites, Person, Collection). 'portrait' = 2:3 poster,
+// 'landscape' = 16:9 still (episode Primary, otherwise series Thumb as fallback). Centralized because it was
+// previously duplicated identically across several grids. (Search deliberately uses its own variant with a backdrop fallback.)
 export function getItemImageUrl(item, format = 'portrait') {
   if (format === 'landscape') {
     if (item.ImageTags?.Primary)
@@ -186,13 +186,13 @@ export function getItemImageUrl(item, format = 'portrait') {
   return null;
 }
 
-// Fortschritt 0–100: Resume-Position (Filme/Folgen) oder Anteil gesehener Folgen
-// (Serien, via Jellyfins PlayedPercentage). Für Fortschrittsbalken.
-// Karten-Badge "Gesehen" (oben links; oben rechts gehoert dem Folgenzaehler-Opt-in bzw. in den
-// Details-Strips dem dortigen gruenen Haekchen): NUR ein Haekchen, NUR wenn komplett gesehen.
-// Jellyfin setzt Played bei Serien/Staffeln/Sammlungen erst, wenn ALLE enthaltenen Titel gesehen
-// sind — genau die gewuenschte Semantik. Bewusst KEIN Ungesehen-Zaehler: der wuerde den
-// Folgenzaehler oben rechts optisch doppeln.
+// Progress 0–100: resume position (movies/episodes) or share of watched episodes
+// (series, via Jellyfin's PlayedPercentage). For progress bars.
+// Card badge "Watched" (top left; top right belongs to the episode-counter opt-in, or in the
+// details strips to the green check there): ONLY a check, ONLY when fully watched.
+// Jellyfin sets Played on series/seasons/collections only once ALL contained titles are watched
+// — exactly the desired semantics. Deliberately NO unwatched counter: it would visually
+// duplicate the episode counter in the top right.
 export function itemBadge(item) {
   return item?.UserData?.Played ? { check: true } : null;
 }
@@ -203,9 +203,9 @@ export function itemProgress(item) {
   return 0;
 }
 
-// Karten-/Grid-Untertitel: Folge → "S1:E2 – Titel"; Serie → Jahresbereich
-// ("2016 – 2019" / "2024 – heute"); sonst das Produktionsjahr.
-// `todayLabel` = lokalisiertes "heute" ($t.today), da $t hier nicht verfügbar ist.
+// Card/grid subtitle: episode → "S1:E2 – Title"; series → year range
+// ("2016 – 2019" / "2024 – today"); otherwise the production year.
+// `todayLabel` = localized "today" ($t.today), since $t isn't available here.
 export function getItemSubtitle(item, todayLabel = '') {
   if (item.Type === 'Episode') {
     const s = item.ParentIndexNumber ?? '?';
@@ -224,11 +224,11 @@ export function getItemSubtitle(item, todayLabel = '') {
 }
 
 // ============================================================
-// SEITENLEISTEN-NAVIGATION (dynamisch + pro Profil anpassbar)
+// SIDEBAR NAVIGATION (dynamic + customizable per profile)
 // ============================================================
-// Icon-Palette für die Navigation: Typ-Standards (dashboard/search/settings/movies/tvshows/
-// folder) + dekorative Auswahl, die der Nutzer pro Eintrag selbst wählen kann. Exportiert,
-// damit der Einstellungs-Editor dieselben Icons rendert.
+// Icon palette for the navigation: type defaults (dashboard/search/settings/movies/tvshows/
+// folder) + a decorative selection the user can choose per entry. Exported
+// so the settings editor renders the same icons.
 export const NAV_ICON_PALETTE = {
   dashboard: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6',
   search:    'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
@@ -266,15 +266,15 @@ export const NAV_ICON_PALETTE = {
   bell:      'M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0',
   bolt2:     'M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18',
 };
-// Reihenfolge im Icon-Wähler.
+// Order in the icon picker.
 export const NAV_ICON_KEYS = ['dashboard','search','settings','movies','tvshows','tv','folder','star','heart','book','globe','music','photo','sparkles','bolt','ticket','syncplay','home','play','clock','calendar','fire','bookmark','queue','grid','building','newspaper','download','microphone','puzzle','flag','tag','cloud','bell','bolt2'];
 
-// Musik bleibt bewusst außen vor (eigene Ansicht nötig, derzeit nicht unterstützt).
+// Music is deliberately left out (needs its own view, currently unsupported).
 const NAV_HIDDEN_TYPES = ['music', 'musicvideos'];
 
-// Baut die vollständige Eintragsliste: feste Ansichten (übersetzt, dashboard/settings gesperrt)
-// + ein Eintrag je echter Mediathek (Server-Name, sprachunabhängig). `iconOverrides` (pro Profil,
-// {entryId: paletteKey}) gewinnt vor dem Typ-Standard. Eine Quelle für Sidebar und Editor.
+// Builds the full entry list: fixed views (translated, dashboard/settings locked)
+// + one entry per real library (server name, language-independent). `iconOverrides` (per profile,
+// {entryId: paletteKey}) wins over the type default. One source for sidebar and editor.
 export function buildNavEntries(libraries, t, iconOverrides = {}) {
   const pick = (id, fallbackKey) =>
     NAV_ICON_PALETTE[iconOverrides[id]] || NAV_ICON_PALETTE[fallbackKey] || NAV_ICON_PALETTE.folder;
@@ -296,9 +296,9 @@ export function buildNavEntries(libraries, t, iconOverrides = {}) {
   ];
 }
 
-// Wendet die Profil-Konfiguration an: erst nach gespeicherter Reihenfolge, neue/unbekannte
-// Einträge hinten anhängen; verwaiste Ids ignorieren. Annotiert ein `hidden`-Flag
-// (gesperrte Einträge lassen sich nie verstecken).
+// Applies the profile configuration: first by saved order, appending new/unknown
+// entries at the end; ignoring orphaned ids. Annotates a `hidden` flag
+// (locked entries can never be hidden).
 export function applyNavConfig(entries, order = [], hidden = []) {
   const byId = new Map(entries.map(e => [e.id, e]));
   const ordered = [];
@@ -308,9 +308,9 @@ export function applyNavConfig(entries, order = [], hidden = []) {
 }
 
 // ============================================================
-// PROFILBILD-PRESETS (am TV gibt es keine Datei-Auswahl → vorgefertigte Avatare).
-// Avatar = weißes Icon auf farbigem Hintergrund, per Canvas zu PNG gerendert und als
-// Jellyfin-Profilbild hochgeladen (synct über alle Clients). Geteilte Pfade wiederverwendet.
+// PROFILE-PICTURE PRESETS (on TV there is no file picker → prebuilt avatars).
+// Avatar = white icon on a colored background, rendered to PNG via canvas and uploaded
+// as the Jellyfin profile picture (syncs across all clients). Shared paths reused.
 export const AVATAR_ICONS = {
   person:     'M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z',
   users:      'M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z',
@@ -338,14 +338,12 @@ export const AVATAR_ICONS = {
   beaker:     'M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5',
 };
 export const AVATAR_ICON_KEYS = ['person', 'users', 'academicCap', 'trophy', 'smiley', 'heart', 'star', 'rocket', 'puzzle', 'bolt', 'sparkles', 'music', 'globe', 'book', 'photo', 'fire', 'cloud', 'play', 'ticket', 'moon', 'sun', 'gift', 'paintBrush', 'beaker'];
-// OLED-freundliche, kräftige Hintergrundfarben (an die Akzent-Palette angelehnt).
+// OLED-friendly, vivid background colors (aligned with the accent palette).
 export const AVATAR_COLORS = ['#3b82f6', '#0ea5e9', '#14b8a6', '#10b981', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e', '#f97316', '#f59e0b'];
 
-// Rendert Avatar (Icon auf Farbfläche) per Canvas zu einem PNG-Base64-String (ohne data:-Präfix).
-// Browser-only (nutzt document/canvas). Liefert ein Promise.
-// Rendert ein Bild (Film-/Serien-Poster) mittig quadratisch zugeschnitten in einen Avatar (PNG).
-// Das Bild wird per fetch als Blob geholt und über eine ObjectURL gezeichnet → kein Canvas-CORS-Taint,
-// sodass toDataURL funktioniert. imageUrl muss den Token (ApiKey-Parameter) enthalten.
+// Renders an image (movie/series poster) center-cropped to a square into an avatar (PNG).
+// The image is fetched as a Blob and drawn via an ObjectURL → no canvas CORS taint,
+// so toDataURL works. imageUrl must contain the token (ApiKey parameter).
 export function renderImageAvatarPng(imageUrl, size = 256) {
   return new Promise((resolve, reject) => {
     fetch(imageUrl)
@@ -357,7 +355,7 @@ export function renderImageAvatarPng(imageUrl, size = 256) {
           const canvas = document.createElement('canvas');
           canvas.width = canvas.height = size;
           const ctx = canvas.getContext('2d');
-          const s = Math.min(img.width, img.height);          // mittiger quadratischer Ausschnitt (cover)
+          const s = Math.min(img.width, img.height);          // center square crop (cover)
           ctx.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, size, size);
           URL.revokeObjectURL(objUrl);
           resolve(canvas.toDataURL('image/png').split(',')[1]);
@@ -369,6 +367,8 @@ export function renderImageAvatarPng(imageUrl, size = 256) {
   });
 }
 
+// Renders an avatar (icon on a colored surface) to a PNG base64 string via canvas (without the data: prefix).
+// Browser-only (uses document/canvas). Returns a Promise.
 export function renderAvatarPng(iconKey, bgColor, size = 256) {
   return new Promise((resolve, reject) => {
     const path = AVATAR_ICONS[iconKey] || AVATAR_ICONS.person;
@@ -380,7 +380,7 @@ export function renderAvatarPng(iconKey, bgColor, size = 256) {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${path}"/></svg>`;
     const img = new Image();
     img.onload = () => {
-      const pad = size * 0.22;                          // Icon zentriert auf ~56 % der Fläche
+      const pad = size * 0.22;                          // icon centered on ~56% of the surface
       ctx.drawImage(img, pad, pad, size - 2 * pad, size - 2 * pad);
       resolve(canvas.toDataURL('image/png').split(',')[1]);
     };
@@ -389,9 +389,9 @@ export function renderAvatarPng(iconKey, bgColor, size = 256) {
   });
 }
 
-// Liefert true, wenn die Jellyfin-Serverversion VobSub/DVD-Untertitel extern als .mks ausliefert
-// (Server-PR #16552, gemerged für die 12.0-/10.12-Linie). Auf älteren Servern false → DVD-Subs
-// müssen gebrannt werden. Robustes Parsen: unterstützt ab Major 12 ODER 10.12+.
+// Returns true if the Jellyfin server version delivers VobSub/DVD subtitles externally as .mks
+// (server PR #16552, merged for the 12.0 / 10.12 line). On older servers false → DVD subs
+// must be burned in. Robust parsing: supports major 12 OR 10.12+.
 export function serverSupportsVobSub(version) {
   if (!version || typeof version !== 'string') return false;
   const m = version.match(/(\d+)\.(\d+)/);
@@ -403,13 +403,13 @@ export function serverSupportsVobSub(version) {
   return false;
 }
 
-// Standard-Authentifizierungs-Header für Jellyfin-API-Aufrufe (Token + JSON-Content-Type).
-// KONVENTION für Listen-Abfragen (/Items, /Persons, /Genres, NextUp, Resume …):
-// immer &EnableTotalRecordCount=false anhängen — der Server spart sich sonst pro Abfrage
-// eine COUNT-Query über die Bibliothek. Ausnahmen (brauchen den Zähler wirklich): Library-
-// Hauptabfrage + letterStartIndex (Pagination/A-Z) und die Personen-Zählprüfung der Suche
-// (Limit=0). Audit-Einzeiler:  grep -rn "Items?" --include=*.svelte | grep -v EnableTotalRecordCount
-// Zentral, damit nicht jede Komponente ihre eigene Kopie pflegt.
+// Standard authentication header for Jellyfin API calls (token + JSON content type).
+// CONVENTION for list queries (/Items, /Persons, /Genres, NextUp, Resume …):
+// always append &EnableTotalRecordCount=false — otherwise the server runs a COUNT
+// query over the library per request. Exceptions (that really need the counter): the library
+// main query + letterStartIndex (pagination/A-Z) and the person-count check of the search
+// (Limit=0). Audit one-liner:  grep -rn "Items?" --include=*.svelte | grep -v EnableTotalRecordCount
+// Centralized so that not every component maintains its own copy.
 export function authHeaders(token) {
   return {
     "Authorization": `MediaBrowser Token="${token}"`,
@@ -417,17 +417,17 @@ export function authHeaders(token) {
   };
 }
 
-// --- Diagnose-Logging (opt-in, geräteweit) -------------------------------------------------
-// Ein zentraler Schalter gated alle Diagnose-Ausgaben. dlog() ersetzt console.log an den
-// Diagnosestellen (Video, SyncPlay, PlaybackInfo, libbitsub …). console.error bleibt immer aktiv.
-// Modul-State wird von allen Importeuren geteilt → ein setDebug() wirkt sofort überall.
+// --- Diagnostic logging (opt-in, device-wide) ----------------------------------------------
+// A central switch gates all diagnostic output. dlog() replaces console.log at the
+// diagnostic sites (video, SyncPlay, PlaybackInfo, libbitsub …). console.error stays always active.
+// Module state is shared by all importers → one setDebug() takes effect everywhere immediately.
 let _debug = false;
 export function setDebug(on) { _debug = !!on; }
 
-// --- In-App-Log-Puffer ----------------------------------------------------------------------
-// Ring-Puffer, damit Nutzer Logs ohne 'ares inspect' sehen/teilen können. console.error/warn
-// werden IMMER erfasst (auch ohne Debug-Modus → nach einem Fehler ist der Log schon da);
-// dlog-Zeilen nur bei aktivem Debug. Das Original-Konsolenverhalten bleibt unverändert.
+// --- In-app log buffer ----------------------------------------------------------------------
+// Ring buffer so users can see/share logs without 'ares inspect'. console.error/warn
+// are ALWAYS captured (even without debug mode → after an error the log is already there);
+// dlog lines only when debug is active. The original console behavior stays unchanged.
 const LOG_BUFFER_MAX = 300;
 let _logBuffer = [];
 function _stringify(args) {
@@ -443,6 +443,73 @@ function _pushLog(level, args) {
     if (_logBuffer.length > LOG_BUFFER_MAX) _logBuffer.shift();
   } catch {}
 }
+// Focus/hover hint for icon-only buttons on TV: shows the node's aria-label as a small
+// tooltip above it — on FOCUS (D-pad) and hover (pointer), since a TV rarely hovers.
+// Reuses aria-label so dynamic labels (watched <-> unwatched) stay correct (read at show
+// time). Body-appended + position:fixed so scroll/overflow containers can't clip it; a short
+// delay avoids flashing while quickly moving across a button row. {@attach} factory signature.
+export function hint(delay = 220) {
+  return (node) => {
+    let tip = null;
+    let timer = null;
+
+    function build() {
+      const label = node.getAttribute('aria-label');
+      if (!label) return;
+      destroy();
+      tip = document.createElement('div');
+      tip.textContent = label;
+      Object.assign(tip.style, {
+        position: 'fixed', zIndex: '650', pointerEvents: 'none',   // above modals (<=600), below the screensaver (700)
+        background: 'rgba(17,24,39,0.97)', color: '#fff',
+        padding: '0.4rem 0.7rem', borderRadius: '0.5rem',
+        fontSize: '0.95rem', fontWeight: '600', whiteSpace: 'nowrap',
+        border: '1px solid rgba(255,255,255,0.12)',
+        boxShadow: '0 6px 20px rgba(0,0,0,0.55)',
+        opacity: '0', transition: 'opacity 120ms ease',
+      });
+      document.body.appendChild(tip);
+      position();
+      requestAnimationFrame(() => { if (tip) tip.style.opacity = '1'; });
+    }
+    // Center above the button; flip below near the top edge; clamp to the viewport.
+    function position() {
+      if (!tip) return;
+      const r = node.getBoundingClientRect();
+      const tw = tip.offsetWidth, th = tip.offsetHeight, gap = 8, pad = 8;
+      let left = r.left + r.width / 2 - tw / 2;
+      left = Math.max(pad, Math.min(left, window.innerWidth - tw - pad));
+      let top = r.top - th - gap;
+      if (top < pad) top = r.bottom + gap;
+      tip.style.left = `${left}px`;
+      tip.style.top = `${top}px`;
+    }
+    function show() { clearTimeout(timer); timer = setTimeout(build, delay); }
+    function destroy() { clearTimeout(timer); if (tip) { tip.remove(); tip = null; } }
+
+    // Keep the visible hint in sync when the button's aria-label changes while it is shown
+    // (e.g. after clicking "mark as watched", the label flips to "mark as unwatched").
+    const observer = new MutationObserver(() => {
+      const label = node.getAttribute('aria-label');
+      if (tip && label) { tip.textContent = label; position(); }
+    });
+    observer.observe(node, { attributes: true, attributeFilter: ['aria-label'] });
+
+    node.addEventListener('focus', show);
+    node.addEventListener('blur', destroy);
+    node.addEventListener('mouseenter', show);
+    node.addEventListener('mouseleave', destroy);
+    return () => {
+      observer.disconnect();
+      destroy();
+      node.removeEventListener('focus', show);
+      node.removeEventListener('blur', destroy);
+      node.removeEventListener('mouseenter', show);
+      node.removeEventListener('mouseleave', destroy);
+    };
+  };
+}
+
 export function dlog(...args) { if (_debug) { _pushLog('log', args); console.log(...args); } }
 export function clearLogBuffer() { _logBuffer = []; }
 export function formatLog(maxChars = 0) {
@@ -452,11 +519,11 @@ export function formatLog(maxChars = 0) {
     return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${e.level.toUpperCase().padEnd(5)} ${e.msg}`;
   });
   let text = lines.join('\n');
-  // Für den QR-Code: nur das Ende (jüngste Zeilen) bis maxChars zurückgeben.
+  // For the QR code: return only the end (most recent lines) up to maxChars.
   if (maxChars > 0 && text.length > maxChars) text = '…\n' + text.slice(text.length - maxChars);
   return text;
 }
-// console.error/warn zusätzlich in den Puffer spiegeln (einmalig, Original bleibt aktiv).
+// Also mirror console.error/warn into the buffer (once; the original stays active).
 if (typeof console !== 'undefined' && !console.__ocenfinLogHook) {
   const _origErr = console.error.bind(console);
   const _origWarn = console.warn.bind(console);
@@ -465,9 +532,9 @@ if (typeof console !== 'undefined' && !console.__ocenfinLogHook) {
   console.__ocenfinLogHook = true;
 }
 
-// --- Versionen für die Status-/Diagnose-Seite --------------------------------------------------
-// Chromium/WebView aus dem User-Agent; Abhängigkeits-Versionen direkt aus package.json (zieht bei
-// einem Update automatisch mit, sofort verfügbar, keine Laufzeit-Erfassung nötig).
+// --- Versions for the status/diagnostics page --------------------------------------------------
+// Chromium/WebView from the user agent; dependency versions directly from package.json (updates
+// automatically on a bump, immediately available, no runtime detection needed).
 export function runtimeVersions() {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
   const m = ua.match(/Chrom(?:e|ium)\/(\d+(?:\.\d+)*)/);
@@ -475,11 +542,11 @@ export function runtimeVersions() {
   return { chromium: m ? m[1] : '', hls: dep('hls.js'), libbitsub: dep('libbitsub'), assjs: dep('assjs') };
 }
 
-// --- TV-Fähigkeiten ----------------------------------------------------------------------------
-// Panel-Wahrheit über webOSTV.js (webOS.deviceInfo). Liefert harte Flags (HDR10/Dolby Vision/
-// Atmos/UHD/OLED) direkt vom Fernseher. Capability-Flags können je nach Firmware fehlen → wir
-// geben sie roh weiter (true/false/undefined), damit die UI "✓ / ✗ / unbekannt" unterscheiden kann.
-// Im Browser-Dev (kein window.webOS) → { available:false }.
+// --- TV capabilities ---------------------------------------------------------------------------
+// Panel ground truth via webOSTV.js (webOS.deviceInfo). Provides hard flags (HDR10/Dolby Vision/
+// Atmos/UHD/OLED) directly from the TV. Capability flags may be missing depending on firmware → we
+// pass them through raw (true/false/undefined) so the UI can distinguish "✓ / ✗ / unknown".
+// In browser dev (no window.webOS) → { available:false }.
 export function getTvDeviceInfo() {
   return new Promise((resolve) => {
     try {
@@ -506,7 +573,7 @@ export function getTvDeviceInfo() {
           dolbyAtmos:  d?.dolbyAtmos,
         });
       });
-      // Manche Firmware ruft den Callback nicht → nach 2 s aufgeben.
+      // Some firmware never calls the callback → give up after 2 s.
       setTimeout(() => {
         if (!done) console.warn('[DeviceInfo] no response from webOS.deviceInfo after 2 s — panel detection degraded');
         finish({ available: false });
@@ -515,9 +582,9 @@ export function getTvDeviceInfo() {
   });
 }
 
-// Codec-Probe über die Browser-Pipeline (canPlayType / MediaSource). ACHTUNG: spiegelt den
-// Browser-Decoder, NICHT zwingend die TV-Hardware (auf altem webOS unterschätzt das HEVC). Daher
-// in der UI als "Browser-Decoder" gekennzeichnet. true = abspielbar laut Browser.
+// Codec probe via the browser pipeline (canPlayType / MediaSource). NOTE: reflects the
+// browser decoder, NOT necessarily the TV hardware (on old webOS this underestimates HEVC). Hence
+// labeled "browser decoder" in the UI. true = playable according to the browser.
 export function probeBrowserCodecs() {
   if (typeof document === 'undefined') return {};
   const v = document.createElement('video');
@@ -536,10 +603,10 @@ export function probeBrowserCodecs() {
   };
 }
 
-// --- BlurHash: moderne „Blur-up"-Platzhalter für Bilder ----------------------------------------
-// Jellyfin liefert zu jedem Bild einen BlurHash. Wir dekodieren ihn (kompakt, ohne Abhängigkeit) zu
-// einer winzigen 32×32-Vorschau und legen sie als Hintergrund unter das <img> (use:blurUp). Bis das
-// scharfe Bild lädt, zeigt sich die unscharfe Vorschau statt einer grauen Box.
+// --- BlurHash: modern "blur-up" placeholders for images ----------------------------------------
+// Jellyfin provides a BlurHash for every image. We decode it (compact, no dependency) into
+// a tiny 32×32 preview and place it as the background behind the <img> (via {@attach blurUp}). Until the
+// sharp image loads, the blurry preview shows instead of a gray box.
 const B83 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~';
 function b83(str) { let v = 0; for (const c of str) v = v * 83 + B83.indexOf(c); return v; }
 function sRGBtoLin(v) { const x = v / 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }
@@ -573,23 +640,23 @@ export function decodeBlurHash(hash, width = 32, height = 32, punch = 1) {
   } catch { return null; }
 }
 
-// Liefert den BlurHash eines Items für einen Bildtyp ('Primary'/'Backdrop'), oder null.
+// Returns the BlurHash of an item for an image type ('Primary'/'Backdrop'), or null.
 export function itemBlurHash(item, type = 'Primary') {
   if (!item?.ImageBlurHashes) return null;
   const tag = type === 'Backdrop' ? item.BackdropImageTags?.[0] : item.ImageTags?.[type];
   return tag ? (item.ImageBlurHashes[type]?.[tag] || null) : null;
 }
 
-// Svelte-Attachment (Factory): dekodierten BlurHash als Hintergrund eines <img> setzen (Cache je Hash).
-// Kein update mehr nötig — bei Hash-Wechsel läuft das Attachment automatisch neu (reaktiver Effect).
+// Svelte attachment (factory): set the decoded BlurHash as the background of an <img> (cached per hash).
+// No update needed anymore — on hash change the attachment re-runs automatically (reactive effect).
 const _blurCache = new Map();
 export function blurUp(hash) {
   return (node) => {
     if (!hash) { node.style.backgroundImage = ''; return; }
     let url = _blurCache.get(hash);
     if (url === undefined) {
-      // Deckel: Die App laeuft auf dem TV tagelang ohne Reload — unbegrenzt wuerde der Cache mit
-      // jedem je gesehenen Hash wachsen. Leeren ist billig (danach nur ein paar Re-Decodes).
+      // Cap: the app runs on the TV for days without a reload — unbounded, the cache would grow with
+      // every hash ever seen. Clearing is cheap (only a few re-decodes afterward).
       if (_blurCache.size > 500) _blurCache.clear();
       url = decodeBlurHash(hash); _blurCache.set(hash, url);
     }

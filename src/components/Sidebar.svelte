@@ -6,20 +6,20 @@
   let {
     selectedUser,
     viewState,
-    activeLibraryId = null,    // Id der aktuell geöffneten Mediathek (für Aktiv-Zustand)
-    libraries = [],            // echte Mediatheken des Profils (dynamische Einträge)
-    navOrder = [],             // Profil-Reihenfolge der Einträge
-    navHidden = [],            // ausgeblendete Einträge (gesperrte bleiben sichtbar)
-    navIcons = {},             // pro-Eintrag gewählte Icons {entryId: paletteKey}
-    showLogo = true,           // Logo oben in der Sidebar (Einstellung, Opt-out)
-    onNavigate, onNavigateLibrary, onSwitchUser, onLogOutServer,   // Callback-Props (statt Events)
+    activeLibraryId = null,    // ID of the currently open library (for the active state)
+    libraries = [],            // the profile's real libraries (dynamic entries)
+    navOrder = [],             // the profile's entry order
+    navHidden = [],            // hidden entries (locked ones stay visible)
+    navIcons = {},             // per-entry chosen icons {entryId: paletteKey}
+    showLogo = true,           // logo at the top of the sidebar (setting, opt-out)
+    onNavigate, onNavigateLibrary, onSwitchUser, onLogOutServer,   // callback props (instead of events)
   } = $props();
 
   let isExpanded      = $state(false);
   let showProfileMenu = $state(false);
-  let profileButton;   // für Fokus-Rückgabe nach Menü-Schließen (bind:this)
+  let profileButton;   // for focus return after closing the menu (bind:this)
 
-  // Aktiver Eintrag: feste Ansichten über viewState, Mediatheken über ihre Id.
+  // Active entry: fixed views via viewState, libraries via their ID.
   let activeNavId = $derived(
     viewState === 'dashboard' ? 'dashboard' :
     viewState === 'search'    ? 'search'    :
@@ -28,8 +28,8 @@
     viewState === 'library'   ? 'lib:' + activeLibraryId : ''
   );
 
-  // Einträge aus der gemeinsamen Quelle (utils): feste Ansichten + echte Mediatheken,
-  // in Profil-Reihenfolge, ausgeblendete entfernt. Klick je nach Art (Ansicht/Mediathek).
+  // Entries from the shared source (utils): fixed views + real libraries,
+  // in profile order, hidden ones removed. Click depends on the kind (view/library).
   let navItems = $derived(
     applyNavConfig(buildNavEntries(libraries, i18n.t, navIcons), navOrder, navHidden).filter(e => !e.hidden)
   );
@@ -55,17 +55,21 @@
     if (showProfileMenu && isBackKey(e)) {
       e.stopPropagation();
       showProfileMenu = false;
-      profileButton?.focus();   // Fokus zurück auf Profil-Button (D-Pad-Orientierung)
+      profileButton?.focus();   // focus back on the profile button (D-pad orientation)
     }
   }
 </script>
 
 <svelte:window onclick={() => showProfileMenu = false} />
 
-<!-- Fester Platzhalter (w-24): hält das Flex-Layout konstant, damit der Inhalt beim
-     Aufklappen NICHT umbricht (Haupt-Ruckelquelle). Die sichtbare Leiste liegt
-     absolut darüber und überlagert den Inhalt beim Ausklappen (wie moderne TV-Apps). -->
+<!-- Fixed placeholder (w-24): keeps the flex layout constant so the content does NOT
+     reflow on expand (the main source of jank). The visible bar sits
+     absolutely on top and overlaps the content when expanded (like modern TV apps). -->
 <div class="h-full w-24 shrink-0 relative z-40">
+<!-- The sidebar expands on focus/hover of its child buttons (a container-level enhancement) and
+     delegates D-pad keys to the nav manager. It stays a <nav> landmark; an interactive role would
+     misrepresent a navigation region that holds multiple buttons. -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <nav
   data-focus-group="sidebar"
   class="absolute top-0 left-0 h-full bg-gray-900 border-r border-gray-800 flex flex-col pt-8 pb-8 [contain:layout]
@@ -77,16 +81,16 @@
   onmouseleave={() => { isExpanded = false; showProfileMenu = false; }}
   onkeydown={handleNavKeyDown}
 >
-  <!-- Kantenschatten als Gradient mit Opacity-Fade statt box-shadow: Ein box-shadow an einem
-       Element, dessen Breite animiert, wird auf dem B4 bei JEDEM Frame neu gerastert (großer
-       Blur-Radius = teuer) — das war der letzte große Kostenpunkt beim Aufklappen. Opacity läuft
-       auf dem Compositor; eingeklappt trennt die border-r die Leiste vom Inhalt.
-       [contain:layout] oben: Layout-Neuberechnung pro Frame bleibt strikt aufs Panel begrenzt
-       (bewusst KEIN contain:paint — das würde das Profil-Flyout abschneiden). -->
+  <!-- Edge shadow as a gradient with an opacity fade instead of box-shadow: a box-shadow on an
+       element whose width animates is re-rasterized on EVERY frame on the B4 (large
+       blur radius = expensive) — that was the last big cost on expand. Opacity runs
+       on the compositor; when collapsed the border-r separates the bar from the content.
+       [contain:layout] above: per-frame layout recalculation stays strictly limited to the panel
+       (deliberately NO contain:paint — that would clip the profile flyout). -->
   <div class="absolute inset-y-0 -right-6 w-6 bg-gradient-to-r from-black/35 to-transparent pointer-events-none
               transition-opacity duration-300 {isExpanded ? 'opacity-100' : 'opacity-0'}" aria-hidden="true"></div>
 
-  <!-- LOGO + NAME (über dem Profil) — ausblendbar via Einstellung -->
+  <!-- LOGO + NAME (above the profile) — hideable via a setting -->
   {#if showLogo}
   <div class="w-full px-5 mb-5 flex items-center gap-3 select-none">
     <svg viewBox="0 0 512 512" class="w-11 h-11 shrink-0 drop-shadow">
@@ -98,7 +102,7 @@
   </div>
   {/if}
 
-  <!-- PROFIL-BUTTON -->
+  <!-- PROFILE BUTTON -->
   <button
     bind:this={profileButton}
     onclick={(e) => { e.stopPropagation(); showProfileMenu = !showProfileMenu; }}
@@ -120,7 +124,7 @@
     </div>
   </button>
 
-  <!-- PROFIL-DROPDOWN -->
+  <!-- PROFILE DROPDOWN -->
   {#if showProfileMenu && isExpanded}
     <div data-focus-trap class="absolute top-24 left-20 bg-gray-800 border border-gray-700 shadow-2xl
                 rounded-xl p-2 flex flex-col gap-1 z-[60] min-w-[220px]">
@@ -150,16 +154,19 @@
     </div>
   {/if}
 
-  <!-- NAV-BUTTONS — activeNavId ist $: reaktiv, Klasse wird korrekt aktualisiert -->
-  <!-- flex-1 + min-h-0 + overflow-y-auto: bei mehr Einträgen als Platz scrollt die Liste,
-       sodass auch der unterste Eintrag (z. B. Einstellungen) immer erreichbar bleibt. -->
-  <div class="w-full flex-1 min-h-0 overflow-y-auto hide-scrollbar flex flex-col gap-2 px-4 py-1">
+  <!-- NAV BUTTONS — activeNavId is $: reactive, the class is updated correctly -->
+  <!-- flex-1 + min-h-0 + overflow-y-auto: with more entries than space, the list scrolls
+       so even the bottom entry (e.g. Settings) always stays reachable. -->
+  <!-- py-2 + scroll-my-2 on the buttons: the focus ring (ring-4) extends beyond the button
+       box; without padding AND scroll-margin the ring gets clipped at the very first/last
+       entry once the list scrolls (scrollIntoView aligns the box flush with the edge). -->
+  <div class="w-full flex-1 min-h-0 overflow-y-auto hide-scrollbar flex flex-col gap-2 px-4 py-2">
     {#each navItems as navItem (navItem.id)}
       <button
         onclick={() => activate(navItem)}
         data-group-current={activeNavId === navItem.id ? '' : null}
         onfocus={(e) => e.currentTarget.scrollIntoView({ block: 'nearest' })}
-        class="w-full flex items-center gap-6 px-4 py-3.5 rounded-xl transition-colors focus:outline-none shrink-0
+        class="w-full flex items-center gap-6 px-4 py-3.5 rounded-xl transition-colors focus:outline-none shrink-0 scroll-my-2
                {activeNavId === navItem.id
                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 focus:ring-4 focus:ring-white'
                  : 'text-gray-400 hover:bg-gray-800 hover:text-white focus:bg-gray-800 focus:text-white focus:ring-4 focus:ring-white'}"

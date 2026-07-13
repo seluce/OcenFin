@@ -9,7 +9,11 @@
   </head>
   <body>
     <div id="app"></div>
-    <script charset="utf-8" src="webOSTV.js"></script>
+    <!-- LG's proprietary webOS library — served untouched from public/ as a classic
+         script (it defines window.webOS globals). vite-ignore tells Vite not to try
+         bundling it, which silences the "can't be bundled" build warning; Vite strips
+         the attribute from the output itself. -->
+    <script charset="utf-8" src="webOSTV.js" vite-ignore></script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

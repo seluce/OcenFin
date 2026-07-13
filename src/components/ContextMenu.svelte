@@ -2,21 +2,22 @@
   import { i18n } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, authHeaders } from '../utils.js';
   import { session } from '../session.svelte.js';
-  import { onMount, onDestroy } from 'svelte';
+  import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
+  import { onMount, onDestroy, untrack } from 'svelte';
 
   let { item, userId, selectedUser, onChanged, onOpenDetails, onAddToList, onAddToCollection, onClose } = $props();
 
-  // Lokale (optimistische) Zustände — werden beim Klick sofort umgeschaltet, damit
-  // Beschriftung/Icons im Menü die Änderung direkt zeigen. Initial aus dem Item.
-  let played    = $state(!!item?.UserData?.Played);
-  let favorite  = $state(!!item?.UserData?.IsFavorite);
-  let hasResume = $state((item?.UserData?.PlaybackPositionTicks || 0) > 0
-                  && item?.Type !== 'Series' && item?.Type !== 'Season');
+  // Local (optimistic) states — toggled immediately on click so the
+  // label/icons in the menu show the change directly. Initialized from the item.
+  let played    = $state(untrack(() => !!item?.UserData?.Played));
+  let favorite  = $state(untrack(() => !!item?.UserData?.IsFavorite));
+  let hasResume = $state(untrack(() => (item?.UserData?.PlaybackPositionTicks || 0) > 0
+                  && item?.Type !== 'Series' && item?.Type !== 'Season'));
 
-  // "Scharfschalten": Wird das Menü durch langes OK-Halten geöffnet, ist die Taste noch
-  // gedrückt. Wir nehmen Eingaben ERST nach dem Loslassen an (keyup bzw. pointerup) —
-  // egal wie lange gehalten wird —, damit die gehaltene Taste nicht den ersten Eintrag
-  // auslöst. Kein Timer (zu langes Halten würde sonst doch durchrutschen).
+  // "Arming": if the menu is opened by holding OK long, the key is still
+  // pressed. We only accept input AFTER release (keyup or pointerup) —
+  // no matter how long it's held — so the held key doesn't trigger the first entry.
+  // No timer (holding too long would otherwise still slip through).
   let armed = false;
   function arm() { armed = true; }
   onMount(() => {
@@ -42,11 +43,11 @@
   async function toggleWatched() {
     if (!armed) return;
     const next = !played;
-    played = next;                         // optimistisch umschalten
-    if (next) hasResume = false;           // als gesehen → kein Fortsetzen mehr
+    played = next;                         // toggle optimistically
+    if (next) hasResume = false;           // marked as watched → no more resume
     if (item.UserData) item.UserData.Played = next;
     await call(next ? 'POST' : 'DELETE', `/Users/${userId}/PlayedItems/${item.Id}`);
-    onChanged?.();                   // ERST nach dem Server-Write neu laden (sonst Race: Reload liest veraltete Daten)
+    onChanged?.();                   // reload only AFTER the server write (otherwise a race: reload reads stale data)
   }
   async function toggleFavorite() {
     if (!armed) return;
@@ -58,7 +59,7 @@
   }
   async function resetProgress() {
     if (!armed) return;
-    hasResume = false; played = false;     // raus aus "Weiterschauen"
+    hasResume = false; played = false;     // out of "Continue Watching"
     if (item.UserData) { item.UserData.Played = false; item.UserData.PlaybackPositionTicks = 0; }
     await call('DELETE', `/Users/${userId}/PlayedItems/${item.Id}`);
     onChanged?.();
@@ -66,32 +67,35 @@
   function openDetails() { if (!armed) return; onOpenDetails?.(item); onClose?.(); }
   function addToList()   { if (!armed) return; onAddToList?.(item); onClose?.(); }
   function addToCollection() { if (!armed) return; onAddToCollection?.(item); onClose?.(); }
-  // Sammlung nur zeigen, wenn das Profil das Recht hat (wie in Details/Player). Nur bei explizitem
-  // false ausblenden → fehlendes Feld/älterer Server: sichtbar + 403-Fallback in AddToPicker.
+  // Show collection only if the profile has the right (like in Details/Player). Hide only on an explicit
+  // false → missing field/older server: visible + 403 fallback in AddToPicker.
   const canManageCollections = $derived(selectedUser?.Policy?.EnableCollectionManagement !== false);
 
   function handleKeyDown(e) {
     if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); onClose?.(); }
   }
 
-  // Titel: bei Folgen "Serie · Folgentitel", sonst der Name
+  // Title: for episodes "Series · Episode title", otherwise the name
   let title = $derived(item?.SeriesName ? `${item.SeriesName} · ${item.Name}` : item?.Name);
 </script>
 
 <svelte:window onkeydowncapture={handleKeyDown} />
 
-<!-- Overlay -->
+<!-- Overlay: backdrop click-to-close is a pointer-only convenience; keyboard/remote users close via
+     the back key or by picking an action. A role/key handler on the backdrop would fight the focus trap. -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
 <div data-focus-trap class="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-center justify-center p-8"
      onclick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
 
   <div class="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden ring-1 ring-white/10">
-    <!-- Kopf -->
+    <!-- Header -->
     <div class="px-6 pt-6 pb-4 border-b border-white/10">
       <p class="text-xs uppercase tracking-wider text-gray-500 font-bold mb-1">{i18n.t.options}</p>
       <h2 class="text-xl font-bold text-white line-clamp-2">{title}</h2>
     </div>
 
-    <!-- Aktionen -->
+    <!-- Actions -->
     <div class="p-3 flex flex-col gap-1">
       <button onclick={toggleWatched} {@attach focusOnMount()}
         class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
@@ -109,6 +113,15 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"/>
         </svg>
         {favorite ? i18n.t.removeFavorite : i18n.t.addFavorite}
+      </button>
+
+      <button onclick={() => toggleWatchlist(item)}
+        class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
+               hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
+        <svg class="w-6 h-6 shrink-0 {inWatchlist(item.Id) ? 'text-blue-400' : 'text-gray-400'}" fill={inWatchlist(item.Id) ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"/>
+        </svg>
+        {inWatchlist(item.Id) ? i18n.t.removeFromWatchlist : i18n.t.addToWatchlist}
       </button>
 
       {#if hasResume}

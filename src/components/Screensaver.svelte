@@ -5,12 +5,12 @@
   import { onMount, onDestroy } from 'svelte';
 
   let {
-    use24h    = true,            // Zeitformat (aus Einstellung abgeleitet)
+    use24h    = true,            // time format (derived from the setting)
     mode      = 'clock',         // 'clock' | 'art'
     artSource = 'watched',       // 'watched' | 'unwatched' | 'random'
-    brightness = 0.45,           // Art-Mode-Helligkeit (0.45 gedimmt = OLED-Standard)
+    brightness = 0.45,           // art-mode brightness (0.45 dimmed = OLED default)
     userId    = '',
-    onDismiss,                   // Callback-Prop (statt 'dismiss'-Event)
+    onDismiss,                   // callback prop (instead of a 'dismiss' event)
   } = $props();
 
   let timeString = $state(''), dateString = $state('');
@@ -24,32 +24,32 @@
     dateString = now.toLocaleDateString(loc, { weekday: 'long', day: 'numeric', month: 'long' });
   }
 
-  // ── UHR-MODUS ──────────────────────────────────────────────────────────────
-  // Nicht gleiten, sondern sanft ausblenden → unsichtbar an neue Stelle → einblenden.
-  // OLED-Best-Practice: ein statisches Element muss seine Pixel regelmäßig verschieben,
-  // bevor Einbrennen droht. Ein Wechsel alle ~45 s schützt zuverlässig, ohne durch zu
-  // häufiges Blinken zu stören (Pixel-Shift-Logik wie bei TV-eigenen Schonern).
-  const CLOCK_FIRST_MOVE = 20000;   // erster Wechsel nach 20 s
-  const CLOCK_INTERVAL   = 45000;   // danach alle 45 s
+  // ── CLOCK MODE ─────────────────────────────────────────────────────────────
+  // Don't glide, but fade out gently → move invisibly to a new spot → fade in.
+  // OLED best practice: a static element must shift its pixels regularly
+  // before burn-in threatens. A change every ~45 s protects reliably without disturbing
+  // through too frequent blinking (pixel-shift logic like the TV's own screensavers).
+  const CLOCK_FIRST_MOVE = 20000;   // first change after 20 s
+  const CLOCK_INTERVAL   = 45000;   // then every 45 s
   let posX = $state(30), posY = $state(35), clockOn = $state(true);
-  let clockMoveTimeout = null;   // einziger Timer, der bisher NICHT im onDestroy geräumt wurde
+  let clockMoveTimeout = null;   // the only timer not yet cleaned up in onDestroy
   function moveClock() {
-    clockOn = false;                          // ausblenden
+    clockOn = false;                          // fade out
     clockMoveTimeout = setTimeout(() => {
-      posX = 12 + Math.random() * 76;         // unsichtbar an neue Stelle setzen
+      posX = 12 + Math.random() * 76;         // move invisibly to a new spot
       posY = 16 + Math.random() * 64;
-      clockOn = true;                         // wieder einblenden
+      clockOn = true;                         // fade back in
     }, 1200);
   }
 
-  // ── ART-MODUS ──────────────────────────────────────────────────────────────
-  let artlist  = [];                          // [{ url, title }] — interne Daten (nicht im Template)
-  let slots    = $state([{ url: '', title: '', logo: null }, { url: '', title: '', logo: null }]);  // zwei Crossfade-Ebenen
-  let front    = $state(0);                   // sichtbare Ebene
+  // ── ART MODE ───────────────────────────────────────────────────────────────
+  let artlist  = [];                          // [{ url, title }] — internal data (not in the template)
+  let slots    = $state([{ url: '', title: '', logo: null }, { url: '', title: '', logo: null }]);  // two crossfade layers
+  let front    = $state(0);                   // visible layer
   let artIdx   = 0;
-  let artReady = $state(false);               // true → Backdrops anzeigen statt Uhr-Fallback
+  let artReady = $state(false);               // true → show backdrops instead of the clock fallback
 
-  // Titel-Logo (Schriftzug) des Films/der Serie — wie im Hero-Banner. maxHeight fürs Vollbild etwas größer.
+  // Title logo (lettering) of the movie/series — like in the hero banner. maxHeight a bit larger for fullscreen.
   const logoUrl = (id, tag) => `${session.serverUrl}/Items/${id}/Images/Logo?tag=${tag}&maxHeight=240&quality=90&format=webp&ApiKey=${session.token}`;
 
   async function fetchBackdrops(filter) {
@@ -69,8 +69,8 @@
       }));
   }
 
-  // Next Up = nächste Folge laufender Serien → für "aktuell". Liefert Episoden; gezeigt wird das
-  // SERIEN-Backdrop (über SeriesId + geerbte ParentBackdropImageTags) mit dem Serientitel.
+  // Next Up = the next episode of ongoing series → for "current". Returns episodes; shown is the
+  // SERIES backdrop (via SeriesId + inherited ParentBackdropImageTags) with the series title.
   async function fetchNextUp() {
     const url = `${session.serverUrl}/Shows/NextUp?UserId=${userId}&Limit=40&Fields=ParentBackdropImageTags`
               + `&ImageTypeLimit=1&EnableImageTypes=Backdrop,Logo&EnableTotalRecordCount=false`;
@@ -100,26 +100,26 @@
     try {
       let list;
       if (artSource === 'watched') {
-        // "Gesehen / aktuell" = laufende Serien (Next Up) + angefangene Titel (Resume) + komplett
-        // Gesehenes, zusammengeführt. Reihenfolge priorisiert das Aktuelle, dedupliziert per Id.
+        // "Watched / current" = ongoing series (Next Up) + started titles (Resume) + fully
+        // watched, merged. The order prioritizes the current, deduplicated by ID.
         const [nextUp, resuming, played] = await Promise.all([
           fetchNextUp(),
           fetchBackdrops('&Filters=IsResumable'),
           fetchBackdrops('&Filters=IsPlayed'),
         ]);
-        // Reihenfolge priorisiert das Aktuelle; Deduplizierung erledigt der universelle Pass unten.
+        // The order prioritizes the current; deduplication is done by the universal pass below.
         list = [...nextUp, ...resuming, ...played];
       } else if (artSource === 'unwatched') {
         list = await fetchBackdrops('&Filters=IsUnplayed');
       } else {
         list = await fetchBackdrops('');
       }
-      // Über ALLE Quellen hinweg per Id deduplizieren: dieselbe Serie / derselbe Film taucht nie
-      // doppelt in der Rotation auf (das erste, höher priorisierte Vorkommen bleibt).
+      // Deduplicate by ID across ALL sources: the same series / the same movie never appears
+      // twice in the rotation (the first, higher-prioritized occurrence stays).
       const seen = new Set();
       list = list.filter(x => x.id && !seen.has(x.id) && seen.add(x.id));
-      // Mischen für abwechslungsreiche Reihenfolge. KEIN Auffüllen mit Zufallstiteln — die Auswahl
-      // (gesehen/ungesehen) wird strikt respektiert; ist sie leer → Uhr-Fallback.
+      // Shuffle for a varied order. NO topping up with random titles — the selection
+      // (watched/unwatched) is respected strictly; if it's empty → clock fallback.
       shuffle(list);
       artlist = list;
     } catch {
@@ -129,12 +129,12 @@
 
   function preload(u) { if (u) { const im = new Image(); im.src = u; } }
 
-  // Backdrop i in die verdeckte Ebene legen und diese nach vorn blenden (CSS-Opacity).
+  // Put backdrop i into the hidden layer and fade that to the front (CSS opacity).
   function applyArt(i) {
     if (!artlist.length) return;
     const item = artlist[i % artlist.length];
     const back = front === 0 ? 1 : 0;
-    slots[back] = item;   // Deep Reactivity: Mutation reicht (kein "slots = slots" mehr nötig)
+    slots[back] = item;   // deep reactivity: mutation is enough (no more "slots = slots" needed)
     front = back;
   }
 
@@ -145,9 +145,9 @@
     if (mode === 'art') {
       await loadArt();
       if (artlist.length) {
-        // Erstes Backdrop vorladen und erst danach auf Art-Mode umschalten. Bis dahin zeigt sich die
-        // Uhr als ruhiger Platzhalter (kein „nackter Titel über Schwarz"); dann blendet das Bild aus
-        // dem Cache sofort ein. Das verkürzt nicht die Netzwerkzeit, lässt sie aber gewollt wirken.
+        // Preload the first backdrop and only then switch to art mode. Until then the clock shows
+        // as a calm placeholder (no "bare title over black"); then the image from the cache
+        // fades in immediately. This doesn't shorten the network time but makes it feel intentional.
         const startArt = () => {
           if (artReady || destroyed) return;
           clearTimeout(firstArtTimeout);
@@ -157,9 +157,9 @@
           preload(artlist[1]?.url);
           const tick = () => {
             if (artIdx + 1 >= artlist.length) {
-              // Alle Backdrops einmal gezeigt → Wiederholungsrunde neu mischen, damit nicht
-              // dieselbe Reihenfolge 1:1 wiederkehrt. Danach sicherstellen, dass nicht ausgerechnet
-              // das gerade gezeigte Bild direkt wieder an Position 0 landet (kein Sofort-Doppel).
+              // All backdrops shown once → reshuffle the repeat round so the
+              // same order doesn't recur 1:1. Then make sure the just-shown image
+              // doesn't land right back at position 0 (no immediate double).
               const lastShown = artlist[artIdx];
               shuffle(artlist);
               if (artlist.length > 1 && artlist[0] === lastShown) [artlist[0], artlist[1]] = [artlist[1], artlist[0]];
@@ -175,15 +175,15 @@
         };
         const pre = new Image();
         pre.onload = startArt;
-        pre.onerror = startArt;          // trotzdem starten – das DOM-<img> versucht es erneut
+        pre.onerror = startArt;          // start anyway – the DOM <img> retries
         pre.src = artlist[0].url;
-        firstArtTimeout = setTimeout(startArt, 4000);   // Sicherheitsnetz, falls der Preload hängt
-        return;                          // Uhr läuft als Platzhalter, bis das erste Bild da ist
+        firstArtTimeout = setTimeout(startArt, 4000);   // safety net in case the preload hangs
+        return;                          // the clock runs as a placeholder until the first image is there
       }
-      // keine Backdrops verfügbar → Uhr-Fallback (unten)
+      // no backdrops available → clock fallback (below)
     }
 
-    // Uhr-Modus (auch Fallback)
+    // Clock mode (also fallback)
     firstMove = setTimeout(moveClock, CLOCK_FIRST_MOVE);
     moveTimer = setInterval(moveClock, CLOCK_INTERVAL);
   });
@@ -203,12 +203,15 @@
 
 </script>
 
-<!-- Schwarzer Grund schont OLED; im Art-Modus stark abgedunkelte Backdrops im Crossfade. -->
-<div class="fixed inset-0 bg-black z-[500] cursor-none select-none overflow-hidden"
+<!-- Black background protects OLED; in art mode strongly darkened backdrops in a crossfade. -->
+<!-- Presentational full-screen overlay: it grabs focus and dismisses on ANY input (click/key/pointer);
+     keyboard dismiss is already wired via onkeydown. It's an exit surface, not a control to navigate to. -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="fixed inset-0 bg-black z-[700] cursor-none select-none overflow-hidden"
      onclick={dismiss} onkeydown={dismiss} onpointermove={(e) => { if (e.target === e.currentTarget) dismiss(); }} tabindex="-1">
 
   {#if useArt}
-    <!-- Zwei Ebenen für sanftes Überblenden -->
+    <!-- Two layers for a smooth crossfade -->
     {#each slots as slot, i}
       <div class="absolute inset-0 ss-fade pointer-events-none" style="opacity:{front === i ? 1 : 0}">
         {#if slot.url}
@@ -216,10 +219,10 @@
         {/if}
       </div>
     {/each}
-    <!-- Abdunkelung + Verlauf unten (Lesbarkeit + Panelschutz) -->
+    <!-- Darkening + gradient at the bottom (legibility + panel protection) -->
     <div class="absolute inset-0 pointer-events-none"
          style="background: linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.3) 38%, rgba(0,0,0,0.55) 100%)"></div>
-    <!-- Titel + Uhr unten -->
+    <!-- Title + clock at the bottom -->
     <div class="absolute bottom-0 left-0 right-0 p-12 pointer-events-none ss-fade">
       {#if slots[front].logo}
         <img src={slots[front].logo} alt={slots[front].title} class="max-h-[18vh] max-w-[55%] object-contain object-left drop-shadow-lg" />
@@ -230,7 +233,7 @@
     </div>
 
   {:else}
-    <!-- UHR-MODUS: blendet weg und erscheint an neuer Stelle -->
+    <!-- CLOCK MODE: fades away and reappears at a new spot -->
     <div class="absolute pointer-events-none ss-clock" style="left:{posX}%; top:{posY}%; opacity:{clockOn ? 1 : 0}">
       <p class="text-gray-300 font-thin tabular-nums text-center" style="font-size: clamp(3rem, 8vw, 7rem); letter-spacing:0.15em">{timeString}</p>
       <p class="text-gray-400 text-center text-2xl font-light mt-1 tracking-wider">{dateString}</p>

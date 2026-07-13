@@ -121,12 +121,16 @@ export default {
     markUnwatched: "Marquer comme non vu",
     addFavorite: "Ajouter aux favoris",
     removeFavorite: "Retirer des favoris",
+    watchlist: "Ma liste",
+    addToWatchlist: "Ajouter à ma liste",
+    removeFromWatchlist: "Retirer de ma liste",
     resetProgress: "Réinitialiser la progression",
     openDetails: "Ouvrir les détails",
     options: "Options",
     moreFromSeason: "Plus de",
     trailer: "Bande-annonce",
     similar: "Similaire",
+    extras: "Bonus",
     seasons: "Saisons",
     audio: "Audio",
     subtitles: "Sous-titres",
@@ -135,6 +139,8 @@ export default {
     mins: "min",
 
     // Player
+    unknown: "Inconnu",
+    source: "Source",
     playback: "Lecture",
     prevEpisode: "Épisode précédent",
     nextEpisode: "Épisode suivant",
@@ -318,6 +324,7 @@ export default {
     // Quick Connect
     quickConnect: "Quick Connect",
     qcInstruction: "Saisissez ce code dans votre application Jellyfin (téléphone/web) sous « Quick Connect » :",
+    qcQrHint: "Scannez avec un téléphone connecté à Jellyfin.",
     qcCancel: "Annuler",
     qcAuthInstruction: "Saisissez un code à 6 chiffres depuis un autre appareil pour l'autoriser :",
     qcAuthorizeBtn: "Autoriser l'appareil",
@@ -374,13 +381,15 @@ export default {
     clear: "Effacer",
     logShow: "Afficher le journal",
     logShowDesc: "Consulter, copier ou partager les journaux actuels via un QR code.",
+    helpFaq: "Aide et FAQ",
+    helpFaqHint: "Scannez avec votre téléphone pour ouvrir le wiki et la FAQ d'OcenFin.",
     logTitle: "Journal",
     logEmpty: "Aucune entrée pour le moment.",
     logQrButton: "QR code",
     logQrHint: "Scannez avec votre téléphone pour transférer les dernières lignes (par e-mail par ex.).",
     logBackToText: "Retour au texte",
 
-    // Untertitel-Styling (nur Text)
+    // Subtitle styling (text only)
     subtitleColor: "Couleur",
     subtitleEdge: "Bord",
     subtitleBackground: "Fond",
@@ -397,14 +406,14 @@ export default {
     bgSemi: "Semi",
     bgSolid: "Plein",
 
-    // Teilen
+    // Share
     share: "Partager",
     shareHint: "Scannez avec votre téléphone pour consulter ou partager le titre.",
 
-    // Untertitel-Versatz
+    // Subtitle offset
     subtitleOffset: "Décalage",
 
-    // Kennwort anzeigen/verbergen
+    // Show/hide password
     showPassword: "Afficher le mot de passe",
     hidePassword: "Masquer le mot de passe",
 

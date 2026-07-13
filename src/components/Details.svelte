@@ -1,6 +1,7 @@
 <script>
   import { i18n, LANGUAGES } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro } from '../utils.js';
+  import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
+  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
@@ -9,39 +10,40 @@
     item,
     selectedUser,
     playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default' },
-    use24h = true,              // Zeitformat für den „Endet um"-Chip (folgt der Einstellung)
-    serverVobSub = false,       // Server liefert VobSub/DVD extern (.mks, Jellyfin 12.0+)?
-    spoilerProtection = true,   // ungesehene Folgen-Thumbnails leicht verschleiern
-    detailsBackdrop = true,     // Hero-Backdrop auf der Detailseite zeigen (eigener Schalter, von reduceAnimations entkoppelt)
-    detailsLogo = false,        // Titel als Logo-Grafik statt Text (Rückfall auf Text, wenn kein Logo vorhanden)
-    onClose, onLibChanged, onOpenItemById, onOpenPerson, onPlayVideo,   // Callback-Props (statt Events)
+    use24h = true,              // time format for the "ends at" chip (follows the setting)
+    serverVobSub = false,       // does the server deliver VobSub/DVD externally (.mks, Jellyfin 12.0+)?
+    spoilerProtection = true,   // slightly obscure thumbnails of unwatched episodes
+    detailsBackdrop = true,     // show the hero backdrop on the detail page (own toggle, decoupled from reduceAnimations)
+    detailsLogo = false,        // title as a logo graphic instead of text (falls back to text if no logo exists)
+    onClose, onLibChanged, onOpenItemById, onOpenPerson, onPlayVideo,   // callback props (instead of events)
   } = $props();
 
   let fullItem     = $state(null);
   let relatedItems = $state([]);
   let similarItems = $state([]);
+  let extras       = $state([]);   // special features (making-ofs, deleted scenes, …)
   let isLoading    = $state(true);
 
   let selectedAudioIndex    = $state(-1);
   let selectedSubtitleIndex = $state(-1);
-  let selectedMediaSourceId = $state(null);   // gewählte Version (FullHD/4K …), wenn mehrere existieren
+  let selectedMediaSourceId = $state(null);   // chosen version (FullHD/4K …), when several exist
 
-  // aktuell gewählte Quelle (für Stream-Infos, Audio-/Untertitelspuren)
+  // currently chosen source (for stream info, audio/subtitle tracks)
   let selectedSource = $derived(
     fullItem?.MediaSources?.find(s => s.Id === selectedMediaSourceId)
     || fullItem?.MediaSources?.[0] || null
   );
 
-  // Label für die Auflösungsauswahl, z. B. "4K HEVC" / "1080p HEVC"
+  // Label for the resolution selection, e.g. "4K HEVC" / "1080p HEVC"
   function sourceLabel(src) {
     const v = (src?.MediaStreams || []).find(s => s.Type === 'Video');
     const h = v?.Height || 0;
     const res = h >= 2160 ? '4K' : h >= 1080 ? '1080p' : h >= 720 ? '720p' : (h ? h + 'p' : '');
     const codec = (v?.Codec || '').toUpperCase();
-    return [res, codec].filter(Boolean).join(' ') || src?.Name || 'Quelle';
+    return [res, codec].filter(Boolean).join(' ') || src?.Name || i18n.t.source;
   }
 
-  // Standard-Audio/-Untertitel für eine Quelle wählen (Präferenzen + Server-Defaults)
+  // Choose default audio/subtitle for a source (preferences + server defaults)
   function applySourceDefaults(src) {
     const streams = src?.MediaStreams || [];
     selectedAudioIndex = -1;
@@ -61,23 +63,23 @@
     }
   }
 
-  // Bei Wechsel der Auflösung/Version: Spuren neu auf die Standardwerte der Quelle setzen
+  // On resolution/version change: reset the tracks to the source's default values
   function onSourceChange() {
     const src = fullItem?.MediaSources?.find(s => s.Id === selectedMediaSourceId);
     if (src) applySourceDefaults(src);
   }
 
-  // ---- Eigene Dropdowns (Auflösung/Audio/Untertitel) ------------------------------------------
-  // Native <select> friert auf webOS beim Zurück-Knopf ein → D-Pad-taugliche Eigenbau-Dropdowns.
+  // ---- Custom dropdowns (resolution/audio/subtitle) -------------------------------------------
+  // A native <select> freezes on webOS on the back button → D-pad-capable custom dropdowns.
   let openDropdown = $state(null);     // 'resolution' | 'audio' | 'subtitle'
-  let openTrigger  = null;     // Auslöser-Button (DOM-Ref; Fokus kehrt beim Schließen dorthin zurück)
+  let openTrigger  = null;     // trigger button (DOM ref; focus returns there on close)
 
   async function toggleDropdown(key, e) {
     if (openDropdown === key) { openDropdown = null; openTrigger = null; return; }
     openDropdown = key;
     openTrigger  = e.currentTarget;
-    // Fokus auf das aktive (blau hinterlegte) Element legen, sonst auf die erste Option —
-    // intuitiver, als jedes Mal ganz oben zu starten.
+    // Put focus on the active (blue-highlighted) element, otherwise on the first option —
+    // more intuitive than starting at the very top every time.
     const panel = e.currentTarget.closest('[data-dropdown]');
     await tick();
     const active = panel?.querySelector('[data-opt][data-active="true"]');
@@ -89,46 +91,46 @@
     if (refocus) t?.focus();
   }
   function onDropdownBack(e) {
-    // Zurück schließt nur das offene Dropdown — nicht die Detailansicht.
+    // Back closes only the open dropdown — not the detail view.
     if (openDropdown && isBackKey(e)) { e.preventDefault(); e.stopPropagation(); closeDropdown(); }
   }
   function onDropdownOutside(e) {
-    // Klick mit der Magic-Remote außerhalb des Dropdowns schließt es (wie ein normales Dropdown).
+    // A Magic Remote click outside the dropdown closes it (like a normal dropdown).
     if (openDropdown && !e.target.closest('[data-dropdown]')) closeDropdown(false);
   }
   onMount(()   => { window.addEventListener('keydown', onDropdownBack, true); window.addEventListener('click', onDropdownOutside); });
   onDestroy(() => { window.removeEventListener('keydown', onDropdownBack, true); window.removeEventListener('click', onDropdownOutside); });
 
-  // Anzeige-Labels für die Trigger-Buttons
-  function audioLabel(s)    { return s ? (s.DisplayTitle || `${s.Language || 'Unbekannt'} – ${s.Codec}`) : ''; }
-  function subtitleLabel(s) { return s ? (s.DisplayTitle || s.Language || 'Unbekannt') : ''; }
+  // Display labels for the trigger buttons
+  function audioLabel(s)    { return s ? (s.DisplayTitle || `${s.Language || i18n.t.unknown} – ${s.Codec}`) : ''; }
+  function subtitleLabel(s) { return s ? (s.DisplayTitle || s.Language || i18n.t.unknown) : ''; }
 
-  // ---- Zur Sammlung / Wiedergabeliste hinzufügen ----------------------------------------------
-  // Der Dialog selbst liegt in der gemeinsamen Komponente <AddToPicker>; hier nur der Schalter.
+  // ---- Add to collection / playlist -----------------------------------------------------------
+  // The dialog itself lives in the shared component <AddToPicker>; here only the trigger.
   let pickerMode = $state(null);   // null | 'collection' | 'playlist'
 
-  // Trailer-Modal
+  // Trailer modal
   let trailerEmbedUrl = $state(null);
-  let showMediaInfo   = $state(false);   // Medieninformationen-Modal
-  let mediaInfoScroll = $state();           // Scroll-Container des Modals (bind:this, für D-Pad-Scrollen)
+  let showMediaInfo   = $state(false);   // media info modal
+  let mediaInfoScroll = $state();           // the modal's scroll container (bind:this, for D-pad scrolling)
 
-  // Teilen: QR-Code mit öffentlichem Titel-Link (IMDb/TMDb) — jeder kann ihn scannen, kein Serverzugang nötig.
+  // Share: QR code with a public title link (IMDb/TMDb) — anyone can scan it, no server access needed.
   let showShare = $state(false);
-  let kebabBtnEl = $state();                 // Drei-Punkte-Button (bind:this, immer im DOM)
-  const shareFocus = makeFocusReturn();   // Fokus-Rückgabe nach Schließen des Teilen-Modals
-  // Dieselbe Rückgabe für Medieninfos + Playlist/Sammlung-Picker (nie gleichzeitig offen): ohne sie
-  // fiel der Fokus nach dem Schließen auf den Body → die Navigation fing ihn ab (Teilen war korrekt,
-  // die anderen drei nicht). Jetzt landet er wieder auf dem Drei-Punkte-Button.
+  let kebabBtnEl = $state();                 // three-dots button (bind:this, always in the DOM)
+  const shareFocus = makeFocusReturn();   // focus return after closing the share modal
+  // The same return for media info + playlist/collection picker (never open at once): without it
+  // focus fell to the body after closing → the navigation caught it (share was correct,
+  // the other three weren't). Now it lands back on the three-dots button.
   const menuReturn = makeFocusReturn();
-  // Darf dieses Profil Sammlungen verwalten? Policy.EnableCollectionManagement kommt mit dem
-  // Login-User mit. Bewusst nur bei explizitem false ausblenden: fehlt das Feld (älterer Server),
-  // bleibt der Eintrag sichtbar und der 403-Fallback in AddToPicker greift. Admins haben true.
+  // May this profile manage collections? Policy.EnableCollectionManagement comes with the
+  // login user. Deliberately hide only on an explicit false: if the field is missing (older server),
+  // the entry stays visible and the 403 fallback in AddToPicker kicks in. Admins have true.
   const canManageCollections = $derived(selectedUser?.Policy?.EnableCollectionManagement !== false);
-  // Nach dem Schließen des Teilen-Modals den Fokus zurück auf die drei Punkte legen.
+  // After closing the share modal, put focus back on the three dots.
   $effect(() => { if (!showShare && shareFocus.pending) shareFocus.restore(); });
   $effect(() => { if (!showMediaInfo && !pickerMode && menuReturn.pending) menuReturn.restore(); });
   let shareQrSvg = $state(null);
-  // Öffentlicher Link (IMDb/TMDb) eines Items — oder null, wenn keine eigene ID vorhanden.
+  // Public link (IMDb/TMDb) of an item — or null if no own ID exists.
   function buildShareUrl(item) {
     const p = item?.ProviderIds || {};
     if (p.Imdb) return `https://www.imdb.com/title/${p.Imdb}/`;
@@ -136,7 +138,7 @@
       return `https://www.themoviedb.org/${item.Type === 'Series' ? 'tv' : 'movie'}/${p.Tmdb}`;
     return null;
   }
-  // Titel als lesbarer Fallback (Scan zeigt den Namen zum Nachschlagen, nie ein toter Link).
+  // Title as a readable fallback (a scan shows the name to look up, never a dead link).
   function shareTitleText(item) {
     return item?.ProductionYear ? `${item.Name} (${item.ProductionYear})` : (item?.Name || '');
   }
@@ -146,16 +148,16 @@
     shareQrSvg = null;
     try {
       let target = buildShareUrl(fullItem);
-      // Kein eigener öffentlicher Link (z.B. Staffel/Episode ohne ID) → auf den Serien-Link ausweichen.
+      // No own public link (e.g. season/episode without an ID) → fall back to the series link.
       if (!target && fullItem.SeriesId) {
         try {
           const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${fullItem.SeriesId}?Fields=ProviderIds`, { headers: getAuthHeaders() });
           if (res.ok) target = buildShareUrl(await res.json());
-        } catch { /* Serie nicht erreichbar → Titel-Fallback unten */ }
+        } catch { /* series unreachable → title fallback below */ }
       }
       target = target || shareTitleText(fullItem);
-      const { renderSVG } = await import('uqr');   // dynamisch geladen, zero-dependency
-      shareQrSvg = renderSVG(target || ' ', { ecc: 'M', border: 1 });   // Vektor statt PNG → gestochen scharf
+      const { renderSVG } = await import('uqr');   // dynamically loaded, zero-dependency
+      shareQrSvg = renderSVG(target || ' ', { ecc: 'M', border: 1 });   // vector instead of PNG → razor sharp
     } catch (e) { console.warn('[OcenFin] share QR failed', e); }
   }
 
@@ -171,7 +173,7 @@
     return `${(bps / 1000000).toFixed(1)} Mbit/s`;
   }
 
-  const YOUTUBE_APP_ID = 'youtube.leanback.v4';   // LG webOS YouTube-App
+  const YOUTUBE_APP_ID = 'youtube.leanback.v4';   // LG webOS YouTube app
 
   function openTrailer() {
     if (!fullItem?.RemoteTrailers?.length) return;
@@ -179,20 +181,20 @@
     const match   = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([^&?\s]{11})/);
     const videoId = match ? match[1] : null;
 
-    // Auf dem TV: native YouTube-App starten. Embeds scheitern auf WebOS an der Referer-/
-    // Plattform-Beschränkung (Fehler 153) — so macht es auch LiteFin/Jellyfin-webOS.
+    // On the TV: launch the native YouTube app. Embeds fail on webOS due to the referer/
+    // platform restriction (error 153) — LiteFin/Jellyfin-webOS do it the same way.
     if (videoId && window.webOS?.service?.request) {
       window.webOS.service.request('luna://com.webos.applicationManager', {
         method: 'launch',
         parameters: { id: YOUTUBE_APP_ID, params: { contentTarget: `v=${videoId}` } },
-        onFailure: () => {   // App nicht vorhanden o. Ä. → Embed als Notlösung
+        onFailure: () => {   // app not present etc. → embed as a fallback
           trailerEmbedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&playsinline=1&modestbranding=1`;
         },
       });
-      return;   // YouTube-App übernimmt; kein App-internes Modal nötig
+      return;   // the YouTube app takes over; no in-app modal needed
     }
 
-    // Browser/Entwicklung (kein webOS) oder keine YouTube-URL → wie bisher per Overlay.
+    // Browser/development (no webOS) or no YouTube URL → via overlay as before.
     if (videoId) {
       trailerEmbedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&playsinline=1&modestbranding=1`;
     } else {
@@ -200,11 +202,11 @@
     }
   }
 
-  // Besetzung: Schauspieler (max. 20) aus den People-Daten
+  // Cast: actors (max. 20) from the People data
   let castMembers = $derived((fullItem?.People || []).filter(p => p.Type === 'Actor').slice(0, 20));
 
-  // Findet den Index des ersten Streams (Audio/Subtitle), dessen Sprache zur Präferenz passt.
-  // Gibt null zurück wenn keine Präferenz gesetzt ('default') oder kein Treffer.
+  // Finds the index of the first stream (audio/subtitle) whose language matches the preference.
+  // Returns null if no preference is set ('default') or there's no match.
   function matchLanguageStream(streams, type, prefKey) {
     if (!prefKey || prefKey === 'default') return null;
     const lang = LANGUAGES.find(l => l.key === prefKey);
@@ -215,20 +217,20 @@
     return match ? match.Index : null;
   }
 
-  // Wie Jellyfin im Standardmodus: erzwungenen ("Forced") Untertitel in der Sprache der
-  // gewählten Audiospur einblenden. Automatisch wählbar sind: TEXT (VTT) immer; PGS, wenn
-  // clientseitiges Rendern an ist (libbitsub → Direct Play); VobSub/DVD ebenso, SOBALD der
-  // Server sie als .mks liefert (Jellyfin 12.0+) → dann ebenfalls Direct Play. Auf älteren
-  // Servern greift für DVD nur die Opt-out-Option (dann bewusst mit Transcode/Brennen).
+  // Like Jellyfin in default mode: show a forced ("Forced") subtitle in the language of the
+  // chosen audio track. Auto-selectable are: TEXT (VTT) always; PGS, when
+  // client-side rendering is on (libbitsub → Direct Play); VobSub/DVD likewise, AS SOON AS the
+  // server delivers them as .mks (Jellyfin 12.0+) → then also Direct Play. On older
+  // servers only the opt-out option applies for DVD (then deliberately with transcode/burn-in).
   const GRAPHIC_SUB_CODECS = ['pgssub', 'pgs', 'dvdsub', 'dvbsub', 'vobsub', 'sub'];
   function isGraphicSub(s) { return GRAPHIC_SUB_CODECS.includes((s?.Codec || '').toLowerCase()); }
   function subtitleAutoEligible(s) {
-    if (!isGraphicSub(s)) return true;                                  // Text → immer
-    if (playbackPrefs.pgsRendering === false) return false;            // Bild-Rendern global aus
+    if (!isGraphicSub(s)) return true;                                  // text → always
+    if (playbackPrefs.pgsRendering === false) return false;            // graphic rendering globally off
     const codec = (s?.Codec || '').toLowerCase();
-    if (['pgssub', 'pgs'].includes(codec)) return true;               // PGS → clientseitig (Direct Play)
-    if (serverVobSub) return true;                                    // VobSub/DVD via .mks → clientseitig (Direct Play)
-    return !!playbackPrefs.forcedGraphicSubs;                          // alter Server: nur per Option (gebrannt)
+    if (['pgssub', 'pgs'].includes(codec)) return true;               // PGS → client-side (Direct Play)
+    if (serverVobSub) return true;                                    // VobSub/DVD via .mks → client-side (Direct Play)
+    return !!playbackPrefs.forcedGraphicSubs;                          // old server: only via the option (burned in)
   }
   function pickForcedSubtitle(streams, audioIndex, serverDefault) {
     const audioLang = streams.find(s => s.Type === 'Audio' && s.Index === audioIndex)?.Language?.toLowerCase();
@@ -249,14 +251,14 @@
 
   const getAuthHeaders = () => authHeaders(session.token);
 
-  // Stale-Guard (Muster wie in Suche/Library): Die Breadcrumb-Navigation (Folge → Serie → Staffel)
-  // wechselt das Item schnell hintereinander — nur Antworten zur JÜNGSTEN Anfrage dürfen
-  // fullItem/relatedItems/similarItems schreiben, sonst überschreibt eine langsame alte Antwort
-  // die neue Ansicht.
+  // Stale guard (pattern like in Search/Library): the breadcrumb navigation (episode → series → season)
+  // switches the item quickly in succession — only responses to the MOST RECENT request may
+  // write fullItem/relatedItems/similarItems, otherwise a slow old response overwrites
+  // the new view.
   let detailToken = 0;
 
-  // Reaktiv: lädt neu, sobald sich die 'item'-Prop ändert. untrack(), damit der Effect NUR auf
-  // item reagiert — nicht auf Stores/User, die loadFullDetails intern synchron liest.
+  // Reactive: reloads as soon as the 'item' prop changes. untrack() so the effect reacts ONLY to
+  // item — not to stores/user that loadFullDetails reads synchronously internally.
   $effect(() => { const id = item?.Id; if (id) untrack(() => loadFullDetails(id)); });
 
   async function loadFullDetails(itemId) {
@@ -265,6 +267,7 @@
     fullItem     = null;
     relatedItems = [];
     similarItems = [];
+    extras = [];
     selectedAudioIndex    = -1;
     selectedSubtitleIndex = -1;
     selectedMediaSourceId = null;
@@ -276,22 +279,23 @@
       );
       if (res.ok) {
         const data = await res.json();
-        if (myToken !== detailToken) return;   // inzwischen anderes Item geöffnet → verwerfen
+        if (myToken !== detailToken) return;   // a different item was opened meanwhile → discard
         fullItem = data;
 
         if (fullItem.MediaSources?.length > 0) {
           const src = fullItem.MediaSources[0];
-          selectedMediaSourceId = src.Id;   // erste Version vorwählen
+          selectedMediaSourceId = src.Id;   // preselect the first version
           applySourceDefaults(src);
         }
 
-        // Parallel laden
-        // "Ähnliches" für Staffel/Episode über die SERIE abfragen (sonst liefert der Server
-        // ähnliche Staffeln verschiedener Serien). Bei einer Serie direkt deren ID.
+        // Load in parallel
+        // Query "similar" for season/episode via the SERIES (otherwise the server returns
+        // similar seasons of different series). For a series, its ID directly.
         const similarId = (fullItem.Type === 'Season' || fullItem.Type === 'Episode')
           ? (fullItem.SeriesId || itemId)
           : itemId;
         loadSimilarItems(similarId, myToken);
+        loadExtras(itemId, myToken);
         if (fullItem.Type === 'Episode' && fullItem.SeasonId) {
           loadRelatedItems(fullItem.SeasonId, myToken);
         } else if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
@@ -299,8 +303,20 @@
         }
       }
     } catch (e) { console.error(e); }
-    // Spinner nur löschen, wenn wir noch aktuell sind — sonst killt eine alte Antwort den der neuen.
+    // Only clear the spinner if we're still current — otherwise an old response kills the new one's.
     finally     { if (myToken === detailToken) isLoading = false; }
+  }
+
+  // Extras / special features of the opened item (movie, series or season).
+  // NOTE: the endpoint returns a DIRECT array (like /Items/Latest), not { Items }.
+  async function loadExtras(itemId, myToken) {
+    try {
+      const res = await fetch(
+        `${session.serverUrl}/Items/${itemId}/SpecialFeatures?userId=${selectedUser.Id}`,
+        { headers: getAuthHeaders() }
+      );
+      if (res.ok) { const d = await res.json(); if (myToken !== detailToken) return; extras = Array.isArray(d) ? d : (d.Items || []); }
+    } catch { /* extras are optional */ }
   }
 
   async function loadSimilarItems(itemId, myToken) {
@@ -334,7 +350,7 @@
         if (data.Items?.length > 0) {
           onPlayVideo?.({ item: data.Items[0], audioIndex: -1, subtitleIndex: -1 });
         } else {
-          // Fallback: erste Folge
+          // Fallback: first episode
           const fb = await fetch(
             `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`,
             { headers: getAuthHeaders() }
@@ -348,15 +364,15 @@
     }
   }
 
-  // "Von Anfang": gleiches Item, aber Fortsetzen-Position auf 0 → Player startet bei Null.
+  // "From the beginning": same item, but resume position at 0 → the Player starts at zero.
   function playFromBeginning() {
     const fresh = { ...fullItem, UserData: { ...(fullItem.UserData || {}), PlaybackPositionTicks: 0 } };
     onPlayVideo?.({ item: fresh, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId });
   }
 
-  // Zufallsfolge — für lange Serien "spiel einfach irgendwas". Serie → aus ALLEN Folgen (rekursiv über alle
-  // Staffeln, Specials/Staffel 0 ausgeschlossen); Staffel → nur aus dieser Staffel. Gleichverteilt, inkl. schon
-  // gesehener (bewusst: Comfort-Rewatch). Landet wie handlePlay über onPlayVideo im Player.
+  // Random episode — for long series "just play something". Series → from ALL episodes (recursively across all
+  // seasons, specials/season 0 excluded); season → only from this season. Uniformly distributed, incl. already
+  // watched ones (deliberately: comfort rewatch). Ends up in the Player via onPlayVideo like handlePlay.
   async function playRandomEpisode() {
     const isSeries = fullItem.Type === 'Series';
     const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}`
@@ -365,7 +381,7 @@
       const res  = await fetch(url, { headers: getAuthHeaders() });
       const data = await res.json();
       let pool = (data.Items || []).filter(e => e.Type === 'Episode');
-      if (isSeries) pool = pool.filter(e => e.ParentIndexNumber !== 0);   // Specials (Staffel 0) ausschließen
+      if (isSeries) pool = pool.filter(e => e.ParentIndexNumber !== 0);   // exclude specials (season 0)
       if (!pool.length) return;
       const pick = pool[Math.floor(Math.random() * pool.length)];
       onPlayVideo?.({ item: pick, audioIndex: -1, subtitleIndex: -1 });
@@ -373,17 +389,17 @@
   }
 
   async function togglePlayed() {
-    // Optimistisch lokal umschalten — kein Neuladen der ganzen Detailseite
+    // Toggle optimistically and locally — no reload of the whole detail page
     const willBePlayed = !fullItem.UserData?.Played;
     fullItem.UserData = { ...fullItem.UserData, Played: willBePlayed };
-    if (item) item.UserData = { ...item.UserData, Played: willBePlayed };   // Original-Listen-Item mitziehen → Herkunftsliste aktualisiert sich
+    if (item) item.UserData = { ...item.UserData, Played: willBePlayed };   // carry the original list item along → the origin list updates
     try {
       await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/PlayedItems/${fullItem.Id}`, {
         method: willBePlayed ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
     } catch (e) {
-      // Bei Fehler zurückrollen
+      // Roll back on error
       console.warn('[OcenFin] played-status toggle failed, rolled back:', e);
       fullItem.UserData = { ...fullItem.UserData, Played: !willBePlayed };
       if (item) item.UserData = { ...item.UserData, Played: !willBePlayed };
@@ -393,7 +409,7 @@
   async function toggleFavorite() {
     const willBeFav = !fullItem.UserData?.IsFavorite;
     fullItem.UserData = { ...fullItem.UserData, IsFavorite: willBeFav };
-    if (item) item.UserData = { ...item.UserData, IsFavorite: willBeFav };   // Original-Listen-Item mitziehen → Favoriten-Ansicht entfernt/ergänzt reaktiv
+    if (item) item.UserData = { ...item.UserData, IsFavorite: willBeFav };   // carry the original list item along → the favorites view removes/adds reactively
     try {
       await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${fullItem.Id}`, {
         method: willBeFav ? "POST" : "DELETE",
@@ -406,11 +422,11 @@
     }
   }
 
-  // FIX: Nur dispatchen — die reaktive $: if(item) in dieser Datei übernimmt das Laden.
-  // Kein direktes loadFullDetails() mehr hier, sonst doppelter API-Call.
+  // FIX: only dispatch — the reactive $: if(item) in this file takes over the loading.
+  // No direct loadFullDetails() here anymore, otherwise a duplicate API call.
   function navigateTo(id) {
     isLoading = true;
-    fullItem  = null;   // Spinner sofort zeigen
+    fullItem  = null;   // show the spinner immediately
     onOpenItemById?.(id);
   }
 
@@ -436,7 +452,7 @@
     return null;
   }
 
-  // Titel-Logo (transparentes PNG) der Folge/Serie; bei Folgen die Serie. Null → Aufrufer fällt auf Text zurück.
+  // Title logo (transparent PNG) of the episode/series; for episodes the series. Null → the caller falls back to text.
   function getItemLogoUrl(targetItem) {
     if (targetItem.ImageTags?.Logo)
       return `${session.serverUrl}/Items/${targetItem.Id}/Images/Logo?tag=${targetItem.ImageTags.Logo}&maxHeight=200&quality=90&format=webp`;
@@ -449,8 +465,8 @@
     return !ticks ? "" : Math.round(ticks / 10000000 / 60) + ` ${i18n.t.mins}`;
   }
 
-  // Spoilerschutz: ungesehene Folgen leicht verschleiern. Ausgenommen sind Staffeln (Poster),
-  // bereits begonnene, gesehene und als Favorit markierte Folgen.
+  // Spoiler protection: slightly obscure unwatched episodes. Excluded are seasons (posters),
+  // already started, watched and favorite-marked episodes.
   function epSpoiler(ep) {
     return spoilerProtection
       && ep?.Type === 'Episode'
@@ -467,7 +483,7 @@
     if (!targetItem?.RunTimeTicks) return "";
     const remainingTicks = targetItem.RunTimeTicks - (targetItem.UserData?.PlaybackPositionTicks || 0);
     const endDate = new Date(Date.now() + remainingTicks / 10000);
-    return `${i18n.t.endsAt} ${endDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`;   // i18n statt hartkodiertem Deutsch
+    return `${i18n.t.endsAt} ${endDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`;   // i18n instead of hardcoded German
   }
 </script>
 
@@ -481,7 +497,7 @@
 
     <div class="flex-1 overflow-y-auto hide-scrollbar">
 
-      <!-- ════ CINEMATIC HERO-BANNER — Backdrop scrollt mit, läuft unten/links ins App-Grau ════ -->
+      <!-- ════ CINEMATIC HERO BANNER — the backdrop scrolls along, fading into the app gray at bottom/left ════ -->
       <div class="relative">
         {#if detailsBackdrop && getItemBackdropUrl(fullItem)}
           <div class="absolute inset-0 z-0">
@@ -493,7 +509,7 @@
 
         <div class="relative z-10 p-10 pt-16">
 
-          <!-- BREADCRUMB + ZURÜCK -->
+          <!-- BREADCRUMB + BACK -->
       <div class="flex items-center gap-6 mb-10" data-focus-group="details-top">
         <button onclick={() => onClose?.()}
           class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
@@ -555,7 +571,7 @@
 
           <p class="text-xl text-gray-300 mb-10 line-clamp-4 leading-relaxed">{fullItem.Overview || i18n.t.noDescription}</p>
 
-          <!-- AKTIONS-BUTTONS -->
+          <!-- ACTION BUTTONS -->
           <div class="flex items-center gap-4 mb-12">
             <button onclick={handlePlay} {@attach focusOnMount()}
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-2xl px-12 py-4 rounded-xl
@@ -591,7 +607,7 @@
             {/if}
 
             {#if fullItem.RemoteTrailers?.length > 0}
-              <button onclick={openTrailer} aria-label={i18n.t.trailer} title={i18n.t.trailer}
+              <button onclick={openTrailer} {@attach hint()} aria-label={i18n.t.trailer}
                 class="p-4 rounded-xl bg-gray-800 text-white hover:bg-gray-700 focus:bg-gray-700
                        focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg">
                 <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
@@ -600,7 +616,8 @@
               </button>
             {/if}
 
-            <button onclick={togglePlayed}
+            <button onclick={togglePlayed} {@attach hint()}
+              aria-label={fullItem.UserData?.Played ? i18n.t.markUnwatched : i18n.t.markWatched}
               class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg
                      {fullItem.UserData?.Played ? 'bg-green-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
@@ -608,7 +625,8 @@
               </svg>
             </button>
 
-            <button onclick={toggleFavorite}
+            <button onclick={toggleFavorite} {@attach hint()}
+              aria-label={fullItem.UserData?.IsFavorite ? i18n.t.removeFavorite : i18n.t.addFavorite}
               class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg
                      {fullItem.UserData?.IsFavorite ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
@@ -616,9 +634,18 @@
               </svg>
             </button>
 
+            <button onclick={() => toggleWatchlist(fullItem)} {@attach hint()}
+              aria-label={inWatchlist(fullItem.Id) ? i18n.t.removeFromWatchlist : i18n.t.addToWatchlist}
+              class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg
+                     {inWatchlist(fullItem.Id) ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white focus:text-white'}">
+              <svg class="w-8 h-8" fill={inWatchlist(fullItem.Id) ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"/>
+              </svg>
+            </button>
+
             {#if fullItem.MediaSources?.length > 0 || fullItem.Type === 'Series' || fullItem.Type === 'Season'}
               <div class="relative" data-dropdown data-focus-trap={openDropdown === 'kebab' || undefined}>
-                <button bind:this={kebabBtnEl} onclick={(e) => toggleDropdown('kebab', e)} aria-label={i18n.t.more} title={i18n.t.more}
+                <button bind:this={kebabBtnEl} onclick={(e) => toggleDropdown('kebab', e)} {@attach hint()} aria-label={i18n.t.more}
                   class="p-4 rounded-xl bg-gray-800 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg">
                   <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
                 </button>
@@ -658,7 +685,7 @@
           {#if fullItem.MediaSources?.length > 0}
             <div class="bg-gray-800/80 border border-gray-700 rounded-xl p-4 flex flex-col gap-4 max-w-2xl">
 
-              <!-- AUFLÖSUNG / VERSION: eigenes Dropdown bei mehreren Quellen, sonst statisch -->
+              <!-- RESOLUTION / VERSION: own dropdown with multiple sources, otherwise static -->
               {#if fullItem.MediaSources.length > 1}
                 <div class="flex items-start gap-4 w-full">
                   <svg class="w-6 h-6 text-gray-500 shrink-0 mt-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -693,7 +720,7 @@
                 {/each}
               {/if}
 
-              <!-- AUDIO: eigenes Dropdown bei mehreren Spuren, sonst statisch -->
+              <!-- AUDIO: own dropdown with multiple tracks, otherwise static -->
               {#if getMediaStreams('Audio').length > 1}
                 <div class="flex items-start gap-4 w-full">
                   <svg class="w-6 h-6 text-gray-500 shrink-0 mt-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -726,7 +753,7 @@
                 </div>
               {/if}
 
-              <!-- UNTERTITEL: eigenes Dropdown (mit "Aus") -->
+              <!-- SUBTITLES: own dropdown (with "Off") -->
               {#if getMediaStreams('Subtitle').length > 0}
                 <div class="flex items-start gap-4 w-full">
                   <svg class="w-6 h-6 text-gray-500 shrink-0 mt-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -765,11 +792,11 @@
       </div>
       <!-- ════ /HERO-BANNER ════ -->
 
-      <!-- INHALT (Reihen) auf vollem App-Grau — eigene Fokus-Gruppe pro Reihe,
-           damit D-Pad LINKS am Reihenanfang direkt zur Sidebar springt. -->
+      <!-- CONTENT (rows) on full app gray — its own focus group per row,
+           so D-pad LEFT at the start of a row jumps directly to the sidebar. -->
       <div class="relative z-10 px-10 pb-16 bg-gray-900 flex flex-col">
 
-      <!-- STAFFELN / FOLGEN -->
+      <!-- SEASONS / EPISODES -->
       {#if relatedItems.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-episodes">
           <h2 class="text-3xl font-bold text-white mb-6">
@@ -782,7 +809,7 @@
             {#each relatedItems as ep (ep.Id)}
               <button onclick={() => { fullItem = null; loadFullDetails(ep.Id); }}
                 class="shrink-0 scroll-m-4 group flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
-                <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 group-focus:scale-105 transition-all duration-200 shadow-xl relative">
+                <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
                   {#if getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')}
                     <img src={getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')} {@attach blurUp(itemBlurHash(ep))} alt={ep.Name} loading="lazy"
                       class="w-full h-full object-cover transition-all duration-200 {epSpoiler(ep) ? 'blur-md scale-110' : ''}" />
@@ -809,14 +836,39 @@
         </div>
       {/if}
 
-      <!-- BESETZUNG (antippbar → Filmografie der Person) — gehört zum Titel, daher über Ähnliches -->
+      <!-- EXTRAS (special features) — play directly, extras have no own detail page -->
+      {#if extras.length > 0}
+        <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-extras">
+          <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.extras}</h2>
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
+            {#each extras as ex (ex.Id)}
+              <button onclick={() => onPlayVideo?.({ item: ex, audioIndex: -1, subtitleIndex: -1 })}
+                class="shrink-0 w-80 scroll-m-4 group flex flex-col focus:outline-none text-left">
+                <div class="aspect-video w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-transform duration-200">
+                  {#if getItemImageUrl(ex, 'landscape')}
+                    <img src={getItemImageUrl(ex, 'landscape')} {@attach blurUp(itemBlurHash(ex))} alt={ex.Name} class="w-full h-full object-cover" loading="lazy" />
+                  {:else}
+                    <div class="w-full h-full flex items-center justify-center text-gray-600">
+                      <svg class="w-12 h-12" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    </div>
+                  {/if}
+                </div>
+                <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full">{ex.Name}</span>
+                {#if ex.RunTimeTicks}<span class="text-xs text-gray-500">{getRuntimeMinutes(ex.RunTimeTicks)}</span>{/if}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
+      <!-- CAST (tappable → the person's filmography) — belongs to the title, so above Similar -->
       {#if castMembers.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-cast">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.cast}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each castMembers as person (person.Id)}
               <button onclick={() => onOpenPerson?.(person)} class="shrink-0 w-36 scroll-m-4 group focus:outline-none text-center">
-                <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto group-focus:scale-105 transition-all duration-200">
+                <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto group-focus:scale-105 transition-transform duration-200">
                   {#if personImageUrl(session.serverUrl, person)}
                     <img src={personImageUrl(session.serverUrl, person)} {@attach blurUp(itemBlurHash(person))} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}
@@ -833,14 +885,14 @@
         </div>
       {/if}
 
-      <!-- ÄHNLICHES -->
+      <!-- SIMILAR -->
       {#if similarItems.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-similar">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.similar}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each similarItems as si (si.Id)}
               <button onclick={() => navigateTo(si.Id)} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-all duration-200">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-transform duration-200">
                   {#if getItemImageUrl(si, 'portrait')}
                     <img src={getItemImageUrl(si, 'portrait')} {@attach blurUp(itemBlurHash(si))} alt={si.Name} class="w-full h-full object-cover" loading="lazy" />
                   {/if}
@@ -853,22 +905,25 @@
       {/if}
 
       </div>
-      <!-- ════ /INHALT ════ -->
+      <!-- ════ /CONTENT ════ -->
     </div>
   {/if}
 </div>
 
-<!-- TRAILER-MODAL — YouTube Embed oder direktes Video -->
+<!-- TRAILER MODAL — YouTube embed or direct video -->
 {#if trailerEmbedUrl}
   <div
     data-focus-trap
+    role="dialog"
+    tabindex="-1"
     class="fixed inset-0 bg-black z-[200] flex items-center justify-center"
     onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeTrailer(); } }}
   >
-    <!-- Schließen-Button (oben rechts, über dem Video) -->
+    <!-- Close button (top right, above the video) -->
     <button
       onclick={closeTrailer}
       {@attach focusOnMount()}
+      aria-label={i18n.t.close}
       class="absolute top-6 right-8 z-10 text-white/80 hover:text-white focus:text-white
              bg-black/50 rounded-full p-3 focus:outline-none focus:ring-4 focus:ring-white transition-colors"
     >
@@ -877,7 +932,7 @@
       </svg>
     </button>
 
-    <!-- Vollbild: Video füllt den Bildschirm -->
+    <!-- Fullscreen: the video fills the screen -->
     {#if trailerEmbedUrl.includes('/embed/')}
       <iframe
         src={trailerEmbedUrl}
@@ -887,7 +942,7 @@
         title={i18n.t.trailer}
       ></iframe>
     {:else}
-      <!-- svelte-ignore a11y-media-has-caption -->
+      <!-- svelte-ignore a11y_media_has_caption -->
       <video
         src={trailerEmbedUrl}
         class="w-full h-full object-contain"
@@ -898,9 +953,9 @@
   </div>
 {/if}
 
-<!-- MEDIENINFORMATIONEN-MODAL (Codec, Bitrate, Sprachen, …) -->
+<!-- MEDIA INFO MODAL (codec, bitrate, languages, …) -->
 {#if showMediaInfo && fullItem?.MediaSources?.length}
-  <div data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8"
+  <div data-focus-trap role="dialog" tabindex="-1" transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8"
     onkeydown={(e) => {
       if (isBackKey(e)) { e.stopPropagation(); showMediaInfo = false; return; }
       if (e.key === 'ArrowDown')    { e.preventDefault(); e.stopPropagation(); mediaInfoScroll?.scrollBy({ top: 160, behavior: 'smooth' }); }
@@ -909,15 +964,15 @@
     <div bind:this={mediaInfoScroll} class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl">
       <div class="flex justify-between items-center p-8 pb-4 sticky top-0 bg-gray-800 z-10">
         <h2 class="text-4xl text-white font-bold">{i18n.t.mediaInfo}</h2>
-        <button onclick={() => showMediaInfo = false} {@attach focusOnMount()}
+        <button onclick={() => showMediaInfo = false} {@attach focusOnMount()} aria-label={i18n.t.close}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
       </div>
-      <!-- Zeigt die aktuell GEWÄHLTE Version (nicht stur die erste) — folgt der Auflösungsauswahl -->
+      <!-- Shows the currently CHOSEN version (not stubbornly the first) — follows the resolution selection -->
       {#each (selectedSource ? [selectedSource] : []) as src (src.Id)}
         <div class="px-8 pb-8 flex flex-col gap-5">
-          <!-- Datei: Container / Größe / Gesamtbitrate -->
+          <!-- File: container / size / total bitrate -->
           <div class="grid grid-cols-3 gap-3">
             {#if src.Container}
               <div><div class="text-gray-500 text-xs uppercase tracking-wider">Container</div><div class="text-white font-semibold uppercase">{src.Container}</div></div>
@@ -930,7 +985,7 @@
             {/if}
           </div>
 
-          <!-- Einzelne Spuren -->
+          <!-- Individual tracks -->
           {#each (src.MediaStreams || []) as s (s.Index)}
             <div class="bg-gray-900 rounded-xl p-4 border border-gray-700/50">
               <div class="flex items-center gap-3 mb-2">
@@ -954,9 +1009,9 @@
   </div>
 {/if}
 
-<!-- Teilen: QR-Code mit Titel-Link (IMDb/TMDb) zum Scannen -->
+<!-- Share: QR code with a title link (IMDb/TMDb) to scan -->
 {#if showShare}
-  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
+  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8" role="dialog" tabindex="-1"
     transition:uiFade onoutrostart={dropTrapOnOutro}
     onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showShare = false; } }}>
     <div data-modal data-focus-trap
@@ -977,12 +1032,12 @@
   </div>
 {/if}
 
-<!-- Zur Sammlung / Wiedergabeliste hinzufügen (gemeinsame Komponente) -->
+<!-- Add to collection / playlist (shared component) -->
 <AddToPicker mode={pickerMode} item={fullItem} {selectedUser} {getAuthHeaders}
   onCreated={() => onLibChanged?.()} onClose={() => pickerMode = null} />
 
 <style>
-  /* Bewusst KEIN scroll-snap auf den Reihen: auf D-Pad-Geraeten scrollt ausschliesslich
-     der Fokus (scrollIntoView) — Proximity-Snapping zog dessen Position phasenabhaengig
-     zurueck und schnitt den skalierten Rahmen der Randkarte ab (webOS/B4). */
+  /* Deliberately NO scroll-snap on the rows: on D-pad devices only the focus scrolls
+     (scrollIntoView) — proximity snapping pulled its position back phase-dependently
+     and cut off the scaled border of the edge card (webOS/B4). */
 </style>

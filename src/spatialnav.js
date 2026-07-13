@@ -1,24 +1,24 @@
 // ============================================================
-// Gruppen-basiertes Fokus-Modell für D-Pad-Navigation (WebOS)
+// Group-based focus model for D-pad navigation (webOS)
 // ------------------------------------------------------------
-// Wie ausgereifte TV-Clients (LiteFins FocusManager, Enacts Spotlight) arbeitet
-// die Navigation mit logischen GRUPPEN statt rein geometrisch über die ganze Seite.
+// Like mature TV clients (LiteFin's FocusManager, Enact's Spotlight), the
+// navigation works with logical GROUPS instead of purely geometrically across the whole page.
 //
-// Gruppen = Elemente mit [data-focus-group].
-//   • Innerhalb der aktuellen Gruppe: geometrische Auswahl (Überlappung → Kegel → Rückfall).
-//   • An der Gruppenkante (kein Ziel in Richtung): Übergang zur nächsten Gruppe in der
-//     Richtung; dort wird der zuletzt fokussierte Eintrag wiederhergestellt (oder der
-//     geometrisch nächste). Dadurch mischt sich z.B. die Sidebar NICHT in die vertikale
-//     Navigation des Inhalts ein.
-//   • Modale ([data-focus-trap]): nur diese Gruppe ist navigierbar (kein Verlassen).
-//   • Schieberegler (type=range): Links/Rechts steuern sie selbst, Hoch/Runter verlässt sie.
+// Groups = elements with [data-focus-group].
+//   • Within the current group: geometric selection (overlap → cone → fallback).
+//   • At the group edge (no target in the direction): transition to the next group in the
+//     direction; there the last focused entry is restored (or the geometrically
+//     nearest one). This keeps e.g. the sidebar OUT of the content's vertical
+//     navigation.
+//   • Modals ([data-focus-trap]): only this group is navigable (no leaving).
+//   • Sliders (type=range): Left/Right control them, Up/Down leaves them.
 // ============================================================
 
 const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const ARROWS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 
-// Zuletzt fokussiertes Element je Gruppe (für Wiedereintritt).
+// Last focused element per group (for re-entry).
 const lastFocus = new WeakMap();
 
 function isVisible(el) {
@@ -44,16 +44,16 @@ function rectOf(el) { return el.getBoundingClientRect(); }
 function cx(r) { return r.left + r.width / 2; }
 function cy(r) { return r.top + r.height / 2; }
 
-// Dreistufige geometrische Auswahl unter Kandidaten:
-//  1) Überlappung in der Querachse (gleiche Spalte/Zeile) — ideal.
-//  2) Kegel: Richtung dominiert die Querabweichung.
-//  3) Rückfall: irgendetwas in der Halbebene (stark nach Querversatz bestraft).
+// Three-stage geometric selection among candidates:
+//  1) Overlap on the cross axis (same column/row) — ideal.
+//  2) Cone: the direction dominates the cross-axis deviation.
+//  3) Fallback: anything in the half-plane (heavily penalized by cross offset).
 function pickGeometric(dir, from, candidates, exclude, strictRow = false) {
   const fX = cx(from), fY = cy(from);
-  // Horizontale Sprungleiste (z.B. A-Z) ist nur per Links/Rechts erreichbar. Steht der Fokus
-  // außerhalb, werden ihre Buttons bei Hoch/Runter ignoriert — so springt es nicht seitlich
-  // zur A-Z-Leiste, wenn die nächste Grid-Reihe noch lädt. Innerhalb der Leiste bleibt Hoch/
-  // Runter normal (Buchstabennavigation).
+  // A horizontal jump bar (e.g. A-Z) is only reachable via Left/Right. When focus is
+  // outside it, its buttons are ignored on Up/Down — so focus doesn't jump sideways
+  // to the A-Z bar while the next grid row is still loading. Inside the bar, Up/
+  // Down stays normal (letter navigation).
   const fromHbar = exclude ? exclude.closest('[data-hbar]') : null;
   let overlap = null, oS = Infinity;
   let cone = null, cS = Infinity;
@@ -63,10 +63,10 @@ function pickGeometric(dir, from, candidates, exclude, strictRow = false) {
     if (el === exclude) continue;
     if (dir === 'ArrowUp' || dir === 'ArrowDown') {
       const elHbar = el.closest('[data-hbar]');
-      // Hoch/Runter bleibt strikt in derselben hbar-Gruppe: von außen NICHT hinein (elHbar gesetzt,
-      // fromHbar null) UND von innen NICHT hinaus (fromHbar gesetzt, elHbar null oder andere Gruppe).
-      // Dadurch springt der Fokus an der obersten/untersten Kategorie der Settings-Navigation nicht
-      // seitlich in den Inhalt — nur Kandidaten derselben Gruppe (bzw. beide ohne) bleiben gültig.
+      // Up/Down stays strictly within the same hbar group: from outside NOT into it (elHbar set,
+      // fromHbar null) AND from inside NOT out of it (fromHbar set, elHbar null or a different group).
+      // This keeps focus from jumping sideways into the content at the top-most/bottom-most category
+      // of the settings navigation — only candidates of the same group (or both without) stay valid.
       if (elHbar !== fromHbar) continue;
     }
     const r = rectOf(el);
@@ -95,9 +95,9 @@ function pickGeometric(dir, from, candidates, exclude, strictRow = false) {
       align = Math.abs(r.top - from.top);
     }
     if (!valid || along <= 0) continue;
-    // Links/Rechts bleibt in derselben Zeile: Kandidaten ohne vertikale Überlappung (also aus einer
-    // anderen Reihe) werden ignoriert. So springt es am Zeilenrand nicht hoch/runter, sondern der
-    // Within-Pick liefert nichts → der Gruppen-Übergang (z.B. zur Sidebar) greift.
+    // Left/Right stays in the same row: candidates without vertical overlap (i.e. from another
+    // row) are ignored. So at the row edge it doesn't jump up/down; instead the within-pick
+    // returns nothing → the group transition (e.g. to the sidebar) takes over.
     if (strictRow && (dir === 'ArrowLeft' || dir === 'ArrowRight') && perp !== 0) continue;
 
     if (perp === 0)            { const s = along + align * 0.3; if (s < oS) { oS = s; overlap = el; } }
@@ -126,18 +126,18 @@ function focusEl(el) {
   el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 
-// Eintrittspunkt einer Gruppe beim Übergang: zuletzt fokussiert (falls noch sichtbar),
-// sonst geometrisch nächstes in Richtung, sonst überhaupt nächstes.
+// Entry point of a group on transition: last focused (if still visible),
+// otherwise geometrically nearest in the direction, otherwise nearest overall.
 function entryOf(group, dir, from) {
-  // Opt-in [data-enter-first]: Beim Betreten der Gruppe (Hoch/Runter zwischen Sektionen) immer auf
-  // deren ERSTE Karte – stabil und vorhersehbar, egal aus welcher Spalte man kam. Innerhalb der Gruppe
-  // bleibt die Navigation geometrisch (greift nur beim Gruppen-Übergang, nicht zeilenweise).
+  // Opt-in [data-enter-first]: When entering the group (Up/Down between sections) always land on
+  // its FIRST card — stable and predictable, no matter which column you came from. Within the group
+  // navigation stays geometric (this only applies on the group transition, not row by row).
   if (group.hasAttribute('data-enter-first')) {
     const first = focusablesIn(group)[0];
     if (first) return first;
   }
-  // Als aktiv markiertes Element bevorzugen (z.B. der aktuelle Sidebar-Eintrag): Beim Wechsel in
-  // die Gruppe landet der Fokus so immer auf dem aktiven Element, nicht auf dem zuletzt fokussierten.
+  // Prefer the element marked as active (e.g. the current sidebar entry): switching into
+  // the group thus always lands focus on the active element, not on the last focused one.
   const current = group.querySelector('[data-group-current]');
   if (current && isVisible(current)) return current;
   const remembered = lastFocus.get(group);
@@ -158,12 +158,12 @@ function entryOf(group, dir, from) {
 function nearestGroup(dir, from, currentGroup) {
   let groups = Array.from(document.querySelectorAll('[data-focus-group]'))
     .filter(g => g !== currentGroup && isVisible(g) && focusablesIn(g).length
-              && !(currentGroup && g.contains(currentGroup)));   // Vorfahr-Gruppen (z.B. der Inhalts-Container "main")
-                                                                 // sind kein Sprungziel – man ist bereits darin.
-  // Hoch/Runter nur zu Gruppen wechseln, die sich HORIZONTAL mit der Quelle überlappen. Sonst springt
-  // der Fokus am unteren Rand der Mediathek in die (bildschirmhohe) Sidebar links: deren Mitte liegt
-  // dann unter der letzten Karte, weil der Nachlade-Bereich (Sentinel/Skelett) die Karte nach oben
-  // schiebt. Die Sidebar bleibt so ausschließlich per Links/Rechts erreichbar.
+              && !(currentGroup && g.contains(currentGroup)));   // Ancestor groups (e.g. the content container "main")
+                                                                 // are not a jump target – you are already inside them.
+  // Up/Down only transitions to groups that HORIZONTALLY overlap the source. Otherwise focus jumps
+  // at the bottom edge of the library into the (full-height) sidebar on the left: its center then lies
+  // below the last card, because the load-more area (sentinel/skeleton) pushes the card upward.
+  // This keeps the sidebar reachable exclusively via Left/Right.
   if (dir === 'ArrowUp' || dir === 'ArrowDown') {
     groups = groups.filter(g => {
       const r = rectOf(g);
@@ -173,13 +173,13 @@ function nearestGroup(dir, from, currentGroup) {
   return pickGeometric(dir, from, groups, null);
 }
 
-// Aktiviert die Navigation global. isEnabled() darf false liefern, um sie zeitweise
-// abzuschalten. Gibt eine Aufräumfunktion zurück.
+// Enables the navigation globally. isEnabled() may return false to temporarily
+// disable it. Returns a cleanup function.
 export function createFocusManager(isEnabled) {
   function onFocusIn(e) {
-    // Ist ein Modal/Banner als Trap offen, darf der Fokus es nicht verlassen — auch nicht durch
-    // einen programmatischen focus() einer parallel mountenden Ansicht (z. B. Filme-Autofokus,
-    // während der "Server nicht erreichbar"-Banner erscheint). Dann Fokus zurück ins Modal holen.
+    // If a modal/banner is open as a trap, focus must not leave it — not even via
+    // a programmatic focus() of a view mounting in parallel (e.g. the Movies autofocus
+    // while the "server unreachable" banner appears). In that case pull focus back into the modal.
     const trap = activeTrap();
     if (trap && !trap.contains(e.target)) {
       const back = focusablesIn(trap)[0];
@@ -194,23 +194,23 @@ export function createFocusManager(isEnabled) {
     if (typeof isEnabled === 'function' && !isEnabled()) return;
 
     const active = document.activeElement;
-    // Schieberegler: Links/Rechts steuern sie selbst (Spulen); Hoch/Runter navigiert weiter.
+    // Sliders: Left/Right control them (seeking); Up/Down keeps navigating.
     if (active && active.tagName === 'INPUT' && active.type === 'range' &&
         (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return;
 
-    // Text-Eingabefelder: Links/Rechts bewegt den Cursor INNERHALB des Textes, solange er nicht
-    // am Rand steht. Erst am Anfang (Links) bzw. Ende (Rechts) verlässt der Fokus das Feld. So
-    // kann man Geschriebenes korrigieren, ohne alles löschen zu müssen.
+    // Text input fields: Left/Right moves the cursor WITHIN the text, as long as it's not
+    // at the edge. Only at the start (Left) or end (Right) does focus leave the field. This way
+    // you can correct what you typed without having to delete everything.
     if (active && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') &&
         ((active.tagName === 'INPUT' && /^(text|password|search|email|url|tel|)$/.test(active.type)) ||
          active.tagName === 'TEXTAREA')) {
       let start, end, len;
       try { start = active.selectionStart; end = active.selectionEnd; len = (active.value || '').length; }
-      catch { return; }                                              // keine Selection-API → dem Browser überlassen
+      catch { return; }                                              // no Selection API → leave it to the browser
       if (start === null) return;
-      if (e.key === 'ArrowLeft'  && !(start === 0   && end === 0))   return;   // links steht noch Text → Cursor bewegen
-      if (e.key === 'ArrowRight' && !(start === len && end === len)) return;   // rechts steht noch Text → Cursor bewegen
-      // sonst: Cursor am Rand → Fokus darf das Feld in diese Richtung verlassen (normale Navigation)
+      if (e.key === 'ArrowLeft'  && !(start === 0   && end === 0))   return;   // text remains to the left → move cursor
+      if (e.key === 'ArrowRight' && !(start === len && end === len)) return;   // text remains to the right → move cursor
+      // otherwise: cursor at the edge → focus may leave the field in this direction (normal navigation)
     }
 
     const hasActive = active && active !== document.body;
@@ -220,29 +220,40 @@ export function createFocusManager(isEnabled) {
     const trap = activeTrap();
     const scope = trap || groupOf(active);
 
-    // 1) Innerhalb der aktuellen Gruppe / des Modals
+    // 1) Within the current group / modal
     if (scope) {
       let within = pickGeometric(e.key, from, focusablesIn(scope), active, true);
-      // Fallback für den Eintritt in einen "oben-anfangen"-Bereich (data-enter-top): Fand die strikte
-      // Zeilen-Bindung nichts, weil auf Höhe der Quelle im Zielbereich nur NICHT-fokussierbarer Inhalt
-      // steht (z.B. die Server-Info-Karte über "Cache leeren" in Konto & Server), ohne Zeilen-Bindung
-      // nachfassen und dort oben einsteigen. Greift nur beim Übergang in einen fremden enter-top-Bereich.
+      // Fallback for entering a "start-at-top" area (data-enter-top): if the strict
+      // row binding found nothing because at the source's height the target area has only NON-focusable
+      // content (e.g. the server-info card above "Clear cache" in Account & Server), retry without row
+      // binding and enter at its top. Only applies when transitioning into a foreign enter-top area.
       if (!within && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
         const loose = pickGeometric(e.key, from, focusablesIn(scope), active, false);
         const top = loose?.closest('[data-enter-top]');
-        if (top && !top.contains(active)) within = focusablesIn(top)[0] || null;
+        if (top && !top.contains(active)) {
+          within = focusablesIn(top)[0] || null;
+        } else {
+          // Leaving a start-at-top content area toward a jump bar (data-hbar) in the SAME group —
+          // e.g. Left from the settings detail area back to the category navigation. Content rows
+          // below the last bar item find no vertically overlapping target, so the strict-row pick
+          // returns nothing; without this the group transition would jump past the bar straight to
+          // the sidebar. Enter the bar at its current item instead.
+          const bar = loose?.closest('[data-hbar]');
+          if (bar && !bar.contains(active))
+            within = bar.querySelector('[data-hbar-current]') || focusablesIn(bar)[0] || null;
+        }
       }
-      // Eintritt von außen IN eine Sprungleiste (per Links/Rechts): direkt auf das aktuell
-      // markierte Element (data-hbar-current, z.B. der ausgewählte Buchstabe) springen statt
-      // auf das geometrisch nächste. Innerhalb der Leiste bleibt die Navigation normal.
+      // Entering a jump bar from outside (via Left/Right): jump directly onto the currently
+      // marked element (data-hbar-current, e.g. the selected letter) instead of the
+      // geometrically nearest one. Inside the bar the navigation stays normal.
       if (within && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
         const bar = within.closest('[data-hbar]');
         if (bar && !bar.contains(active)) {
           const cur = bar.querySelector('[data-hbar-current]');
           if (cur && isVisible(cur)) within = cur;
         }
-        // Betritt man einen "oben-anfangen"-Bereich (z.B. den Einstellungs-Detailbereich) von
-        // außen, immer auf dessen oberstes fokussierbares Element statt geometrisch in die Mitte.
+        // When entering a "start-at-top" area (e.g. the settings detail area) from
+        // outside, always go to its top-most focusable element instead of geometrically into the middle.
         const top = within.closest('[data-enter-top]');
         if (top && !top.contains(active)) {
           const first = focusablesIn(top)[0];
@@ -250,17 +261,17 @@ export function createFocusManager(isEnabled) {
         }
       }
       if (within) { e.preventDefault(); focusEl(within); return; }
-      if (trap) { e.preventDefault(); return; }   // Modal nicht verlassen
+      if (trap) { e.preventDefault(); return; }   // don't leave the modal
     }
 
-    // 2) Übergang zur nächsten Gruppe in der Richtung
+    // 2) Transition to the next group in the direction
     const tgt = nearestGroup(e.key, from, groupOf(active));
     if (tgt) {
       const entry = entryOf(tgt, e.key, from);
       if (entry) { e.preventDefault(); focusEl(entry); return; }
     }
 
-    // 3) Noch kein Fokus überhaupt → erstes fokussierbares Element nehmen
+    // 3) No focus at all yet → take the first focusable element
     if (!hasActive) {
       const any = focusablesIn(document.body)[0];
       if (any) { e.preventDefault(); focusEl(any); }

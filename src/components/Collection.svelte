@@ -13,8 +13,8 @@
   let isLoading = $state(false);
   let name      = $state('');
 
-  // Wiedergabelisten-Verwaltung
-  let playlistEditMode     = $state(false);   // Bearbeiten-Modus (Entfernen/Umsortieren)
+  // Playlist management
+  let playlistEditMode     = $state(false);   // edit mode (remove/reorder)
   let confirmDeletePlaylist = $state(false);
   let renamingPlaylist     = $state(false);
   let renameValue          = $state('');
@@ -22,10 +22,10 @@
 
   const getAuthHeaders = () => authHeaders(session.token);
 
-  // Zufällige Wiedergabe aus Sammlung/Playlist — Pendant zum Serien-Shuffle in den Details.
-  // Filme/Folgen spielen direkt. Fällt die Wahl auf eine Serie/Staffel (in BoxSets normal),
-  // wird daraus eine zufällige Folge gezogen (Specials/Staffel 0 ausgeschlossen), weil eine
-  // Serie selbst nicht abspielbar ist. Gleichverteilt, inkl. schon Gesehenem (Comfort-Rewatch).
+  // Random playback from a collection/playlist — counterpart to the series shuffle in the details.
+  // Movies/episodes play directly. If the pick lands on a series/season (normal in BoxSets),
+  // a random episode is drawn from it (specials/season 0 excluded), because a
+  // series itself isn't playable. Uniformly distributed, incl. already watched (comfort rewatch).
   async function playRandom() {
     if (!items.length) return;
     const pick = items[Math.floor(Math.random() * items.length)];
@@ -45,11 +45,11 @@
     }
   }
 
-  // "Alle abspielen": Elemente in Listen-Reihenfolge zu einer flachen Queue auflösen.
-  // Serien/Staffeln werden zu ihren Folgen expandiert (ohne Specials, in Staffel-/Folgen-
-  // Reihenfolge) — dieselbe Auflösung wie beim Zufällig-Button, nur geordnet statt gezogen.
-  // Abspielen mit Weiterschalten übernimmt App (playQueue) + Player (queueNext).
-  let buildingQueue = $state(false);   // Spinner im Button, während Serien aufgelöst werden
+  // "Play all": resolve the elements in list order into a flat queue.
+  // Series/seasons are expanded into their episodes (without specials, in season/episode
+  // order) — the same resolution as the random button, just ordered instead of drawn.
+  // Playback with advancing is handled by App (playQueue) + Player (queueNext).
+  let buildingQueue = $state(false);   // spinner in the button while series are being resolved
   async function playAll() {
     if (!items.length || buildingQueue) return;
     buildingQueue = true;
@@ -74,7 +74,7 @@
     if (queue.length) onPlayQueue?.(queue);
   }
 
-  // Beschriftung für eine Folge: "S1 · E5 · Titel"
+  // Label for an episode: "S1 · E5 · Title"
   function episodeLabel(item) {
     const s = item.ParentIndexNumber, e = item.IndexNumber;
     const code = (s != null && e != null) ? `S${s} · E${e}` : (e != null ? `E${e}` : '');
@@ -86,19 +86,19 @@
     items     = [];
     isLoading = true;
     playlistEditMode = false; confirmDeletePlaylist = false; renamingPlaylist = false;
-    // Wiedergabelisten über ihren eigenen Endpunkt (zuverlässig + in Listen-Reihenfolge),
-    // Sammlungen/BoxSets über ParentId.
+    // Playlists via their own endpoint (reliable + in list order),
+    // collections/BoxSets via ParentId.
     const url = collection.Type === 'Playlist'
       ? `${session.serverUrl}/Playlists/${collection.Id}/Items?UserId=${selectedUser.Id}&Fields=PrimaryImageAspectRatio&Limit=300`
       : `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${collection.Id}&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=100&EnableTotalRecordCount=false`;
     try {
       const res = await fetch(url, { headers: getAuthHeaders() });
       if (res.ok) items = (await res.json()).Items || [];
-    } catch { /* ignorieren */ }
+    } catch { /* ignore */ }
     finally { isLoading = false; }
   }
 
-  // Umsortieren: optimistisch lokal, dann serverseitig bestätigen.
+  // Reorder: optimistically local, then confirm server-side.
   async function movePlaylistItem(fromIndex, toIndex) {
     if (toIndex < 0 || toIndex >= items.length) return;
     const item = items[fromIndex];
@@ -117,7 +117,7 @@
   async function removePlaylistItem(item) {
     if (!item?.PlaylistItemId) return;
     items = items.filter(i => i.PlaylistItemId !== item.PlaylistItemId);
-    onChildCountChanged?.(collection.Id, items.length);   // Übersichts-Kachel (ChildCount) mitziehen
+    onChildCountChanged?.(collection.Id, items.length);   // carry the overview tile (ChildCount) along
     try {
       const res = await fetch(`${session.serverUrl}/Playlists/${collection.Id}/Items?EntryIds=${item.PlaylistItemId}`,
         { method: 'DELETE', headers: getAuthHeaders() });
@@ -125,7 +125,7 @@
     } catch (e) { console.warn('[OcenFin] remove error', e); }
   }
 
-  // Ganze Wiedergabeliste löschen (Inline-Sicherheitsabfrage im Bearbeiten-Modus).
+  // Delete the whole playlist (inline confirmation in edit mode).
   async function deletePlaylist() {
     if (collection.Type !== 'Playlist') return;
     try {
@@ -134,7 +134,7 @@
     } catch (e) { console.warn('[OcenFin] playlist delete error', e); return; }
     confirmDeletePlaylist = false;
     playlistEditMode      = false;
-    onPlaylistDeleted?.(collection.Id);   // App: aus Grid entfernen, Sidebar neu laden, Navigation
+    onPlaylistDeleted?.(collection.Id);   // App: remove from the grid, reload the sidebar, navigation
   }
 
   function startRename() {
@@ -149,7 +149,7 @@
     if (newName === name) { renamingPlaylist = false; return; }
     renameError = false;
     try {
-      // Playlist-eigener Update-Endpunkt: nutzt die Besitzrechte des Nutzers (kein Admin-Recht nötig).
+      // Playlist's own update endpoint: uses the user's ownership rights (no admin right needed).
       const res = await fetch(`${session.serverUrl}/Playlists/${collection.Id}`, {
         method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ Name: newName })
       });
@@ -157,10 +157,10 @@
     } catch (e) { console.warn('[OcenFin] rename error', e); renameError = true; return; }
     name = newName;
     renamingPlaylist = false;
-    onPlaylistRenamed?.(collection.Id, newName);   // App: Grid-Kachel + Sidebar aktualisieren
+    onPlaylistRenamed?.(collection.Id, newName);   // App: update the grid tile + sidebar
   }
 
-  // Zurück-Taste: erst Edit-Zustände abwickeln, dann (false) → App navigiert zurück.
+  // Back key: first unwind the edit states, then (false) → App navigates back.
   export function handleBackKey() {
     if (renamingPlaylist)      { renamingPlaylist = false;      return true; }
     if (confirmDeletePlaylist) { confirmDeletePlaylist = false; return true; }
@@ -168,7 +168,7 @@
     return false;
   }
 
-  // Lädt beim Mounten und wenn eine andere Sammlung/Playlist geöffnet wird.
+  // Loads on mount and when a different collection/playlist is opened.
   let loadedId = null;
   $effect(() => {
     if (collection && collection.Id !== loadedId) { loadedId = collection.Id; loadCollection(); }
@@ -182,12 +182,12 @@
       {i18n.t.back}
     </button>
   </div>
-  <!-- Titel-Zeile: Name wird bei Ueberlaenge mit "…" gekuerzt (min-w-0 + truncate), Icon und
-       Buttons sind shrink-0 — so bleiben Zufaellig/Bearbeiten IMMER sichtbar, egal wie lang
-       der Playlist-/Sammlungsname ist (sonst wuerden sie aus dem Sichtfeld geschoben). -->
+  <!-- Title row: the name is truncated with "…" when too long (min-w-0 + truncate), icon and
+       buttons are shrink-0 — so Random/Edit ALWAYS stay visible, no matter how long
+       the playlist/collection name is (otherwise they'd be pushed out of view). -->
   <div class="flex items-center gap-4 mb-10">
     <svg class="w-10 h-10 shrink-0 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
-    <h1 class="text-4xl font-bold text-white min-w-0 truncate">{name}</h1>
+    <h1 class="text-4xl font-bold text-white min-w-0 truncate">{name === 'Watchlist' ? i18n.t.watchlist : name}</h1>
     {#if items.length > 0 && !playlistEditMode}
       <button onclick={playAll}
         class="ml-4 shrink-0 bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold px-6 py-3 rounded-xl
@@ -233,7 +233,7 @@
         {#each items as item, i (item.PlaylistItemId)}
           <div class="flex items-center gap-4 bg-gray-800/60 rounded-xl p-3">
             <div class="w-14 h-20 shrink-0 bg-gray-900 rounded-lg overflow-hidden">
-              {#if getItemImageUrl(item)}<img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover"/>{/if}
+              {#if getItemImageUrl(item)}<img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>{/if}
             </div>
             <div class="flex-1 min-w-0">
               {#if item.Type === 'Episode'}
@@ -262,7 +262,7 @@
         <p class="text-gray-500 font-bold py-6 text-center">{i18n.t.noItems}</p>
       {/if}
 
-      <!-- Playlist verwalten: Umbenennen / Löschen (auch bei leerer Liste erreichbar) -->
+      <!-- Manage playlist: rename / delete (reachable even with an empty list) -->
       <div class="mt-4 border-t border-gray-700/70 pt-4">
         {#if renamingPlaylist}
           <div class="flex flex-col gap-2">
@@ -327,8 +327,8 @@
     <div class="flex flex-col gap-10 pr-4">
       {#each groups as group (group.label)}
         <div>
-          {#if groups.length > 1 && group.label}
-            <h2 class="text-2xl font-bold text-gray-400 mb-4">{group.label}</h2>
+          {#if group.label}
+            <h2 class="text-3xl font-bold text-white mb-6 px-2">{group.label}</h2>
           {/if}
           <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
             {#each group.items as item (item.PlaylistItemId ?? item.Id)}
@@ -336,7 +336,7 @@
               <button onclick={() => onOpenDetails(item)}
                 {@attach longPress()} onlongpress={() => onContextMenu(item)}
                 class="group focus:outline-none text-left scroll-my-4">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-all duration-200 shadow-xl relative">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
                   {#if badge}
                     <div class="absolute top-2 left-2 z-10 min-w-[1.6rem] h-[1.6rem] px-1.5 rounded-full flex items-center justify-center bg-blue-600/90 text-white text-xs font-bold shadow-md pointer-events-none">
                       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>

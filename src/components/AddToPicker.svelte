@@ -1,7 +1,7 @@
 <script>
-  // Gemeinsamer Dialog: Titel zu einer Sammlung oder Wiedergabeliste hinzufügen.
-  // Wird von Details und Player verwendet. Steuerung über die Prop `mode`
-  // (null = geschlossen). Schließen meldet sich per 'close'-Event beim Eltern.
+  // Shared dialog: add a title to a collection or playlist.
+  // Used by Details and Player. Controlled via the `mode` prop
+  // (null = closed). Closing reports back to the parent via a 'close' event.
   import { i18n } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, dlog, uiFade, dropTrapOnOutro } from '../utils.js';
   import { session } from '../session.svelte.js';
@@ -9,20 +9,23 @@
 
   let { mode = null, item = null, selectedUser, getAuthHeaders, onCreated, onClose } = $props();
 
-  let items     = $state([]);              // vorhandene Sammlungen/Wiedergabelisten
+  let items     = $state([]);              // existing collections/playlists
   let loading   = $state(false);
   let newName   = $state('');
   let busy      = $state(false);
   let msg       = $state('');
-  let msgError  = $state(false);       // true → Meldung als Fehler (rot) darstellen, sonst Erfolg (grün)
-  let alreadyIn = new SvelteSet();         // reaktives Set: .add()/.clear() lösen Updates aus
-  let childrenOf = $state({});             // Ziel-ID → enthaltene Titel (Deep Reactivity)
+  let msgError  = $state(false);       // true → render the message as an error (red), otherwise success (green)
+  let alreadyIn = new SvelteSet();         // reactive set: .add()/.clear() trigger updates
 
-  // Bei jedem Öffnen frisch laden (Eltern setzt mode von null auf einen Wert)
+  // The fixed-name watchlist playlist is shown with its localized label.
+  const displayName = (t) => t.Name === 'Watchlist' ? i18n.t.watchlist : t.Name;
+  let childrenOf = $state({});             // target ID → contained titles (deep reactivity)
+
+  // Load fresh on every open (the parent sets mode from null to a value)
   $effect(() => { if (mode) loadList(mode); });
 
-  // Stale-Guard (Muster wie in Suche/Details): Schnelles Schließen + Wiederöffnen des Dialogs
-  // kann zwei loadList-Läufe überlappen — nur der jüngste darf Liste/Spinner schreiben.
+  // Stale guard (pattern like in Search/Details): quickly closing + reopening the dialog
+  // can overlap two loadList runs — only the most recent may write the list/spinner.
   let loadListToken = 0;
 
   async function loadList(m) {
@@ -34,10 +37,12 @@
         `${session.serverUrl}/Users/${selectedUser.Id}/Items?Recursive=true&IncludeItemTypes=${type}&SortBy=SortName&SortOrder=Ascending&EnableTotalRecordCount=false`,
         { headers: getAuthHeaders() }
       );
-      if (res.ok) { const d = await res.json(); if (myToken !== loadListToken) return; items = d.Items || []; }
+      // The watchlist has its own dedicated button — offering it here as a target again
+      // would be confusing duplication, so it is hidden from the playlist picker.
+      if (res.ok) { const d = await res.json(); if (myToken !== loadListToken) return; items = (d.Items || []).filter(t => m === 'collection' || t.Name !== 'Watchlist'); }
     } catch { }
     if (myToken !== loadListToken) return;
-    // Inhalte jedes Ziels holen → Mitgliedschaft (keine Duplikate) + Vorschau, was drin ist
+    // Fetch the contents of each target → membership (no duplicates) + a preview of what's inside
     await Promise.all(items.map(async (target) => {
       try {
         const url = m === 'collection'
@@ -57,7 +62,7 @@
   function close() { onClose?.(); }
 
   async function addTo(target) {
-    if (!item || busy || alreadyIn.has(target.Id)) return;   // keine Duplikate
+    if (!item || busy || alreadyIn.has(target.Id)) return;   // no duplicates
     busy = true;
     const url = mode === 'collection'
       ? `${session.serverUrl}/Collections/${target.Id}/Items?Ids=${item.Id}`
@@ -65,7 +70,7 @@
     try {
       const res = await fetch(url, { method: 'POST', headers: getAuthHeaders() });
       if (res.ok) {
-        msg = `${i18n.t.added}: ${target.Name}`; msgError = false;
+        msg = `${i18n.t.added}: ${displayName(target)}`; msgError = false;
         alreadyIn.add(target.Id);
         childrenOf[target.Id] = [...(childrenOf[target.Id] || []), { Id: item.Id, Name: item.Name }];
       } else {
@@ -95,7 +100,7 @@
           childrenOf[created.Id] = [{ Id: item.Id, Name: item.Name }];
         }
         newName = '';
-        onCreated?.();   // Eltern können Mediatheken/Sidebar auffrischen
+        onCreated?.();   // the parent can refresh libraries/sidebar
       } else {
         console.warn('[OcenFin] create failed', mode, res.status, await res.text().catch(() => ''));
         msg = (mode === 'collection' && res.status === 403) ? i18n.t.collectionPermissionDenied : i18n.t.actionFailed; msgError = true;
@@ -108,12 +113,12 @@
 </script>
 
 {#if mode}
-  <div data-focus-trap transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8"
+  <div data-focus-trap role="dialog" tabindex="-1" transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8"
     onkeydown={onKeydown}>
     <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl p-8 flex flex-col gap-5">
       <div class="flex justify-between items-center">
         <h2 class="text-3xl text-white font-bold">{mode === 'collection' ? i18n.t.addToCollection : i18n.t.addToPlaylist}</h2>
-        <button onclick={close} {@attach focusOnMount()}
+        <button onclick={close} {@attach focusOnMount()} aria-label={i18n.t.close}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
@@ -124,7 +129,7 @@
           {msgError ? 'bg-red-600/20 border-red-600/40 text-red-300' : 'bg-green-600/20 border-green-600/40 text-green-300'}">{msg}</div>
       {/if}
 
-      <!-- Neu erstellen -->
+      <!-- Create new -->
       <div class="flex gap-2">
         <input bind:value={newName} placeholder={i18n.t.createNew} maxlength="100"
           class="flex-1 bg-gray-900 text-white text-lg px-4 py-3 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white placeholder-gray-500"/>
@@ -134,7 +139,7 @@
         </button>
       </div>
 
-      <!-- Vorhandene -->
+      <!-- Existing -->
       {#if loading}
         <div class="text-gray-400 py-4 text-center">…</div>
       {:else if items.length}
@@ -148,7 +153,7 @@
                 {#if has}<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>{:else}<path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>{/if}
               </svg>
               <div class="flex-1 min-w-0">
-                <div class="text-lg truncate {has ? 'text-gray-300' : ''}">{target.Name}</div>
+                <div class="text-lg truncate {has ? 'text-gray-300' : ''}">{displayName(target)}</div>
                 {#if childrenOf[target.Id]?.length}
                   <div class="text-sm text-gray-500 truncate">{childrenOf[target.Id].slice(0, 10).map(c => c.Name).join(', ')}</div>
                 {/if}

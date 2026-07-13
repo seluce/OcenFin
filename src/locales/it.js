@@ -121,12 +121,16 @@ export default {
     markUnwatched: "Segna come non visto",
     addFavorite: "Aggiungi ai preferiti",
     removeFavorite: "Rimuovi dai preferiti",
+    watchlist: "La mia lista",
+    addToWatchlist: "Aggiungi alla mia lista",
+    removeFromWatchlist: "Rimuovi dalla mia lista",
     resetProgress: "Reimposta avanzamento",
     openDetails: "Apri dettagli",
     options: "Opzioni",
     moreFromSeason: "Altro da",
     trailer: "Trailer",
     similar: "Simili",
+    extras: "Contenuti extra",
     seasons: "Stagioni",
     audio: "Audio",
     subtitles: "Sottotitoli",
@@ -135,6 +139,8 @@ export default {
     mins: "min",
 
     // Player
+    unknown: "Sconosciuto",
+    source: "Sorgente",
     playback: "Riproduzione",
     prevEpisode: "Episodio precedente",
     nextEpisode: "Episodio successivo",
@@ -318,6 +324,7 @@ export default {
     // Quick Connect
     quickConnect: "Quick Connect",
     qcInstruction: "Inserisci questo codice nella tua app Jellyfin (telefono/web) in «Quick Connect»:",
+    qcQrHint: "Inquadra con un telefono connesso a Jellyfin.",
     qcCancel: "Annulla",
     qcAuthInstruction: "Inserisci un codice di 6 cifre da un altro dispositivo per autorizzarlo:",
     qcAuthorizeBtn: "Autorizza dispositivo",
@@ -374,13 +381,15 @@ export default {
     clear: "Svuota",
     logShow: "Mostra registro",
     logShowDesc: "Visualizza, copia o condividi i log attuali come codice QR.",
+    helpFaq: "Aiuto e FAQ",
+    helpFaqHint: "Inquadra col telefono per aprire la wiki e le FAQ di OcenFin.",
     logTitle: "Registro",
     logEmpty: "Ancora nessuna voce.",
     logQrButton: "Codice QR",
     logQrHint: "Scansiona con il telefono per trasferire le ultime righe (es. via e-mail).",
     logBackToText: "Torna al testo",
 
-    // Untertitel-Styling (nur Text)
+    // Subtitle styling (text only)
     subtitleColor: "Colore",
     subtitleEdge: "Bordo",
     subtitleBackground: "Sfondo",
@@ -397,14 +406,14 @@ export default {
     bgSemi: "Semi",
     bgSolid: "Pieno",
 
-    // Teilen
+    // Share
     share: "Condividi",
     shareHint: "Scansiona con il telefono per cercare o condividere il titolo.",
 
-    // Untertitel-Versatz
+    // Subtitle offset
     subtitleOffset: "Sfasamento",
 
-    // Kennwort anzeigen/verbergen
+    // Show/hide password
     showPassword: "Mostra password",
     hidePassword: "Nascondi password",
 
