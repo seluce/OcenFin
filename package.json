@@ -1,7 +1,7 @@
 {
   "name": "OcenFin",
   "private": true,
-  "version": "2026.7.7",
+  "version": "2026.7.13",
   "type": "module",
   "scripts": {
     "dev": "vite",
