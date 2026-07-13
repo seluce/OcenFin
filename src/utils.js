@@ -495,9 +495,6 @@ export function hint(delay = 220) {
     });
     observer.observe(node, { attributes: true, attributeFilter: ['aria-label'] });
 
-    // Full-screen takeovers (e.g. the screensaver) don't blur the focused button, so hide the
-    // tooltip on their global signal — otherwise it would linger on top of them.
-    window.addEventListener('ocenfin:hide-hints', destroy);
     node.addEventListener('focus', show);
     node.addEventListener('blur', destroy);
     node.addEventListener('mouseenter', show);
@@ -505,7 +502,6 @@ export function hint(delay = 220) {
     return () => {
       observer.disconnect();
       destroy();
-      window.removeEventListener('ocenfin:hide-hints', destroy);
       node.removeEventListener('focus', show);
       node.removeEventListener('blur', destroy);
       node.removeEventListener('mouseenter', show);
