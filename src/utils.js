@@ -460,7 +460,7 @@ export function hint(delay = 220) {
       tip = document.createElement('div');
       tip.textContent = label;
       Object.assign(tip.style, {
-        position: 'fixed', zIndex: '9999', pointerEvents: 'none',
+        position: 'fixed', zIndex: '650', pointerEvents: 'none',   // above modals (<=600), below the screensaver (700)
         background: 'rgba(17,24,39,0.97)', color: '#fff',
         padding: '0.4rem 0.7rem', borderRadius: '0.5rem',
         fontSize: '0.95rem', fontWeight: '600', whiteSpace: 'nowrap',

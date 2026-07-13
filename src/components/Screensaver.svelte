@@ -210,7 +210,7 @@
 <!-- Presentational full-screen overlay: it grabs focus and dismisses on ANY input (click/key/pointer);
      keyboard dismiss is already wired via onkeydown. It's an exit surface, not a control to navigate to. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="fixed inset-0 bg-black z-[500] cursor-none select-none overflow-hidden"
+<div class="fixed inset-0 bg-black z-[700] cursor-none select-none overflow-hidden"
      onclick={dismiss} onkeydown={dismiss} onpointermove={(e) => { if (e.target === e.currentTarget) dismiss(); }} tabindex="-1">
 
   {#if useArt}
