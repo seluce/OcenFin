@@ -139,6 +139,9 @@
   }
 
   onMount(async () => {
+    // Dismiss any transient overlays that don't blur on their own (e.g. a focus hint tooltip),
+    // otherwise they'd stay visible on top of the screensaver.
+    window.dispatchEvent(new CustomEvent('ocenfin:hide-hints'));
     updateClock();
     clockTick = setInterval(updateClock, 1000);
 

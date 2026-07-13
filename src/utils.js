@@ -443,6 +443,77 @@ function _pushLog(level, args) {
     if (_logBuffer.length > LOG_BUFFER_MAX) _logBuffer.shift();
   } catch {}
 }
+// Focus/hover hint for icon-only buttons on TV: shows the node's aria-label as a small
+// tooltip above it — on FOCUS (D-pad) and hover (pointer), since a TV rarely hovers.
+// Reuses aria-label so dynamic labels (watched <-> unwatched) stay correct (read at show
+// time). Body-appended + position:fixed so scroll/overflow containers can't clip it; a short
+// delay avoids flashing while quickly moving across a button row. {@attach} factory signature.
+export function hint(delay = 220) {
+  return (node) => {
+    let tip = null;
+    let timer = null;
+
+    function build() {
+      const label = node.getAttribute('aria-label');
+      if (!label) return;
+      destroy();
+      tip = document.createElement('div');
+      tip.textContent = label;
+      Object.assign(tip.style, {
+        position: 'fixed', zIndex: '9999', pointerEvents: 'none',
+        background: 'rgba(17,24,39,0.97)', color: '#fff',
+        padding: '0.4rem 0.7rem', borderRadius: '0.5rem',
+        fontSize: '0.95rem', fontWeight: '600', whiteSpace: 'nowrap',
+        border: '1px solid rgba(255,255,255,0.12)',
+        boxShadow: '0 6px 20px rgba(0,0,0,0.55)',
+        opacity: '0', transition: 'opacity 120ms ease',
+      });
+      document.body.appendChild(tip);
+      position();
+      requestAnimationFrame(() => { if (tip) tip.style.opacity = '1'; });
+    }
+    // Center above the button; flip below near the top edge; clamp to the viewport.
+    function position() {
+      if (!tip) return;
+      const r = node.getBoundingClientRect();
+      const tw = tip.offsetWidth, th = tip.offsetHeight, gap = 8, pad = 8;
+      let left = r.left + r.width / 2 - tw / 2;
+      left = Math.max(pad, Math.min(left, window.innerWidth - tw - pad));
+      let top = r.top - th - gap;
+      if (top < pad) top = r.bottom + gap;
+      tip.style.left = `${left}px`;
+      tip.style.top = `${top}px`;
+    }
+    function show() { clearTimeout(timer); timer = setTimeout(build, delay); }
+    function destroy() { clearTimeout(timer); if (tip) { tip.remove(); tip = null; } }
+
+    // Keep the visible hint in sync when the button's aria-label changes while it is shown
+    // (e.g. after clicking "mark as watched", the label flips to "mark as unwatched").
+    const observer = new MutationObserver(() => {
+      const label = node.getAttribute('aria-label');
+      if (tip && label) { tip.textContent = label; position(); }
+    });
+    observer.observe(node, { attributes: true, attributeFilter: ['aria-label'] });
+
+    // Full-screen takeovers (e.g. the screensaver) don't blur the focused button, so hide the
+    // tooltip on their global signal — otherwise it would linger on top of them.
+    window.addEventListener('ocenfin:hide-hints', destroy);
+    node.addEventListener('focus', show);
+    node.addEventListener('blur', destroy);
+    node.addEventListener('mouseenter', show);
+    node.addEventListener('mouseleave', destroy);
+    return () => {
+      observer.disconnect();
+      destroy();
+      window.removeEventListener('ocenfin:hide-hints', destroy);
+      node.removeEventListener('focus', show);
+      node.removeEventListener('blur', destroy);
+      node.removeEventListener('mouseenter', show);
+      node.removeEventListener('mouseleave', destroy);
+    };
+  };
+}
+
 export function dlog(...args) { if (_debug) { _pushLog('log', args); console.log(...args); } }
 export function clearLogBuffer() { _logBuffer = []; }
 export function formatLog(maxChars = 0) {
