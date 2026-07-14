@@ -565,7 +565,16 @@
               </span>
             {/if}
             {#if fullItem.CriticRating}
-              <span class="flex items-center gap-1 text-red-400">• {fullItem.CriticRating}%</span>
+              <span class="flex items-center gap-1 text-gray-200">
+                •
+                <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="14" r="7.5" fill="#ef4444"/>
+                  <ellipse cx="9.5" cy="6.5" rx="2.5" ry="1.3" fill="#22c55e" transform="rotate(-25 9.5 6.5)"/>
+                  <ellipse cx="14.5" cy="6.5" rx="2.5" ry="1.3" fill="#22c55e" transform="rotate(25 14.5 6.5)"/>
+                  <rect x="11.3" y="4.5" width="1.4" height="3" rx="0.7" fill="#22c55e"/>
+                </svg>
+                {fullItem.CriticRating}%
+              </span>
             {/if}
           </div>
 
