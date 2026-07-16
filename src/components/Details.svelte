@@ -577,9 +577,15 @@
       <!-- HERO -->
       <div class="flex gap-12 items-start mb-8">
 
-        <div class="w-64 shrink-0 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800">
+        <div class="w-64 shrink-0 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800 relative">
           {#if getItemImageUrl(fullItem)}
             <img src={getItemImageUrl(fullItem)} {@attach blurUp(itemBlurHash(fullItem))} alt={fullItem.Name} class="w-full h-full object-cover" />
+          {/if}
+          {#if itemProgress(fullItem) > 0 && fullItem.Type !== 'Series' && fullItem.Type !== 'Season'}
+            <!-- Resume progress on the poster — same style as the episode thumbnails -->
+            <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
+              <div class="h-full bg-blue-500" style="width:{itemProgress(fullItem)}%"></div>
+            </div>
           {/if}
         </div>
 
