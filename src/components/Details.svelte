@@ -555,6 +555,11 @@
                 </span>
               </span>
             {/if}
+            {#if fullItem.OfficialRating}
+              <span class="px-2.5 py-0.5 rounded-md border-2 border-gray-500 text-gray-100 text-base font-bold leading-none">
+                {fullItem.OfficialRating}
+              </span>
+            {/if}
             {#if fullItem.CommunityRating}
               <span class="flex items-center gap-1 text-yellow-400">
                 •
