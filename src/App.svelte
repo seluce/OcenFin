@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, itemProgress, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, uiFade, dropTrapOnOutro, getItemSubtitle, getItemImageUrl } from './utils.js';
+  import { isBackKey, focusOnMount, itemProgress, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, uiFade, dropTrapOnOutro, getItemSubtitle, getItemImageUrl, installConnectionGuard } from './utils.js';
   import { session } from './session.svelte.js';
   import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
   import { APP_VERSION } from './version.js';
@@ -654,7 +654,10 @@
     // D-pad navigation (group focus model) — active everywhere. The Player is its
     // own focus group; its slider handles Left/Right itself.
     createFocusManager(() => !navReordering);
-    // Monitor network status (banner on connection loss)
+    // Monitor network status (banner on connection loss). The offline/online events cover the
+    // OS network state; the connection guard additionally catches "server unreachable while the
+    // network is up" (NAS reboot etc.) by watching server fetches for network-level failures.
+    installConnectionGuard();
     window.addEventListener('offline', () => session.connectionLost = true);
     window.addEventListener('online',  () => session.connectionLost = false);
 

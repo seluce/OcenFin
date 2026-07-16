@@ -510,6 +510,32 @@ export function hint(delay = 220) {
   };
 }
 
+// Connection guard (install once from App): wraps window.fetch to watch SERVER requests for
+// network-level failures. A THROWN fetch means the server is unreachable (network is up but the
+// server is down/rebooting) -> flip session.connectionLost so the reconnect banner appears; the
+// existing auto-reconnect poll clears it when the server returns, and a successful call clears it
+// instantly. An HTTP error status (4xx/5xx) is NOT a connection loss -- the server answered -- so
+// it is deliberately left alone. Scoped to session.serverUrl; external fetches and <img> loads
+// are untouched. Distinguishing "server unreachable" from "server said no" is the whole point.
+let _connectionGuardInstalled = false;
+export function installConnectionGuard() {
+  if (_connectionGuardInstalled) return;
+  _connectionGuardInstalled = true;
+  const orig = window.fetch.bind(window);
+  window.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    const isServer = session.serverUrl && url.startsWith(session.serverUrl);
+    try {
+      const res = await orig(input, init);
+      if (isServer && res.ok && session.connectionLost) session.connectionLost = false;
+      return res;
+    } catch (err) {
+      if (isServer) session.connectionLost = true;
+      throw err;
+    }
+  };
+}
+
 export function dlog(...args) { if (_debug) { _pushLog('log', args); console.log(...args); } }
 export function clearLogBuffer() { _logBuffer = []; }
 export function formatLog(maxChars = 0) {
