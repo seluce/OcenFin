@@ -346,7 +346,7 @@
   function infiniteScroll(node) {
     const obs = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) loadMoreLibraryItems(); },
-      { rootMargin: '2000px' }
+      { root: libraryScrollContainer ?? null, rootMargin: '2000px' }
     );
     obs.observe(node);
     return () => obs.disconnect();
@@ -354,7 +354,7 @@
   function infiniteScrollUp(node) {
     const obs = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) loadPreviousLibraryItems(); },
-      { rootMargin: '1000px' }
+      { root: libraryScrollContainer ?? null, rootMargin: '1000px' }
     );
     obs.observe(node);
     return () => obs.disconnect();
@@ -363,6 +363,14 @@
   // Keep the A-Z display in sync while scrolling (the topmost visible card determines the active letter).
   let scrollTimer;
   function handleLibraryScroll() {
+    // Fallback for older Chromium (webOS 25 / Chromium 120): an IntersectionObserver inside an
+    // inner scroll container can fail to fire there, so also trigger loading straight from the
+    // scroll position. Both load functions guard against concurrent calls, so this never double-loads.
+    const sc = libraryScrollContainer;
+    if (sc) {
+      if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 2000) loadMoreLibraryItems();
+      if (firstLoadedIndex > 0 && sc.scrollTop <= 1500) loadPreviousLibraryItems();
+    }
     if (scrollTimer) clearTimeout(scrollTimer);
     scrollTimer = setTimeout(() => {
       if (!libraryGrid || !currentItems.length) return;
