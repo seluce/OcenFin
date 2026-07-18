@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, itemBadge, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle } from '../utils.js';
+  import { itemProgress, itemBadge, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, NAV_HIDDEN_TYPES } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { watchlist, refreshWatchlist } from '../watchlist.svelte.js';
   import { onMount, onDestroy } from 'svelte';
@@ -324,7 +324,8 @@
 
       // Priority: Views + Resume → release the UI immediately
       const [resViews, resResume] = await Promise.all([pViews, pResume]);
-      libraries        = (await resViews.json()).Items  || [];
+      // Hide the same collection types as the sidebar (music / live TV — unsupported views).
+      libraries        = ((await resViews.json()).Items || []).filter(l => !NAV_HIDDEN_TYPES.includes((l.CollectionType || '').toLowerCase()));
       continueWatching = (await resResume.json()).Items || [];
       isLoading        = false;
       session.connectionLost = false;   // server reachable

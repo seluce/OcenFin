@@ -269,8 +269,9 @@ export const NAV_ICON_PALETTE = {
 // Order in the icon picker.
 export const NAV_ICON_KEYS = ['dashboard','search','settings','movies','tvshows','tv','folder','star','heart','book','globe','music','photo','sparkles','bolt','ticket','syncplay','home','play','clock','calendar','fire','bookmark','queue','grid','building','newspaper','download','microphone','puzzle','flag','tag','cloud','bell','bolt2'];
 
-// Music is deliberately left out (needs its own view, currently unsupported).
-const NAV_HIDDEN_TYPES = ['music', 'musicvideos'];
+// Music and Live TV are deliberately left out (each needs its own view; currently unsupported).
+// Exported so the dashboard's library row filters by the exact same list as the sidebar.
+export const NAV_HIDDEN_TYPES = ['music', 'musicvideos', 'livetv'];
 
 // Builds the full entry list: fixed views (translated, dashboard/settings locked)
 // + one entry per real library (server name, language-independent). `iconOverrides` (per profile,
