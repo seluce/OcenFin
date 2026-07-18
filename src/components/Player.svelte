@@ -150,7 +150,7 @@
     console.error('[OcenFin] <video> error:', { code: err?.code, message: err?.message, playMethod });
     // Direct Play failed on the device (e.g. MKV demux/audio not playable) →
     // fall back to transcode ONCE instead of showing the error page immediately.
-    // Exactly this "try Direct Play first, then transcode" is what LiteFin/Breezefin do.
+    // This "try Direct Play first, then transcode" fallback is the standard, robust approach.
     if (playMethod !== 'Transcode' && !triedTranscodeFallback) {
       triedTranscodeFallback = true;
       console.warn('[OcenFin] Direct Play failed → forcing transcode fallback');
@@ -783,7 +783,7 @@
   let showSkipCredits = $derived(introData?.Credits?.Valid
     && currentTime >= (introData.Credits.ShowSkipPromptAt ?? Infinity));
 
-  // Auto-play the next episode with a countdown overlay (Netflix principle).
+  // Auto-play the next episode with a countdown overlay.
   // Starts near the end; "auto-skip credits" takes precedence (immediate jump).
   let chapters          = $state([]);
   let nextCountdown     = $state(null);   // remaining seconds (integer, for the text), null = inactive
@@ -949,7 +949,7 @@
   // LIFECYCLE
   // ============================================================
 
-  // "Still watching?" – best practice (Netflix style): NOT time-based, but after
+  // "Still watching?" – best practice: NOT time-based, but after
   // several auto-played episodes in a row without interaction. So it only applies to
   // series auto-play (sleep protection) and never interrupts a movie or an actively watched episode.
   // The counter (autoPlayStreak) lives in App.svelte, because the Player resets per episode.
@@ -1342,7 +1342,7 @@
     resetControlsTimeout();
   }
 
-  // Seeking like Netflix/Jellyfin: several fast presses only move the PREVIEW
+  // Seeking: several fast presses only move the PREVIEW
   // and jump to the spot ONCE only after a short pause — no reload on every press.
   function skip(seconds) {
     if (!videoElement || !duration) return;
@@ -1479,7 +1479,7 @@
       playPauseBtn?.focus();
       return;
     }
-    // HUD hidden + Left/Right → focus the playback bar and seek (like Jellyfin).
+    // HUD hidden + Left/Right → focus the playback bar and seek.
     if (!showControls && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault(); e.stopPropagation();
       resetControlsTimeout();
@@ -1950,7 +1950,7 @@
 
 
   <!-- NEXT EPISODE — bottom right -->
-  <!-- AUTO-PLAY COUNTDOWN — Netflix style, with "Play now" / "Cancel" -->
+  <!-- AUTO-PLAY COUNTDOWN — with "Play now" / "Cancel" -->
   {#if nextCountdown !== null && nextEpisode}
     <div transition:uiFade data-focus-trap class="absolute bottom-36 right-12 z-[70]">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-5 w-80 flex flex-col gap-3">

@@ -69,7 +69,7 @@
     i => !i.UserData?.Played && (i.UserData?.PlaybackPositionTicks || 0) > 0
   ));
 
-  // HERO BANNER: rotating featured item (Netflix style)
+  // HERO BANNER: rotating featured item
   let heroItems  = $state([]);
   let heroIndex  = $state(0);
   let prevHeroIndex = $state(-1);   // the previous image stays as a base during the switch (crossfade instead of dip-to-black)
@@ -222,7 +222,7 @@
   }
 
   // Recommendations: seeds from recently watched items, then /Items/{id}/Similar.
-  // Best practice (Netflix/Plex): right in the dashboard, no separate tab.
+  // Best practice: shown right in the dashboard, no separate tab.
   async function loadRecommendations(uId, opts, fields) {
     try {
       // Fetch recently played movies/series as the hook
@@ -455,7 +455,7 @@
 
   function getItemImageUrl(item, format = 'portrait') {
     if (format === 'landscape') {
-      // Like Jellyfin (preferThumb): prefer landscape artwork — own thumb, otherwise
+      // Prefer landscape artwork (preferThumb order): own thumb, otherwise
       // series/parent thumb, then backdrop (episode → series), lastly the episode still.
       if (item.ImageTags?.Thumb)
         return `${session.serverUrl}/Items/${item.Id}/Images/Thumb?tag=${item.ImageTags.Thumb}&maxWidth=600&quality=80&format=webp`;
@@ -650,7 +650,7 @@
     <!-- HERO BANNER — rotating featured item -->
     {#if showHero && heroCurrent}
       <div transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gray-900">
-        <!-- Full-bleed backdrop (Netflix style): crossfade — the PREVIOUS image stays as a base,
+        <!-- Full-bleed backdrop: crossfade — the PREVIOUS image stays as a base,
              the new one fades in on top (no more dip-to-black). Blurhash → sharp. -->
         {#if prevHeroIndex >= 0 && prevHeroIndex !== heroIndex && heroItems[prevHeroIndex] && getHeroBackdrop(heroItems[prevHeroIndex])}
           <img src={getHeroBackdrop(heroItems[prevHeroIndex])} alt="" aria-hidden="true" decoding="async"

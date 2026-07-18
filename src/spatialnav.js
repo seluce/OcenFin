@@ -1,8 +1,8 @@
 // ============================================================
 // Group-based focus model for D-pad navigation (webOS)
 // ------------------------------------------------------------
-// Like mature TV clients (LiteFin's FocusManager, Enact's Spotlight), the
-// navigation works with logical GROUPS instead of purely geometrically across the whole page.
+// The navigation works with logical GROUPS instead of purely geometrically across the whole
+// page — the robust approach for reliable D-pad focus on a TV.
 //
 // Groups = elements with [data-focus-group].
 //   • Within the current group: geometric selection (overlap → cone → fallback).

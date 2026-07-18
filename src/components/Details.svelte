@@ -230,7 +230,7 @@
     const videoId = match ? match[1] : null;
 
     // On the TV: launch the native YouTube app. Embeds fail on webOS due to the referer/
-    // platform restriction (error 153) — LiteFin/Jellyfin-webOS do it the same way.
+    // platform restriction (error 153), so launching the native app is the reliable path.
     if (videoId && window.webOS?.service?.request) {
       window.webOS.service.request('luna://com.webos.applicationManager', {
         method: 'launch',
@@ -265,7 +265,7 @@
     return match ? match.Index : null;
   }
 
-  // Like Jellyfin in default mode: show a forced ("Forced") subtitle in the language of the
+  // In default mode, show a forced ("Forced") subtitle in the language of the
   // chosen audio track. Auto-selectable are: TEXT (VTT) always; PGS, when
   // client-side rendering is on (libbitsub → Direct Play); VobSub/DVD likewise, AS SOON AS the
   // server delivers them as .mks (Jellyfin 12.0+) → then also Direct Play. On older

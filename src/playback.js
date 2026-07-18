@@ -109,8 +109,8 @@ export async function getPlaybackInfo({
   burnSubtitles = false, mediaSourceId = null, clientGraphicSubs = false, serverVobSub = false,
 }) {
   // IMPORTANT: Jellyfin reads AudioStreamIndex/SubtitleStreamIndex and the Enable* flags
-  // from the QUERY STRING (only the DeviceProfile belongs in the body). This is exactly how
-  // jellyfin-web does it. Previously they were in the body → the server ignored the chosen audio track.
+  // from the QUERY STRING (only the DeviceProfile belongs in the body). Previously they were
+  // in the body → the server ignored the chosen audio track.
   const qs = new URLSearchParams({
     UserId: userId,
     StartTimeTicks: String(startTicks),
