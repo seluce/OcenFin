@@ -449,7 +449,7 @@ function _pushLog(level, args) {
 // Reuses aria-label so dynamic labels (watched <-> unwatched) stay correct (read at show
 // time). Body-appended + position:fixed so scroll/overflow containers can't clip it; a short
 // delay avoids flashing while quickly moving across a button row. {@attach} factory signature.
-export function hint(delay = 220) {
+export function hint(delay = 350) {
   return (node) => {
     let tip = null;
     let timer = null;
