@@ -252,6 +252,15 @@ export function createFocusManager(isEnabled) {
           if (bar && !bar.contains(active))
             within = bar.querySelector('[data-hbar-current]') || focusablesIn(bar)[0] || null;
         }
+        // Final safety net: leaving a start-at-top content area (data-enter-top) via Left with still
+        // no target means the loose pick landed on another content row instead of the leading category
+        // bar (happens for options near the top, where a nearby content row is closer than the bar).
+        // Bind directly to that bar so Left from the options can never skip past it to the sidebar,
+        // wherever the option sits vertically.
+        if (!within && e.key === 'ArrowLeft' && active.closest('[data-enter-top]')) {
+          const leadingBar = [...scope.querySelectorAll('[data-hbar]')].find(b => !b.contains(active));
+          if (leadingBar) within = leadingBar.querySelector('[data-hbar-current]') || focusablesIn(leadingBar)[0] || null;
+        }
       }
       // Entering a jump bar from outside (via Left/Right): jump directly onto the currently
       // marked element (data-hbar-current, e.g. the selected letter) instead of the
