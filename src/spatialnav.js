@@ -213,12 +213,6 @@ export function createFocusManager(isEnabled) {
       // otherwise: cursor at the edge → focus may leave the field in this direction (normal navigation)
     }
 
-    // From here on spatial nav owns the navigation key. Suppress the browser's native
-    // arrow-key scrolling once, up front — otherwise pressing e.g. Down on the last row
-    // (no target below, focus correctly stays put) would still scroll the page into empty
-    // space, which looks wrong on a TV. All focus moves scroll via focusEl/scrollIntoView.
-    e.preventDefault();
-
     const hasActive = active && active !== document.body;
     const from = hasActive ? rectOf(active)
                            : { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
@@ -267,7 +261,7 @@ export function createFocusManager(isEnabled) {
         }
       }
       if (within) { focusEl(within); return; }
-      if (trap) { return; }   // don't leave the modal
+      if (trap) { e.preventDefault(); return; }   // modal boundary: stay, and don't scroll the background
     }
 
     // 2) Transition to the next group in the direction
@@ -280,8 +274,14 @@ export function createFocusManager(isEnabled) {
     // 3) No focus at all yet → take the first focusable element
     if (!hasActive) {
       const any = focusablesIn(document.body)[0];
-      if (any) { focusEl(any); }
+      if (any) { focusEl(any); return; }
     }
+
+    // No target in this direction — focus stays put. Suppress the browser's native arrow-key
+    // scrolling so we don't scroll into empty space past the last row/card. On a SUCCESSFUL move
+    // above we deliberately do NOT preventDefault, so the browser adds a little context scroll —
+    // keeping the row title / section header above the newly focused element visible.
+    e.preventDefault();
   }
 
   window.addEventListener('focusin', onFocusIn);
