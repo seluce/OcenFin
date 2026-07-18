@@ -538,7 +538,7 @@
 
   <!-- RIGHT: content of the active category. data-enter-top: when switching from the left, focus
        always starts at the top element of the respective category, not geometrically in the middle. -->
-  <div bind:this={contentEl} data-enter-top class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16">
+  <div bind:this={contentEl} data-enter-top class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16 [scroll-padding-top:4rem]">
     <div class="max-w-4xl flex flex-col gap-10 pb-32">
     <!-- ══════════════════════════════════════════
          1. APPEARANCE

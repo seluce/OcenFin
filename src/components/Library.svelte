@@ -479,7 +479,7 @@
   {/if}
 
   <div bind:this={libraryScrollContainer} onscroll={handleLibraryScroll}
-    class="flex-1 p-10 pt-16 overflow-y-auto hide-scrollbar relative z-10">
+    class="flex-1 p-10 pt-16 overflow-y-auto hide-scrollbar relative z-10 [scroll-padding-top:4rem]">
 
     <div class="flex justify-between items-center mb-10 pr-6">
       <h1 class="text-4xl font-bold text-white">

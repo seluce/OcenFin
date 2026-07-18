@@ -218,6 +218,12 @@ export function createFocusManager(isEnabled) {
       // otherwise: cursor at the edge → focus may leave the field in this direction (normal navigation)
     }
 
+    // From here on spatial nav owns the navigation key and scrolls deterministically via
+    // scrollIntoView — suppress the browser's native arrow-key scroll entirely. (A variable native
+    // scroll caused inconsistent context reveal and unwanted page scrolling inside dropdowns.) Row
+    // titles / section headers are revealed via scroll-padding-top on the scroll containers instead.
+    e.preventDefault();
+
     const hasActive = active && active !== document.body;
     const from = hasActive ? rectOf(active)
                            : { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
@@ -280,7 +286,7 @@ export function createFocusManager(isEnabled) {
         }
       }
       if (within) { focusEl(within); return; }
-      if (trap) { e.preventDefault(); return; }   // modal boundary: stay, and don't scroll the background
+      if (trap) { return; }   // modal boundary: stay put
     }
 
     // 2) Transition to the next group in the direction
@@ -296,11 +302,6 @@ export function createFocusManager(isEnabled) {
       if (any) { focusEl(any); return; }
     }
 
-    // No target in this direction — focus stays put. Suppress the browser's native arrow-key
-    // scrolling so we don't scroll into empty space past the last row/card. On a SUCCESSFUL move
-    // above we deliberately do NOT preventDefault, so the browser adds a little context scroll —
-    // keeping the row title / section header above the newly focused element visible.
-    e.preventDefault();
   }
 
   window.addEventListener('focusin', onFocusIn);

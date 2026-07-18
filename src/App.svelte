@@ -1552,7 +1552,7 @@
         onLogOutServer={handleLogout}
       />
 
-      <div data-focus-group="main" class="flex-1 h-full overflow-y-auto hide-scrollbar bg-gray-900 relative">
+      <div data-focus-group="main" class="flex-1 h-full overflow-y-auto hide-scrollbar bg-gray-900 relative [scroll-padding-top:4rem]">
 
         {#if viewState === 'dashboard'}
           {#key dashboardReloadKey}
