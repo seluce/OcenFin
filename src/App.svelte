@@ -382,9 +382,11 @@
   function dismissRemoteMessage() { if (remoteMessageTimer) clearTimeout(remoteMessageTimer); remoteMessage = null; }
   let _lastSyncQueueItem = null;   // last auto-opened group item (no re-opening after leaving)
   let _syncOpeningId = null;       // currently opening (prevents double open)
-  async function syncRefresh() {
+  async function syncRefresh(silent = false) {
     if (!session.serverUrl || !session.token) return;
-    syncLoading = true;
+    // The 4s background poll refreshes SILENTLY (no loading flag): otherwise the empty state
+    // ("no groups") would flip to a spinner and back on every poll, causing a flicker.
+    if (!silent) syncLoading = true;
     const all = await listSyncGroups(session.serverUrl, session.token);
     syncLoading = false;
     // My group = the one THIS session joined (by GroupId) — NOT by profile name,
@@ -397,7 +399,7 @@
     showSyncPlay = true;
     syncRefresh();
     if (syncPollTimer) clearInterval(syncPollTimer);
-    syncPollTimer = setInterval(syncRefresh, 4000);   // keep members live-updated while open
+    syncPollTimer = setInterval(() => syncRefresh(true), 4000);   // keep members live-updated while open (silent)
   }
   function closeSyncPlay() {
     showSyncPlay = false;
@@ -1708,7 +1710,7 @@
       onCreate={syncCreate}
       onJoin={(groupId) => syncJoin(groupId)}
       onLeave={syncLeave}
-      onRefresh={syncRefresh}
+      onRefresh={() => syncRefresh()}
       onClose={closeSyncPlay}
     />
     {/await}
