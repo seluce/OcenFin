@@ -495,6 +495,10 @@
 
   // Two-column navigation: pick the category on the left, content on the right (no long scrolling)
   let activeCategory = $state('appearance');
+  let contentEl = $state();
+  // Reset the content scroll position on category switch, so a new category always starts at the
+  // top instead of inheriting the previous category's scroll depth.
+  $effect(() => { activeCategory; if (contentEl) contentEl.scrollTop = 0; });
   // Close the "display elements" sub-item as soon as you leave the appearance tab
   $effect(() => { if (activeCategory !== 'appearance') showDisplayOptions = false; });
   let categories = $derived([
@@ -534,7 +538,7 @@
 
   <!-- RIGHT: content of the active category. data-enter-top: when switching from the left, focus
        always starts at the top element of the respective category, not geometrically in the middle. -->
-  <div data-enter-top class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16">
+  <div bind:this={contentEl} data-enter-top class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16">
     <div class="max-w-4xl flex flex-col gap-10 pb-32">
     <!-- ══════════════════════════════════════════
          1. APPEARANCE
