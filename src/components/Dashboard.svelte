@@ -510,7 +510,7 @@
   {#if dashboardBackdrop && previewBackdrop}
     <div {@attach heroScrollFade} style="opacity:{bgOpacity}" class="sticky top-0 h-screen w-full -mb-[100vh] z-0 pointer-events-none overflow-hidden">
       {#key previewBackdrop}
-        <img src={previewBackdrop} alt="" class="w-full h-full object-cover preview-fade" />
+        <img src={previewBackdrop} alt="" class="w-full h-full object-cover object-top preview-fade" />
       {/key}
       <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/85 to-gray-900/40"></div>
       <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-gray-900/60"></div>
@@ -654,12 +654,12 @@
              the new one fades in on top (no more dip-to-black). Blurhash → sharp. -->
         {#if prevHeroIndex >= 0 && prevHeroIndex !== heroIndex && heroItems[prevHeroIndex] && getHeroBackdrop(heroItems[prevHeroIndex])}
           <img src={getHeroBackdrop(heroItems[prevHeroIndex])} alt="" aria-hidden="true" decoding="async"
-            class="absolute inset-0 w-full h-full object-cover object-center" />
+            class="absolute inset-0 w-full h-full object-cover object-[center_20%]" />
         {/if}
         {#key heroCurrent?.Id}
           {#if heroCurrent && getHeroBackdrop(heroCurrent)}
             <img src={getHeroBackdrop(heroCurrent)} {@attach blurUp(itemBlurHash(heroCurrent, 'Backdrop'))} alt={heroCurrent.Name} fetchpriority="high" loading="eager" decoding="async"
-              class="absolute inset-0 w-full h-full object-cover object-center hero-fade" />
+              class="absolute inset-0 w-full h-full object-cover object-[center_20%] hero-fade" />
           {/if}
         {/key}
         <!-- Gradients: left for text legibility, bottom for a seamless transition into the rows below -->

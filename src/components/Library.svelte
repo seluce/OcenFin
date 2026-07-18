@@ -462,7 +462,7 @@
   {#if previewBackdrop}
     <div class="absolute inset-0 z-0 pointer-events-none">
       {#key previewBackdrop}
-        <img src={previewBackdrop} alt="" class="w-full h-full object-cover preview-fade" />
+        <img src={previewBackdrop} alt="" class="w-full h-full object-cover object-top preview-fade" />
       {/key}
       <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/85 to-gray-900/40"></div>
       <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-gray-900/60"></div>
