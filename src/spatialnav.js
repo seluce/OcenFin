@@ -141,8 +141,13 @@ function entryOf(group, dir, from) {
   const current = group.querySelector('[data-group-current]');
   if (current && isVisible(current)) return current;
   const remembered = lastFocus.get(group);
-  if (remembered && group.contains(remembered) && isVisible(remembered)) return remembered;
-  const cands = focusablesIn(group);
+  if (remembered && group.contains(remembered) && isVisible(remembered)
+      && !remembered.closest('[data-hbar-trailing]')) return remembered;
+  // A trailing jump bar (the A-Z bar sits AFTER the grid on the right) is reached only by moving
+  // into it from the grid — never as the landing spot when entering the group from outside (e.g.
+  // the sidebar). Leading bars (settings category nav on the left) are NOT marked → stay valid.
+  let cands = focusablesIn(group).filter(el => !el.closest('[data-hbar-trailing]'));
+  if (!cands.length) cands = focusablesIn(group);
   if (!cands.length) return null;
   const byDir = pickGeometric(dir, from, cands, null);
   if (byDir) return byDir;
@@ -229,10 +234,15 @@ export function createFocusManager(isEnabled) {
       // binding and enter at its top. Only applies when transitioning into a foreign enter-top area.
       if (!within && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
         const loose = pickGeometric(e.key, from, focusablesIn(scope), active, false);
+        // Leaving a jump bar toward the grid (Left from the A-Z bar; its focused letter may sit
+        // below the last card, so the strict-row pick found nothing) → nearest content element,
+        // so focus can't skip the grid and jump straight to the sidebar.
+        const _activeHbar = active.closest('[data-hbar]');
+        if (_activeHbar && e.key === 'ArrowLeft' && loose && !_activeHbar.contains(loose)) within = loose;
         const top = loose?.closest('[data-enter-top]');
-        if (top && !top.contains(active)) {
+        if (!within && top && !top.contains(active)) {
           within = focusablesIn(top)[0] || null;
-        } else {
+        } else if (!within) {
           // Leaving a start-at-top content area toward a jump bar (data-hbar) in the SAME group —
           // e.g. Left from the settings detail area back to the category navigation. Content rows
           // below the last bar item find no vertically overlapping target, so the strict-row pick

@@ -646,7 +646,7 @@
        re-sampled on every scroll frame (expensive on the B4). The slightly denser gradient
        keeps the letters readable over bright posters instead. -->
   {#if showLetterBar}
-  <div data-hbar class="w-16 shrink-0 bg-gradient-to-l from-gray-950/90 via-gray-950/65 to-transparent flex flex-col items-center justify-between py-6 overflow-y-auto hide-scrollbar z-10">
+  <div data-hbar data-hbar-trailing class="w-16 shrink-0 bg-gradient-to-l from-gray-950/90 via-gray-950/65 to-transparent flex flex-col items-center justify-between py-6 overflow-y-auto hide-scrollbar z-10">
     {#each alphabet as letter}
       <button
         onclick={() => { showJumpLetter(letter); loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, letter); }}
