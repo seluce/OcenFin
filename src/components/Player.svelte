@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro } from '../utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro, getItemImageUrl } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady } from '../syncplay.js';
@@ -150,7 +150,7 @@
     console.error('[OcenFin] <video> error:', { code: err?.code, message: err?.message, playMethod });
     // Direct Play failed on the device (e.g. MKV demux/audio not playable) →
     // fall back to transcode ONCE instead of showing the error page immediately.
-    // Exactly this "try Direct Play first, then transcode" is what LiteFin/Breezefin do.
+    // This "try Direct Play first, then transcode" fallback is the standard, robust approach.
     if (playMethod !== 'Transcode' && !triedTranscodeFallback) {
       triedTranscodeFallback = true;
       console.warn('[OcenFin] Direct Play failed → forcing transcode fallback');
@@ -783,7 +783,7 @@
   let showSkipCredits = $derived(introData?.Credits?.Valid
     && currentTime >= (introData.Credits.ShowSkipPromptAt ?? Infinity));
 
-  // Auto-play the next episode with a countdown overlay (Netflix principle).
+  // Auto-play the next episode with a countdown overlay.
   // Starts near the end; "auto-skip credits" takes precedence (immediate jump).
   let chapters          = $state([]);
   let nextCountdown     = $state(null);   // remaining seconds (integer, for the text), null = inactive
@@ -910,6 +910,7 @@
   let nextByIndex = $derived(queueActive ? queueNext : (episodeIndex >= 0 && episodeIndex < seriesEpisodes.length - 1
                    ? seriesEpisodes[episodeIndex + 1] : null));
   let nextEpisode = $derived(nextByIndex);   // auto-play/outro use the same sequential next episode (also into the next season)
+  let nextEpisodeImage = $derived(nextEpisode ? getItemImageUrl(nextEpisode, 'landscape') : null);   // still for the compact "up next" thumbnail
 
   // "Only this episode" — one-shot sleep switch (opt-in via playbackPrefs.sleepButton).
   // Blocks ONLY the automatic transitions (outro countdown, video end, auto-skip credits);
@@ -949,7 +950,7 @@
   // LIFECYCLE
   // ============================================================
 
-  // "Still watching?" – best practice (Netflix style): NOT time-based, but after
+  // "Still watching?" – best practice: NOT time-based, but after
   // several auto-played episodes in a row without interaction. So it only applies to
   // series auto-play (sleep protection) and never interrupts a movie or an actively watched episode.
   // The counter (autoPlayStreak) lives in App.svelte, because the Player resets per episode.
@@ -1342,7 +1343,7 @@
     resetControlsTimeout();
   }
 
-  // Seeking like Netflix/Jellyfin: several fast presses only move the PREVIEW
+  // Seeking: several fast presses only move the PREVIEW
   // and jump to the spot ONCE only after a short pause — no reload on every press.
   function skip(seconds) {
     if (!videoElement || !duration) return;
@@ -1479,7 +1480,7 @@
       playPauseBtn?.focus();
       return;
     }
-    // HUD hidden + Left/Right → focus the playback bar and seek (like Jellyfin).
+    // HUD hidden + Left/Right → focus the playback bar and seek.
     if (!showControls && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault(); e.stopPropagation();
       resetControlsTimeout();
@@ -1487,9 +1488,11 @@
       skip(e.key === 'ArrowLeft' ? -10 : 10);
       return;
     }
-    // Arrow keys/Enter are otherwise handled by the group navigation or the focused
-    // buttons — here just show the controls again.
-    resetControlsTimeout();
+    // Arrow keys/Enter are otherwise handled by group navigation or the focused buttons. With an
+    // overlay open (skip intro / outro prompt / still-watching) do NOT reveal the HUD — pressing OK
+    // there acts on the overlay button (e.g. skip intro → seamless playback), so the controls
+    // shouldn't pop up. Otherwise, show the controls again.
+    if (!overlayActive) resetControlsTimeout();
   }
 
   function formatTime(seconds) {
@@ -1933,14 +1936,14 @@
 
   <!-- SKIP INTRO — bottom left -->
   {#if showSkipIntro}
-    <div transition:uiFade class="absolute bottom-36 left-12 z-[70]">
+    <div transition:uiFade class="absolute bottom-44 left-12 z-[70]">
       <button onclick={skipIntro} {@attach focusOnMount()}
-        class="bg-white/10 backdrop-blur-md border-2 border-white text-white font-bold text-xl
-               px-8 py-4 rounded-xl flex items-center gap-3 shadow-2xl
+        class="bg-black/85 border-2 border-white text-white font-bold text-2xl
+               px-10 py-5 rounded-xl flex items-center gap-4 shadow-2xl
                hover:bg-white hover:text-black focus:bg-white focus:text-black
-               focus:outline-none transition-all duration-200">
+               focus:outline-none transition-colors duration-200">
         <!-- Double arrow right for "skip" -->
-        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+        <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
           <path d="M5.59 7.41L10.18 12l-4.59 4.59L7 18l6-6-6-6zM16 6h2v12h-2z"/>
         </svg>
         {i18n.t.skipIntro}
@@ -1950,25 +1953,33 @@
 
 
   <!-- NEXT EPISODE — bottom right -->
-  <!-- AUTO-PLAY COUNTDOWN — Netflix style, with "Play now" / "Cancel" -->
+  <!-- AUTO-PLAY COUNTDOWN — with "Play now" / "Cancel" -->
   {#if nextCountdown !== null && nextEpisode}
-    <div transition:uiFade data-focus-trap class="absolute bottom-36 right-12 z-[70]">
-      <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-5 w-80 flex flex-col gap-3">
-        <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{i18n.t.nextEpisodeIn} {nextCountdown} {nextCountdown === 1 ? i18n.t.secondOne : i18n.t.secondsMany}</span>
-        <span class="text-lg font-bold text-white truncate">{nextEpisode.Name}</span>
-        {#if nextEpisodeMeta}<span class="text-sm text-gray-400 truncate">{nextEpisodeMeta}</span>{/if}
-        <div class="h-1 bg-gray-700 rounded-full overflow-hidden">
+    <div transition:uiFade data-focus-trap class="absolute bottom-12 right-12 z-[70] transition-transform duration-300 {showControls ? '-translate-y-32' : ''}">
+      <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-6 w-[30rem] flex flex-col gap-3">
+        <div class="flex items-center gap-3">
+          {#if nextEpisodeImage}
+            <img src={nextEpisodeImage} alt="" loading="lazy" decoding="async"
+              class="w-32 aspect-video object-cover rounded-lg shrink-0 bg-gray-800" />
+          {/if}
+          <div class="min-w-0 flex-1 flex flex-col gap-1">
+            <span class="text-sm font-semibold text-gray-400 uppercase tracking-wider">{i18n.t.nextEpisodeIn} {nextCountdown} {nextCountdown === 1 ? i18n.t.secondOne : i18n.t.secondsMany}</span>
+            <span class="text-xl font-bold text-white truncate">{nextEpisode.Name}</span>
+            {#if nextEpisodeMeta}<span class="text-base text-gray-400">{nextEpisodeMeta}</span>{/if}
+          </div>
+        </div>
+        <div class="h-1.5 bg-gray-700 rounded-full overflow-hidden">
           <div class="h-full bg-blue-500" style="width: {countdownProgress * 100}%; transition: width 0.12s linear;"></div>
         </div>
         <div class="flex gap-3">
           <button onclick={() => goToNextEpisode(true)} {@attach focusOnMount()}
-            class="flex-1 bg-white text-black font-bold py-2.5 rounded-lg flex items-center justify-center gap-2
+            class="flex-1 bg-white text-black font-bold text-lg py-3 rounded-lg flex items-center justify-center gap-2
                    focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
-            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
             {i18n.t.playNow}
           </button>
           <button onclick={cancelCountdown}
-            class="px-4 bg-gray-700 text-white font-bold py-2.5 rounded-lg
+            class="px-4 bg-gray-700 text-white font-bold text-lg py-3 rounded-lg
                    focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-600 transition-colors">
             {i18n.t.cancel}
           </button>
@@ -1980,20 +1991,28 @@
   <!-- Manual "next episode" prompt (no countdown): appears with auto-play disabled OR after
        cancelling the timer. The user decides — "Cancel" stays on the current episode (outro). -->
   {#if outroPromptActive && nextEpisode && nextCountdown === null && !outroDismissed}
-    <div transition:uiFade data-focus-trap class="absolute bottom-36 right-12 z-[70]">
-      <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-5 w-80 flex flex-col gap-3">
-        <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{i18n.t.nextEpisode}</span>
-        <span class="text-lg font-bold text-white truncate">{nextEpisode.Name}</span>
-        {#if nextEpisodeMeta}<span class="text-sm text-gray-400 truncate">{nextEpisodeMeta}</span>{/if}
+    <div transition:uiFade data-focus-trap class="absolute bottom-12 right-12 z-[70] transition-transform duration-300 {showControls ? '-translate-y-32' : ''}">
+      <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-6 w-[30rem] flex flex-col gap-3">
+        <div class="flex items-center gap-3">
+          {#if nextEpisodeImage}
+            <img src={nextEpisodeImage} alt="" loading="lazy" decoding="async"
+              class="w-32 aspect-video object-cover rounded-lg shrink-0 bg-gray-800" />
+          {/if}
+          <div class="min-w-0 flex-1 flex flex-col gap-1">
+            <span class="text-sm font-semibold text-gray-400 uppercase tracking-wider">{i18n.t.nextEpisode}</span>
+            <span class="text-xl font-bold text-white truncate">{nextEpisode.Name}</span>
+            {#if nextEpisodeMeta}<span class="text-base text-gray-400">{nextEpisodeMeta}</span>{/if}
+          </div>
+        </div>
         <div class="flex gap-3">
           <button onclick={() => goToNextEpisode(true)} {@attach focusOnMount()}
-            class="flex-1 bg-white text-black font-bold py-2.5 rounded-lg flex items-center justify-center gap-2
+            class="flex-1 bg-white text-black font-bold text-lg py-3 rounded-lg flex items-center justify-center gap-2
                    focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
-            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
             {i18n.t.playNow}
           </button>
           <button onclick={() => outroDismissed = true}
-            class="px-4 bg-gray-700 text-white font-bold py-2.5 rounded-lg
+            class="px-4 bg-gray-700 text-white font-bold text-lg py-3 rounded-lg
                    focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-600 transition-colors">
             {i18n.t.cancel}
           </button>

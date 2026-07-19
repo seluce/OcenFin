@@ -346,7 +346,7 @@
   function infiniteScroll(node) {
     const obs = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) loadMoreLibraryItems(); },
-      { rootMargin: '2000px' }
+      { root: libraryScrollContainer ?? null, rootMargin: '2000px' }
     );
     obs.observe(node);
     return () => obs.disconnect();
@@ -354,7 +354,7 @@
   function infiniteScrollUp(node) {
     const obs = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) loadPreviousLibraryItems(); },
-      { rootMargin: '1000px' }
+      { root: libraryScrollContainer ?? null, rootMargin: '1000px' }
     );
     obs.observe(node);
     return () => obs.disconnect();
@@ -363,6 +363,14 @@
   // Keep the A-Z display in sync while scrolling (the topmost visible card determines the active letter).
   let scrollTimer;
   function handleLibraryScroll() {
+    // Fallback for older Chromium (webOS 25 / Chromium 120): an IntersectionObserver inside an
+    // inner scroll container can fail to fire there, so also trigger loading straight from the
+    // scroll position. Both load functions guard against concurrent calls, so this never double-loads.
+    const sc = libraryScrollContainer;
+    if (sc) {
+      if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 2000) loadMoreLibraryItems();
+      if (firstLoadedIndex > 0 && sc.scrollTop <= 1500) loadPreviousLibraryItems();
+    }
     if (scrollTimer) clearTimeout(scrollTimer);
     scrollTimer = setTimeout(() => {
       if (!libraryGrid || !currentItems.length) return;
@@ -454,7 +462,7 @@
   {#if previewBackdrop}
     <div class="absolute inset-0 z-0 pointer-events-none">
       {#key previewBackdrop}
-        <img src={previewBackdrop} alt="" class="w-full h-full object-cover preview-fade" />
+        <img src={previewBackdrop} alt="" class="w-full h-full object-cover object-top preview-fade" />
       {/key}
       <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/85 to-gray-900/40"></div>
       <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-gray-900/60"></div>
@@ -471,7 +479,7 @@
   {/if}
 
   <div bind:this={libraryScrollContainer} onscroll={handleLibraryScroll}
-    class="flex-1 p-10 pt-16 overflow-y-auto hide-scrollbar relative z-10">
+    class="flex-1 p-10 pt-16 overflow-y-auto hide-scrollbar relative z-10 [scroll-padding-top:4rem]">
 
     <div class="flex justify-between items-center mb-10 pr-6">
       <h1 class="text-4xl font-bold text-white">
@@ -638,7 +646,7 @@
        re-sampled on every scroll frame (expensive on the B4). The slightly denser gradient
        keeps the letters readable over bright posters instead. -->
   {#if showLetterBar}
-  <div data-hbar class="w-16 shrink-0 bg-gradient-to-l from-gray-950/90 via-gray-950/65 to-transparent flex flex-col items-center justify-between py-6 overflow-y-auto hide-scrollbar z-10">
+  <div data-hbar data-hbar-trailing class="w-16 shrink-0 bg-gradient-to-l from-gray-950/90 via-gray-950/65 to-transparent flex flex-col items-center justify-between py-6 overflow-y-auto hide-scrollbar z-10">
     {#each alphabet as letter}
       <button
         onclick={() => { showJumpLetter(letter); loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, letter); }}

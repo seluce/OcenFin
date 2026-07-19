@@ -1,8 +1,8 @@
 // ============================================================
 // Group-based focus model for D-pad navigation (webOS)
 // ------------------------------------------------------------
-// Like mature TV clients (LiteFin's FocusManager, Enact's Spotlight), the
-// navigation works with logical GROUPS instead of purely geometrically across the whole page.
+// The navigation works with logical GROUPS instead of purely geometrically across the whole
+// page — the robust approach for reliable D-pad focus on a TV.
 //
 // Groups = elements with [data-focus-group].
 //   • Within the current group: geometric selection (overlap → cone → fallback).
@@ -141,8 +141,13 @@ function entryOf(group, dir, from) {
   const current = group.querySelector('[data-group-current]');
   if (current && isVisible(current)) return current;
   const remembered = lastFocus.get(group);
-  if (remembered && group.contains(remembered) && isVisible(remembered)) return remembered;
-  const cands = focusablesIn(group);
+  if (remembered && group.contains(remembered) && isVisible(remembered)
+      && !remembered.closest('[data-hbar-trailing]')) return remembered;
+  // A trailing jump bar (the A-Z bar sits AFTER the grid on the right) is reached only by moving
+  // into it from the grid — never as the landing spot when entering the group from outside (e.g.
+  // the sidebar). Leading bars (settings category nav on the left) are NOT marked → stay valid.
+  let cands = focusablesIn(group).filter(el => !el.closest('[data-hbar-trailing]'));
+  if (!cands.length) cands = focusablesIn(group);
   if (!cands.length) return null;
   const byDir = pickGeometric(dir, from, cands, null);
   if (byDir) return byDir;
@@ -213,6 +218,12 @@ export function createFocusManager(isEnabled) {
       // otherwise: cursor at the edge → focus may leave the field in this direction (normal navigation)
     }
 
+    // From here on spatial nav owns the navigation key and scrolls deterministically via
+    // scrollIntoView — suppress the browser's native arrow-key scroll entirely. (A variable native
+    // scroll caused inconsistent context reveal and unwanted page scrolling inside dropdowns.) Row
+    // titles / section headers are revealed via scroll-padding-top on the scroll containers instead.
+    e.preventDefault();
+
     const hasActive = active && active !== document.body;
     const from = hasActive ? rectOf(active)
                            : { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
@@ -229,10 +240,15 @@ export function createFocusManager(isEnabled) {
       // binding and enter at its top. Only applies when transitioning into a foreign enter-top area.
       if (!within && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
         const loose = pickGeometric(e.key, from, focusablesIn(scope), active, false);
+        // Leaving a jump bar toward the grid (Left from the A-Z bar; its focused letter may sit
+        // below the last card, so the strict-row pick found nothing) → nearest content element,
+        // so focus can't skip the grid and jump straight to the sidebar.
+        const _activeHbar = active.closest('[data-hbar]');
+        if (_activeHbar && e.key === 'ArrowLeft' && loose && !_activeHbar.contains(loose)) within = loose;
         const top = loose?.closest('[data-enter-top]');
-        if (top && !top.contains(active)) {
+        if (!within && top && !top.contains(active)) {
           within = focusablesIn(top)[0] || null;
-        } else {
+        } else if (!within) {
           // Leaving a start-at-top content area toward a jump bar (data-hbar) in the SAME group —
           // e.g. Left from the settings detail area back to the category navigation. Content rows
           // below the last bar item find no vertically overlapping target, so the strict-row pick
@@ -241,6 +257,15 @@ export function createFocusManager(isEnabled) {
           const bar = loose?.closest('[data-hbar]');
           if (bar && !bar.contains(active))
             within = bar.querySelector('[data-hbar-current]') || focusablesIn(bar)[0] || null;
+        }
+        // Final safety net: leaving a start-at-top content area (data-enter-top) via Left with still
+        // no target means the loose pick landed on another content row instead of the leading category
+        // bar (happens for options near the top, where a nearby content row is closer than the bar).
+        // Bind directly to that bar so Left from the options can never skip past it to the sidebar,
+        // wherever the option sits vertically.
+        if (!within && e.key === 'ArrowLeft' && active.closest('[data-enter-top]')) {
+          const leadingBar = [...scope.querySelectorAll('[data-hbar]')].find(b => !b.contains(active));
+          if (leadingBar) within = leadingBar.querySelector('[data-hbar-current]') || focusablesIn(leadingBar)[0] || null;
         }
       }
       // Entering a jump bar from outside (via Left/Right): jump directly onto the currently
@@ -260,22 +285,23 @@ export function createFocusManager(isEnabled) {
           if (first) within = first;
         }
       }
-      if (within) { e.preventDefault(); focusEl(within); return; }
-      if (trap) { e.preventDefault(); return; }   // don't leave the modal
+      if (within) { focusEl(within); return; }
+      if (trap) { return; }   // modal boundary: stay put
     }
 
     // 2) Transition to the next group in the direction
     const tgt = nearestGroup(e.key, from, groupOf(active));
     if (tgt) {
       const entry = entryOf(tgt, e.key, from);
-      if (entry) { e.preventDefault(); focusEl(entry); return; }
+      if (entry) { focusEl(entry); return; }
     }
 
     // 3) No focus at all yet → take the first focusable element
     if (!hasActive) {
       const any = focusablesIn(document.body)[0];
-      if (any) { e.preventDefault(); focusEl(any); }
+      if (any) { focusEl(any); return; }
     }
+
   }
 
   window.addEventListener('focusin', onFocusIn);

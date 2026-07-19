@@ -495,6 +495,10 @@
 
   // Two-column navigation: pick the category on the left, content on the right (no long scrolling)
   let activeCategory = $state('appearance');
+  let contentEl = $state();
+  // Reset the content scroll position on category switch, so a new category always starts at the
+  // top instead of inheriting the previous category's scroll depth.
+  $effect(() => { activeCategory; if (contentEl) contentEl.scrollTop = 0; });
   // Close the "display elements" sub-item as soon as you leave the appearance tab
   $effect(() => { if (activeCategory !== 'appearance') showDisplayOptions = false; });
   let categories = $derived([
@@ -534,7 +538,7 @@
 
   <!-- RIGHT: content of the active category. data-enter-top: when switching from the left, focus
        always starts at the top element of the respective category, not geometrically in the middle. -->
-  <div data-enter-top class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16">
+  <div bind:this={contentEl} data-enter-top class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16 [scroll-padding-top:4rem]">
     <div class="max-w-4xl flex flex-col gap-10 pb-32">
     <!-- ══════════════════════════════════════════
          1. APPEARANCE
@@ -1273,7 +1277,7 @@
           <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-2xl max-w-2xl w-full flex flex-col gap-5">
             <div class="flex justify-between items-center">
               <h3 class="text-2xl font-bold text-white">{i18n.t.profilePicture}</h3>
-              <button onclick={() => avatarModalOpen = false} aria-label={i18n.t.close} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
+              <button onclick={() => avatarModalOpen = false} {@attach focusOnMount()} aria-label={i18n.t.close} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
                 <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>

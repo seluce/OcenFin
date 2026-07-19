@@ -5,6 +5,7 @@
   import { i18n } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, dlog, uiFade, dropTrapOnOutro } from '../utils.js';
   import { session } from '../session.svelte.js';
+  import { tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
 
   let { mode = null, item = null, selectedUser, getAuthHeaders, onCreated, onClose } = $props();
@@ -59,6 +60,11 @@
     if (myToken === loadListToken) loading = false;
   }
 
+  let closeBtn = $state();
+  // After a successful add/create the clicked button becomes disabled (already-added / input
+  // cleared) and would drop focus to <body>. Move focus to the always-enabled close button.
+  async function focusClose() { await tick(); closeBtn?.focus(); }
+
   function close() { onClose?.(); }
 
   async function addTo(target) {
@@ -73,6 +79,7 @@
         msg = `${i18n.t.added}: ${displayName(target)}`; msgError = false;
         alreadyIn.add(target.Id);
         childrenOf[target.Id] = [...(childrenOf[target.Id] || []), { Id: item.Id, Name: item.Name }];
+        focusClose();
       } else {
         console.warn('[OcenFin] add failed', mode, res.status, await res.text().catch(() => ''));
         msg = (mode === 'collection' && res.status === 403) ? i18n.t.collectionPermissionDenied : i18n.t.actionFailed; msgError = true;
@@ -101,6 +108,7 @@
         }
         newName = '';
         onCreated?.();   // the parent can refresh libraries/sidebar
+        focusClose();
       } else {
         console.warn('[OcenFin] create failed', mode, res.status, await res.text().catch(() => ''));
         msg = (mode === 'collection' && res.status === 403) ? i18n.t.collectionPermissionDenied : i18n.t.actionFailed; msgError = true;
@@ -118,7 +126,7 @@
     <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl p-8 flex flex-col gap-5">
       <div class="flex justify-between items-center">
         <h2 class="text-3xl text-white font-bold">{mode === 'collection' ? i18n.t.addToCollection : i18n.t.addToPlaylist}</h2>
-        <button onclick={close} {@attach focusOnMount()} aria-label={i18n.t.close}
+        <button bind:this={closeBtn} onclick={close} {@attach focusOnMount()} aria-label={i18n.t.close}
           class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>

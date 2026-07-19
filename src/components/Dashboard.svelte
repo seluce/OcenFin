@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, itemBadge, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle } from '../utils.js';
+  import { itemProgress, itemBadge, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, NAV_HIDDEN_TYPES, getItemImageUrl } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { watchlist, refreshWatchlist } from '../watchlist.svelte.js';
   import { onMount, onDestroy } from 'svelte';
@@ -69,7 +69,7 @@
     i => !i.UserData?.Played && (i.UserData?.PlaybackPositionTicks || 0) > 0
   ));
 
-  // HERO BANNER: rotating featured item (Netflix style)
+  // HERO BANNER: rotating featured item
   let heroItems  = $state([]);
   let heroIndex  = $state(0);
   let prevHeroIndex = $state(-1);   // the previous image stays as a base during the switch (crossfade instead of dip-to-black)
@@ -222,7 +222,7 @@
   }
 
   // Recommendations: seeds from recently watched items, then /Items/{id}/Similar.
-  // Best practice (Netflix/Plex): right in the dashboard, no separate tab.
+  // Best practice: shown right in the dashboard, no separate tab.
   async function loadRecommendations(uId, opts, fields) {
     try {
       // Fetch recently played movies/series as the hook
@@ -324,7 +324,8 @@
 
       // Priority: Views + Resume → release the UI immediately
       const [resViews, resResume] = await Promise.all([pViews, pResume]);
-      libraries        = (await resViews.json()).Items  || [];
+      // Hide the same collection types as the sidebar (music / live TV — unsupported views).
+      libraries        = ((await resViews.json()).Items || []).filter(l => !NAV_HIDDEN_TYPES.includes((l.CollectionType || '').toLowerCase()));
       continueWatching = (await resResume.json()).Items || [];
       isLoading        = false;
       session.connectionLost = false;   // server reachable
@@ -452,29 +453,6 @@
     return null;
   }
 
-  function getItemImageUrl(item, format = 'portrait') {
-    if (format === 'landscape') {
-      // Like Jellyfin (preferThumb): prefer landscape artwork — own thumb, otherwise
-      // series/parent thumb, then backdrop (episode → series), lastly the episode still.
-      if (item.ImageTags?.Thumb)
-        return `${session.serverUrl}/Items/${item.Id}/Images/Thumb?tag=${item.ImageTags.Thumb}&maxWidth=600&quality=80&format=webp`;
-      if (item.ParentThumbItemId && item.ParentThumbImageTag)
-        return `${session.serverUrl}/Items/${item.ParentThumbItemId}/Images/Thumb?tag=${item.ParentThumbImageTag}&maxWidth=600&quality=80&format=webp`;
-      if (item.SeriesId && item.SeriesThumbImageTag)
-        return `${session.serverUrl}/Items/${item.SeriesId}/Images/Thumb?tag=${item.SeriesThumbImageTag}&maxWidth=600&quality=80&format=webp`;
-      if (item.BackdropImageTags?.length > 0)
-        return `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
-      if (item.ParentBackdropItemId && item.ParentBackdropImageTags?.length > 0)
-        return `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${item.ParentBackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
-      if (item.ImageTags?.Primary)
-        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
-    } else {
-      if (item.ImageTags?.Primary)
-        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
-    }
-    return null;
-  }
-
   function getItemTitle(item) {
     return (item.Type === 'Episode' && item.SeriesName) ? item.SeriesName : item.Name;
   }
@@ -509,7 +487,7 @@
   {#if dashboardBackdrop && previewBackdrop}
     <div {@attach heroScrollFade} style="opacity:{bgOpacity}" class="sticky top-0 h-screen w-full -mb-[100vh] z-0 pointer-events-none overflow-hidden">
       {#key previewBackdrop}
-        <img src={previewBackdrop} alt="" class="w-full h-full object-cover preview-fade" />
+        <img src={previewBackdrop} alt="" class="w-full h-full object-cover object-top preview-fade" />
       {/key}
       <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/85 to-gray-900/40"></div>
       <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-gray-900/60"></div>
@@ -519,7 +497,7 @@
 
   <!-- Reusable card snippets (instead of 8 nearly identical blocks) -->
   {#snippet landscapeCard(item)}
-    {@const img = getItemImageUrl(item, 'landscape')}
+    {@const img = getItemImageUrl(item, 'landscape', true)}
     {@const prog = itemProgress(item)}
     {@const badge = itemBadge(item)}
     {@const rem = getRemainingMinutes(item)}
@@ -649,16 +627,16 @@
     <!-- HERO BANNER — rotating featured item -->
     {#if showHero && heroCurrent}
       <div transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gray-900">
-        <!-- Full-bleed backdrop (Netflix style): crossfade — the PREVIOUS image stays as a base,
+        <!-- Full-bleed backdrop: crossfade — the PREVIOUS image stays as a base,
              the new one fades in on top (no more dip-to-black). Blurhash → sharp. -->
         {#if prevHeroIndex >= 0 && prevHeroIndex !== heroIndex && heroItems[prevHeroIndex] && getHeroBackdrop(heroItems[prevHeroIndex])}
           <img src={getHeroBackdrop(heroItems[prevHeroIndex])} alt="" aria-hidden="true" decoding="async"
-            class="absolute inset-0 w-full h-full object-cover object-center" />
+            class="absolute inset-0 w-full h-full object-cover object-[center_20%]" />
         {/if}
         {#key heroCurrent?.Id}
           {#if heroCurrent && getHeroBackdrop(heroCurrent)}
             <img src={getHeroBackdrop(heroCurrent)} {@attach blurUp(itemBlurHash(heroCurrent, 'Backdrop'))} alt={heroCurrent.Name} fetchpriority="high" loading="eager" decoding="async"
-              class="absolute inset-0 w-full h-full object-cover object-center hero-fade" />
+              class="absolute inset-0 w-full h-full object-cover object-[center_20%] hero-fade" />
           {/if}
         {/key}
         <!-- Gradients: left for text legibility, bottom for a seamless transition into the rows below -->

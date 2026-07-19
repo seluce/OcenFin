@@ -173,8 +173,26 @@ export function personImageUrl(serverUrl, person) {
 // Card image URL for grid items (Library, Favorites, Person, Collection). 'portrait' = 2:3 poster,
 // 'landscape' = 16:9 still (episode Primary, otherwise series Thumb as fallback). Centralized because it was
 // previously duplicated identically across several grids. (Search deliberately uses its own variant with a backdrop fallback.)
-export function getItemImageUrl(item, format = 'portrait') {
+// preferThumb=true selects show-level landscape artwork (own/parent/series thumb → backdrop →
+// primary), used by the continue-watching row. The default prefers the item's OWN still first
+// (correct for episode lists, extras, favorites), then the series thumb.
+export function getItemImageUrl(item, format = 'portrait', preferThumb = false) {
   if (format === 'landscape') {
+    if (preferThumb) {
+      if (item.ImageTags?.Thumb)
+        return `${session.serverUrl}/Items/${item.Id}/Images/Thumb?tag=${item.ImageTags.Thumb}&maxWidth=600&quality=80&format=webp`;
+      if (item.ParentThumbItemId && item.ParentThumbImageTag)
+        return `${session.serverUrl}/Items/${item.ParentThumbItemId}/Images/Thumb?tag=${item.ParentThumbImageTag}&maxWidth=600&quality=80&format=webp`;
+      if (item.SeriesId && item.SeriesThumbImageTag)
+        return `${session.serverUrl}/Items/${item.SeriesId}/Images/Thumb?tag=${item.SeriesThumbImageTag}&maxWidth=600&quality=80&format=webp`;
+      if (item.BackdropImageTags?.length > 0)
+        return `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+      if (item.ParentBackdropItemId && item.ParentBackdropImageTags?.length > 0)
+        return `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${item.ParentBackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+      if (item.ImageTags?.Primary)
+        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
+      return null;
+    }
     if (item.ImageTags?.Primary)
       return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
     if (item.SeriesId && item.SeriesThumbImageTag)
@@ -269,8 +287,9 @@ export const NAV_ICON_PALETTE = {
 // Order in the icon picker.
 export const NAV_ICON_KEYS = ['dashboard','search','settings','movies','tvshows','tv','folder','star','heart','book','globe','music','photo','sparkles','bolt','ticket','syncplay','home','play','clock','calendar','fire','bookmark','queue','grid','building','newspaper','download','microphone','puzzle','flag','tag','cloud','bell','bolt2'];
 
-// Music is deliberately left out (needs its own view, currently unsupported).
-const NAV_HIDDEN_TYPES = ['music', 'musicvideos'];
+// Music and Live TV are deliberately left out (each needs its own view; currently unsupported).
+// Exported so the dashboard's library row filters by the exact same list as the sidebar.
+export const NAV_HIDDEN_TYPES = ['music', 'musicvideos', 'livetv'];
 
 // Builds the full entry list: fixed views (translated, dashboard/settings locked)
 // + one entry per real library (server name, language-independent). `iconOverrides` (per profile,
@@ -448,7 +467,7 @@ function _pushLog(level, args) {
 // Reuses aria-label so dynamic labels (watched <-> unwatched) stay correct (read at show
 // time). Body-appended + position:fixed so scroll/overflow containers can't clip it; a short
 // delay avoids flashing while quickly moving across a button row. {@attach} factory signature.
-export function hint(delay = 220) {
+export function hint(delay = 350) {
   return (node) => {
     let tip = null;
     let timer = null;
@@ -507,6 +526,32 @@ export function hint(delay = 220) {
       node.removeEventListener('mouseenter', show);
       node.removeEventListener('mouseleave', destroy);
     };
+  };
+}
+
+// Connection guard (install once from App): wraps window.fetch to watch SERVER requests for
+// network-level failures. A THROWN fetch means the server is unreachable (network is up but the
+// server is down/rebooting) -> flip session.connectionLost so the reconnect banner appears; the
+// existing auto-reconnect poll clears it when the server returns, and a successful call clears it
+// instantly. An HTTP error status (4xx/5xx) is NOT a connection loss -- the server answered -- so
+// it is deliberately left alone. Scoped to session.serverUrl; external fetches and <img> loads
+// are untouched. Distinguishing "server unreachable" from "server said no" is the whole point.
+let _connectionGuardInstalled = false;
+export function installConnectionGuard() {
+  if (_connectionGuardInstalled) return;
+  _connectionGuardInstalled = true;
+  const orig = window.fetch.bind(window);
+  window.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    const isServer = session.serverUrl && url.startsWith(session.serverUrl);
+    try {
+      const res = await orig(input, init);
+      if (isServer && res.ok && session.connectionLost) session.connectionLost = false;
+      return res;
+    } catch (err) {
+      if (isServer) session.connectionLost = true;
+      throw err;
+    }
   };
 }
 

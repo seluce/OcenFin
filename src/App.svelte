@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, itemProgress, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, uiFade, dropTrapOnOutro, getItemSubtitle, getItemImageUrl } from './utils.js';
+  import { isBackKey, focusOnMount, itemProgress, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, uiFade, dropTrapOnOutro, getItemSubtitle, getItemImageUrl, installConnectionGuard } from './utils.js';
   import { session } from './session.svelte.js';
   import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
   import { APP_VERSION } from './version.js';
@@ -382,9 +382,11 @@
   function dismissRemoteMessage() { if (remoteMessageTimer) clearTimeout(remoteMessageTimer); remoteMessage = null; }
   let _lastSyncQueueItem = null;   // last auto-opened group item (no re-opening after leaving)
   let _syncOpeningId = null;       // currently opening (prevents double open)
-  async function syncRefresh() {
+  async function syncRefresh(silent = false) {
     if (!session.serverUrl || !session.token) return;
-    syncLoading = true;
+    // The 4s background poll refreshes SILENTLY (no loading flag): otherwise the empty state
+    // ("no groups") would flip to a spinner and back on every poll, causing a flicker.
+    if (!silent) syncLoading = true;
     const all = await listSyncGroups(session.serverUrl, session.token);
     syncLoading = false;
     // My group = the one THIS session joined (by GroupId) — NOT by profile name,
@@ -397,7 +399,7 @@
     showSyncPlay = true;
     syncRefresh();
     if (syncPollTimer) clearInterval(syncPollTimer);
-    syncPollTimer = setInterval(syncRefresh, 4000);   // keep members live-updated while open
+    syncPollTimer = setInterval(() => syncRefresh(true), 4000);   // keep members live-updated while open (silent)
   }
   function closeSyncPlay() {
     showSyncPlay = false;
@@ -654,7 +656,10 @@
     // D-pad navigation (group focus model) — active everywhere. The Player is its
     // own focus group; its slider handles Left/Right itself.
     createFocusManager(() => !navReordering);
-    // Monitor network status (banner on connection loss)
+    // Monitor network status (banner on connection loss). The offline/online events cover the
+    // OS network state; the connection guard additionally catches "server unreachable while the
+    // network is up" (NAS reboot etc.) by watching server fetches for network-level failures.
+    installConnectionGuard();
     window.addEventListener('offline', () => session.connectionLost = true);
     window.addEventListener('online',  () => session.connectionLost = false);
 
@@ -1547,7 +1552,7 @@
         onLogOutServer={handleLogout}
       />
 
-      <div data-focus-group="main" class="flex-1 h-full overflow-y-auto hide-scrollbar bg-gray-900 relative">
+      <div data-focus-group="main" class="flex-1 h-full overflow-y-auto hide-scrollbar bg-gray-900 relative [scroll-padding-top:4rem]">
 
         {#if viewState === 'dashboard'}
           {#key dashboardReloadKey}
@@ -1705,7 +1710,7 @@
       onCreate={syncCreate}
       onJoin={(groupId) => syncJoin(groupId)}
       onLeave={syncLeave}
-      onRefresh={syncRefresh}
+      onRefresh={() => syncRefresh()}
       onClose={closeSyncPlay}
     />
     {/await}

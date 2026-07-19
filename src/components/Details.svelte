@@ -34,11 +34,59 @@
     || fullItem?.MediaSources?.[0] || null
   );
 
+  // Technical badges for the CURRENT version (resolution / dynamic range / codec / premium
+  // audio). Derived from selectedSource + selectedAudioIndex, so switching the version or the
+  // audio track updates them automatically. SDR and common audio formats are intentionally
+  // omitted — the badge row is for standout capabilities, not every codec detail.
+  let techBadges = $derived.by(() => {
+    const streams = selectedSource?.MediaStreams || [];
+    const v = streams.find(s => s.Type === 'Video');
+    if (!v) return [];
+    const out = [];
+    // premium=true → standout capabilities (brighter badge); baseline stays dimmer.
+    const r = resLabel(v);
+    if (r) out.push({ label: r, premium: r === '4K' });
+    const range = (v.VideoRangeType || v.VideoRange || '').toUpperCase();
+    if (range.includes('DOVI') || range.includes('DOLBY')) out.push({ label: 'Dolby Vision', premium: true });
+    else if (range.includes('HDR10PLUS') || range.includes('HDR10+')) out.push({ label: 'HDR10+', premium: true });
+    else if (range.includes('HDR10')) out.push({ label: 'HDR10', premium: true });
+    else if (range.includes('HLG')) out.push({ label: 'HLG', premium: true });
+    else if (range === 'HDR') out.push({ label: 'HDR', premium: true });
+    const c = (v.Codec || '').toLowerCase();
+    if (c === 'hevc' || c === 'h265') out.push({ label: 'HEVC', premium: false });
+    else if (c === 'av1') out.push({ label: 'AV1', premium: false });
+    else if (c === 'h264' || c === 'avc') out.push({ label: 'H.264', premium: false });
+    else if (c) out.push({ label: c.toUpperCase(), premium: false });
+    // Premium audio of the SELECTED track (fallback: source default, then first audio)
+    const audio = streams.find(s => s.Type === 'Audio' && s.Index === selectedAudioIndex)
+               || streams.find(s => s.Type === 'Audio' && s.Index === selectedSource?.DefaultAudioStreamIndex)
+               || streams.find(s => s.Type === 'Audio');
+    if (audio) {
+      const meta = `${audio.Profile || ''} ${audio.DisplayTitle || ''}`.toLowerCase();
+      const ac = (audio.Codec || '').toLowerCase();
+      if (meta.includes('atmos')) out.push({ label: 'Dolby Atmos', premium: true });
+      else if (meta.includes('dts:x') || meta.includes('dts-x')) out.push({ label: 'DTS:X', premium: true });
+      else if (ac === 'truehd') out.push({ label: 'Dolby TrueHD', premium: true });
+      else if (meta.includes('dts-hd ma')) out.push({ label: 'DTS-HD MA', premium: true });
+    }
+    return out;
+  });
+
+  // Resolution class from a video stream — classify by WIDTH (the standard), not height:
+  // widescreen films (e.g. 1920x800, 2.40:1) have reduced height and would otherwise
+  // mis-read as 720p even though they are a full 1080p source.
+  function resLabel(v) {
+    const w = v?.Width || 0, h = v?.Height || 0;
+    return (w >= 3840 || h >= 2160) ? '4K'
+         : (w >= 1920 || h >= 1080) ? '1080p'
+         : (w >= 1280 || h >= 720)  ? '720p'
+         : (h ? h + 'p' : '');
+  }
+
   // Label for the resolution selection, e.g. "4K HEVC" / "1080p HEVC"
   function sourceLabel(src) {
     const v = (src?.MediaStreams || []).find(s => s.Type === 'Video');
-    const h = v?.Height || 0;
-    const res = h >= 2160 ? '4K' : h >= 1080 ? '1080p' : h >= 720 ? '720p' : (h ? h + 'p' : '');
+    const res = resLabel(v);
     const codec = (v?.Codec || '').toUpperCase();
     return [res, codec].filter(Boolean).join(' ') || src?.Name || i18n.t.source;
   }
@@ -182,7 +230,7 @@
     const videoId = match ? match[1] : null;
 
     // On the TV: launch the native YouTube app. Embeds fail on webOS due to the referer/
-    // platform restriction (error 153) — LiteFin/Jellyfin-webOS do it the same way.
+    // platform restriction (error 153), so launching the native app is the reliable path.
     if (videoId && window.webOS?.service?.request) {
       window.webOS.service.request('luna://com.webos.applicationManager', {
         method: 'launch',
@@ -217,7 +265,7 @@
     return match ? match.Index : null;
   }
 
-  // Like Jellyfin in default mode: show a forced ("Forced") subtitle in the language of the
+  // In default mode, show a forced ("Forced") subtitle in the language of the
   // chosen audio track. Auto-selectable are: TEXT (VTT) always; PGS, when
   // client-side rendering is on (libbitsub → Direct Play); VobSub/DVD likewise, AS SOON AS the
   // server delivers them as .mks (Jellyfin 12.0+) → then also Direct Play. On older
@@ -500,7 +548,7 @@
       <!-- ════ CINEMATIC HERO BANNER — the backdrop scrolls along, fading into the app gray at bottom/left ════ -->
       <div class="relative">
         {#if detailsBackdrop && getItemBackdropUrl(fullItem)}
-          <div class="absolute inset-0 z-0">
+          <div class="absolute inset-0 z-0 max-h-[95vh] overflow-hidden">
             <img src={getItemBackdropUrl(fullItem)} {@attach blurUp(itemBlurHash(fullItem, 'Backdrop'))} alt="" class="w-full h-full object-cover object-top" />
             <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/60 to-gray-900/20"></div>
             <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/40 to-transparent"></div>
@@ -529,9 +577,15 @@
       <!-- HERO -->
       <div class="flex gap-12 items-start mb-8">
 
-        <div class="w-64 shrink-0 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800">
+        <div class="w-64 shrink-0 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800 relative">
           {#if getItemImageUrl(fullItem)}
             <img src={getItemImageUrl(fullItem)} {@attach blurUp(itemBlurHash(fullItem))} alt={fullItem.Name} class="w-full h-full object-cover" />
+          {/if}
+          {#if itemProgress(fullItem) > 0 && fullItem.Type !== 'Series' && fullItem.Type !== 'Season'}
+            <!-- Resume progress on the poster — same style as the episode thumbnails -->
+            <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
+              <div class="h-full bg-blue-500" style="width:{itemProgress(fullItem)}%"></div>
+            </div>
           {/if}
         </div>
 
@@ -543,31 +597,52 @@
           {/if}
 
           <!-- META -->
-          <div class="flex items-center flex-wrap gap-4 text-lg font-semibold text-gray-300 mb-6">
+          <div class="flex items-center flex-wrap gap-4 text-lg font-semibold text-gray-200 mb-6 [text-shadow:0_1px_4px_rgba(0,0,0,0.75)]">
             {#if fullItem.ProductionYear}
               <span class="text-blue-400">{fullItem.ProductionYear}</span>
             {/if}
             {#if fullItem.RunTimeTicks}
               <span class="flex items-center gap-2">
                 • {getRuntimeMinutes(fullItem.RunTimeTicks)}
-                <span class="text-sm font-normal text-gray-400 bg-gray-800/80 px-2 py-0.5 rounded-md border border-gray-700 ml-1">
-                  {getEndTime(fullItem)}
-                </span>
+                <span class="text-base font-normal text-gray-400 ml-1">{getEndTime(fullItem)}</span>
+              </span>
+            {/if}
+            {#if fullItem.OfficialRating}
+              <span class="px-2 py-0.5 rounded border border-gray-400/80 bg-black/25 text-gray-100 text-base font-bold leading-none [text-shadow:none]">
+                {fullItem.OfficialRating}
               </span>
             {/if}
             {#if fullItem.CommunityRating}
-              <span class="flex items-center gap-1 text-yellow-400">
+              <span class="flex items-center gap-1 text-gray-100">
                 •
-                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <svg class="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
                 </svg>
                 {fullItem.CommunityRating.toFixed(1)}
               </span>
             {/if}
             {#if fullItem.CriticRating}
-              <span class="flex items-center gap-1 text-red-400">• {fullItem.CriticRating}%</span>
+              <span class="flex items-center gap-1 text-gray-100">
+                •
+                <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="14" r="7.5" fill="#ef4444"/>
+                  <ellipse cx="9.5" cy="6.5" rx="2.5" ry="1.3" fill="#22c55e" transform="rotate(-25 9.5 6.5)"/>
+                  <ellipse cx="14.5" cy="6.5" rx="2.5" ry="1.3" fill="#22c55e" transform="rotate(25 14.5 6.5)"/>
+                  <rect x="11.3" y="4.5" width="1.4" height="3" rx="0.7" fill="#22c55e"/>
+                </svg>
+                {fullItem.CriticRating}%
+              </span>
             {/if}
           </div>
+
+          {#if techBadges.length}
+            <!-- Technical capabilities of the selected version (reactive: see techBadges) -->
+            <div class="flex items-center flex-wrap gap-2 -mt-3 mb-6">
+              {#each techBadges as badge (badge.label)}
+                <span class="px-2.5 py-1 rounded text-sm font-bold tracking-wide border {badge.premium ? 'bg-white/15 border-white/30 text-white' : 'bg-black/40 border-white/15 text-gray-300'}">{badge.label}</span>
+              {/each}
+            </div>
+          {/if}
 
           <p class="text-xl text-gray-300 mb-10 line-clamp-4 leading-relaxed">{fullItem.Overview || i18n.t.noDescription}</p>
 
@@ -650,7 +725,7 @@
                   <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
                 </button>
                 {#if openDropdown === 'kebab'}
-                  <div class="absolute right-0 mt-2 z-50 w-80 flex flex-col gap-1 bg-gray-900 rounded-xl border border-gray-700 p-2 shadow-2xl">
+                  <div class="absolute right-0 mt-2 z-50 w-80 max-h-[70vh] overflow-y-auto hide-scrollbar flex flex-col gap-1 bg-gray-900 rounded-xl border border-gray-700 p-2 shadow-2xl">
                     {#if fullItem.MediaSources?.length > 0}
                       <button onclick={() => { menuReturn.capture(kebabBtnEl); closeDropdown(false); showMediaInfo = true; }}
                         class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
