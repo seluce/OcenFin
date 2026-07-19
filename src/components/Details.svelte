@@ -548,7 +548,7 @@
       <!-- ════ CINEMATIC HERO BANNER — the backdrop scrolls along, fading into the app gray at bottom/left ════ -->
       <div class="relative">
         {#if detailsBackdrop && getItemBackdropUrl(fullItem)}
-          <div class="absolute inset-0 z-0 max-h-[100vh] overflow-hidden">
+          <div class="absolute inset-0 z-0 max-h-[95vh] overflow-hidden">
             <img src={getItemBackdropUrl(fullItem)} {@attach blurUp(itemBlurHash(fullItem, 'Backdrop'))} alt="" class="w-full h-full object-cover object-top" />
             <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/60 to-gray-900/20"></div>
             <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/40 to-transparent"></div>
@@ -725,7 +725,7 @@
                   <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
                 </button>
                 {#if openDropdown === 'kebab'}
-                  <div class="absolute right-0 mt-2 z-50 w-80 flex flex-col gap-1 bg-gray-900 rounded-xl border border-gray-700 p-2 shadow-2xl">
+                  <div class="absolute right-0 mt-2 z-50 w-80 max-h-[70vh] overflow-y-auto hide-scrollbar flex flex-col gap-1 bg-gray-900 rounded-xl border border-gray-700 p-2 shadow-2xl">
                     {#if fullItem.MediaSources?.length > 0}
                       <button onclick={() => { menuReturn.capture(kebabBtnEl); closeDropdown(false); showMediaInfo = true; }}
                         class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
