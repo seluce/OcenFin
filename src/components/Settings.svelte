@@ -1277,7 +1277,7 @@
           <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-2xl max-w-2xl w-full flex flex-col gap-5">
             <div class="flex justify-between items-center">
               <h3 class="text-2xl font-bold text-white">{i18n.t.profilePicture}</h3>
-              <button onclick={() => avatarModalOpen = false} aria-label={i18n.t.close} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
+              <button onclick={() => avatarModalOpen = false} {@attach focusOnMount()} aria-label={i18n.t.close} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
                 <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
