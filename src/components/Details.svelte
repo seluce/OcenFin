@@ -581,7 +581,7 @@
           {#if getItemImageUrl(fullItem)}
             <img src={getItemImageUrl(fullItem)} {@attach blurUp(itemBlurHash(fullItem))} alt={fullItem.Name} class="w-full h-full object-cover" />
           {/if}
-          {#if itemProgress(fullItem) > 0 && fullItem.Type !== 'Series' && fullItem.Type !== 'Season'}
+          {#if itemProgress(fullItem) > 0}
             <!-- Resume progress on the poster — same style as the episode thumbnails -->
             <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
               <div class="h-full bg-blue-500" style="width:{itemProgress(fullItem)}%"></div>
