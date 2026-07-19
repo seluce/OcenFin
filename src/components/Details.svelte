@@ -548,7 +548,7 @@
       <!-- ════ CINEMATIC HERO BANNER — the backdrop scrolls along, fading into the app gray at bottom/left ════ -->
       <div class="relative">
         {#if detailsBackdrop && getItemBackdropUrl(fullItem)}
-          <div class="absolute inset-0 z-0">
+          <div class="absolute inset-0 z-0 max-h-[100vh] overflow-hidden">
             <img src={getItemBackdropUrl(fullItem)} {@attach blurUp(itemBlurHash(fullItem, 'Backdrop'))} alt="" class="w-full h-full object-cover object-top" />
             <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/60 to-gray-900/20"></div>
             <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/40 to-transparent"></div>
