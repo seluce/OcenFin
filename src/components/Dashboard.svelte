@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, itemBadge, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, NAV_HIDDEN_TYPES } from '../utils.js';
+  import { itemProgress, itemBadge, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, NAV_HIDDEN_TYPES, getItemImageUrl } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { watchlist, refreshWatchlist } from '../watchlist.svelte.js';
   import { onMount, onDestroy } from 'svelte';
@@ -453,29 +453,6 @@
     return null;
   }
 
-  function getItemImageUrl(item, format = 'portrait') {
-    if (format === 'landscape') {
-      // Prefer landscape artwork (preferThumb order): own thumb, otherwise
-      // series/parent thumb, then backdrop (episode → series), lastly the episode still.
-      if (item.ImageTags?.Thumb)
-        return `${session.serverUrl}/Items/${item.Id}/Images/Thumb?tag=${item.ImageTags.Thumb}&maxWidth=600&quality=80&format=webp`;
-      if (item.ParentThumbItemId && item.ParentThumbImageTag)
-        return `${session.serverUrl}/Items/${item.ParentThumbItemId}/Images/Thumb?tag=${item.ParentThumbImageTag}&maxWidth=600&quality=80&format=webp`;
-      if (item.SeriesId && item.SeriesThumbImageTag)
-        return `${session.serverUrl}/Items/${item.SeriesId}/Images/Thumb?tag=${item.SeriesThumbImageTag}&maxWidth=600&quality=80&format=webp`;
-      if (item.BackdropImageTags?.length > 0)
-        return `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
-      if (item.ParentBackdropItemId && item.ParentBackdropImageTags?.length > 0)
-        return `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${item.ParentBackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
-      if (item.ImageTags?.Primary)
-        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
-    } else {
-      if (item.ImageTags?.Primary)
-        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
-    }
-    return null;
-  }
-
   function getItemTitle(item) {
     return (item.Type === 'Episode' && item.SeriesName) ? item.SeriesName : item.Name;
   }
@@ -520,7 +497,7 @@
 
   <!-- Reusable card snippets (instead of 8 nearly identical blocks) -->
   {#snippet landscapeCard(item)}
-    {@const img = getItemImageUrl(item, 'landscape')}
+    {@const img = getItemImageUrl(item, 'landscape', true)}
     {@const prog = itemProgress(item)}
     {@const badge = itemBadge(item)}
     {@const rem = getRemainingMinutes(item)}

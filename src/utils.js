@@ -173,8 +173,26 @@ export function personImageUrl(serverUrl, person) {
 // Card image URL for grid items (Library, Favorites, Person, Collection). 'portrait' = 2:3 poster,
 // 'landscape' = 16:9 still (episode Primary, otherwise series Thumb as fallback). Centralized because it was
 // previously duplicated identically across several grids. (Search deliberately uses its own variant with a backdrop fallback.)
-export function getItemImageUrl(item, format = 'portrait') {
+// preferThumb=true selects show-level landscape artwork (own/parent/series thumb → backdrop →
+// primary), used by the continue-watching row. The default prefers the item's OWN still first
+// (correct for episode lists, extras, favorites), then the series thumb.
+export function getItemImageUrl(item, format = 'portrait', preferThumb = false) {
   if (format === 'landscape') {
+    if (preferThumb) {
+      if (item.ImageTags?.Thumb)
+        return `${session.serverUrl}/Items/${item.Id}/Images/Thumb?tag=${item.ImageTags.Thumb}&maxWidth=600&quality=80&format=webp`;
+      if (item.ParentThumbItemId && item.ParentThumbImageTag)
+        return `${session.serverUrl}/Items/${item.ParentThumbItemId}/Images/Thumb?tag=${item.ParentThumbImageTag}&maxWidth=600&quality=80&format=webp`;
+      if (item.SeriesId && item.SeriesThumbImageTag)
+        return `${session.serverUrl}/Items/${item.SeriesId}/Images/Thumb?tag=${item.SeriesThumbImageTag}&maxWidth=600&quality=80&format=webp`;
+      if (item.BackdropImageTags?.length > 0)
+        return `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+      if (item.ParentBackdropItemId && item.ParentBackdropImageTags?.length > 0)
+        return `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${item.ParentBackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+      if (item.ImageTags?.Primary)
+        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
+      return null;
+    }
     if (item.ImageTags?.Primary)
       return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
     if (item.SeriesId && item.SeriesThumbImageTag)
