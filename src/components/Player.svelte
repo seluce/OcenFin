@@ -1488,9 +1488,11 @@
       skip(e.key === 'ArrowLeft' ? -10 : 10);
       return;
     }
-    // Arrow keys/Enter are otherwise handled by the group navigation or the focused
-    // buttons — here just show the controls again.
-    resetControlsTimeout();
+    // Arrow keys/Enter are otherwise handled by group navigation or the focused buttons. With an
+    // overlay open (skip intro / outro prompt / still-watching) do NOT reveal the HUD — pressing OK
+    // there acts on the overlay button (e.g. skip intro → seamless playback), so the controls
+    // shouldn't pop up. Otherwise, show the controls again.
+    if (!overlayActive) resetControlsTimeout();
   }
 
   function formatTime(seconds) {
