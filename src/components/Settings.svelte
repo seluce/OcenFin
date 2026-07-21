@@ -923,6 +923,23 @@
 
         <div class="h-px bg-gray-700"></div>
 
+        <!-- Remember audio track per series -->
+        <button onclick={() => togglePlaybackPref('rememberAudioTrack')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.rememberAudioTrack}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.rememberAudioTrackDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.rememberAudioTrack ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.rememberAudioTrack ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        <div class="h-px bg-gray-700"></div>
+
         <!-- Jump distance of the forward/back buttons (stacked + flex-1 so it's reachable via D-pad) -->
         <div class="p-6">
           <span class="text-2xl text-white font-medium block">{i18n.t.seekInterval}</span>
@@ -1094,6 +1111,21 @@
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl">
           <span class="text-2xl text-white font-medium">{i18n.t.subtitleLanguage}</span>
           <span class="text-xl font-bold text-gray-300">{subtitleLangName}</span>
+        </button>
+
+        <!-- Remember subtitle track per series -->
+        <button onclick={() => togglePlaybackPref('rememberSubtitleTrack')}
+          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.rememberSubtitleTrack}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.rememberSubtitleTrackDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.rememberSubtitleTrack ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.rememberSubtitleTrack ? 'translate-x-8' : ''}"></div>
+          </div>
         </button>
 
         <!-- Automatically choose forced/default GRAPHIC subtitles (DVDSUB) — needs transcode (no Direct Play).

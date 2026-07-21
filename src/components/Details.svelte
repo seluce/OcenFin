@@ -2,6 +2,7 @@
   import { i18n, LANGUAGES } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
   import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint } from '../utils.js';
+  import { getRememberedTrack } from '../trackmemory.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
@@ -91,23 +92,47 @@
     return [res, codec].filter(Boolean).join(' ') || src?.Name || i18n.t.source;
   }
 
-  // Choose default audio/subtitle for a source (preferences + server defaults)
+  // Choose default audio/subtitle for a source. The per-series remembered track (when the option is
+  // on) takes precedence over the global language preference / server default — mirroring the player,
+  // so returning to Details reflects the track chosen during playback. Matched by language (audio) and
+  // by language + forced/SDH flags (subtitle), exactly like the player.
   function applySourceDefaults(src) {
     const streams = src?.MediaStreams || [];
-    selectedAudioIndex = -1;
-    const audioPref = matchLanguageStream(streams, 'Audio', playbackPrefs.audioLanguage);
-    if (audioPref != null)                        selectedAudioIndex = audioPref;
-    else if (src?.DefaultAudioStreamIndex != null) selectedAudioIndex = src.DefaultAudioStreamIndex;
+    const seriesId = fullItem?.SeriesId;
+    let audioSet = false, subSet = false;
 
-    if (playbackPrefs.subtitleLanguage === 'off') {
-      selectedSubtitleIndex = -1;
-    } else {
-      const subPref = matchLanguageStream(streams, 'Subtitle', playbackPrefs.subtitleLanguage);
-      if (subPref != null)                              selectedSubtitleIndex = subPref;
-      else if (playbackPrefs.subtitleLanguage === 'default')
-        selectedSubtitleIndex = pickForcedSubtitle(streams, selectedAudioIndex, src?.DefaultSubtitleStreamIndex);
-      else if (src?.DefaultSubtitleStreamIndex != null) selectedSubtitleIndex = src.DefaultSubtitleStreamIndex;
-      else selectedSubtitleIndex = -1;
+    if (seriesId && playbackPrefs.rememberAudioTrack) {
+      const remA = getRememberedTrack(seriesId, 'audio');
+      if (remA) { const t = streams.find(s => s.Type === 'Audio' && s.Language === remA); if (t) { selectedAudioIndex = t.Index; audioSet = true; } }
+    }
+    if (seriesId && playbackPrefs.rememberSubtitleTrack) {
+      const remS = getRememberedTrack(seriesId, 'subtitle');
+      if (remS === 'off') { selectedSubtitleIndex = -1; subSet = true; }
+      else if (remS?.lang) {
+        const subs = streams.filter(s => s.Type === 'Subtitle' && s.Language === remS.lang);
+        const t = subs.find(s => !!s.IsForced === remS.forced && !!s.IsHearingImpaired === remS.sdh) || subs[0];
+        if (t) { selectedSubtitleIndex = t.Index; subSet = true; }
+      }
+    }
+
+    if (!audioSet) {
+      selectedAudioIndex = -1;
+      const audioPref = matchLanguageStream(streams, 'Audio', playbackPrefs.audioLanguage);
+      if (audioPref != null)                        selectedAudioIndex = audioPref;
+      else if (src?.DefaultAudioStreamIndex != null) selectedAudioIndex = src.DefaultAudioStreamIndex;
+    }
+
+    if (!subSet) {
+      if (playbackPrefs.subtitleLanguage === 'off') {
+        selectedSubtitleIndex = -1;
+      } else {
+        const subPref = matchLanguageStream(streams, 'Subtitle', playbackPrefs.subtitleLanguage);
+        if (subPref != null)                              selectedSubtitleIndex = subPref;
+        else if (playbackPrefs.subtitleLanguage === 'default')
+          selectedSubtitleIndex = pickForcedSubtitle(streams, selectedAudioIndex, src?.DefaultSubtitleStreamIndex);
+        else if (src?.DefaultSubtitleStreamIndex != null) selectedSubtitleIndex = src.DefaultSubtitleStreamIndex;
+        else selectedSubtitleIndex = -1;
+      }
     }
   }
 
