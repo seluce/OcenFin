@@ -85,7 +85,7 @@
      the back key or by picking an action. A role/key handler on the backdrop would fight the focus trap. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
-<div data-focus-trap class="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-center justify-center p-8"
+<div data-focus-trap class="fixed inset-0 z-[90] bg-black/80 flex items-center justify-center p-8"
      onclick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
 
   <div class="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden ring-1 ring-white/10">
