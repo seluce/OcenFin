@@ -1,6 +1,7 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
   import { itemProgress, itemBadge, itemBlurHash, blurUp, longPress, authHeaders, focusOnMount, getItemImageUrl } from '../utils.js';
+  import { buildPlayQueue } from '../playback.js';
   import { session } from '../session.svelte.js';
 
   let {
@@ -53,23 +54,8 @@
   async function playAll() {
     if (!items.length || buildingQueue) return;
     buildingQueue = true;
-    const queue = [];
-    try {
-      for (const it of items) {
-        if (it.Type === 'Series' || it.Type === 'Season') {
-          const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${it.Id}`
-            + `&IncludeItemTypes=Episode${it.Type === 'Series' ? '&Recursive=true' : ''}`
-            + `&SortBy=ParentIndexNumber,IndexNumber&EnableTotalRecordCount=false`;
-          const res  = await fetch(url, { headers: getAuthHeaders() });
-          const data = await res.json();
-          let eps = (data.Items || []).filter(e => e.Type === 'Episode');
-          if (it.Type === 'Series') eps = eps.filter(e => e.ParentIndexNumber !== 0);
-          queue.push(...eps);
-        } else {
-          queue.push(it);
-        }
-      }
-    } catch (e) { console.error(e); }
+    let queue = [];
+    try { queue = await buildPlayQueue(items, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() }); }
     finally { buildingQueue = false; }
     if (queue.length) onPlayQueue?.(queue);
   }

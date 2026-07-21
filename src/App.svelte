@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
   import { isBackKey, focusOnMount, serverSupportsVobSub, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard } from './utils.js';
+  import { buildPlayQueue } from './playback.js';
   import { session } from './session.svelte.js';
   import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
   import { APP_VERSION } from './version.js';
@@ -1249,6 +1250,21 @@
   function contextAddToList(item) { contextPickerItem = item; contextPickerMode = 'playlist'; }
   function contextAddToCollection(item) { contextPickerItem = item; contextPickerMode = 'collection'; }
 
+  // "Play all" from a playlist's context menu → fetch its items, build the queue, play (returns to the
+  // current view afterwards). Series/Season entries are expanded to episodes via buildPlayQueue.
+  async function contextPlayPlaylist(item) {
+    contextReturnId = null; contextReturnEl = null;   // playback takes over the focus
+    contextItem = null;
+    if (!item?.Id) return;
+    detailsOrigin = viewState;
+    try {
+      const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300`, { headers: getAuthHeaders() });
+      const data  = await res.json();
+      const queue = await buildPlayQueue(data.Items || [], { serverUrl: session.serverUrl, userId: activeUserId, headers: getAuthHeaders() });
+      if (queue.length) { playQueue = { items: queue, index: 0 }; startPlayback({ item: queue[0], audioIndex: -1, subtitleIndex: -1 }); }
+    } catch (e) { console.error('play playlist:', e); }
+  }
+
   // Back from Details/Player → to the origin, restore the library position
   // Starts playback of an item — used by Details (Play/From-start/Random-episode)
   // and Collection (random playback). One source instead of two inline copies.
@@ -1726,6 +1742,7 @@
       onOpenDetails={contextOpenDetails}
       onAddToList={contextAddToList}
       onAddToCollection={contextAddToCollection}
+      onPlayAll={contextPlayPlaylist}
       {selectedUser}
     />
   {/if}
