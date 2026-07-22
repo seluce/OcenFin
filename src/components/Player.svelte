@@ -890,7 +890,11 @@
     if (playbackPrefs.autoPlayNext && nextEpisode && !countdownDismissed) {
       stopCountdown();
       goToNextEpisode();
+      return;
     }
+    // Nothing left to play (movie, last episode of the last season, or auto-play off): leave the
+    // player instead of sitting paused on the last frame — back to the details of what was watched.
+    onExit?.();
   }
 
   // Current chapter name (for display while seeking). Meaningless auto-names (timestamps,

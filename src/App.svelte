@@ -1683,7 +1683,10 @@
        PLAYER — absolute overlay (always on top of everything)
   ============================================================ -->
   {#if appPhase === 'app' && viewState === 'player' && currentDetailItem}
-    <div class="absolute inset-0 z-[100] bg-black w-full h-full">
+    <!-- Fade OUT only: leaving the player reveals the details underneath (softens the hard cut at
+         the end of a video / on back). Entering stays instant so playback isn't delayed.
+         uiFade honours "reduce animations" (duration 0). -->
+    <div out:uiFade={{ duration: 150 }} class="absolute inset-0 z-[100] bg-black w-full h-full">
       {#key currentDetailItem.Id}
         {#await lazyPlayer() then Player}
         <Player
