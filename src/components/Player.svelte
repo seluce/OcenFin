@@ -1,6 +1,7 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro, getItemImageUrl } from '../utils.js';
+  import { rememberTrack, getRememberedTrack } from '../trackmemory.js';
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady } from '../syncplay.js';
@@ -349,6 +350,7 @@
 
   // Streams
   let mediaStreams   = $state([]);
+  let _trackMemApplied = false;   // guard: apply remembered per-series track language only once per mount
   let currentMediaSource = null;   // currently running source – for the instant switch of text subtitles
   let audioStreams = $derived(mediaStreams.filter(s => s.Type === 'Audio'));
   let subtitleStreams = $derived(mediaStreams.filter(s => s.Type === 'Subtitle'));
@@ -437,6 +439,29 @@
           const r = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaStreams`, { headers: getAuthHeaders() });
           if (r.ok) { const full = await r.json(); if (full?.MediaStreams?.length) titleStreams = full.MediaStreams; }
         } catch {}
+      }
+      // Apply the per-series remembered track language ONCE, on the first setup (mount). Matched by
+      // language so it's robust across episodes (track order/index may differ). A later manual switch
+      // keeps _trackMemApplied set, so it never overrides the user's own choice.
+      if (!_trackMemApplied) {
+        _trackMemApplied = true;
+        if (item?.SeriesId && titleStreams.length) {
+          if (playbackPrefs.rememberAudioTrack) {
+            const remA = getRememberedTrack(item.SeriesId, 'audio');
+            if (remA) { const t = titleStreams.find(s => s.Type === 'Audio' && s.Language === remA); if (t) { audioIndex = t.Index; selectedAudioIndex = t.Index; } }
+          }
+          if (playbackPrefs.rememberSubtitleTrack) {
+            const remS = getRememberedTrack(item.SeriesId, 'subtitle');
+            if (remS === 'off') { subtitleIndex = -1; selectedSubtitleIndex = -1; }
+            else if (remS?.lang) {
+              const subs = titleStreams.filter(s => s.Type === 'Subtitle' && s.Language === remS.lang);
+              // Prefer an exact match on the forced/SDH flags (distinguishes Full vs Forced vs SDH of the
+              // same language); fall back to any track of that language.
+              const t = subs.find(s => !!s.IsForced === remS.forced && !!s.IsHearingImpaired === remS.sdh) || subs[0];
+              if (t) { subtitleIndex = t.Index; selectedSubtitleIndex = t.Index; }
+            }
+          }
+        }
       }
       // Audio counts as "explicit" (→ transcode, so the server outputs the CHOSEN track) only
       // when the default track is KNOWN AND the chosen one differs from it. If the default track
@@ -1215,6 +1240,25 @@
     settingsPanel?.removeAttribute('data-focus-trap');
     showSettings = false;
     resetControlsTimeout();
+
+    // Remember the chosen track language per series (matched by language across episodes). Subtitle
+    // "Off" (-1) is stored as 'off'. Applied on the next episode's first setup in setupPlayback.
+    if (item?.SeriesId) {
+      if (type === 'audio') {
+        if (playbackPrefs.rememberAudioTrack) {
+          const lang = mediaStreams.find(s => s.Index === index && s.Type === 'Audio')?.Language;
+          if (lang) rememberTrack(item.SeriesId, 'audio', lang);
+        }
+      } else if (playbackPrefs.rememberSubtitleTrack) {
+        if (index === -1) {
+          rememberTrack(item.SeriesId, 'subtitle', 'off');
+        } else {
+          const st = mediaStreams.find(s => s.Index === index && s.Type === 'Subtitle');
+          // Store language + the flags that distinguish same-language variants (Full vs Forced vs SDH).
+          if (st?.Language) rememberTrack(item.SeriesId, 'subtitle', { lang: st.Language, forced: !!st.IsForced, sdh: !!st.IsHearingImpaired });
+        }
+      }
+    }
 
     if (type === 'subtitle') {
       const oldStream = mediaStreams.find(s => s.Index === selectedSubtitleIndex && s.Type === 'Subtitle');

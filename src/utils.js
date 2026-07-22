@@ -697,6 +697,9 @@ export function itemBlurHash(item, type = 'Primary') {
 const _blurCache = new Map();
 export function blurUp(hash) {
   return (node) => {
+    // Graceful fallback: if the real image fails to load (dead tag, server hiccup), drop the src so
+    // only the blurhash placeholder remains instead of the browser's broken-image icon.
+    node.onerror = () => node.removeAttribute('src');
     if (!hash) { node.style.backgroundImage = ''; return; }
     let url = _blurCache.get(hash);
     if (url === undefined) {

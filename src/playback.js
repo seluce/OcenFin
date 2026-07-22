@@ -280,3 +280,27 @@ export function graphicSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, t
     return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.sup?ApiKey=${token}`;
   return null;   // VobSub/DVDSub without a DeliveryUrl → not client-side renderable (burn in)
 }
+
+
+// Build a flat playback queue from a list of items, expanding Series/Season into their episodes
+// (air order; specials skipped for a whole series). Shared by the collection and playlist "Play all".
+export async function buildPlayQueue(items, { serverUrl, userId, headers }) {
+  const queue = [];
+  for (const it of items || []) {
+    if (it.Type === 'Series' || it.Type === 'Season') {
+      const url = `${serverUrl}/Users/${userId}/Items?ParentId=${it.Id}`
+        + `&IncludeItemTypes=Episode${it.Type === 'Series' ? '&Recursive=true' : ''}`
+        + `&SortBy=ParentIndexNumber,IndexNumber&EnableTotalRecordCount=false`;
+      try {
+        const res  = await fetch(url, { headers });
+        const data = await res.json();
+        let eps = (data.Items || []).filter(e => e.Type === 'Episode');
+        if (it.Type === 'Series') eps = eps.filter(e => e.ParentIndexNumber !== 0);
+        queue.push(...eps);
+      } catch (e) { console.error('buildPlayQueue:', e); }
+    } else {
+      queue.push(it);
+    }
+  }
+  return queue;
+}

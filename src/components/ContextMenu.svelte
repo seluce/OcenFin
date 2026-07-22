@@ -5,7 +5,7 @@
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
   import { onMount, onDestroy, untrack } from 'svelte';
 
-  let { item, userId, selectedUser, onChanged, onOpenDetails, onAddToList, onAddToCollection, onClose } = $props();
+  let { item, userId, selectedUser, onChanged, onOpenDetails, onAddToList, onAddToCollection, onPlayAll, onClose } = $props();
 
   // Local (optimistic) states — toggled immediately on click so the
   // label/icons in the menu show the change directly. Initialized from the item.
@@ -65,6 +65,7 @@
     onChanged?.();
   }
   function openDetails() { if (!armed) return; onOpenDetails?.(item); onClose?.(); }
+  function playAll()     { if (!armed) return; onPlayAll?.(item); onClose?.(); }
   function addToList()   { if (!armed) return; onAddToList?.(item); onClose?.(); }
   function addToCollection() { if (!armed) return; onAddToCollection?.(item); onClose?.(); }
   // Show collection only if the profile has the right (like in Details/Player). Hide only on an explicit
@@ -85,7 +86,7 @@
      the back key or by picking an action. A role/key handler on the backdrop would fight the focus trap. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
-<div data-focus-trap class="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-center justify-center p-8"
+<div data-focus-trap class="fixed inset-0 z-[90] bg-black/80 flex items-center justify-center p-8"
      onclick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
 
   <div class="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden ring-1 ring-white/10">
@@ -97,6 +98,21 @@
 
     <!-- Actions -->
     <div class="p-3 flex flex-col gap-1">
+      {#if item?.Type === 'Playlist'}
+        <!-- Playlist: only container-appropriate actions -->
+        <button onclick={playAll} {@attach focusOnMount()}
+          class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
+                 hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
+          <svg class="w-6 h-6 shrink-0 text-gray-400" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          {i18n.t.playAll}
+        </button>
+        <button onclick={openDetails}
+          class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
+                 hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
+          <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
+          {i18n.t.openDetails}
+        </button>
+      {:else}
       <button onclick={toggleWatched} {@attach focusOnMount()}
         class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
                hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
@@ -163,6 +179,7 @@
         </svg>
         {i18n.t.openDetails}
       </button>
+      {/if}
     </div>
   </div>
 </div>

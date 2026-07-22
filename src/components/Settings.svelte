@@ -28,7 +28,6 @@
     onDisplayChange, onReorderingChange, onProfileImageChanged, onPlaybackPrefsChange, onClearCache,
   } = $props();
 
-  let showDisplayOptions = $state(false);   // expand/collapse the sub-item
 
   // Audio/subtitle language options for the modals
   let audioLangOptions = $derived([
@@ -500,9 +499,9 @@
   // top instead of inheriting the previous category's scroll depth.
   $effect(() => { activeCategory; if (contentEl) contentEl.scrollTop = 0; });
   // Close the "display elements" sub-item as soon as you leave the appearance tab
-  $effect(() => { if (activeCategory !== 'appearance') showDisplayOptions = false; });
   let categories = $derived([
     { id: 'appearance', label: i18n.t.settingsDisplay,    icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
+    { id: 'displayElements', label: i18n.t.displayElements, icon: 'M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z' },
     { id: 'navigation', label: i18n.t.settingsNavigation, icon: 'M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z' },
     { id: 'oled',       label: i18n.t.screensaverSection, icon: 'M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
     { id: 'playback',   label: i18n.t.playback,           icon: 'M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z' },
@@ -635,30 +634,21 @@
           </div>
         </div>
 
-        <div class="h-px bg-gray-700"></div>
+      </div>
+    </section>
+    {/if}
 
-        <!-- DISPLAY ELEMENTS — expandable sub-item, keeps the menu lean -->
-        <button onclick={() => showDisplayOptions = !showDisplayOptions}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.displayElements}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.displayElementsDesc}</span>
-          </div>
-          <svg class="w-7 h-7 text-gray-400 transition-transform {showDisplayOptions ? 'rotate-90' : ''}"
-            fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-          </svg>
-        </button>
-
-        {#if showDisplayOptions}
+    {#if activeCategory === 'displayElements'}
+    <section class="flex flex-col gap-4">
+      <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{i18n.t.displayElements}</h2>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
           <!-- Group: interface (general elements) -->
-          <div class="pl-10 pr-6 pt-4 pb-2 bg-gray-900/50">
+          <div class="px-6 pt-4 pb-2">
             <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{i18n.t.groupInterface}</h3>
           </div>
           {#each uiToggles as tg}
             <button onclick={() => toggleDisplay(tg.key)}
-              class="flex items-center justify-between w-full pl-10 pr-6 py-4 bg-gray-900/50 hover:bg-gray-700 focus:bg-gray-700
+              class="flex items-center justify-between w-full px-6 py-4 hover:bg-gray-700 focus:bg-gray-700
                      focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
               <span class="text-lg text-gray-200">{tg.label}</span>
               <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
@@ -670,7 +660,7 @@
           {/each}
 
           <!-- Time format (applies to both clocks) -->
-          <div class="pl-10 pr-6 py-4 bg-gray-900/50">
+          <div class="px-6 py-4">
             <span class="text-lg text-gray-200 block mb-3">{i18n.t.clockFormat}</span>
             <div class="flex gap-2">
               {#each [['auto', i18n.t.clockAuto],['24h', i18n.t.clock24h],['12h', i18n.t.clock12h]] as [val, label]}
@@ -684,12 +674,12 @@
           </div>
 
           <!-- Group: home (dashboard rows) -->
-          <div class="pl-10 pr-6 pt-5 pb-2 bg-gray-900/50 border-t border-gray-700/40">
+          <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
             <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{i18n.t.groupHome}</h3>
           </div>
           {#each homeToggles as tg}
             <button onclick={() => toggleDisplay(tg.key)}
-              class="flex items-center justify-between w-full pl-10 pr-6 py-4 bg-gray-900/50 hover:bg-gray-700 focus:bg-gray-700
+              class="flex items-center justify-between w-full px-6 py-4 hover:bg-gray-700 focus:bg-gray-700
                      focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
               <span class="text-lg text-gray-200">{tg.label}</span>
               <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
@@ -702,7 +692,7 @@
 
           <!-- Number of recommendation rows — only relevant when recommendations are active -->
           {#if displaySettings.recommendations}
-            <div class="pl-10 pr-6 py-4 bg-gray-900/50">
+            <div class="px-6 py-4">
               <span class="text-lg text-gray-200 block mb-3">{i18n.t.recommendationRows}</span>
               <div class="flex gap-2">
                 {#each [[1, i18n.t.rowsOne],[2, i18n.t.rowsTwo]] as [val, label]}
@@ -717,12 +707,12 @@
           {/if}
 
           <!-- Group: details (detail page of a movie/series) -->
-          <div class="pl-10 pr-6 pt-5 pb-2 bg-gray-900/50 border-t border-gray-700/40">
+          <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
             <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{i18n.t.groupDetails}</h3>
           </div>
           {#each detailToggles as tg}
             <button onclick={() => toggleDisplay(tg.key)}
-              class="flex items-center justify-between w-full pl-10 pr-6 py-4 bg-gray-900/50 hover:bg-gray-700 focus:bg-gray-700
+              class="flex items-center justify-between w-full px-6 py-4 hover:bg-gray-700 focus:bg-gray-700
                      focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
               <span class="text-lg text-gray-200">{tg.label}</span>
               <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
@@ -732,8 +722,6 @@
               </div>
             </button>
           {/each}
-        {/if}
-
       </div>
     </section>
     {/if}
@@ -923,6 +911,23 @@
 
         <div class="h-px bg-gray-700"></div>
 
+        <!-- Remember audio track per series -->
+        <button onclick={() => togglePlaybackPref('rememberAudioTrack')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.rememberAudioTrack}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.rememberAudioTrackDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.rememberAudioTrack ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.rememberAudioTrack ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        <div class="h-px bg-gray-700"></div>
+
         <!-- Jump distance of the forward/back buttons (stacked + flex-1 so it's reachable via D-pad) -->
         <div class="p-6">
           <span class="text-2xl text-white font-medium block">{i18n.t.seekInterval}</span>
@@ -1094,6 +1099,21 @@
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl">
           <span class="text-2xl text-white font-medium">{i18n.t.subtitleLanguage}</span>
           <span class="text-xl font-bold text-gray-300">{subtitleLangName}</span>
+        </button>
+
+        <!-- Remember subtitle track per series -->
+        <button onclick={() => togglePlaybackPref('rememberSubtitleTrack')}
+          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.rememberSubtitleTrack}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.rememberSubtitleTrackDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.rememberSubtitleTrack ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.rememberSubtitleTrack ? 'translate-x-8' : ''}"></div>
+          </div>
         </button>
 
         <!-- Automatically choose forced/default GRAPHIC subtitles (DVDSUB) — needs transcode (no Direct Play).

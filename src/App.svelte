@@ -1,7 +1,8 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, itemProgress, longPress, personImageUrl, serverSupportsVobSub, authHeaders, dlog, setDebug, blurUp, itemBlurHash, uiFade, dropTrapOnOutro, getItemSubtitle, getItemImageUrl, installConnectionGuard } from './utils.js';
+  import { isBackKey, focusOnMount, serverSupportsVobSub, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard } from './utils.js';
+  import { buildPlayQueue } from './playback.js';
   import { session } from './session.svelte.js';
   import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
   import { APP_VERSION } from './version.js';
@@ -143,7 +144,7 @@
   let displaySettings = $state({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
 
   // Default audio/subtitle language
-  let playbackPrefs = $state({ audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true });
+  let playbackPrefs = $state({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true });
 
   // ── Profile-specific settings ───────────────────────────────
   // Language + display + playback + animations are stored PER USER.
@@ -203,7 +204,7 @@
       localStorage.setItem('app_language', p.language);   // update "last used"
     }
     displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
-    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, ...(p.playbackPrefs || {}) };
+    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, ...(p.playbackPrefs || {}) };
     reduceAnimations = p.reduceAnimations ?? false;
     librarySorts     = p.librarySorts || {};   // remembered sort per library
     sharedProfile    = p.sharedProfile && Array.isArray(p.sharedProfile.members)
@@ -1249,6 +1250,21 @@
   function contextAddToList(item) { contextPickerItem = item; contextPickerMode = 'playlist'; }
   function contextAddToCollection(item) { contextPickerItem = item; contextPickerMode = 'collection'; }
 
+  // "Play all" from a playlist's context menu → fetch its items, build the queue, play (returns to the
+  // current view afterwards). Series/Season entries are expanded to episodes via buildPlayQueue.
+  async function contextPlayPlaylist(item) {
+    contextReturnId = null; contextReturnEl = null;   // playback takes over the focus
+    contextItem = null;
+    if (!item?.Id) return;
+    detailsOrigin = viewState;
+    try {
+      const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300`, { headers: getAuthHeaders() });
+      const data  = await res.json();
+      const queue = await buildPlayQueue(data.Items || [], { serverUrl: session.serverUrl, userId: activeUserId, headers: getAuthHeaders() });
+      if (queue.length) { playQueue = { items: queue, index: 0 }; startPlayback({ item: queue[0], audioIndex: -1, subtitleIndex: -1 }); }
+    } catch (e) { console.error('play playlist:', e); }
+  }
+
   // Back from Details/Player → to the origin, restore the library position
   // Starts playback of an item — used by Details (Play/From-start/Random-episode)
   // and Collection (random playback). One source instead of two inline copies.
@@ -1552,7 +1568,7 @@
         onLogOutServer={handleLogout}
       />
 
-      <div data-focus-group="main" class="flex-1 h-full overflow-y-auto hide-scrollbar bg-gray-900 relative [scroll-padding-top:4rem]">
+      <div data-focus-group="main" class="flex-1 h-full overflow-y-auto hide-scrollbar bg-gray-900 relative [scroll-padding-top:5rem]">
 
         {#if viewState === 'dashboard'}
           {#key dashboardReloadKey}
@@ -1726,6 +1742,7 @@
       onOpenDetails={contextOpenDetails}
       onAddToList={contextAddToList}
       onAddToCollection={contextAddToCollection}
+      onPlayAll={contextPlayPlaylist}
       {selectedUser}
     />
   {/if}

@@ -274,7 +274,7 @@
       if (res.ok) {
         const data        = await res.json();
         if (myToken !== loadToken) return;
-        currentItems      = data.Items || [];
+        currentItems      = withoutKnown(data.Items, []);
         totalLibraryItems = data.TotalRecordCount || 0;
         if (isCacheableView()) cacheLibraryView(lib.Id, { items: currentItems, total: totalLibraryItems });
       }
@@ -282,6 +282,14 @@
     } catch { if (myToken === loadToken) session.connectionLost = true; }
     // Only clear the spinner if we're still current — otherwise an old response kills the new one's skeleton.
     finally { if (myToken === loadToken) isLoading = false; }
+  }
+
+  // Paged responses can repeat an item: the list shifts between requests (e.g. the watchlist
+  // playlist is created/updated while paging) or the server re-sends the same page. A keyed
+  // {#each} hard-crashes on duplicate keys, so only ever merge items we don't have yet.
+  function withoutKnown(list, known) {
+    const seen = new Set(known.map(i => i.Id));
+    return (list || []).filter(i => i.Id && !seen.has(i.Id));
   }
 
   async function loadMoreLibraryItems() {
@@ -296,10 +304,11 @@
       if (res.ok && myToken === loadToken) {
         const data   = await res.json();
         if (myToken !== loadToken) return;
-        // Empty response although the total says more should exist → the count is stale
-        // (e.g. items deleted server-side). Correct it so the sentinel stops re-firing.
-        if (!(data.Items || []).length) totalLibraryItems = firstLoadedIndex + currentItems.length;
-        currentItems = [...currentItems, ...(data.Items || [])];
+        // Nothing new although the total says more should exist → the count is stale (items
+        // deleted server-side, or the page repeated). Correct it so the sentinel stops re-firing.
+        const fresh = withoutKnown(data.Items, currentItems);
+        if (!fresh.length) totalLibraryItems = firstLoadedIndex + currentItems.length;
+        currentItems = [...currentItems, ...fresh];
         if (isCacheableView()) cacheLibraryView(currentLibraryId, { items: currentItems, total: totalLibraryItems });
       }
     } catch { } finally { isFetchingMore = false; }
@@ -319,7 +328,7 @@
         const items  = (await res.json()).Items || [];
         if (myToken !== loadToken) return;
         const before = libraryScrollContainer ? libraryScrollContainer.scrollHeight : 0;
-        currentItems     = [...items, ...currentItems];
+        currentItems     = [...withoutKnown(items, currentItems), ...currentItems];
         firstLoadedIndex = newStart;
         await tick();
         if (libraryScrollContainer) libraryScrollContainer.scrollTop += libraryScrollContainer.scrollHeight - before;

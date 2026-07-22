@@ -774,7 +774,7 @@
     {/if}
 
     <!-- RECOMMENDATIONS: "Because you watched X" — personalized, hence near the top -->
-    {#each (showRecommendations ? recommendations.slice(0, recommendationRows) : []) as rec}
+    {#each (showRecommendations ? recommendations.slice(0, recommendationRows) : []) as rec (rec.seedTitle)}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">

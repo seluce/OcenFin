@@ -3,7 +3,7 @@
   // Used by Details and Player. Controlled via the `mode` prop
   // (null = closed). Closing reports back to the parent via a 'close' event.
   import { i18n } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount, dlog, uiFade, dropTrapOnOutro } from '../utils.js';
+  import { isBackKey, focusOnMount, uiFade, dropTrapOnOutro } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
