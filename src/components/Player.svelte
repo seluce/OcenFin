@@ -840,9 +840,11 @@
   // An interactive overlay is open → OK should trigger its focused button, not pause.
   let overlayActive = $derived(showSkipIntro || showStillWatching || (outroPromptActive && !!nextEpisode));
   // Exactly then ONE outro decision prompt is visible (timer OR manual) → trap focus there.
-  let outroPromptShowing = $derived(!!nextEpisode && (nextCountdown !== null || (outroPromptActive && !outroDismissed)));
+  let outroPromptShowing = $derived(!showStillWatching && !!nextEpisode && (nextCountdown !== null || (outroPromptActive && !outroDismissed)));
+  // !showStillWatching is essential: when the countdown expires it sets nextCountdown back to null,
+  // which would re-trigger this effect and restart the countdown behind the open prompt.
   $effect(() => { if (playbackPrefs.autoPlayNext && !stopAfterThis && nextEpisode && !playbackPrefs.autoSkipCredits
-         && nearEnd && nextCountdown === null && !countdownDismissed) {
+         && nearEnd && nextCountdown === null && !countdownDismissed && !showStillWatching) {
     startCountdown();
   } });
 
@@ -894,7 +896,8 @@
     }
     // Nothing left to play (movie, last episode of the last season, or auto-play off): leave the
     // player instead of sitting paused on the last frame — back to the details of what was watched.
-    onExit?.();
+    // Not while the "still watching?" prompt is up: it waits for an answer and must stay.
+    if (!showStillWatching) onExit?.();
   }
 
   // Current chapter name (for display while seeking). Meaningless auto-names (timestamps,
@@ -922,7 +925,7 @@
     introAutoSkipped = true;
     skipIntro();
   } });
-  $effect(() => { if (playbackPrefs.autoSkipCredits && !stopAfterThis && showSkipCredits && !creditsAutoSkipped && nextEpisode) {
+  $effect(() => { if (playbackPrefs.autoSkipCredits && !stopAfterThis && showSkipCredits && !creditsAutoSkipped && nextEpisode && !showStillWatching) {
     creditsAutoSkipped = true;
     prefetchNextEpisode();   // this path bypasses the countdown → the fetch runs parallel to the Player remount
     goToNextEpisode();
@@ -984,7 +987,8 @@
   // series auto-play (sleep protection) and never interrupts a movie or an actively watched episode.
   // The counter (autoPlayStreak) lives in App.svelte, because the Player resets per episode.
   let showStillWatching = $state(false);
-  let interacted = false;   // did the user do anything in THIS episode? (keypress/remote/click)
+  let interacted = false;   // did the user do anything in THIS episode? (keypress/remote/click —
+                            // deliberately NOT pointermove: stray mouse jitter would reset the counter)
   function markInteraction() { interacted = true; }
   function resumeFromStillWatching() {
     showStillWatching = false;
@@ -1017,7 +1021,6 @@
 
     // Interaction tracking for "still watching?": every deliberate input marks the user as awake.
     window.addEventListener('keydown', markInteraction);
-    window.addEventListener('pointermove', markInteraction);
     window.addEventListener('click', markInteraction);
     // Also save the position on app suspend (webOS Home) / close / reload.
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -1035,7 +1038,6 @@
 
   onDestroy(() => {
     window.removeEventListener('keydown', markInteraction);
-    window.removeEventListener('pointermove', markInteraction);
     window.removeEventListener('click', markInteraction);
     document.removeEventListener('visibilitychange', onVisibilityChange);
     window.removeEventListener('pagehide', onPageHide);
@@ -1326,11 +1328,17 @@
   // manual=true → triggered by the user (button/prompt); manual=false → auto-play (countdown/end/credits).
   function goToNextEpisode(manual = false) {
     stopCountdown();
+    // While the "still watching?" prompt is up nothing may advance on its own — not even if a key
+    // press has meanwhile marked the user as awake. Only the prompt's button moves on (it calls
+    // onNext directly); no answer at all lets the timeout close the player.
+    if (showStillWatching) return;
     if (!nextEpisode) return;
     const awake = manual || interacted;
     // Sleep protection: only for series auto-play, when the user hasn't done anything for a while.
+    // autoPlayStreak counts episodes already auto-started; this call would start the next one, so
+    // compare with +1 → asking after exactly N auto-played episodes as configured.
     if (!awake && playbackPrefs.stillWatching && item.Type === 'Episode'
-        && autoPlayStreak >= (playbackPrefs.stillWatchingEpisodes || 3)) {
+        && autoPlayStreak + 1 >= (playbackPrefs.stillWatchingEpisodes || 3)) {
       videoElement?.pause();
       showStillWatching = true;
       return;
@@ -2038,7 +2046,7 @@
 
   <!-- Manual "next episode" prompt (no countdown): appears with auto-play disabled OR after
        cancelling the timer. The user decides — "Cancel" stays on the current episode (outro). -->
-  {#if outroPromptActive && nextEpisode && nextCountdown === null && !outroDismissed}
+  {#if outroPromptActive && nextEpisode && nextCountdown === null && !outroDismissed && !showStillWatching}
     <div transition:uiFade data-focus-trap class="absolute bottom-12 right-12 z-[70] transition-transform duration-300 {showControls ? '-translate-y-32' : ''}">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-6 w-[30rem] flex flex-col gap-3">
         <div class="flex items-center gap-3">
@@ -2071,7 +2079,10 @@
 
   <!-- "Still watching?" – paused after inactivity -->
   {#if showStillWatching}
-    <div transition:uiFade onoutrostart={dropTrapOnOutro} class="absolute inset-0 z-[120] bg-black/85 flex items-center justify-center">
+    <!-- data-focus-trap: the prompt is the only thing that may take focus — spatial navigation must
+         not reach the player controls underneath. -->
+    <div data-focus-trap role="dialog" aria-modal="true" tabindex="-1"
+      transition:uiFade onoutrostart={dropTrapOnOutro} class="absolute inset-0 z-[120] bg-black/85 flex items-center justify-center">
       <div class="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl p-12 flex flex-col items-center gap-7 max-w-md text-center">
         <svg class="w-16 h-16 text-gray-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1 1 0 010-.644C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178a1 1 0 010 .644C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178z"/>

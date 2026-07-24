@@ -1283,6 +1283,11 @@
     if (qi >= 0) playQueue = { ...playQueue, index: qi };
   }
   function startPlayback(p) {
+    // Starting playback by hand is a deliberate action → the "still watching?" counter starts over.
+    // Without this a stale streak from an earlier series session would carry into the new one and
+    // could trigger the prompt far too early. Auto-advance never comes through here (it goes via
+    // handleNextEpisode), so the sleep protection stays intact.
+    autoPlayStreak = 0;
     if (p.item) currentDetailItem = p.item;
     activeAudioIndex    = p.audioIndex    ?? -1;
     activeSubtitleIndex = p.subtitleIndex ?? -1;
