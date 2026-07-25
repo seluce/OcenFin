@@ -571,11 +571,18 @@
   // parse it instead of setting a <track>. A cross-origin <track> is blocked by the browser,
   // and webOS renders native cues unreliably anyway. This way we have full control.
   let subtitleCues = $state([]);           // [{ start, end, text }] in seconds
-  // Subtitle offset (text overlay only = VTT/SRT/ASS-to-VTT). + = subtitles later (delayed),
-  // − = earlier. Reset per track/title; deliberately NOT saved (it's content-specific).
+  // Subtitle offset: applies to our own text overlay (VTT/SRT/ASS-to-VTT) AND to ASS rendered by
+  // assjs, which supports the same shift natively via its `delay` property. That property exists
+  // since 0.1.0, but its handling was corrected in 0.1.6 (floating point) and 0.1.8 (delay is now
+  // honoured in the allocate step) — so 0.1.8 is the sensible minimum for reliable behaviour.
+  // + = subtitles later (delayed), − = earlier. Reset per track/title; deliberately NOT saved
+  // (it's content-specific).
   let subtitleOffset = $state(0);
   function adjustSubtitleOffset(delta) {
     subtitleOffset = Math.round(Math.max(-10, Math.min(10, subtitleOffset + delta)) * 10) / 10;
+    // Same unit (seconds) and sign convention as the text overlay: assjs renders at
+    // currentTime − delay. Its setter re-syncs right away → no rebuild of the overlay needed.
+    if (assRenderer) assRenderer.delay = subtitleOffset;
   }
   function formatOffset(s) {
     return (s > 0 ? '+' : '') + s.toFixed(1).replace('.', ',') + ' s';
@@ -586,6 +593,7 @@
   let clientGraphicRender = $derived(playbackPrefs.pgsRendering && !playbackPrefs.burnSubtitles);
   // Render ASS/SSA with original layout (assjs)? Off → plain text overlay, both Direct Play.
   let assRenderer = null;
+  let assActive   = $state(false);  // ASS overlay live → the offset control applies (assjs delay)
   let assContainer = $state(null);  // host <div>; assjs injects its DOM overlay here (over the video)
   let clientAssRender = $derived(playbackPrefs.assRendering && !playbackPrefs.burnSubtitles);
 
@@ -655,6 +663,12 @@
   // cross-origin taint, no crossorigin on the <video>). The browser handles the font fallback. resampling controls the
   // behavior when the script resolution (PlayResX/Y) ≠ video resolution (letterbox); the default 'video_height' usually fits.
   // assjs has no setTrack → track switch/re-apply via rebuild (the DOM overlay is detached/re-attached).
+  // KNOWN LIMIT on webOS 25 (Chromium 120): assjs detects "border width is 0" inside a CSS filter via a
+  // round() trick, and round() needs Chromium 125. That single declaration is therefore dropped, so
+  // \blur on borderless text (\bord0) renders sharp instead of soft. Nothing else is affected — bordered
+  // text, i.e. normal dialogue, gets its blur from the :before/:after layers, which don't use round().
+  // Purely cosmetic and it degrades gracefully, so we don't work around it: patching it would mean
+  // rebuilding assjs' internal selectors and custom properties in our own CSS. Revisit on webOS 26.
   async function applyAssSubtitle(stream, ms) {
     if (!videoElement || !assContainer) return;
     const url = assSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
@@ -665,6 +679,7 @@
       ensureVideoFrameCallback();               // webOS: rVFC polyfill active BEFORE assjs reads it
       disposeAss();                            // no setTrack → remove the old overlay, rebuild fresh
       assRenderer = new ASS(content, videoElement, { container: assContainer });
+      assActive = true;
       // assjs drives its render loop via requestAnimationFrame, started by the video's 'play'/'playing'
       // event. On a track switch in the MIDDLE of playback the video is already running → it fires
       // no new event → the loop would never start and the subtitle would stay frozen at the state from
@@ -685,6 +700,7 @@
       try { assRenderer.destroy(); } catch {}
       assRenderer = null;
     }
+    assActive = false;
   }
   // webOS reports requestVideoFrameCallback as present (feature detection true) but NEVER calls the
   // callback. The bug is in LG's media integration, not in Chromium → version-independent (on desktop it
@@ -1966,7 +1982,9 @@
             {/each}
           {/if}
 
-          {#if subtitleCues.length > 0}
+          <!-- Offset control: sits outside the audio/subtitle branch above, so it must check the tab
+               itself — otherwise it also shows up under "Audio", where it has no meaning. -->
+          {#if settingsTab === 'subtitle' && (subtitleCues.length > 0 || assActive)}
             <div class="mt-3 pt-3 border-t border-gray-700/60 flex items-center justify-between gap-3 px-1">
               <span class="text-sm text-gray-300 font-medium">{i18n.t.subtitleOffset}</span>
               <div class="flex items-center gap-2">
