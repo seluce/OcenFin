@@ -987,8 +987,10 @@
   // series auto-play (sleep protection) and never interrupts a movie or an actively watched episode.
   // The counter (autoPlayStreak) lives in App.svelte, because the Player resets per episode.
   let showStillWatching = $state(false);
-  let interacted = false;   // did the user do anything in THIS episode? (keypress/remote/click —
-                            // deliberately NOT pointermove: stray mouse jitter would reset the counter)
+  let interacted = false;   // did the user do anything in THIS episode? (keypress/click/pointer move)
+                            // Pointer movement counts on purpose: the Magic Remote has a pointer, so
+                            // moving it — e.g. to glance at the clock — means the user is awake. The
+                            // prompt is meant for someone who fell asleep, i.e. stopped moving entirely.
   function markInteraction() { interacted = true; }
   function resumeFromStillWatching() {
     showStillWatching = false;
@@ -1021,6 +1023,7 @@
 
     // Interaction tracking for "still watching?": every deliberate input marks the user as awake.
     window.addEventListener('keydown', markInteraction);
+    window.addEventListener('pointermove', markInteraction);
     window.addEventListener('click', markInteraction);
     // Also save the position on app suspend (webOS Home) / close / reload.
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -1038,6 +1041,7 @@
 
   onDestroy(() => {
     window.removeEventListener('keydown', markInteraction);
+    window.removeEventListener('pointermove', markInteraction);
     window.removeEventListener('click', markInteraction);
     document.removeEventListener('visibilitychange', onVisibilityChange);
     window.removeEventListener('pagehide', onPageHide);
