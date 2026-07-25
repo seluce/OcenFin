@@ -706,7 +706,9 @@
                   <span class="text-2xl text-gray-500 font-bold">{library.Name}</span>
                 {/if}
               </div>
-              <span class="mt-3 text-lg text-gray-300 group-focus:text-white">{library.Name}</span>
+              <!-- block + w-64 (= tile width) + truncate: without a width bound a long library name
+                   makes the button wider than its tile, which breaks the spacing of the row. -->
+              <span class="mt-3 text-lg text-gray-300 group-focus:text-white block w-64 truncate text-center">{library.Name}</span>
             </button>
           {/each}
         </div>

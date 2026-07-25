@@ -490,12 +490,14 @@
   <div bind:this={libraryScrollContainer} onscroll={handleLibraryScroll}
     class="flex-1 p-10 pt-16 overflow-y-auto hide-scrollbar relative z-10 [scroll-padding-top:4rem]">
 
-    <div class="flex justify-between items-center mb-10 pr-6">
-      <h1 class="text-4xl font-bold text-white">
-        {currentLibraryName}
-        <span class="text-xl text-gray-500 font-normal">({totalLibraryItems})</span>
+    <div class="flex justify-between items-center gap-6 mb-10 pr-6">
+      <!-- min-w-0 + truncate on the name, shrink-0 on the count and the actions: a very long library
+           name would otherwise push "random / sort / filter" out of view and make them unreachable. -->
+      <h1 class="text-4xl font-bold text-white min-w-0 flex items-baseline gap-2">
+        <span class="truncate">{currentLibraryName}</span>
+        <span class="text-xl text-gray-500 font-normal shrink-0">({totalLibraryItems})</span>
       </h1>
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-3 shrink-0">
         <button onclick={playRandomItem}
           class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
                  focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105"
