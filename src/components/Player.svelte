@@ -1341,7 +1341,10 @@
     // Sleep protection: only for series auto-play, when the user hasn't done anything for a while.
     // autoPlayStreak counts episodes already auto-started; this call would start the next one, so
     // compare with +1 → asking after exactly N auto-played episodes as configured.
-    if (!awake && playbackPrefs.stillWatching && item.Type === 'Episode'
+    // Never in a SyncPlay group: the prompt pauses locally, which sends Pause to the whole group —
+    // one inactive member would stop everyone else's session. The others are demonstrably awake, so
+    // there is nothing to protect against here.
+    if (!awake && !inSyncGroup && playbackPrefs.stillWatching && item.Type === 'Episode'
         && autoPlayStreak + 1 >= (playbackPrefs.stillWatchingEpisodes || 3)) {
       videoElement?.pause();
       showStillWatching = true;
