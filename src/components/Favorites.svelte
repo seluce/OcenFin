@@ -93,7 +93,7 @@
       {#each favGroups as group (group.key)}
         {#if group.items.length > 0}
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{group.label}</h2>
-          <div data-focus-group data-enter-first class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-12">
+          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-12">
             {#each group.items as item (item.Id)}
               {@const badge = itemBadge(item)}
               <button onclick={() => onOpenDetails(item)}
@@ -128,7 +128,7 @@
 
       {#if favEpisodes.length > 0}
         <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.episodes}</h2>
-        <div data-focus-group data-enter-first class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pr-4 mb-12">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pr-4 mb-12">
           {#each favEpisodes as item (item.Id)}
             <button onclick={() => onOpenDetails(item)}
               {@attach longPress()} onlongpress={() => onContextMenu(item)}
@@ -152,7 +152,7 @@
 
       {#if favPersons.length > 0}
         <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.people}</h2>
-        <div data-focus-group data-enter-first class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-6 pr-4 mb-12">
+        <div class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-6 pr-4 mb-12">
           {#each favPersons as p (p.Id)}
             <button onclick={() => onOpenPerson(p)} class="group focus:outline-none text-center scroll-my-4">
               <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl">
