@@ -38,6 +38,18 @@
   // 'servers' → 'users' → 'app'
   // ============================================================
   let appPhase = $state('servers');   // current step in the onboarding flow
+
+  // On first entering the app, put focus on the sidebar's active item. A freshly loaded app has no
+  // focus, so the first D-pad press would otherwise be spent just establishing it (landing top-left,
+  // overlapping hero + first row) instead of navigating. Guarded to only run when nothing is focused
+  // yet, so it never steals focus from a modal, the connection-lost retry button or a restore path.
+  $effect(() => {
+    if (appPhase !== 'app') return;
+    tick().then(() => {
+      if (document.activeElement && document.activeElement !== document.body) return;
+      document.querySelector('[data-focus-group="sidebar"] [data-group-current]')?.focus();
+    });
+  });
   let initializing = $state(true);    // splash screen until auto-login/startup is done
   let dashboardReloadKey = $state(0); // incrementing forces a fresh reload of the dashboard
   let resumeStale = $state(false);    // after playback: dashboard fetches Resume/NextUp fresh (cache stays otherwise)
