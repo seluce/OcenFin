@@ -1716,10 +1716,12 @@
 
     <!-- TOP: title + clock -->
     <div class="flex items-start justify-between gap-6">
-      <div>
-        <h1 class="text-3xl font-bold drop-shadow-lg">{item.Name}</h1>
+      <!-- min-w-0 so this block can actually shrink; without it a long episode name wraps over
+           several lines. The clock/buttons on the right are already protected by shrink-0. -->
+      <div class="min-w-0">
+        <h1 class="text-3xl font-bold drop-shadow-lg line-clamp-2">{item.Name}</h1>
         {#if item.SeriesName}
-          <p class="text-gray-400 text-lg mt-1">{item.SeriesName} · {item.SeasonName}</p>
+          <p class="text-gray-400 text-lg mt-1 truncate">{item.SeriesName} · {item.SeasonName}</p>
         {/if}
         {#if episodePosition}
           <p class="text-gray-500 text-base mt-0.5 font-semibold tracking-wide">{episodePosition}</p>

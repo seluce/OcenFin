@@ -94,9 +94,9 @@
     </button>
   </div>
   <div class="flex items-center gap-4 mb-10">
-    <svg class="w-10 h-10 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-    <div>
-      <h1 class="text-4xl font-bold text-white">{person?.Name}</h1>
+    <svg class="w-10 h-10 shrink-0 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+    <div class="min-w-0">
+      <h1 class="text-4xl font-bold text-white truncate">{person?.Name}</h1>
       <p class="text-gray-400 mt-1">{i18n.t.appearsIn}</p>
     </div>
   </div>
