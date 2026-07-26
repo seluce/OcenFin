@@ -840,7 +840,7 @@
   let nextCountdown     = $state(null);   // remaining seconds (integer, for the text), null = inactive
   let countdownProgress = $state(0);      // 1 → 0, drives the bar
   let countdownTimer    = null;
-  let countdownEnd      = 0;
+  let countdownEndTime  = 0;   // countdown target in VIDEO seconds (not wall clock — must pause with the video)
   let countdownDismissed = false; // per episode: don't restart after a cancel
   let outroDismissed = $state(false); // manual outro prompt for THIS episode dismissed → stay put
   const COUNTDOWN_FROM  = 20;
@@ -889,15 +889,23 @@
 
   function startCountdown() {
     prefetchNextEpisode();
-    nextCountdown = COUNTDOWN_FROM;   // immediately visible → the card appears
+    // Cap the countdown at the video time actually left. After seeking close to the end there can be
+    // fewer seconds remaining than COUNTDOWN_FROM — a fixed span would then still claim time left
+    // while the video has already ended. Floor + min 1 s so it never outlasts the picture.
+    const left = duration > 0 ? Math.max(0, duration - currentTime) : COUNTDOWN_FROM;
+    const span = Math.max(1, Math.min(COUNTDOWN_FROM, Math.floor(left)));
+    nextCountdown = span;             // immediately visible → the card appears
     countdownProgress = 1;
-    countdownEnd = Date.now() + COUNTDOWN_FROM * 1000;
+    // Count in VIDEO time, not wall clock: pausing has to hold the countdown, and seeking has to
+    // shorten it. Note the span can be shorter than the remaining video — with real credits data the
+    // countdown deliberately expires before the picture ends, which is what skips the credits.
+    countdownEndTime = (videoElement?.currentTime ?? currentTime) + span;
     // setInterval (reliable in this project) every 100 ms → text per second, bar smooth.
     countdownTimer = setInterval(() => {
-      const remainingMs = countdownEnd - Date.now();
-      if (remainingMs <= 0) { stopCountdown(); goToNextEpisode(); return; }
-      countdownProgress = remainingMs / (COUNTDOWN_FROM * 1000);
-      nextCountdown = Math.ceil(remainingMs / 1000);
+      const remaining = countdownEndTime - (videoElement?.currentTime ?? 0);
+      if (remaining <= 0) { stopCountdown(); goToNextEpisode(); return; }
+      countdownProgress = Math.min(1, remaining / span);
+      nextCountdown = Math.ceil(remaining);
     }, 100);
   }
   function stopCountdown() {
@@ -920,10 +928,13 @@
       goToNextEpisode();
       return;
     }
-    // Nothing left to play (movie, last episode of the last season, or auto-play off): leave the
-    // player instead of sitting paused on the last frame — back to the details of what was watched.
+    // Only leave when nothing follows at all (movie, last episode, end of queue) — otherwise the
+    // player would sit paused on the last frame forever. If a next item DOES exist we stay put:
+    // auto-play being off, or a dismissed countdown, is an explicit "don't move on by yourself", so
+    // the credits keep running and the user decides via the manual next / skip-outro button.
+    // "Only this episode" is handled above and exits regardless — that's its whole purpose.
     // Not while the "still watching?" prompt is up: it waits for an answer and must stay.
-    if (!showStillWatching) onExit?.();
+    if (!nextEpisode && !showStillWatching) onExit?.();
   }
 
   // Current chapter name (for display while seeking). Meaningless auto-names (timestamps,
