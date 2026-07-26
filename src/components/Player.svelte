@@ -873,6 +873,10 @@
          && nearEnd && nextCountdown === null && !countdownDismissed && !showStillWatching) {
     startCountdown();
   } });
+  // Seeking out of the end region has to cancel a running countdown. The countdown is imperative
+  // state, unlike the manual prompt which is derived and disappears on its own — without this it
+  // keeps counting toward a target that is now far away ("next episode in 596 seconds").
+  $effect(() => { if (nextCountdown !== null && !nearEnd) stopCountdown(); });
 
   // Lightly prefetch the next episode (only PlaybackInfo/stream URL, no video pre-buffering)
   // so the switch saves the round-trip. Applies only when the parameters match at switch time.
@@ -902,7 +906,10 @@
     countdownEndTime = (videoElement?.currentTime ?? currentTime) + span;
     // setInterval (reliable in this project) every 100 ms → text per second, bar smooth.
     countdownTimer = setInterval(() => {
-      const remaining = countdownEndTime - (videoElement?.currentTime ?? 0);
+      const cur = videoElement?.currentTime ?? 0;
+      let remaining = countdownEndTime - cur;
+      // Seeking backwards but staying inside the end region: re-anchor instead of counting up.
+      if (remaining > span) { countdownEndTime = cur + span; remaining = span; }
       if (remaining <= 0) { stopCountdown(); goToNextEpisode(); return; }
       countdownProgress = Math.min(1, remaining / span);
       nextCountdown = Math.ceil(remaining);
