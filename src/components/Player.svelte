@@ -727,21 +727,31 @@
     if (!videoElement) return;
     const url = graphicSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
     if (!url) { disposeGraphic(); dlog('[OcenFin] image subtitle not available (server does not provide it externally):', stream.Index); return; }
-    // TV-friendly: STRICTLY SEQUENTIAL. First fully destroy the old renderer (free worker/WASM),
-    // then create the new one. On webOS two concurrent WASM workers are risky (limit → libbitsub
-    // falls back to the main thread → 2–3 s freeze). A short gap on a manual switch is acceptable.
+    // TV-friendly: STRICTLY SEQUENTIAL. Fully destroy the old renderer before creating the new one,
+    // so only one decoder is ever alive. A short gap on a manual switch is acceptable.
     disposeGraphic();
     const codec = (stream?.Codec || '').toLowerCase();
     const opts = {
       video: videoElement, subUrl: url,
       displaySettings: { scale: graphicSubScale(), aspectMode: 'contain' },
-      onWarning: (w) => dlog('[OcenFin] libbitsub notice:', w?.code || w?.message || w),
-      onError: (e) => { dlog('[OcenFin] libbitsub error:', e?.code || '', e?.message || e); disposeGraphic(); },
+      // MEASURED on webOS 25 / Chromium 120 (libbitsub 1.10.1): the worker ALWAYS drops to the main
+      // thread — on the very first load, not just on a switch — which is what causes the brief freeze.
+      // Cause is inside the library: getOrCreateWorker() assigns its module-level `sharedWorker`
+      // immediately after `new Worker(...)`, i.e. BEFORE the WASM init round-trip resolves. Any consumer
+      // arriving in that window gets an uninitialised worker back right away, sends its parse request,
+      // and the worker fails with "Cannot read properties of null (reading 'PgsParser')". The TV loses
+      // that race reliably because loading the WASM there is slow. Neither the worker bootstrap nor a
+      // custom worker URL is exported (`workerUrl` is documented as unused in the WASM build), and the
+      // exported initWasm() only warms the MAIN thread — so we cannot pre-warm or replace it. Revisit
+      // once libbitsub publishes the worker only after init.
+      onWarning: (w) => dlog('[OcenFin] libbitsub notice:', w?.code || w?.message || w, w?.details),
+      onError: (e) => { console.warn('[OcenFin] libbitsub error:', e?.code || '', e?.message || e); disposeGraphic(); },
       onEvent: (ev) => {
-        // backend 'worker' = off-main-thread (good); anything else = main-thread fallback (freeze cause on TV).
-        // Always log both (console.warn) so the B4 backend state is visible even without debug.
-        if (ev?.type === 'renderer-change') console.warn('[OcenFin] libbitsub backend:', ev.renderer);
-        else if (ev?.type === 'worker-state') console.warn('[OcenFin] libbitsub worker-state:', ev.state ?? ev);
+        // renderer-change → GRAPHICS backend, only ever 'webgpu' | 'webgl2' | 'canvas2d' (webgl2 on the
+        // B4, WebGPU is unavailable there). worker-state.fallback → decoding moved to the main thread.
+        if (ev?.type === 'renderer-change') dlog('[OcenFin] libbitsub graphics backend:', ev.renderer);
+        else if (ev?.type === 'worker-state') dlog('[OcenFin] libbitsub worker:',
+          ev.fallback ? 'main-thread fallback' : (ev.ready ? 'off-main-thread' : 'starting'));
         else if (ev?.type === 'loaded') dlog('[OcenFin] libbitsub loaded:', ev.format, 'cues=' + (ev.metadata?.cueCount ?? '?'));
       },
     };
