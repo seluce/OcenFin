@@ -48,8 +48,15 @@ function cy(r) { return r.top + r.height / 2; }
 //  1) Overlap on the cross axis (same column/row) — ideal.
 //  2) Cone: the direction dominates the cross-axis deviation.
 //  3) Fallback: anything in the half-plane (heavily penalized by cross offset).
-function pickGeometric(dir, from, candidates, exclude, strictRow = false) {
+// rowFirst (Up/Down only): move to the NEAREST row and clamp horizontally within it, instead of
+// letting a horizontally overlapping candidate win regardless of distance. Without it a short row
+// (e.g. a watchlist with a single card) is skipped when focus sits further right, because the row
+// below happens to have a card directly underneath — making that row unreachable from the right.
+// Uniform grids are unaffected: their neighbouring row always has a card in the same column.
+function pickGeometric(dir, from, candidates, exclude, strictRow = false, rowFirst = false) {
   const fX = cx(from), fY = cy(from);
+  const vertical = dir === 'ArrowUp' || dir === 'ArrowDown';
+  const band = [];   // rowFirst: every valid candidate, resolved in two steps after the loop
   // A horizontal jump bar (e.g. A-Z) is only reachable via Left/Right. When focus is
   // outside it, its buttons are ignored on Up/Down — so focus doesn't jump sideways
   // to the A-Z bar while the next grid row is still loading. Inside the bar, Up/
@@ -100,9 +107,28 @@ function pickGeometric(dir, from, candidates, exclude, strictRow = false) {
     // returns nothing → the group transition (e.g. to the sidebar) takes over.
     if (strictRow && (dir === 'ArrowLeft' || dir === 'ArrowRight') && perp !== 0) continue;
 
+    if (rowFirst && vertical) { band.push({ el, r, along }); continue; }
+
     if (perp === 0)            { const s = along + align * 0.3; if (s < oS) { oS = s; overlap = el; } }
     else if (along >= perp)    { const s = along + perp * 2;    if (s < cS) { cS = s; cone = el; } }
     else                       { const s = along + perp * 4;    if (s < fS) { fS = s; fall = el; } }
+  }
+  if (rowFirst && vertical && band.length) {
+    // 1) The closest candidate defines the next row …
+    let near = band[0];
+    for (const c of band) if (c.along < near.along) near = c;
+    // 2) … and within that row take the horizontally closest element (a shorter row therefore
+    //    clamps to its last card instead of being skipped).
+    let best = null, bS = Infinity;
+    for (const c of band) {
+      if (Math.min(c.r.bottom, near.r.bottom) - Math.max(c.r.top, near.r.top) <= 0) continue;  // other row
+      const gap = Math.min(from.right, c.r.right) - Math.max(from.left, c.r.left) > 0
+        ? 0
+        : Math.min(Math.abs(c.r.left - from.right), Math.abs(from.left - c.r.right));
+      const s = gap * 10 + Math.abs(c.r.left - from.left);
+      if (s < bS) { bS = s; best = c.el; }
+    }
+    if (best) return best;
   }
   return overlap || cone || fall;
 }
@@ -233,7 +259,7 @@ export function createFocusManager(isEnabled) {
 
     // 1) Within the current group / modal
     if (scope) {
-      let within = pickGeometric(e.key, from, focusablesIn(scope), active, true);
+      let within = pickGeometric(e.key, from, focusablesIn(scope), active, true, true);
       // Fallback for entering a "start-at-top" area (data-enter-top): if the strict
       // row binding found nothing because at the source's height the target area has only NON-focusable
       // content (e.g. the server-info card above "Clear cache" in Account & Server), retry without row

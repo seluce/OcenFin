@@ -571,11 +571,18 @@
   // parse it instead of setting a <track>. A cross-origin <track> is blocked by the browser,
   // and webOS renders native cues unreliably anyway. This way we have full control.
   let subtitleCues = $state([]);           // [{ start, end, text }] in seconds
-  // Subtitle offset (text overlay only = VTT/SRT/ASS-to-VTT). + = subtitles later (delayed),
-  // − = earlier. Reset per track/title; deliberately NOT saved (it's content-specific).
+  // Subtitle offset: applies to our own text overlay (VTT/SRT/ASS-to-VTT) AND to ASS rendered by
+  // assjs, which supports the same shift natively via its `delay` property. That property exists
+  // since 0.1.0, but its handling was corrected in 0.1.6 (floating point) and 0.1.8 (delay is now
+  // honoured in the allocate step) — so 0.1.8 is the sensible minimum for reliable behaviour.
+  // + = subtitles later (delayed), − = earlier. Reset per track/title; deliberately NOT saved
+  // (it's content-specific).
   let subtitleOffset = $state(0);
   function adjustSubtitleOffset(delta) {
     subtitleOffset = Math.round(Math.max(-10, Math.min(10, subtitleOffset + delta)) * 10) / 10;
+    // Same unit (seconds) and sign convention as the text overlay: assjs renders at
+    // currentTime − delay. Its setter re-syncs right away → no rebuild of the overlay needed.
+    if (assRenderer) assRenderer.delay = subtitleOffset;
   }
   function formatOffset(s) {
     return (s > 0 ? '+' : '') + s.toFixed(1).replace('.', ',') + ' s';
@@ -586,6 +593,7 @@
   let clientGraphicRender = $derived(playbackPrefs.pgsRendering && !playbackPrefs.burnSubtitles);
   // Render ASS/SSA with original layout (assjs)? Off → plain text overlay, both Direct Play.
   let assRenderer = null;
+  let assActive   = $state(false);  // ASS overlay live → the offset control applies (assjs delay)
   let assContainer = $state(null);  // host <div>; assjs injects its DOM overlay here (over the video)
   let clientAssRender = $derived(playbackPrefs.assRendering && !playbackPrefs.burnSubtitles);
 
@@ -655,6 +663,12 @@
   // cross-origin taint, no crossorigin on the <video>). The browser handles the font fallback. resampling controls the
   // behavior when the script resolution (PlayResX/Y) ≠ video resolution (letterbox); the default 'video_height' usually fits.
   // assjs has no setTrack → track switch/re-apply via rebuild (the DOM overlay is detached/re-attached).
+  // KNOWN LIMIT on webOS 25 (Chromium 120): assjs detects "border width is 0" inside a CSS filter via a
+  // round() trick, and round() needs Chromium 125. That single declaration is therefore dropped, so
+  // \blur on borderless text (\bord0) renders sharp instead of soft. Nothing else is affected — bordered
+  // text, i.e. normal dialogue, gets its blur from the :before/:after layers, which don't use round().
+  // Purely cosmetic and it degrades gracefully, so we don't work around it: patching it would mean
+  // rebuilding assjs' internal selectors and custom properties in our own CSS. Revisit on webOS 26.
   async function applyAssSubtitle(stream, ms) {
     if (!videoElement || !assContainer) return;
     const url = assSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
@@ -665,6 +679,7 @@
       ensureVideoFrameCallback();               // webOS: rVFC polyfill active BEFORE assjs reads it
       disposeAss();                            // no setTrack → remove the old overlay, rebuild fresh
       assRenderer = new ASS(content, videoElement, { container: assContainer });
+      assActive = true;
       // assjs drives its render loop via requestAnimationFrame, started by the video's 'play'/'playing'
       // event. On a track switch in the MIDDLE of playback the video is already running → it fires
       // no new event → the loop would never start and the subtitle would stay frozen at the state from
@@ -685,6 +700,7 @@
       try { assRenderer.destroy(); } catch {}
       assRenderer = null;
     }
+    assActive = false;
   }
   // webOS reports requestVideoFrameCallback as present (feature detection true) but NEVER calls the
   // callback. The bug is in LG's media integration, not in Chromium → version-independent (on desktop it
@@ -711,21 +727,31 @@
     if (!videoElement) return;
     const url = graphicSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
     if (!url) { disposeGraphic(); dlog('[OcenFin] image subtitle not available (server does not provide it externally):', stream.Index); return; }
-    // TV-friendly: STRICTLY SEQUENTIAL. First fully destroy the old renderer (free worker/WASM),
-    // then create the new one. On webOS two concurrent WASM workers are risky (limit → libbitsub
-    // falls back to the main thread → 2–3 s freeze). A short gap on a manual switch is acceptable.
+    // TV-friendly: STRICTLY SEQUENTIAL. Fully destroy the old renderer before creating the new one,
+    // so only one decoder is ever alive. A short gap on a manual switch is acceptable.
     disposeGraphic();
     const codec = (stream?.Codec || '').toLowerCase();
     const opts = {
       video: videoElement, subUrl: url,
       displaySettings: { scale: graphicSubScale(), aspectMode: 'contain' },
-      onWarning: (w) => dlog('[OcenFin] libbitsub notice:', w?.code || w?.message || w),
-      onError: (e) => { dlog('[OcenFin] libbitsub error:', e?.code || '', e?.message || e); disposeGraphic(); },
+      // MEASURED on webOS 25 / Chromium 120 (libbitsub 1.10.1): the worker ALWAYS drops to the main
+      // thread — on the very first load, not just on a switch — which is what causes the brief freeze.
+      // Cause is inside the library: getOrCreateWorker() assigns its module-level `sharedWorker`
+      // immediately after `new Worker(...)`, i.e. BEFORE the WASM init round-trip resolves. Any consumer
+      // arriving in that window gets an uninitialised worker back right away, sends its parse request,
+      // and the worker fails with "Cannot read properties of null (reading 'PgsParser')". The TV loses
+      // that race reliably because loading the WASM there is slow. Neither the worker bootstrap nor a
+      // custom worker URL is exported (`workerUrl` is documented as unused in the WASM build), and the
+      // exported initWasm() only warms the MAIN thread — so we cannot pre-warm or replace it. Revisit
+      // once libbitsub publishes the worker only after init.
+      onWarning: (w) => dlog('[OcenFin] libbitsub notice:', w?.code || w?.message || w, w?.details),
+      onError: (e) => { console.warn('[OcenFin] libbitsub error:', e?.code || '', e?.message || e); disposeGraphic(); },
       onEvent: (ev) => {
-        // backend 'worker' = off-main-thread (good); anything else = main-thread fallback (freeze cause on TV).
-        // Always log both (console.warn) so the B4 backend state is visible even without debug.
-        if (ev?.type === 'renderer-change') console.warn('[OcenFin] libbitsub backend:', ev.renderer);
-        else if (ev?.type === 'worker-state') console.warn('[OcenFin] libbitsub worker-state:', ev.state ?? ev);
+        // renderer-change → GRAPHICS backend, only ever 'webgpu' | 'webgl2' | 'canvas2d' (webgl2 on the
+        // B4, WebGPU is unavailable there). worker-state.fallback → decoding moved to the main thread.
+        if (ev?.type === 'renderer-change') dlog('[OcenFin] libbitsub graphics backend:', ev.renderer);
+        else if (ev?.type === 'worker-state') dlog('[OcenFin] libbitsub worker:',
+          ev.fallback ? 'main-thread fallback' : (ev.ready ? 'off-main-thread' : 'starting'));
         else if (ev?.type === 'loaded') dlog('[OcenFin] libbitsub loaded:', ev.format, 'cues=' + (ev.metadata?.cueCount ?? '?'));
       },
     };
@@ -814,7 +840,7 @@
   let nextCountdown     = $state(null);   // remaining seconds (integer, for the text), null = inactive
   let countdownProgress = $state(0);      // 1 → 0, drives the bar
   let countdownTimer    = null;
-  let countdownEnd      = 0;
+  let countdownEndTime  = 0;   // countdown target in VIDEO seconds (not wall clock — must pause with the video)
   let countdownDismissed = false; // per episode: don't restart after a cancel
   let outroDismissed = $state(false); // manual outro prompt for THIS episode dismissed → stay put
   const COUNTDOWN_FROM  = 20;
@@ -840,11 +866,17 @@
   // An interactive overlay is open → OK should trigger its focused button, not pause.
   let overlayActive = $derived(showSkipIntro || showStillWatching || (outroPromptActive && !!nextEpisode));
   // Exactly then ONE outro decision prompt is visible (timer OR manual) → trap focus there.
-  let outroPromptShowing = $derived(!!nextEpisode && (nextCountdown !== null || (outroPromptActive && !outroDismissed)));
+  let outroPromptShowing = $derived(!showStillWatching && !!nextEpisode && (nextCountdown !== null || (outroPromptActive && !outroDismissed)));
+  // !showStillWatching is essential: when the countdown expires it sets nextCountdown back to null,
+  // which would re-trigger this effect and restart the countdown behind the open prompt.
   $effect(() => { if (playbackPrefs.autoPlayNext && !stopAfterThis && nextEpisode && !playbackPrefs.autoSkipCredits
-         && nearEnd && nextCountdown === null && !countdownDismissed) {
+         && nearEnd && nextCountdown === null && !countdownDismissed && !showStillWatching) {
     startCountdown();
   } });
+  // Seeking out of the end region has to cancel a running countdown. The countdown is imperative
+  // state, unlike the manual prompt which is derived and disappears on its own — without this it
+  // keeps counting toward a target that is now far away ("next episode in 596 seconds").
+  $effect(() => { if (nextCountdown !== null && !nearEnd) stopCountdown(); });
 
   // Lightly prefetch the next episode (only PlaybackInfo/stream URL, no video pre-buffering)
   // so the switch saves the round-trip. Applies only when the parameters match at switch time.
@@ -861,15 +893,26 @@
 
   function startCountdown() {
     prefetchNextEpisode();
-    nextCountdown = COUNTDOWN_FROM;   // immediately visible → the card appears
+    // Cap the countdown at the video time actually left. After seeking close to the end there can be
+    // fewer seconds remaining than COUNTDOWN_FROM — a fixed span would then still claim time left
+    // while the video has already ended. Floor + min 1 s so it never outlasts the picture.
+    const left = duration > 0 ? Math.max(0, duration - currentTime) : COUNTDOWN_FROM;
+    const span = Math.max(1, Math.min(COUNTDOWN_FROM, Math.floor(left)));
+    nextCountdown = span;             // immediately visible → the card appears
     countdownProgress = 1;
-    countdownEnd = Date.now() + COUNTDOWN_FROM * 1000;
+    // Count in VIDEO time, not wall clock: pausing has to hold the countdown, and seeking has to
+    // shorten it. Note the span can be shorter than the remaining video — with real credits data the
+    // countdown deliberately expires before the picture ends, which is what skips the credits.
+    countdownEndTime = (videoElement?.currentTime ?? currentTime) + span;
     // setInterval (reliable in this project) every 100 ms → text per second, bar smooth.
     countdownTimer = setInterval(() => {
-      const remainingMs = countdownEnd - Date.now();
-      if (remainingMs <= 0) { stopCountdown(); goToNextEpisode(); return; }
-      countdownProgress = remainingMs / (COUNTDOWN_FROM * 1000);
-      nextCountdown = Math.ceil(remainingMs / 1000);
+      const cur = videoElement?.currentTime ?? 0;
+      let remaining = countdownEndTime - cur;
+      // Seeking backwards but staying inside the end region: re-anchor instead of counting up.
+      if (remaining > span) { countdownEndTime = cur + span; remaining = span; }
+      if (remaining <= 0) { stopCountdown(); goToNextEpisode(); return; }
+      countdownProgress = Math.min(1, remaining / span);
+      nextCountdown = Math.ceil(remaining);
     }, 100);
   }
   function stopCountdown() {
@@ -890,7 +933,15 @@
     if (playbackPrefs.autoPlayNext && nextEpisode && !countdownDismissed) {
       stopCountdown();
       goToNextEpisode();
+      return;
     }
+    // Only leave when nothing follows at all (movie, last episode, end of queue) — otherwise the
+    // player would sit paused on the last frame forever. If a next item DOES exist we stay put:
+    // auto-play being off, or a dismissed countdown, is an explicit "don't move on by yourself", so
+    // the credits keep running and the user decides via the manual next / skip-outro button.
+    // "Only this episode" is handled above and exits regardless — that's its whole purpose.
+    // Not while the "still watching?" prompt is up: it waits for an answer and must stay.
+    if (!nextEpisode && !showStillWatching) onExit?.();
   }
 
   // Current chapter name (for display while seeking). Meaningless auto-names (timestamps,
@@ -918,7 +969,7 @@
     introAutoSkipped = true;
     skipIntro();
   } });
-  $effect(() => { if (playbackPrefs.autoSkipCredits && !stopAfterThis && showSkipCredits && !creditsAutoSkipped && nextEpisode) {
+  $effect(() => { if (playbackPrefs.autoSkipCredits && !stopAfterThis && showSkipCredits && !creditsAutoSkipped && nextEpisode && !showStillWatching) {
     creditsAutoSkipped = true;
     prefetchNextEpisode();   // this path bypasses the countdown → the fetch runs parallel to the Player remount
     goToNextEpisode();
@@ -980,7 +1031,10 @@
   // series auto-play (sleep protection) and never interrupts a movie or an actively watched episode.
   // The counter (autoPlayStreak) lives in App.svelte, because the Player resets per episode.
   let showStillWatching = $state(false);
-  let interacted = false;   // did the user do anything in THIS episode? (keypress/remote/click)
+  let interacted = false;   // did the user do anything in THIS episode? (keypress/click/pointer move)
+                            // Pointer movement counts on purpose: the Magic Remote has a pointer, so
+                            // moving it — e.g. to glance at the clock — means the user is awake. The
+                            // prompt is meant for someone who fell asleep, i.e. stopped moving entirely.
   function markInteraction() { interacted = true; }
   function resumeFromStillWatching() {
     showStillWatching = false;
@@ -1322,11 +1376,20 @@
   // manual=true → triggered by the user (button/prompt); manual=false → auto-play (countdown/end/credits).
   function goToNextEpisode(manual = false) {
     stopCountdown();
+    // While the "still watching?" prompt is up nothing may advance on its own — not even if a key
+    // press has meanwhile marked the user as awake. Only the prompt's button moves on (it calls
+    // onNext directly); no answer at all lets the timeout close the player.
+    if (showStillWatching) return;
     if (!nextEpisode) return;
     const awake = manual || interacted;
     // Sleep protection: only for series auto-play, when the user hasn't done anything for a while.
-    if (!awake && playbackPrefs.stillWatching && item.Type === 'Episode'
-        && autoPlayStreak >= (playbackPrefs.stillWatchingEpisodes || 3)) {
+    // autoPlayStreak counts episodes already auto-started; this call would start the next one, so
+    // compare with +1 → asking after exactly N auto-played episodes as configured.
+    // Never in a SyncPlay group: the prompt pauses locally, which sends Pause to the whole group —
+    // one inactive member would stop everyone else's session. The others are demonstrably awake, so
+    // there is nothing to protect against here.
+    if (!awake && !inSyncGroup && playbackPrefs.stillWatching && item.Type === 'Episode'
+        && autoPlayStreak + 1 >= (playbackPrefs.stillWatchingEpisodes || 3)) {
       videoElement?.pause();
       showStillWatching = true;
       return;
@@ -1681,10 +1744,12 @@
 
     <!-- TOP: title + clock -->
     <div class="flex items-start justify-between gap-6">
-      <div>
-        <h1 class="text-3xl font-bold drop-shadow-lg">{item.Name}</h1>
+      <!-- min-w-0 so this block can actually shrink; without it a long episode name wraps over
+           several lines. The clock/buttons on the right are already protected by shrink-0. -->
+      <div class="min-w-0">
+        <h1 class="text-3xl font-bold drop-shadow-lg line-clamp-2">{item.Name}</h1>
         {#if item.SeriesName}
-          <p class="text-gray-400 text-lg mt-1">{item.SeriesName} · {item.SeasonName}</p>
+          <p class="text-gray-400 text-lg mt-1 truncate">{item.SeriesName} · {item.SeasonName}</p>
         {/if}
         {#if episodePosition}
           <p class="text-gray-500 text-base mt-0.5 font-semibold tracking-wide">{episodePosition}</p>
@@ -1947,7 +2012,9 @@
             {/each}
           {/if}
 
-          {#if subtitleCues.length > 0}
+          <!-- Offset control: sits outside the audio/subtitle branch above, so it must check the tab
+               itself — otherwise it also shows up under "Audio", where it has no meaning. -->
+          {#if settingsTab === 'subtitle' && (subtitleCues.length > 0 || assActive)}
             <div class="mt-3 pt-3 border-t border-gray-700/60 flex items-center justify-between gap-3 px-1">
               <span class="text-sm text-gray-300 font-medium">{i18n.t.subtitleOffset}</span>
               <div class="flex items-center gap-2">
@@ -2034,7 +2101,7 @@
 
   <!-- Manual "next episode" prompt (no countdown): appears with auto-play disabled OR after
        cancelling the timer. The user decides — "Cancel" stays on the current episode (outro). -->
-  {#if outroPromptActive && nextEpisode && nextCountdown === null && !outroDismissed}
+  {#if outroPromptActive && nextEpisode && nextCountdown === null && !outroDismissed && !showStillWatching}
     <div transition:uiFade data-focus-trap class="absolute bottom-12 right-12 z-[70] transition-transform duration-300 {showControls ? '-translate-y-32' : ''}">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-6 w-[30rem] flex flex-col gap-3">
         <div class="flex items-center gap-3">
@@ -2067,7 +2134,10 @@
 
   <!-- "Still watching?" – paused after inactivity -->
   {#if showStillWatching}
-    <div transition:uiFade onoutrostart={dropTrapOnOutro} class="absolute inset-0 z-[120] bg-black/85 flex items-center justify-center">
+    <!-- data-focus-trap: the prompt is the only thing that may take focus — spatial navigation must
+         not reach the player controls underneath. -->
+    <div data-focus-trap role="dialog" aria-modal="true" tabindex="-1"
+      transition:uiFade onoutrostart={dropTrapOnOutro} class="absolute inset-0 z-[120] bg-black/85 flex items-center justify-center">
       <div class="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl p-12 flex flex-col items-center gap-7 max-w-md text-center">
         <svg class="w-16 h-16 text-gray-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1 1 0 010-.644C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178a1 1 0 010 .644C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178z"/>

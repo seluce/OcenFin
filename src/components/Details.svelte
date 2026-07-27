@@ -618,7 +618,9 @@
           {#if detailsLogo && getItemLogoUrl(fullItem)}
             <img src={getItemLogoUrl(fullItem)} alt={fullItem.Name} class="max-h-28 max-w-full w-auto object-contain object-left mb-4 drop-shadow-lg" />
           {:else}
-            <h1 class="text-6xl font-bold text-white mb-4 drop-shadow-lg">{fullItem.Name}</h1>
+            <!-- line-clamp-2: an unbounded title wraps and pushes the description and the action
+                 buttons down, and the hero area is capped at 95vh — so they can leave the screen. -->
+            <h1 class="text-6xl font-bold text-white mb-4 drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
           {/if}
 
           <!-- META -->

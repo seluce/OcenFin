@@ -174,7 +174,7 @@
         <svg class="w-8 h-8 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={navItem.icon}/>
         </svg>
-        <div class="overflow-hidden whitespace-nowrap transition-opacity duration-300
+        <div class="overflow-hidden text-ellipsis whitespace-nowrap transition-opacity duration-300
                     {isExpanded ? 'opacity-100' : 'opacity-0'}">
           <span class="text-xl font-semibold">{navItem.label}</span>
         </div>

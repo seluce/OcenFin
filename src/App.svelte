@@ -38,6 +38,18 @@
   // 'servers' → 'users' → 'app'
   // ============================================================
   let appPhase = $state('servers');   // current step in the onboarding flow
+
+  // On first entering the app, put focus on the sidebar's active item. A freshly loaded app has no
+  // focus, so the first D-pad press would otherwise be spent just establishing it (landing top-left,
+  // overlapping hero + first row) instead of navigating. Guarded to only run when nothing is focused
+  // yet, so it never steals focus from a modal, the connection-lost retry button or a restore path.
+  $effect(() => {
+    if (appPhase !== 'app') return;
+    tick().then(() => {
+      if (document.activeElement && document.activeElement !== document.body) return;
+      document.querySelector('[data-focus-group="sidebar"] [data-group-current]')?.focus();
+    });
+  });
   let initializing = $state(true);    // splash screen until auto-login/startup is done
   let dashboardReloadKey = $state(0); // incrementing forces a fresh reload of the dashboard
   let resumeStale = $state(false);    // after playback: dashboard fetches Resume/NextUp fresh (cache stays otherwise)
@@ -1283,6 +1295,11 @@
     if (qi >= 0) playQueue = { ...playQueue, index: qi };
   }
   function startPlayback(p) {
+    // Starting playback by hand is a deliberate action → the "still watching?" counter starts over.
+    // Without this a stale streak from an earlier series session would carry into the new one and
+    // could trigger the prompt far too early. Auto-advance never comes through here (it goes via
+    // handleNextEpisode), so the sleep protection stays intact.
+    autoPlayStreak = 0;
     if (p.item) currentDetailItem = p.item;
     activeAudioIndex    = p.audioIndex    ?? -1;
     activeSubtitleIndex = p.subtitleIndex ?? -1;
@@ -1683,7 +1700,10 @@
        PLAYER — absolute overlay (always on top of everything)
   ============================================================ -->
   {#if appPhase === 'app' && viewState === 'player' && currentDetailItem}
-    <div class="absolute inset-0 z-[100] bg-black w-full h-full">
+    <!-- Fade OUT only: leaving the player reveals the details underneath (softens the hard cut at
+         the end of a video / on back). Entering stays instant so playback isn't delayed.
+         uiFade honours "reduce animations" (duration 0). -->
+    <div out:uiFade={{ duration: 150 }} class="absolute inset-0 z-[100] bg-black w-full h-full">
       {#key currentDetailItem.Id}
         {#await lazyPlayer() then Player}
         <Player
