@@ -589,6 +589,7 @@
   }
   let subtitleFetchToken = 0;      // ignores responses from a superseded switch
   let graphicRenderer = $state(null);      // libbitsub instance for the currently visible graphic-subtitle overlay
+  let graphicObjectUrl = null;             // blob: URL of the prefetched track → revoked on dispose
   // Render graphic subtitles client-side? Only if enabled AND not everything is burned in anyway.
   let clientGraphicRender = $derived(playbackPrefs.pgsRendering && !playbackPrefs.burnSubtitles);
   // Render ASS/SSA with original layout (assjs)? Off → plain text overlay, both Direct Play.
@@ -673,9 +674,15 @@
     if (!videoElement || !assContainer) return;
     const url = assSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
     try {
-      const res = await fetch(url);            // the ApiKey is in the URL → a simple GET, no preflight
-      if (!res.ok) { console.warn('[OcenFin] ASS fetch failed:', res.status); return; }
-      const content = await res.text();
+      // Prefetched while the menu entry was focused → use those bytes instead of fetching again.
+      const cachedAss = subBlobs.get(stream.Index);
+      let content;
+      if (cachedAss) { content = await cachedAss.text(); }
+      else {
+        const res = await fetch(url);          // the ApiKey is in the URL → a simple GET, no preflight
+        if (!res.ok) { console.warn('[OcenFin] ASS fetch failed:', res.status); return; }
+        content = await res.text();
+      }
       ensureVideoFrameCallback();               // webOS: rVFC polyfill active BEFORE assjs reads it
       disposeAss();                            // no setTrack → remove the old overlay, rebuild fresh
       assRenderer = new ASS(content, videoElement, { container: assContainer });
@@ -731,19 +738,25 @@
     // so only one decoder is ever alive. A short gap on a manual switch is acceptable.
     disposeGraphic();
     const codec = (stream?.Codec || '').toLowerCase();
+    const t0 = performance.now();   // measure how long fetch+parse takes until the track is usable
+    // Prefetched while the menu entry was focused → hand the bytes over directly (a blob: URL is
+    // local and instant), otherwise fall back to the network URL.
+    const cached = subBlobs.get(stream.Index);
+    if (cached) graphicObjectUrl = URL.createObjectURL(cached);
     const opts = {
-      video: videoElement, subUrl: url,
+      video: videoElement, subUrl: graphicObjectUrl || url,
       displaySettings: { scale: graphicSubScale(), aspectMode: 'contain' },
-      // MEASURED on webOS 25 / Chromium 120 (libbitsub 1.10.1): the worker ALWAYS drops to the main
-      // thread — on the very first load, not just on a switch — which is what causes the brief freeze.
-      // Cause is inside the library: getOrCreateWorker() assigns its module-level `sharedWorker`
-      // immediately after `new Worker(...)`, i.e. BEFORE the WASM init round-trip resolves. Any consumer
-      // arriving in that window gets an uninitialised worker back right away, sends its parse request,
-      // and the worker fails with "Cannot read properties of null (reading 'PgsParser')". The TV loses
-      // that race reliably because loading the WASM there is slow. Neither the worker bootstrap nor a
-      // custom worker URL is exported (`workerUrl` is documented as unused in the WASM build), and the
-      // exported initWasm() only warms the MAIN thread — so we cannot pre-warm or replace it. Revisit
-      // once libbitsub publishes the worker only after init.
+      // libbitsub ≤ 1.10.2: the worker NEVER comes up and decoding silently falls back to the main
+      // thread. Its inline glue instantiates the WASM with a single `__wbindgen_placeholder__` import,
+      // but the shipped module needs 10 imports from './libbitsub_bg.js' — so instantiate() throws a
+      // LinkError. That error is swallowed (the init call resolves on any response without checking
+      // `type === 'error'`), the worker is marked ready, and the first parse then fails with
+      // "Cannot read properties of null (reading 'PgsParser')". Not platform specific; a TV just
+      // shows it, because main-thread decoding blocks the UI. Reported as altqx/libbitsub#4 and fixed
+      // upstream (dynamic import of the real glue) — but NOT yet in a release, so node_modules carries
+      // a local patch that also passes the glue URL in from the main thread (bundled builds hash the
+      // asset names, which breaks deriving it from the wasm URL). Drop this once a fixed release ships;
+      // until then a plain `npm install` silently reintroduces the fallback.
       onWarning: (w) => dlog('[OcenFin] libbitsub notice:', w?.code || w?.message || w, w?.details),
       onError: (e) => { console.warn('[OcenFin] libbitsub error:', e?.code || '', e?.message || e); disposeGraphic(); },
       onEvent: (ev) => {
@@ -752,7 +765,7 @@
         if (ev?.type === 'renderer-change') dlog('[OcenFin] libbitsub graphics backend:', ev.renderer);
         else if (ev?.type === 'worker-state') dlog('[OcenFin] libbitsub worker:',
           ev.fallback ? 'main-thread fallback' : (ev.ready ? 'off-main-thread' : 'starting'));
-        else if (ev?.type === 'loaded') dlog('[OcenFin] libbitsub loaded:', ev.format, 'cues=' + (ev.metadata?.cueCount ?? '?'));
+        else if (ev?.type === 'loaded') dlog('[OcenFin] libbitsub loaded:', ev.format, 'cues=' + (ev.metadata?.cueCount ?? '?'), 'in ' + Math.round(performance.now() - t0) + ' ms');
       },
     };
     try {
@@ -765,6 +778,40 @@
   }
   function disposeGraphic() {
     if (graphicRenderer) { try { graphicRenderer.dispose(); } catch {} graphicRenderer = null; }
+    if (graphicObjectUrl) { URL.revokeObjectURL(graphicObjectUrl); graphicObjectUrl = null; }
+  }
+  // Warm a subtitle track while its menu entry is focused. MEASURED: switching a 4668-cue PGS track
+  // took 1010 ms, of which 844 ms was the fetch — for just 36 kB, i.e. the server extracting the
+  // track on demand, not bandwidth. Fetching it while the user is still moving through the menu
+  // hides that latency almost entirely; the second fetch then hits an already extracted track.
+  // Only client-rendered tracks: burned-in ones are the server's job anyway.
+  // MEASURED: the server re-extracts on every request (prefetch 983 ms, real load 1.00 s, same
+  // 44 kB) and marks the response as non-cacheable — so warming the HTTP cache achieves nothing.
+  // We therefore keep the bytes ourselves and feed them straight to the renderer. ~44 kB per track.
+  const subBlobs = new Map();         // stream index → Blob, per player mount (resets per episode)
+  const prefetchedSubs = new Set();   // in flight or done → fetch each track only once
+  function prefetchSubtitle(menuStream) {
+    const ms = currentMediaSource;
+    if (!menuStream || !ms || prefetchedSubs.has(menuStream.Index)) return;
+    // Resolve the stream from currentMediaSource, exactly like applySubtitleOverlay does: only THOSE
+    // objects carry the server-computed DeliveryUrl. The menu's copies come from MediaStreams and
+    // lack it, which would fall back to the generic .sup endpoint — rejected with 400 here.
+    const stream = (ms.MediaStreams || []).find(x => x.Index === menuStream.Index && x.Type === 'Subtitle');
+    if (!stream) return;
+    const codec = (stream.Codec || '').toLowerCase();
+    const isGraphic = ['pgssub', 'pgs', 'dvdsub', 'vobsub', 'sub'].includes(codec);
+    const isAss     = ['ass', 'ssa'].includes(codec);
+    const url = (isGraphic && clientGraphicRender)
+      ? graphicSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token })
+      : (isAss && clientAssRender)
+        ? assSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token })
+        : null;
+    if (!url) return;
+    prefetchedSubs.add(stream.Index);
+    fetch(url)
+      .then(r => r.ok ? r.blob() : Promise.reject(new Error('HTTP ' + r.status)))
+      .then(b => subBlobs.set(stream.Index, b))
+      .catch(() => prefetchedSubs.delete(stream.Index));   // failed → allow a retry
   }
   // Apply a size change at runtime live to the running renderer.
   $effect(() => { if (graphicRenderer && (playbackPrefs.subtitleSize || 'normal')) {
@@ -2005,6 +2052,7 @@
             </button>
             {#each subtitleStreams as stream (stream.Index)}
               <button onclick={() => changeTrack('subtitle', stream.Index)}
+                onfocus={() => prefetchSubtitle(stream)} onmouseenter={() => prefetchSubtitle(stream)}
                 class="text-left p-3 rounded-lg font-medium text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors
                        {selectedSubtitleIndex === stream.Index ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                 {stream.DisplayTitle || stream.Language || i18n.t.unknown}
