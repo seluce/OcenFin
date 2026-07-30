@@ -13,12 +13,12 @@
     "@tailwindcss/vite": "^4.3.3",
     "svelte": "^5.56.8",
     "tailwindcss": "^4.3.3",
-    "vite": "^8.1.5"
+    "vite": "^8.2.0"
   },
   "dependencies": {
     "assjs": "^0.1.9",
     "hls.js": "^1.6.16",
-    "libbitsub": "^1.10.2",
+    "libbitsub": "^1.11.0",
     "uqr": "^0.1.3"
   }
 }
