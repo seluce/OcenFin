@@ -5,7 +5,7 @@
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady } from '../syncplay.js';
-  import { PgsRenderer, VobSubRenderer, initWasm } from 'libbitsub';
+  import { PgsRenderer, VobSubRenderer, initWasm, warmup } from 'libbitsub';
   // ASS/SSA with original layout via assjs — a lean DOM/CSS renderer (no WASM/worker). Syncs
   // to the <video> (only time + dimensions, NO pixels → no cross-origin taint, no crossorigin on the <video>).
   // The browser handles the font fallback. Covers almost all ASS tags (rest: VTT fallback via the toggle).
@@ -203,9 +203,12 @@
         wasPlayingBeforeSync = false;
       }
       // Focus back into the Player + show the HUD. Without this the focus stays stuck on the
-      // closed SyncPlay dialog and the Player no longer accepts inputs.
+      // closed SyncPlay dialog and the Player no longer accepts inputs. Return it to the button
+      // that opened the modal (same rule as the settings panel and the playlist picker), NOT to
+      // the container: the container has no focus ring, so with the HUD now visible nothing would
+      // look focused and OK would do nothing — the OK shortcut only fires while the HUD is hidden.
       resetControlsTimeout();
-      tick().then(() => playerContainer?.focus());
+      tick().then(() => { restoreControlFocus(); controlOpener = null; });
     }
   }
 
@@ -590,6 +593,7 @@
   let subtitleFetchToken = 0;      // ignores responses from a superseded switch
   let graphicRenderer = $state(null);      // libbitsub instance for the currently visible graphic-subtitle overlay
   let graphicObjectUrl = null;             // blob: URL of the prefetched track → revoked on dispose
+  let loadSettleTimer  = null;             // debounces the progressive 'loaded' events into one line
   // Render graphic subtitles client-side? Only if enabled AND not everything is burned in anyway.
   let clientGraphicRender = $derived(playbackPrefs.pgsRendering && !playbackPrefs.burnSubtitles);
   // Render ASS/SSA with original layout (assjs)? Off → plain text overlay, both Direct Play.
@@ -741,22 +745,19 @@
     const t0 = performance.now();   // measure how long fetch+parse takes until the track is usable
     // Prefetched while the menu entry was focused → hand the bytes over directly (a blob: URL is
     // local and instant), otherwise fall back to the network URL.
+    let firstCuesLogged = false;   // per switch → the progress event fires many times
     const cached = subBlobs.get(stream.Index);
     if (cached) graphicObjectUrl = URL.createObjectURL(cached);
     const opts = {
       video: videoElement, subUrl: graphicObjectUrl || url,
       displaySettings: { scale: graphicSubScale(), aspectMode: 'contain' },
-      // libbitsub ≤ 1.10.2: the worker NEVER comes up and decoding silently falls back to the main
-      // thread. Its inline glue instantiates the WASM with a single `__wbindgen_placeholder__` import,
-      // but the shipped module needs 10 imports from './libbitsub_bg.js' — so instantiate() throws a
-      // LinkError. That error is swallowed (the init call resolves on any response without checking
-      // `type === 'error'`), the worker is marked ready, and the first parse then fails with
-      // "Cannot read properties of null (reading 'PgsParser')". Not platform specific; a TV just
-      // shows it, because main-thread decoding blocks the UI. Reported as altqx/libbitsub#4 and fixed
-      // upstream (dynamic import of the real glue) — but NOT yet in a release, so node_modules carries
-      // a local patch that also passes the glue URL in from the main thread (bundled builds hash the
-      // asset names, which breaks deriving it from the wasm URL). Drop this once a fixed release ships;
-      // until then a plain `npm install` silently reintroduces the fallback.
+      // REQUIRES libbitsub >= 1.11.0. Up to 1.10.2 the worker never came up: its inline glue
+      // instantiated the WASM with a single `__wbindgen_placeholder__` import while the shipped module
+      // needs 10 from './libbitsub_bg.js', the resulting LinkError was swallowed, and the first parse
+      // then failed with "reading 'PgsParser'" of null — so every cue was decoded on the main thread,
+      // which is what stuttered on the TV. Fixed via altqx/libbitsub#4; 1.11.0 imports the real glue
+      // and takes the glue URL from the main thread (bundled builds hash the asset names, so deriving
+      // it from the wasm URL doesn't work). Don't downgrade below 1.11.0 — the fallback is silent.
       onWarning: (w) => dlog('[OcenFin] libbitsub notice:', w?.code || w?.message || w, w?.details),
       onError: (e) => { console.warn('[OcenFin] libbitsub error:', e?.code || '', e?.message || e); disposeGraphic(); },
       onEvent: (ev) => {
@@ -765,7 +766,15 @@
         if (ev?.type === 'renderer-change') dlog('[OcenFin] libbitsub graphics backend:', ev.renderer);
         else if (ev?.type === 'worker-state') dlog('[OcenFin] libbitsub worker:',
           ev.fallback ? 'main-thread fallback' : (ev.ready ? 'off-main-thread' : 'starting'));
-        else if (ev?.type === 'loaded') dlog('[OcenFin] libbitsub loaded:', ev.format, 'cues=' + (ev.metadata?.cueCount ?? '?'), 'in ' + Math.round(performance.now() - t0) + ' ms');
+        else if (ev?.type === 'loaded') {
+          // NOT a completion event: it fires on every metadata update and parsing is progressive, so
+          // this arrives ~90 times with a growing cue count. Log the first one (time until the first
+          // cues are usable) plus one settled summary, instead of flooding the console.
+          const cues = ev.metadata?.cueCount ?? 0;
+          if (!firstCuesLogged) { firstCuesLogged = true; dlog('[OcenFin] libbitsub first cues:', ev.format, cues, 'in ' + Math.round(performance.now() - t0) + ' ms'); }
+          clearTimeout(loadSettleTimer);
+          loadSettleTimer = setTimeout(() => dlog('[OcenFin] libbitsub complete:', ev.format, 'cues=' + cues, 'in ' + Math.round(performance.now() - t0) + ' ms'), 500);
+        }
       },
     };
     try {
@@ -779,6 +788,7 @@
   function disposeGraphic() {
     if (graphicRenderer) { try { graphicRenderer.dispose(); } catch {} graphicRenderer = null; }
     if (graphicObjectUrl) { URL.revokeObjectURL(graphicObjectUrl); graphicObjectUrl = null; }
+    if (loadSettleTimer) { clearTimeout(loadSettleTimer); loadSettleTimer = null; }
   }
   // Warm a subtitle track while its menu entry is focused. MEASURED: switching a 4668-cue PGS track
   // took 1010 ms, of which 844 ms was the fetch — for just 36 kB, i.e. the server extracting the
@@ -807,6 +817,14 @@
         ? assSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token })
         : null;
     if (!url) return;
+    // Graphic track focused → start the shared parse worker (worker + its own WASM instance) while
+    // the fetch is still running. This is the same promise the renderer requests itself on load and
+    // libbitsub deduplicates it, so it only moves the start earlier — no second mechanism, no extra
+    // state, no new fallback path. Saves the worker startup once per app session: the shared worker
+    // is a module singleton and is never terminated at runtime, so every later switch is warm.
+    // Fire-and-forget, but WITH catch: ready() passes a failed worker creation through, and an
+    // unhandled rejection would surface in the console on webOS. Needs libbitsub >= 1.11.0.
+    if (isGraphic) warmup().catch(() => {});
     prefetchedSubs.add(stream.Index);
     fetch(url)
       .then(r => r.ok ? r.blob() : Promise.reject(new Error('HTTP ' + r.status)))
@@ -1460,6 +1478,17 @@
   // SCRUBBING
   // ============================================================
 
+  // Every jump applies the new position to the reactive state right away instead of waiting for the
+  // video element's 'timeupdate'. While paused that event only arrives once the seek has actually
+  // completed (on a network stream that can take a moment), and until then everything derived from
+  // currentTime still describes the OLD position: the outro prompt stays up and the auto-play
+  // countdown re-anchors its bar to full before it is finally cancelled.
+  function seekTo(t) {
+    if (!videoElement) return;
+    videoElement.currentTime = t;
+    currentTime = t;
+  }
+
   function onSeekStart() {
     isSeeking = true;
     seekTime  = currentTime;
@@ -1473,7 +1502,7 @@
   function onSeekEnd(e) {
     if (seekCommitTimer) { clearTimeout(seekCommitTimer); seekCommitTimer = null; }
     const t = +e.target.value;
-    if (videoElement) videoElement.currentTime = t;
+    seekTo(t);
     seekTime  = t;
     isSeeking = false;
     resetControlsTimeout();
@@ -1510,8 +1539,7 @@
   function commitSeek() {
     if (seekCommitTimer) { clearTimeout(seekCommitTimer); seekCommitTimer = null; }
     if (!isSeeking) return;
-    if (videoElement) videoElement.currentTime = seekTime;
-    currentTime = seekTime;   // apply immediately, no brief jump-back until the timeupdate
+    seekTo(seekTime);
     isSeeking = false;
   }
 
@@ -1525,14 +1553,14 @@
     const t = videoElement.currentTime;
     // 3 s tolerance: shortly after a chapter start you jump to the previous chapter
     const target = [...chapterStartsSorted()].reverse().find(s => s < t - 3);
-    videoElement.currentTime = target ?? 0;
+    seekTo(target ?? 0);
     resetControlsTimeout();
   }
   function chapterNext() {
     if (!videoElement) return;
     const t = videoElement.currentTime;
     const target = chapterStartsSorted().find(s => s > t + 0.5);
-    if (target != null) videoElement.currentTime = target;
+    if (target != null) seekTo(target);
     resetControlsTimeout();
   }
 
@@ -1640,6 +1668,20 @@
       resetControlsTimeout();
       seekBarEl?.focus();
       skip(e.key === 'ArrowLeft' ? -10 : 10);
+      return;
+    }
+    // HUD hidden + Up/Down → just reveal the HUD and land on play/pause. Without this, spatial
+    // navigation starts out from the full-screen container, whose centre sits ABOVE the transport
+    // row, so Up went straight to the SyncPlay button in the top corner — a rare action, and from
+    // there you had to walk all the way back down for anything useful. Merely revealing the HUD
+    // without moving focus is no alternative: focus would stay on the container, and the OK
+    // shortcut above only fires while the HUD is hidden — so OK would then do nothing. Checking
+    // how much is left now costs one press and doesn't pause anything; the HUD hides itself again
+    // after a few seconds. SyncPlay stays reachable further up (play/pause → seek bar → SyncPlay).
+    if (!showControls && !overlayActive && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault(); e.stopPropagation();
+      resetControlsTimeout();
+      playPauseBtn?.focus();
       return;
     }
     // Arrow keys/Enter are otherwise handled by group navigation or the focused buttons. With an
@@ -1803,7 +1845,7 @@
         {/if}
       </div>
       <div class="flex items-center gap-4 shrink-0">
-        <button onclick={(e) => { e.stopPropagation(); onSyncplay?.(); }}
+        <button onclick={(e) => { e.stopPropagation(); controlOpener = e.currentTarget; onSyncplay?.(); }}
           aria-label={i18n.t.syncPlay} title={i18n.t.syncPlay}
           class="text-white/90 hover:text-blue-300 focus:text-white focus:bg-blue-600 rounded-lg p-2
                  focus:outline-none focus:ring-2 focus:ring-white transition-colors">

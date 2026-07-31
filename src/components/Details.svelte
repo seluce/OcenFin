@@ -568,7 +568,10 @@
 
   {:else if fullItem}
 
-    <div class="flex-1 overflow-y-auto hide-scrollbar">
+    <!-- scroll-padding-top: spatial navigation scrolls with block:'nearest', which parks an
+         element flush against the top edge — the back button would sit at the very screen
+         edge with its ring-4 focus ring clipped. Same value as in Library/Settings. -->
+    <div class="flex-1 overflow-y-auto hide-scrollbar [scroll-padding-top:4rem]">
 
       <!-- ════ CINEMATIC HERO BANNER — the backdrop scrolls along, fading into the app gray at bottom/left ════ -->
       <div class="relative">
@@ -580,7 +583,10 @@
           </div>
         {/if}
 
-        <div class="relative z-10 p-10 pt-16">
+        <!-- z-20 keeps the hero above the content rows below (z-10): "relative z-10" there
+             creates its own stacking level, so the absolutely positioned "More" dropdown
+             would otherwise be painted *underneath* the opaque rows and appear cut off. -->
+        <div class="relative z-20 p-10 pt-16">
 
           <!-- BREADCRUMB + BACK -->
       <div class="flex items-center gap-6 mb-10" data-focus-group="details-top">
