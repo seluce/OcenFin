@@ -1667,6 +1667,20 @@
       skip(e.key === 'ArrowLeft' ? -10 : 10);
       return;
     }
+    // HUD hidden + Up/Down → just reveal the HUD and land on play/pause. Without this, spatial
+    // navigation starts out from the full-screen container, whose centre sits ABOVE the transport
+    // row, so Up went straight to the SyncPlay button in the top corner — a rare action, and from
+    // there you had to walk all the way back down for anything useful. Merely revealing the HUD
+    // without moving focus is no alternative: focus would stay on the container, and the OK
+    // shortcut above only fires while the HUD is hidden — so OK would then do nothing. Checking
+    // how much is left now costs one press and doesn't pause anything; the HUD hides itself again
+    // after a few seconds. SyncPlay stays reachable further up (play/pause → seek bar → SyncPlay).
+    if (!showControls && !overlayActive && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault(); e.stopPropagation();
+      resetControlsTimeout();
+      playPauseBtn?.focus();
+      return;
+    }
     // Arrow keys/Enter are otherwise handled by group navigation or the focused buttons. With an
     // overlay open (skip intro / outro prompt / still-watching) do NOT reveal the HUD — pressing OK
     // there acts on the overlay button (e.g. skip intro → seamless playback), so the controls
