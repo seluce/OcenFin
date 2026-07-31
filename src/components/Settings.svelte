@@ -537,7 +537,12 @@
 
   <!-- RIGHT: content of the active category. data-enter-top: when switching from the left, focus
        always starts at the top element of the respective category, not geometrically in the middle. -->
-  <div bind:this={contentEl} data-enter-top class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16 [scroll-padding-top:4rem]">
+  <!-- scroll-padding on BOTH edges: spatial navigation scrolls with block:'nearest', which parks
+       an element flush against whichever edge it entered from. Unlike the card rows elsewhere
+       in the app, the setting rows carry no scroll-margin of their own, so the container has to
+       provide the breathing room — otherwise a row revealed downwards (e.g. the profile picker
+       appearing under "watch together") sits right on the bottom edge with its ring clipped. -->
+  <div bind:this={contentEl} data-enter-top class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16 [scroll-padding-top:4rem] [scroll-padding-bottom:4rem]">
     <div class="max-w-4xl flex flex-col gap-10 pb-32">
     <!-- ══════════════════════════════════════════
          1. APPEARANCE
