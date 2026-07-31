@@ -5,7 +5,7 @@
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady } from '../syncplay.js';
-  import { PgsRenderer, VobSubRenderer, initWasm } from 'libbitsub';
+  import { PgsRenderer, VobSubRenderer, initWasm, warmup } from 'libbitsub';
   // ASS/SSA with original layout via assjs — a lean DOM/CSS renderer (no WASM/worker). Syncs
   // to the <video> (only time + dimensions, NO pixels → no cross-origin taint, no crossorigin on the <video>).
   // The browser handles the font fallback. Covers almost all ASS tags (rest: VTT fallback via the toggle).
@@ -814,6 +814,14 @@
         ? assSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token })
         : null;
     if (!url) return;
+    // Graphic track focused → start the shared parse worker (worker + its own WASM instance) while
+    // the fetch is still running. This is the same promise the renderer requests itself on load and
+    // libbitsub deduplicates it, so it only moves the start earlier — no second mechanism, no extra
+    // state, no new fallback path. Saves the worker startup once per app session: the shared worker
+    // is a module singleton and is never terminated at runtime, so every later switch is warm.
+    // Fire-and-forget, but WITH catch: ready() passes a failed worker creation through, and an
+    // unhandled rejection would surface in the console on webOS. Needs libbitsub >= 1.11.0.
+    if (isGraphic) warmup().catch(() => {});
     prefetchedSubs.add(stream.Index);
     fetch(url)
       .then(r => r.ok ? r.blob() : Promise.reject(new Error('HTTP ' + r.status)))
