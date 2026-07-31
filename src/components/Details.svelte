@@ -580,7 +580,10 @@
           </div>
         {/if}
 
-        <div class="relative z-10 p-10 pt-16">
+        <!-- z-20 keeps the hero above the content rows below (z-10): "relative z-10" there
+             creates its own stacking level, so the absolutely positioned "More" dropdown
+             would otherwise be painted *underneath* the opaque rows and appear cut off. -->
+        <div class="relative z-20 p-10 pt-16">
 
           <!-- BREADCRUMB + BACK -->
       <div class="flex items-center gap-6 mb-10" data-focus-group="details-top">
