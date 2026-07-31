@@ -1467,6 +1467,17 @@
   // SCRUBBING
   // ============================================================
 
+  // Every jump applies the new position to the reactive state right away instead of waiting for the
+  // video element's 'timeupdate'. While paused that event only arrives once the seek has actually
+  // completed (on a network stream that can take a moment), and until then everything derived from
+  // currentTime still describes the OLD position: the outro prompt stays up and the auto-play
+  // countdown re-anchors its bar to full before it is finally cancelled.
+  function seekTo(t) {
+    if (!videoElement) return;
+    videoElement.currentTime = t;
+    currentTime = t;
+  }
+
   function onSeekStart() {
     isSeeking = true;
     seekTime  = currentTime;
@@ -1480,7 +1491,7 @@
   function onSeekEnd(e) {
     if (seekCommitTimer) { clearTimeout(seekCommitTimer); seekCommitTimer = null; }
     const t = +e.target.value;
-    if (videoElement) videoElement.currentTime = t;
+    seekTo(t);
     seekTime  = t;
     isSeeking = false;
     resetControlsTimeout();
@@ -1517,8 +1528,7 @@
   function commitSeek() {
     if (seekCommitTimer) { clearTimeout(seekCommitTimer); seekCommitTimer = null; }
     if (!isSeeking) return;
-    if (videoElement) videoElement.currentTime = seekTime;
-    currentTime = seekTime;   // apply immediately, no brief jump-back until the timeupdate
+    seekTo(seekTime);
     isSeeking = false;
   }
 
@@ -1532,14 +1542,14 @@
     const t = videoElement.currentTime;
     // 3 s tolerance: shortly after a chapter start you jump to the previous chapter
     const target = [...chapterStartsSorted()].reverse().find(s => s < t - 3);
-    videoElement.currentTime = target ?? 0;
+    seekTo(target ?? 0);
     resetControlsTimeout();
   }
   function chapterNext() {
     if (!videoElement) return;
     const t = videoElement.currentTime;
     const target = chapterStartsSorted().find(s => s > t + 0.5);
-    if (target != null) videoElement.currentTime = target;
+    if (target != null) seekTo(target);
     resetControlsTimeout();
   }
 
