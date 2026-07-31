@@ -203,9 +203,12 @@
         wasPlayingBeforeSync = false;
       }
       // Focus back into the Player + show the HUD. Without this the focus stays stuck on the
-      // closed SyncPlay dialog and the Player no longer accepts inputs.
+      // closed SyncPlay dialog and the Player no longer accepts inputs. Return it to the button
+      // that opened the modal (same rule as the settings panel and the playlist picker), NOT to
+      // the container: the container has no focus ring, so with the HUD now visible nothing would
+      // look focused and OK would do nothing — the OK shortcut only fires while the HUD is hidden.
       resetControlsTimeout();
-      tick().then(() => playerContainer?.focus());
+      tick().then(() => { restoreControlFocus(); controlOpener = null; });
     }
   }
 
@@ -1842,7 +1845,7 @@
         {/if}
       </div>
       <div class="flex items-center gap-4 shrink-0">
-        <button onclick={(e) => { e.stopPropagation(); onSyncplay?.(); }}
+        <button onclick={(e) => { e.stopPropagation(); controlOpener = e.currentTarget; onSyncplay?.(); }}
           aria-label={i18n.t.syncPlay} title={i18n.t.syncPlay}
           class="text-white/90 hover:text-blue-300 focus:text-white focus:bg-blue-600 rounded-lg p-2
                  focus:outline-none focus:ring-2 focus:ring-white transition-colors">
