@@ -568,7 +568,10 @@
 
   {:else if fullItem}
 
-    <div class="flex-1 overflow-y-auto hide-scrollbar">
+    <!-- scroll-padding-top: spatial navigation scrolls with block:'nearest', which parks an
+         element flush against the top edge — the back button would sit at the very screen
+         edge with its ring-4 focus ring clipped. Same value as in Library/Settings. -->
+    <div class="flex-1 overflow-y-auto hide-scrollbar [scroll-padding-top:4rem]">
 
       <!-- ════ CINEMATIC HERO BANNER — the backdrop scrolls along, fading into the app gray at bottom/left ════ -->
       <div class="relative">
