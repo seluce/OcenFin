@@ -590,6 +590,7 @@
   let subtitleFetchToken = 0;      // ignores responses from a superseded switch
   let graphicRenderer = $state(null);      // libbitsub instance for the currently visible graphic-subtitle overlay
   let graphicObjectUrl = null;             // blob: URL of the prefetched track → revoked on dispose
+  let loadSettleTimer  = null;             // debounces the progressive 'loaded' events into one line
   // Render graphic subtitles client-side? Only if enabled AND not everything is burned in anyway.
   let clientGraphicRender = $derived(playbackPrefs.pgsRendering && !playbackPrefs.burnSubtitles);
   // Render ASS/SSA with original layout (assjs)? Off → plain text overlay, both Direct Play.
@@ -741,22 +742,19 @@
     const t0 = performance.now();   // measure how long fetch+parse takes until the track is usable
     // Prefetched while the menu entry was focused → hand the bytes over directly (a blob: URL is
     // local and instant), otherwise fall back to the network URL.
+    let firstCuesLogged = false;   // per switch → the progress event fires many times
     const cached = subBlobs.get(stream.Index);
     if (cached) graphicObjectUrl = URL.createObjectURL(cached);
     const opts = {
       video: videoElement, subUrl: graphicObjectUrl || url,
       displaySettings: { scale: graphicSubScale(), aspectMode: 'contain' },
-      // libbitsub ≤ 1.10.2: the worker NEVER comes up and decoding silently falls back to the main
-      // thread. Its inline glue instantiates the WASM with a single `__wbindgen_placeholder__` import,
-      // but the shipped module needs 10 imports from './libbitsub_bg.js' — so instantiate() throws a
-      // LinkError. That error is swallowed (the init call resolves on any response without checking
-      // `type === 'error'`), the worker is marked ready, and the first parse then fails with
-      // "Cannot read properties of null (reading 'PgsParser')". Not platform specific; a TV just
-      // shows it, because main-thread decoding blocks the UI. Reported as altqx/libbitsub#4 and fixed
-      // upstream (dynamic import of the real glue) — but NOT yet in a release, so node_modules carries
-      // a local patch that also passes the glue URL in from the main thread (bundled builds hash the
-      // asset names, which breaks deriving it from the wasm URL). Drop this once a fixed release ships;
-      // until then a plain `npm install` silently reintroduces the fallback.
+      // REQUIRES libbitsub >= 1.11.0. Up to 1.10.2 the worker never came up: its inline glue
+      // instantiated the WASM with a single `__wbindgen_placeholder__` import while the shipped module
+      // needs 10 from './libbitsub_bg.js', the resulting LinkError was swallowed, and the first parse
+      // then failed with "reading 'PgsParser'" of null — so every cue was decoded on the main thread,
+      // which is what stuttered on the TV. Fixed via altqx/libbitsub#4; 1.11.0 imports the real glue
+      // and takes the glue URL from the main thread (bundled builds hash the asset names, so deriving
+      // it from the wasm URL doesn't work). Don't downgrade below 1.11.0 — the fallback is silent.
       onWarning: (w) => dlog('[OcenFin] libbitsub notice:', w?.code || w?.message || w, w?.details),
       onError: (e) => { console.warn('[OcenFin] libbitsub error:', e?.code || '', e?.message || e); disposeGraphic(); },
       onEvent: (ev) => {
@@ -765,7 +763,15 @@
         if (ev?.type === 'renderer-change') dlog('[OcenFin] libbitsub graphics backend:', ev.renderer);
         else if (ev?.type === 'worker-state') dlog('[OcenFin] libbitsub worker:',
           ev.fallback ? 'main-thread fallback' : (ev.ready ? 'off-main-thread' : 'starting'));
-        else if (ev?.type === 'loaded') dlog('[OcenFin] libbitsub loaded:', ev.format, 'cues=' + (ev.metadata?.cueCount ?? '?'), 'in ' + Math.round(performance.now() - t0) + ' ms');
+        else if (ev?.type === 'loaded') {
+          // NOT a completion event: it fires on every metadata update and parsing is progressive, so
+          // this arrives ~90 times with a growing cue count. Log the first one (time until the first
+          // cues are usable) plus one settled summary, instead of flooding the console.
+          const cues = ev.metadata?.cueCount ?? 0;
+          if (!firstCuesLogged) { firstCuesLogged = true; dlog('[OcenFin] libbitsub first cues:', ev.format, cues, 'in ' + Math.round(performance.now() - t0) + ' ms'); }
+          clearTimeout(loadSettleTimer);
+          loadSettleTimer = setTimeout(() => dlog('[OcenFin] libbitsub complete:', ev.format, 'cues=' + cues, 'in ' + Math.round(performance.now() - t0) + ' ms'), 500);
+        }
       },
     };
     try {
@@ -779,6 +785,7 @@
   function disposeGraphic() {
     if (graphicRenderer) { try { graphicRenderer.dispose(); } catch {} graphicRenderer = null; }
     if (graphicObjectUrl) { URL.revokeObjectURL(graphicObjectUrl); graphicObjectUrl = null; }
+    if (loadSettleTimer) { clearTimeout(loadSettleTimer); loadSettleTimer = null; }
   }
   // Warm a subtitle track while its menu entry is focused. MEASURED: switching a 4668-cue PGS track
   // took 1010 ms, of which 844 ms was the fetch — for just 36 kB, i.e. the server extracting the
