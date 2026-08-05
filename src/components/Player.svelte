@@ -574,8 +574,9 @@
   // parse it instead of setting a <track>. A cross-origin <track> is blocked by the browser,
   // and webOS renders native cues unreliably anyway. This way we have full control.
   let subtitleCues = $state([]);           // [{ start, end, text }] in seconds
-  // Subtitle offset: applies to our own text overlay (VTT/SRT/ASS-to-VTT) AND to ASS rendered by
-  // assjs, which supports the same shift natively via its `delay` property. That property exists
+  // Subtitle offset: applies to ALL THREE render paths — our own text overlay (VTT/SRT/ASS-to-VTT),
+  // ASS via assjs, and graphic tracks (PGS/VobSub) via libbitsub. Each shifts natively, so no
+  // overlay is ever rebuilt. assjs does it through its `delay` property. That property exists
   // since 0.1.0, but its handling was corrected in 0.1.6 (floating point) and 0.1.8 (delay is now
   // honoured in the allocate step) — so 0.1.8 is the sensible minimum for reliable behaviour.
   // + = subtitles later (delayed), − = earlier. Reset per track/title; deliberately NOT saved
@@ -586,6 +587,12 @@
     // Same unit (seconds) and sign convention as the text overlay: assjs renders at
     // currentTime − delay. Its setter re-syncs right away → no rebuild of the overlay needed.
     if (assRenderer) assRenderer.delay = subtitleOffset;
+    // libbitsub looks its cues up at mediaTime + timeOffset, so the SIGN IS INVERTED against our
+    // convention. Public field in 1.11.0, a getter/setter pair from 1.12.0 — the plain assignment
+    // stays valid across that upgrade. In 1.11 the render loop reads the value every animation
+    // frame, so an adjustment also lands while paused: currentTime stays put, but the cue index
+    // moves. (1.12 additionally re-renders the paused frame from inside the setter.)
+    if (graphicRenderer) graphicRenderer.timeOffset = -subtitleOffset;
   }
   function formatOffset(s) {
     return (s > 0 ? '+' : '') + s.toFixed(1).replace('.', ',') + ' s';
@@ -2104,7 +2111,7 @@
 
           <!-- Offset control: sits outside the audio/subtitle branch above, so it must check the tab
                itself — otherwise it also shows up under "Audio", where it has no meaning. -->
-          {#if settingsTab === 'subtitle' && (subtitleCues.length > 0 || assActive)}
+          {#if settingsTab === 'subtitle' && (subtitleCues.length > 0 || assActive || graphicRenderer)}
             <div class="mt-3 pt-3 border-t border-gray-700/60 flex items-center justify-between gap-3 px-1">
               <span class="text-sm text-gray-300 font-medium">{i18n.t.subtitleOffset}</span>
               <div class="flex items-center gap-2">
