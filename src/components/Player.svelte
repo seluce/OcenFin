@@ -682,6 +682,7 @@
   // rebuilding assjs' internal selectors and custom properties in our own CSS. Revisit on webOS 26.
   async function applyAssSubtitle(stream, ms) {
     if (!videoElement || !assContainer) return;
+    const myToken = ++subtitleFetchToken;   // same guard as the VTT path — see the check below
     const url = assSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
     try {
       // Prefetched while the menu entry was focused → use those bytes instead of fetching again.
@@ -693,6 +694,11 @@
         if (!res.ok) { console.warn('[OcenFin] ASS fetch failed:', res.status); return; }
         content = await res.text();
       }
+      // Superseded by a newer switch while we were awaiting? Then stop here. Without this a slow
+      // response would mount its overlay AFTER the newer one and win: switching ASS → PGS would end
+      // up showing both renderers at once, and ASS → off would bring the subtitle back.
+      // Blob.text() is async too, so the prefetch path needs the guard just as much.
+      if (myToken !== subtitleFetchToken) return;
       ensureVideoFrameCallback();               // webOS: rVFC polyfill active BEFORE assjs reads it
       disposeAss();                            // no setTrack → remove the old overlay, rebuild fresh
       assRenderer = new ASS(content, videoElement, { container: assContainer });
@@ -738,7 +744,7 @@
     };
     videoElement.cancelVideoFrameCallback = function (id) { cancelAnimationFrame(id); };
     rvfcPatched = true;
-    dlog('[OcenFin] requestVideoFrameCallback per rAF-Polyfill ersetzt (webOS)');
+    dlog('[OcenFin] requestVideoFrameCallback replaced by rAF polyfill (webOS)');
   }
   function applyGraphicSubtitle(stream, ms) {
     if (!videoElement) return;
