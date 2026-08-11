@@ -408,7 +408,15 @@
     syncMyGroup = mine;
     syncGroups  = all.filter(g => g.GroupId !== syncMyGroupId);
   }
+  // Focus return for the SyncPlay modal, same rule as the context menu: back onto the element that
+  // opened it. Opened from the Player this is redundant (the Player restores its own controlOpener,
+  // which is the very same button), but from the SIDEBAR nothing restored the focus at all: the
+  // modal takes it, closing removes those nodes, and the focus fell back to document.body. The
+  // next D-pad press then landed on whatever spatialnav found first instead of the sidebar entry.
+  let syncReturnEl = null;
   function openSyncPlay() {
+    const el = document.activeElement;
+    if (el instanceof HTMLElement) syncReturnEl = el;
     showSyncPlay = true;
     syncRefresh();
     if (syncPollTimer) clearInterval(syncPollTimer);
@@ -417,6 +425,10 @@
   function closeSyncPlay() {
     showSyncPlay = false;
     if (syncPollTimer) { clearInterval(syncPollTimer); syncPollTimer = null; }
+    const el = syncReturnEl;
+    syncReturnEl = null;
+    // tick() so the modal is really gone — focusing while it still holds the focus would be undone.
+    if (el && document.contains(el)) tick().then(() => { if (document.contains(el)) el.focus(); });
   }
 
   // ── Auto-reconnect: while the server is unreachable, ping it lightly at regular intervals.
