@@ -588,10 +588,9 @@
     // currentTime − delay. Its setter re-syncs right away → no rebuild of the overlay needed.
     if (assRenderer) assRenderer.delay = subtitleOffset;
     // libbitsub looks its cues up at mediaTime + timeOffset, so the SIGN IS INVERTED against our
-    // convention. Public field in 1.11.0, a getter/setter pair from 1.12.0 — the plain assignment
-    // stays valid across that upgrade. In 1.11 the render loop reads the value every animation
-    // frame, so an adjustment also lands while paused: currentTime stays put, but the cue index
-    // moves. (1.12 additionally re-renders the paused frame from inside the setter.)
+    // convention. It was a public field up to 1.11.0 and is a getter/setter pair from 1.12.0; the
+    // plain assignment is valid either way. The 1.12 setter drops the cached frame and re-renders
+    // immediately, so an adjustment lands while paused too: currentTime stays put, the cue moves.
     if (graphicRenderer) graphicRenderer.timeOffset = -subtitleOffset;
   }
   function formatOffset(s) {
@@ -758,7 +757,19 @@
     const opts = {
       video: videoElement, subUrl: graphicObjectUrl || url,
       displaySettings: { scale: graphicSubScale(), aspectMode: 'contain' },
-      // REQUIRES libbitsub >= 1.11.0. Up to 1.10.2 the worker never came up: its inline glue
+      // webOS 26 / KNOWN LIMIT — revisit once the rVFC bug below is gone.
+      // 1.12.0 added frameAwareSync (default TRUE): the render loop then runs on
+      // requestVideoFrameCallback and picks cues by the presented frame's mediaTime instead of
+      // video.currentTime. On webOS that is fatal — see ensureVideoFrameCallback() above: rVFC is
+      // reported as present but never fires. libbitsub only feature-detects it (a typeof check in
+      // supportsFrameAwareSync) and has no watchdog for a callback that never arrives, so the
+      // loop would stall after the first frame and the subtitle would freeze on
+      // screen. Forcing it off restores the 1.11 behaviour exactly (requestAnimationFrame +
+      // currentTime). No loss either: PGS cues last seconds, so frame-exact selection buys nothing.
+      // NOTE: our rVFC polyfill would also satisfy the check, but it is installed in the ASS path
+      // only — relying on that call order to keep graphic subtitles alive would be fragile.
+      frameAwareSync: false,
+      // REQUIRES libbitsub >= 1.11.0 (running 1.12.0). Up to 1.10.2 the worker never came up: its inline glue
       // instantiated the WASM with a single `__wbindgen_placeholder__` import while the shipped module
       // needs 10 from './libbitsub_bg.js', the resulting LinkError was swallowed, and the first parse
       // then failed with "reading 'PgsParser'" of null — so every cue was decoded on the main thread,
