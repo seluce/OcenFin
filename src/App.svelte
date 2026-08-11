@@ -513,6 +513,13 @@
       handleSyncMessage(msg);
     };
     ws.onclose = () => {
+      // Only the CURRENT socket may act here. The guard in connectSyncSocket() skips OPEN and
+      // CONNECTING sockets, but not one already in CLOSING — that one gets replaced, and its late
+      // onclose would then clear the NEW socket's KeepAlive interval and queue a pointless
+      // reconnect. The new socket would run unwatched until the server drops it.
+      // This also covers disconnectSyncSocket(), which nulls syncSocket before close() lands; that
+      // path clears the timers itself and wants no reconnect, so returning early is correct there.
+      if (ws !== syncSocket) { dlog('[SyncPlay] a superseded socket closed'); return; }
       if (syncKeepAlive) { clearInterval(syncKeepAlive); syncKeepAlive = null; }
       dlog('[SyncPlay] socket disconnected');
       if (syncSocketWanted) { clearTimeout(syncReconnect); syncReconnect = setTimeout(connectSyncSocket, 5000); }
