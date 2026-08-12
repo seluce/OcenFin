@@ -1,11 +1,11 @@
 {
   "id": "com.ocenfin.app",
-  "version": "2026.8.5",
+  "version": "2026.8.12",
   "vendor": "seluce",
   "type": "web",
   "main": "index.html",
   "title": "OcenFin",
-  "appDescription": "Jellyfin-Client für WebOS",
+  "appDescription": "Jellyfin client for webOS",
   "icon": "icon.png",
   "largeIcon": "largeIcon.png",
   "splashBackground": "splash.png",

@@ -68,6 +68,10 @@
   }
 
   async function loadCollection() {
+    // Guard against a superseded load: opening a second collection while the first is still
+    // fetching would otherwise show the slower response's items under the newer title.
+    // loadedId is set synchronously before this call. Same guard as in Details/Library/Search.
+    const myId = collection.Id;
     name      = collection.Name;
     items     = [];
     isLoading = true;
@@ -79,9 +83,11 @@
       : `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${collection.Id}&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=100&EnableTotalRecordCount=false`;
     try {
       const res = await fetch(url, { headers: getAuthHeaders() });
-      if (res.ok) items = (await res.json()).Items || [];
+      const loaded = res.ok ? ((await res.json()).Items || []) : null;
+      if (myId !== loadedId) return;   // superseded by a newer collection
+      if (loaded) items = loaded;
     } catch { /* ignore */ }
-    finally { isLoading = false; }
+    finally { if (myId === loadedId) isLoading = false; }
   }
 
   // Reorder: optimistically local, then confirm server-side.

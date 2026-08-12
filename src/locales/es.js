@@ -221,7 +221,6 @@ export default {
     reduceAnimations: "Reducir animaciones",
     reduceAnimationsDesc: "Desactiva las transiciones y efectos — mejora el rendimiento en televisores más lentos.",
     displayElements: "Elementos de la interfaz",
-    displayElementsDesc: "Muestra u oculta elementos concretos de la interfaz.",
     displayClock: "Reloj",
     displayHero: "Banner destacado",
     displayEpisodeCount: "Número de episodios (series)",

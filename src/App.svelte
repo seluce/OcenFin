@@ -408,7 +408,15 @@
     syncMyGroup = mine;
     syncGroups  = all.filter(g => g.GroupId !== syncMyGroupId);
   }
+  // Focus return for the SyncPlay modal, same rule as the context menu: back onto the element that
+  // opened it. Opened from the Player this is redundant (the Player restores its own controlOpener,
+  // which is the very same button), but from the SIDEBAR nothing restored the focus at all: the
+  // modal takes it, closing removes those nodes, and the focus fell back to document.body. The
+  // next D-pad press then landed on whatever spatialnav found first instead of the sidebar entry.
+  let syncReturnEl = null;
   function openSyncPlay() {
+    const el = document.activeElement;
+    if (el instanceof HTMLElement) syncReturnEl = el;
     showSyncPlay = true;
     syncRefresh();
     if (syncPollTimer) clearInterval(syncPollTimer);
@@ -417,6 +425,10 @@
   function closeSyncPlay() {
     showSyncPlay = false;
     if (syncPollTimer) { clearInterval(syncPollTimer); syncPollTimer = null; }
+    const el = syncReturnEl;
+    syncReturnEl = null;
+    // tick() so the modal is really gone — focusing while it still holds the focus would be undone.
+    if (el && document.contains(el)) tick().then(() => { if (document.contains(el)) el.focus(); });
   }
 
   // ── Auto-reconnect: while the server is unreachable, ping it lightly at regular intervals.
@@ -501,6 +513,13 @@
       handleSyncMessage(msg);
     };
     ws.onclose = () => {
+      // Only the CURRENT socket may act here. The guard in connectSyncSocket() skips OPEN and
+      // CONNECTING sockets, but not one already in CLOSING — that one gets replaced, and its late
+      // onclose would then clear the NEW socket's KeepAlive interval and queue a pointless
+      // reconnect. The new socket would run unwatched until the server drops it.
+      // This also covers disconnectSyncSocket(), which nulls syncSocket before close() lands; that
+      // path clears the timers itself and wants no reconnect, so returning early is correct there.
+      if (ws !== syncSocket) { dlog('[SyncPlay] a superseded socket closed'); return; }
       if (syncKeepAlive) { clearInterval(syncKeepAlive); syncKeepAlive = null; }
       dlog('[SyncPlay] socket disconnected');
       if (syncSocketWanted) { clearTimeout(syncReconnect); syncReconnect = setTimeout(connectSyncSocket, 5000); }

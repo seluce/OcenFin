@@ -221,7 +221,6 @@ export default {
     reduceAnimations: "Animaties verminderen",
     reduceAnimationsDesc: "Schakelt overgangen en effecten uit — verbetert prestaties op tragere tv's.",
     displayElements: "Weergave-elementen",
-    displayElementsDesc: "Toon of verberg afzonderlijke interface-elementen.",
     displayClock: "Klok",
     displayHero: "Uitgelichte banner",
     displayEpisodeCount: "Aantal afleveringen (series)",
