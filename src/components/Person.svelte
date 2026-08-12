@@ -39,13 +39,18 @@
   const getAuthHeaders = () => authHeaders(session.token);
 
   async function loadPerson() {
+    // Opening a second person while the first is still loading would otherwise let the slower
+    // response win and fill the view with the wrong filmography. loadedId is set synchronously
+    // before this runs, so comparing against it identifies a superseded load. Same guard as in
+    // Details/Library/Search.
+    const myId = person.Id;
     fav       = !!person.UserData?.IsFavorite;
     items     = [];
     isLoading = true;
     // Fetch the person item separately → correct favorite status (from search/cast, UserData is often missing)
     fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${person.Id}`, { headers: getAuthHeaders() })
       .then(r => r.ok ? r.json() : null)
-      .then(p => { if (p) fav = !!p.UserData?.IsFavorite; })
+      .then(p => { if (p && myId === loadedId) fav = !!p.UserData?.IsFavorite; })
       .catch(() => {});
     // Two parallel fetches: main filmography (movies/series) and episodes (for guest roles),
     // so a long-running series' episodes can never crowd movies/series out of a single limit.
@@ -59,9 +64,10 @@
       ]);
       const main = mainRes.ok ? ((await mainRes.json()).Items || []) : [];
       const eps  = epRes.ok  ? ((await epRes.json()).Items  || []) : [];
+      if (myId !== loadedId) return;   // superseded by a newer person
       items = [...main, ...eps];
     } catch { /* ignore */ }
-    finally { isLoading = false; }
+    finally { if (myId === loadedId) isLoading = false; }
   }
 
   // Set/remove the person as a favorite (optimistic; roll back on error)
