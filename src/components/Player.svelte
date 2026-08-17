@@ -316,7 +316,7 @@
       videoElement.currentTime = t; currentTime = t;
     }
     else if (cmd === 'nexttrack') { if (nextEpisode) goToNextEpisode(true); }
-    else if (cmd === 'previoustrack') { if (prevEpisode) onPrev?.(prevEpisode); }
+    else if (cmd === 'previoustrack') { if (prevEpisode) { handingOff = true; onPrev?.(prevEpisode); } }
     // Volume/mute (GeneralCommand)
     else if (cmd === 'setvolume' && videoElement) { const v = parseInt(c.args?.Volume, 10); if (!isNaN(v)) videoElement.volume = Math.max(0, Math.min(1, v / 100)); }
     else if (cmd === 'volumeup'   && videoElement) videoElement.volume = Math.min(1, videoElement.volume + 0.1);
@@ -1128,7 +1128,7 @@
   function resumeFromStillWatching() {
     showStillWatching = false;
     // The user is awake → advance to the next episode; reset the counter in App.
-    if (nextEpisode) onNext?.({ episode: nextEpisode, resetStreak: true });
+    if (nextEpisode) { handingOff = true; onNext?.({ episode: nextEpisode, resetStreak: true }); }
   }
 
   // If no one reacts to "still watching?", the user has most likely
@@ -1484,6 +1484,7 @@
       return;
     }
     // resetStreak: awake → counter in App to 0; otherwise increment.
+    handingOff = true;
     onNext?.({ episode: nextEpisode, resetStreak: awake });
   }
 
@@ -1594,6 +1595,26 @@
   function restoreControlFocus() {
     if (controlOpener && document.contains(controlOpener)) controlOpener.focus();
     else playerContainer?.focus();
+  }
+
+  // Every overlay that can vanish ON ITS OWN has to hand the focus back. Its button carries
+  // focusOnMount, so the overlay OWNS the focus while it is up; once it disappears untouched
+  // (intro window elapsed, countdown cancelled, prompt dismissed) the focused node is removed and
+  // the focus falls to document.body. handleKeyDown sits on the Player container, not on window, so
+  // from that moment nothing bubbles to it: OK and the arrows are dead while Back — a window handler
+  // in App.svelte — still works. That was the "OK stops working mid-episode" bug.
+  // Also drops the trap in the fading subtree: during the ~150 ms fade it still counts as visible
+  // (isVisible checks pointer-events, not opacity), so onFocusIn would drag the focus back in.
+  // True from the moment we ask App for another episode until this instance is gone. {#key item.Id}
+  // replaces the whole Player, and the NEW instance focuses its own container on mount — pulling
+  // the focus into THIS dying one would recreate the very bug, so only the trap is dropped then.
+  let handingOff = false;
+
+  function releaseOverlay(e) {
+    dropTrapOnOutro(e);
+    if (handingOff) return;
+    const root = e?.currentTarget;
+    if (root && root.contains(document.activeElement)) playerContainer?.focus();
   }
 
   // FIX: auto-focus the settings panel for the webOS D-pad
@@ -1946,7 +1967,7 @@
         <div class="flex items-center gap-6">
 
           <!-- Previous episode: |◄ — transport navigation (sequential) -->
-          <button onclick={() => prevEpisode && onPrev?.(prevEpisode)}
+          <button onclick={() => { if (prevEpisode) { handingOff = true; onPrev?.(prevEpisode); } }}
             disabled={!prevEpisode}
             class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none disabled:opacity-30"
             title={i18n.t.prevEpisode}>
@@ -2161,7 +2182,7 @@
 
   <!-- SKIP INTRO — bottom left -->
   {#if showSkipIntro}
-    <div transition:uiFade class="absolute bottom-44 left-12 z-[70]">
+    <div transition:uiFade onoutrostart={releaseOverlay} class="absolute bottom-44 left-12 z-[70]">
       <button onclick={skipIntro} {@attach focusOnMount()}
         class="bg-black/85 border-2 border-white text-white font-bold text-2xl
                px-10 py-5 rounded-xl flex items-center gap-4 shadow-2xl
@@ -2180,7 +2201,7 @@
   <!-- NEXT EPISODE — bottom right -->
   <!-- AUTO-PLAY COUNTDOWN — with "Play now" / "Cancel" -->
   {#if nextCountdown !== null && nextEpisode}
-    <div transition:uiFade onoutrostart={dropTrapOnOutro} data-focus-trap class="absolute bottom-12 right-12 z-[70] transition-transform duration-300 {showControls ? '-translate-y-32' : ''}">
+    <div transition:uiFade onoutrostart={releaseOverlay} data-focus-trap class="absolute bottom-12 right-12 z-[70] transition-transform duration-300 {showControls ? '-translate-y-32' : ''}">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-6 w-[30rem] flex flex-col gap-3">
         <div class="flex items-center gap-3">
           {#if nextEpisodeImage}
@@ -2216,7 +2237,7 @@
   <!-- Manual "next episode" prompt (no countdown): appears with auto-play disabled OR after
        cancelling the timer. The user decides — "Cancel" stays on the current episode (outro). -->
   {#if outroPromptActive && nextEpisode && nextCountdown === null && !outroDismissed && !showStillWatching}
-    <div transition:uiFade onoutrostart={dropTrapOnOutro} data-focus-trap class="absolute bottom-12 right-12 z-[70] transition-transform duration-300 {showControls ? '-translate-y-32' : ''}">
+    <div transition:uiFade onoutrostart={releaseOverlay} data-focus-trap class="absolute bottom-12 right-12 z-[70] transition-transform duration-300 {showControls ? '-translate-y-32' : ''}">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-6 w-[30rem] flex flex-col gap-3">
         <div class="flex items-center gap-3">
           {#if nextEpisodeImage}
