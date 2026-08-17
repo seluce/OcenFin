@@ -2180,7 +2180,7 @@
   <!-- NEXT EPISODE — bottom right -->
   <!-- AUTO-PLAY COUNTDOWN — with "Play now" / "Cancel" -->
   {#if nextCountdown !== null && nextEpisode}
-    <div transition:uiFade data-focus-trap class="absolute bottom-12 right-12 z-[70] transition-transform duration-300 {showControls ? '-translate-y-32' : ''}">
+    <div transition:uiFade onoutrostart={dropTrapOnOutro} data-focus-trap class="absolute bottom-12 right-12 z-[70] transition-transform duration-300 {showControls ? '-translate-y-32' : ''}">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-6 w-[30rem] flex flex-col gap-3">
         <div class="flex items-center gap-3">
           {#if nextEpisodeImage}
@@ -2216,7 +2216,7 @@
   <!-- Manual "next episode" prompt (no countdown): appears with auto-play disabled OR after
        cancelling the timer. The user decides — "Cancel" stays on the current episode (outro). -->
   {#if outroPromptActive && nextEpisode && nextCountdown === null && !outroDismissed && !showStillWatching}
-    <div transition:uiFade data-focus-trap class="absolute bottom-12 right-12 z-[70] transition-transform duration-300 {showControls ? '-translate-y-32' : ''}">
+    <div transition:uiFade onoutrostart={dropTrapOnOutro} data-focus-trap class="absolute bottom-12 right-12 z-[70] transition-transform duration-300 {showControls ? '-translate-y-32' : ''}">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-6 w-[30rem] flex flex-col gap-3">
         <div class="flex items-center gap-3">
           {#if nextEpisodeImage}
