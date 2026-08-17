@@ -312,7 +312,20 @@ export function createFocusManager(isEnabled) {
         }
       }
       if (within) { focusEl(within); return; }
-      if (trap) { return; }   // modal boundary: stay put
+      if (trap) {
+        // Safety net: nothing is focused at all (the previously focused node was removed while the
+        // trap stayed — e.g. an overlay fading out during a view remount). Returning here would make
+        // the modal boundary swallow every key press, and since the Player's key handler sits on its
+        // container rather than on window, OK and the arrows would stay dead until Back is pressed.
+        // So re-enter the trap: its first visible focusable, otherwise the trap itself if it can take
+        // focus (the Player container is tabindex="0" and its controls are pointer-events-none while
+        // the HUD is hidden, so they don't count as focusable).
+        if (!hasActive) {
+          const back = focusablesIn(trap)[0] || (trap.tabIndex >= 0 ? trap : null);
+          if (back) focusEl(back);
+        }
+        return;   // modal boundary: stay put
+      }
     }
 
     // 2) Transition to the next group in the direction
