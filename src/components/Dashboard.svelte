@@ -234,12 +234,15 @@
 
       // Up to two rows of similar titles (cached). Depending on the
       // setting, 1 or 2 are rendered — so switching feels instant without a reload.
+      // Both Similar lookups in parallel — they are independent, so there is no reason to pay
+      // two sequential server round trips (the Similar endpoint is one of the slower ones).
+      const picked = seeds.slice(0, 2);
+      const results = await Promise.all(picked.map(seed =>
+        fetch(`${session.serverUrl}/Items/${seed.Id}/Similar?userId=${uId}&limit=${ROW_LIMIT}&Fields=${fields}`, opts)
+          .then(r => r.json()).then(d => d.Items || []).catch(() => [])
+      ));
       const rows = [];
-      for (const seed of seeds.slice(0, 2)) {
-        const sim = await fetch(`${session.serverUrl}/Items/${seed.Id}/Similar?userId=${uId}&limit=${ROW_LIMIT}&Fields=${fields}`, opts);
-        const items = (await sim.json()).Items || [];
-        if (items.length >= 4) rows.push({ seedTitle: seed.Name, items });
-      }
+      picked.forEach((seed, i) => { if (results[i].length >= 4) rows.push({ seedTitle: seed.Name, items: results[i] }); });
       recommendations = rows;
       if (apiCache.dashboard) apiCache.dashboard.recommendations = rows;
     } catch { /* recommendations are optional */ }
@@ -249,7 +252,6 @@
   // UNWATCHED, well-rated titles with a backdrop from them — instead of "newest additions, random".
   // Returns the candidate pool (rating-sorted). Empty = no signal / error → the caller
   // falls back to the previous new-additions logic so the hero never looks empty.
-  // NOT wired up YET — step 2 switches buildHero over to it.
   async function loadHeroForYou(uId, opts) {
     try {
       // 1) Taste signal: recently watched movies/series WITH genres (a separate fetch, since FIELDS carries none).

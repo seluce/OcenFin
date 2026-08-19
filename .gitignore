@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# webOS packaging artifacts (built per release, attached to GitHub releases instead)
+*.ipk
+com.ocenfin.app.manifest.json
+
+# Internal working docs (not part of the public repo)
+CODE-HEALTH.md
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local environment
+*.local
