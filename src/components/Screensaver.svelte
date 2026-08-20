@@ -19,7 +19,9 @@
 
   function updateClock() {
     const now = new Date();
-    const loc = i18n.lang === 'de' ? 'de-DE' : 'en-US';
+    // The app language IS a valid BCP-47 tag — Chromium 120 ships full ICU, so 'fr', 'pl', 'pt'
+    // etc. all format correctly. The old de/en special-case gave six of eight languages English dates.
+    const loc = i18n.lang || 'en';
     timeString = now.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit', hour12: !use24h });
     dateString = now.toLocaleDateString(loc, { weekday: 'long', day: 'numeric', month: 'long' });
   }
@@ -32,7 +34,7 @@
   const CLOCK_FIRST_MOVE = 20000;   // first change after 20 s
   const CLOCK_INTERVAL   = 45000;   // then every 45 s
   let posX = $state(30), posY = $state(35), clockOn = $state(true);
-  let clockMoveTimeout = null;   // the only timer not yet cleaned up in onDestroy
+  let clockMoveTimeout = null;   // chained from moveClock; cleared in onDestroy like all the others
   function moveClock() {
     clockOn = false;                          // fade out
     clockMoveTimeout = setTimeout(() => {
@@ -144,6 +146,12 @@
 
     if (mode === 'art') {
       await loadArt();
+      // Dismissed while the list was loading? Then onDestroy has ALREADY run and cleared timer
+      // handles that don't exist yet — everything created below would live forever. The art path
+      // guards itself via `destroyed` inside startArt, but the clock FALLBACK below would start an
+      // eternal 45 s interval on a dead component. One leaked interval per too-quick dismissal,
+      // accumulating over weeks of use.
+      if (destroyed) return;
       if (artlist.length) {
         // Preload the first backdrop and only then switch to art mode. Until then the clock shows
         // as a calm placeholder (no "bare title over black"); then the image from the cache
