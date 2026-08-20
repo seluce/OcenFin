@@ -1,7 +1,7 @@
 {
   "name": "OcenFin",
   "private": true,
-  "version": "2026.8.19",
+  "version": "2026.8.20",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,7 +13,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "svelte": "^5.56.9",
     "tailwindcss": "^4.3.3",
-    "vite": "^8.2.1"
+    "vite": "^8.2.2"
   },
   "dependencies": {
     "assjs": "^0.1.10",

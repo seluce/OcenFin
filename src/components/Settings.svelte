@@ -67,6 +67,14 @@
     onPlaybackPrefsChange?.({ ...playbackPrefs, stillWatchingEpisodes: n });
   }
 
+  function setThemeScope(v) {
+    onPlaybackPrefsChange?.({ ...playbackPrefs, themeMusicScope: v });
+  }
+  function stepThemeVolume(d) {
+    const cur = playbackPrefs.themeMusicVolume ?? 40;
+    onPlaybackPrefsChange?.({ ...playbackPrefs, themeMusicVolume: Math.max(5, Math.min(100, cur + d)) });
+  }
+
   // Version: YYYYMMDD — adjust here on updates
   // APP_VERSION now comes centrally from version.js (source: appinfo.json)
 
@@ -1085,6 +1093,50 @@
                   {n} {i18n.t.episodes}
                 </button>
               {/each}
+            </div>
+          </div>
+        {/if}
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Theme music on the details page (opt-in). Scope + volume only show while enabled. -->
+        <button onclick={() => togglePlaybackPref('themeMusic')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.themeMusic}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.themeMusicDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.themeMusic ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.themeMusic ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        {#if playbackPrefs.themeMusic}
+          <div class="p-6 pt-2 pb-0">
+            <div class="flex gap-3">
+              {#each [['both', i18n.t.themeMusicBoth], ['movies', i18n.t.movies], ['series', i18n.t.series]] as [key, label]}
+                <button onclick={() => setThemeScope(key)}
+                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {(playbackPrefs.themeMusicScope || 'both') === key ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                  {label}
+                </button>
+              {/each}
+            </div>
+          </div>
+          <!-- Volume as a regular settings row: label left, control right — matching the toggle rows. -->
+          <div class="flex items-center justify-between w-full p-6">
+            <span class="text-2xl text-white font-medium">{i18n.t.themeMusicVolume}</span>
+            <div class="flex items-center gap-3 shrink-0">
+              <button onclick={() => stepThemeVolume(-5)}
+                class="w-14 h-12 rounded-xl font-bold text-2xl bg-gray-900 text-gray-300 hover:bg-gray-700
+                       focus:outline-none focus:ring-4 focus:ring-white transition-all">&minus;</button>
+              <span class="text-xl font-bold text-gray-300 w-20 text-center tabular-nums">{playbackPrefs.themeMusicVolume ?? 40}&nbsp;%</span>
+              <button onclick={() => stepThemeVolume(5)}
+                class="w-14 h-12 rounded-xl font-bold text-2xl bg-gray-900 text-gray-300 hover:bg-gray-700
+                       focus:outline-none focus:ring-4 focus:ring-white transition-all">+</button>
             </div>
           </div>
         {/if}

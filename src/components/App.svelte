@@ -1,0 +1,1830 @@
+<script>
+  import { onMount, tick } from 'svelte';
+  import { fade } from 'svelte/transition';
+  import { isBackKey, focusOnMount, serverSupportsVobSub, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard } from './utils.js';
+  import { buildPlayQueue } from './playback.js';
+  import { session } from './session.svelte.js';
+  import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
+  import { APP_VERSION } from './version.js';
+  import { createFocusManager } from './spatialnav.js';
+  import { i18n, setLang, detectUiLang } from './i18n.svelte.js';
+  import Clock       from './components/Clock.svelte';
+  import Screensaver from './components/Screensaver.svelte';
+  import Dashboard   from './components/Dashboard.svelte';
+  import Sidebar     from './components/Sidebar.svelte';
+  import Details     from './components/Details.svelte';
+  import ContextMenu from './components/ContextMenu.svelte';
+  import AddToPicker from './components/AddToPicker.svelte';
+  import Search      from './components/Search.svelte';
+  import Favorites   from './components/Favorites.svelte';
+  import Person      from './components/Person.svelte';
+  import Library     from './components/Library.svelte';
+  import Collection  from './components/Collection.svelte';
+  import { registerSession, listSyncGroups, createSyncGroup, joinSyncGroup, leaveSyncGroup, syncSocketUrl, setSyncIgnoreWait } from './syncplay.js';
+  import { suppressTheme } from './thememusic.js';
+
+  // Lazy-loaded views (Vite code-splitting): loaded only on first open, then cached.
+  // Keeps the cold-start bundle small — especially the Player pulls the heavy deps (hls.js, assjs) only on
+  // first playback instead of loading them on every app start.
+  let _settingsP, _playerP, _syncP;
+  const lazySettings = () => (_settingsP ??= import('./components/Settings.svelte').then(m => m.default));
+  const lazyPlayer   = () => (_playerP   ??= import('./components/Player.svelte').then(m => m.default));
+  const lazySyncPlay = () => (_syncP     ??= import('./components/SyncPlay.svelte').then(m => m.default));
+  let _loginP;
+  const lazyLogin    = () => (_loginP    ??= import('./components/Login.svelte').then(m => m.default));
+  let loginRef = $state();   // bind:this → handleBackKey (back in login sub-dialogs)
+
+  // ============================================================
+  // APP PHASE
+  // 'servers' → 'users' → 'app'
+  // ============================================================
+  let appPhase = $state('servers');   // current step in the onboarding flow
+
+  // On first entering the app, put focus on the sidebar's active item. A freshly loaded app has no
+  // focus, so the first D-pad press would otherwise be spent just establishing it (landing top-left,
+  // overlapping hero + first row) instead of navigating. Guarded to only run when nothing is focused
+  // yet, so it never steals focus from a modal, the connection-lost retry button or a restore path.
+  $effect(() => {
+    if (appPhase !== 'app') return;
+    tick().then(() => {
+      if (document.activeElement && document.activeElement !== document.body) return;
+      document.querySelector('[data-focus-group="sidebar"] [data-group-current]')?.focus();
+    });
+  });
+  let initializing = $state(true);    // splash screen until auto-login/startup is done
+  let dashboardReloadKey = $state(0); // incrementing forces a fresh reload of the dashboard
+  let resumeStale = $state(false);    // after playback: dashboard fetches Resume/NextUp fresh (cache stays otherwise)
+  let currentLibrary     = $state(null);  // { Id, Name } — active library (to Library.svelte)
+  let libraryReloadKey   = $state(0);     // increment → Library discards its view cache + reloads
+  let libraryFocusFirst  = $state(false); // when opened from the menu, focus the first card
+  let librarySharedOn    = $state(false); // "watch together" active (reported by Library)
+  let libraryMounted     = $state(false); // permanently mounted from the first library visit on (state persists)
+  let libraryRef = $state();              // bind:this → restoreView / grid mutations
+
+  // Clear cache (settings): discard the in-memory cache and reload the dashboard fresh.
+  function clearCache() {
+    apiCache.dashboard = null;
+    partnersPlayedCache = {};
+    libraryReloadKey++;        // Library discards its own view cache + reloads
+    dashboardReloadKey++;
+    viewState = 'dashboard';
+  }
+
+  // ============================================================
+  // SERVER MANAGEMENT
+  // ============================================================
+  let savedServers      = $state([]);   // [{ id, url, name }]
+  let selectedServer    = $state(null); // currently connected server
+
+  // Discovery
+
+  // Manual entry in the add panel
+
+  // ============================================================
+  // AUTH / USERS
+  // ============================================================
+  let users            = $state([]);
+  let selectedUser     = $state(null);
+  let isLoggedIn       = $state(false);
+  let serverVobSub     = $state(false);   // does the server deliver VobSub/DVD externally as .mks? (Jellyfin 12.0+)
+  let serverVersion    = $state('');      // Jellyfin server version (for the status page)
+  let savedTokens      = $state({});  // { serverId: { userId: token } } — quick switch (only via the profile switch)
+  let sharedTokens     = $state({});  // { serverId: { userId: token } } — watch together, SEPARATE from quick switch
+
+  // Login sub-views
+
+  // Quick Connect (login flow — TV shows the code, phone scans it)
+
+  // Device base ID: generated randomly once per installation and kept in localStorage so that
+  // the same profile on two TVs does NOT get the same DeviceId (Jellyfin allows only one token per
+  // DeviceId → otherwise the second TV would log out the first). Existing installations that already
+  // have tokens keep the old fixed base so their tokens stay valid after the update.
+  function randomDeviceBase() {
+    try {
+      const a = new Uint8Array(16); crypto.getRandomValues(a);   // needs NO secure context
+      return 'ocenfin-' + Array.from(a, (b) => b.toString(16).padStart(2, '0')).join('');
+    } catch {
+      return 'ocenfin-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    }
+  }
+  function loadDeviceBase() {
+    try {
+      const existing = localStorage.getItem('ocenfin_device_base');
+      if (existing) return existing;
+      const hasTokens = !!localStorage.getItem('jellyfin_tokens_v2')
+                     || !!localStorage.getItem('jellyfin_tokens')
+                     || !!localStorage.getItem('session_token');
+      const base = hasTokens ? 'oceonfin-tv-001' : randomDeviceBase();
+      localStorage.setItem('ocenfin_device_base', base);
+      return base;
+    } catch { return 'oceonfin-tv-001'; }
+  }
+  const BASE_DEVICE_ID = loadDeviceBase();
+  // Unique DeviceId per user: Jellyfin allows only ONE token per DeviceId. Without this separation
+  // signing in a second profile (e.g. for watch together) invalidates the first one's
+  // token. The hashed username is the user-specific part — it also sanitizes
+  // special characters that could break the header format (quoted values).
+  function deviceIdHash(name) {
+    let h = 5381; const s = String(name || '');
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+  function deviceIdFor(name) { return `${BASE_DEVICE_ID}-${deviceIdHash(name)}`; }
+  function authHeaderFor(name) {
+    return `MediaBrowser Client="OcenFin-TV", Device="LG Smart TV", DeviceId="${deviceIdFor(name)}", Version="${APP_VERSION}"`;
+  }
+  // Base header without user reference — only for Quick Connect, since the user is still unknown at initiate time.
+  const CLIENT_AUTH_HEADER =
+    `MediaBrowser Client="OcenFin-TV", Device="LG Smart TV", DeviceId="${BASE_DEVICE_ID}", Version="${APP_VERSION}"`;
+
+  // Helpful: which user the current server token points to
+  // Feed the app-wide stores (in parallel to the existing props; components are migrated step by step).
+  // Derive session.serverUrl from the selected server — in the pre phase so children
+  // (Dashboard etc.) already read the current URL on remount. The token is written imperatively on
+  // login/switch/logout directly into session.token (no feed, no timing lag).
+  $effect.pre(() => { session.serverUrl = selectedServer?.url ?? ''; });
+  let isCurrentUserSaved = $derived(!!(
+    selectedUser && selectedServer &&
+    savedTokens[selectedServer.id]?.[selectedUser.Id]
+  ));
+
+  // ============================================================
+  // ANIMATIONS
+  // ============================================================
+  let reduceAnimations = $state(false);
+
+  // Display elements (clock, hero banner, episode count, libraries) — individually toggleable
+  let displaySettings = $state({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
+
+  // Default audio/subtitle language
+  let playbackPrefs = $state({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40 });
+
+  // ── Profile-specific settings ───────────────────────────────
+  // Language + display + playback + animations are stored PER USER.
+  // Before login (server/user selection) there is no profile yet — there the
+  // last chosen device language ('app_language') applies. The screensaver
+  // stays device-wide (protects the physical OLED panel, user-independent).
+  let activeUserId = $state(null);
+
+  // Load (or reset) the user's watchlist whenever the active profile changes.
+  $effect(() => { if (activeUserId) initWatchlist(activeUserId); });
+  let prefsReady   = false;   // prevents saving during the initial load
+  let applyingPrefs = false;  // prevents saving DURING applyUserPrefs (otherwise a half-finished state)
+
+  // Persist language changes (including from the settings) centrally. Tracks i18n.lang reactively
+  // and replaces the earlier currentLang.subscribe.
+  $effect(() => {
+    const v = i18n.lang;
+    if (!prefsReady || applyingPrefs) return;
+    localStorage.setItem('app_language', v);   // device language for pre-login screens
+    saveUserPrefs();                            // + save in the active profile
+  });
+
+  // 12h/24h format for both clocks (top right + screensaver).
+  // "auto" follows the language: German → 24h, English → 12h. Overridable.
+  let use24h = $derived(displaySettings.clockFormat === '24h' ? true
+            : displaySettings.clockFormat === '12h' ? false
+            : i18n.lang !== 'en');
+
+  // Safety net: never leave the grab lock active beyond the settings.
+  $effect(() => { if (viewState !== 'settings' && navReordering) navReordering = false; });
+
+  function userPrefsKey(userId) { return `user_prefs_${userId}`; }
+
+  function loadUserPrefs(userId) {
+    try { return JSON.parse(localStorage.getItem(userPrefsKey(userId)) || '{}'); } catch { return {}; }
+  }
+
+  function saveUserPrefs() {
+    if (!activeUserId || applyingPrefs) return;
+    localStorage.setItem(userPrefsKey(activeUserId), JSON.stringify({
+      language: i18n.lang,
+      displaySettings,
+      playbackPrefs,
+      reduceAnimations,
+      librarySorts,
+      sharedProfile
+    }));
+  }
+
+  // On login, apply the profile's settings (or keep the device defaults)
+  function applyUserPrefs(userId) {
+    applyingPrefs = true;
+    activeUserId = userId;
+    const p = loadUserPrefs(userId);
+    if (p.language) {
+      setLang(p.language);
+      localStorage.setItem('app_language', p.language);   // update "last used"
+    }
+    displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
+    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, ...(p.playbackPrefs || {}) };
+    reduceAnimations = p.reduceAnimations ?? false;
+    librarySorts     = p.librarySorts || {};   // remembered sort per library
+    sharedProfile    = p.sharedProfile && Array.isArray(p.sharedProfile.members)
+                       ? { enabled: !!p.sharedProfile.enabled,
+                           members: [p.sharedProfile.members[0] || null, p.sharedProfile.members[1] || null] }
+                       : { enabled: false, members: [] };
+    // Migration: copy member tokens that (old) live only in the quick-switch store into the own
+    // shared store → watch together runs independently, quick switch can be turned off freely.
+    const _sid = selectedServer?.id;
+    if (_sid) {
+      let _changed = false;
+      for (const m of sharedProfile.members) {
+        if (m?.id && !sharedTokens[_sid]?.[m.id] && savedTokens[_sid]?.[m.id]) {
+          if (!sharedTokens[_sid]) sharedTokens[_sid] = {};
+          sharedTokens[_sid][m.id] = savedTokens[_sid][m.id];
+          _changed = true;
+        }
+      }
+      if (_changed) { sharedTokens = { ...sharedTokens }; persistSharedTokens(); }
+    }
+    librarySharedOn  = false;   // filter starts off per session
+    partnersPlayedIds = null;
+    partnersPlayedCache = {};   // partner cache belongs to the old session
+    applyingPrefs = false;
+  }
+
+  $effect.pre(() => {
+    if (typeof document !== 'undefined') {
+      document.body.dataset.reduceMotion = reduceAnimations ? '1' : '0';
+    }
+  });
+
+  // Apply appearance — lightweight via CSS: the root font size scales the
+  // entire UI (Tailwind computes in rem), data-theme switches the accent color.
+  // Runs reactively on every change of displaySettings (login, toggling, startup).
+  $effect.pre(() => { if (typeof document !== 'undefined') {
+    const sizes = { small: '16px', medium: '20px', large: '24px' };
+    document.documentElement.style.fontSize = sizes[displaySettings.uiSize] || '20px';
+    document.documentElement.setAttribute('data-theme', displaySettings.theme || 'blue');
+    // UI font: set on the root, everything inherits (font-mono spots deliberately stay mono).
+    // 'system' → remove the inline style → Chromium/webOS default as before. Does NOT apply to
+    // ASS subtitles (their own fonts from the script), but does apply to the VTT display.
+    const fonts = { arimo: "'Arimo', sans-serif", noto: "'Noto Sans', sans-serif" };
+    document.documentElement.style.fontFamily = fonts[displaySettings.uiFont] || '';
+  } });
+
+  function onReduceAnimationsChange(v) {
+    reduceAnimations = v;
+    saveUserPrefs();
+  }
+
+  function onDisplayChange(v) {
+    displaySettings = v;
+    saveUserPrefs();
+  }
+
+  function onPlaybackPrefsChange(v) {
+    playbackPrefs = v;
+    saveUserPrefs();
+  }
+
+  let screensaverSettings = $state({ enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45 });
+  let showScreensaver     = $state(false);
+  // Theme music yields to the screensaver: silence while it is up, resume when it goes.
+  $effect(() => { suppressTheme(showScreensaver); });
+  let screensaverTimer    = null;
+  let playerPlaying       = $state(false);   // reported by the Player; true ONLY during active playback
+
+  // Schedules the screensaver: show after `timeout` s of inactivity. Blocked only when it's off, not in
+  // app operation, or the video is CURRENTLY PLAYING. Paused player, details, dashboard etc. → allowed
+  // (important on OLED in particular: still images must not burn in).
+  function scheduleScreensaver() {
+    if (screensaverTimer) { clearTimeout(screensaverTimer); screensaverTimer = null; }
+    if (!screensaverSettings.enabled || appPhase !== 'app' || playerPlaying) { showScreensaver = false; return; }
+    screensaverTimer = setTimeout(() => { showScreensaver = true; }, screensaverSettings.timeout * 1000);
+  }
+
+  // Re-schedule reactively as soon as on/off, app phase or playback status change — so the
+  // screensaver also kicks in WITHOUT a keypress (e.g. when the player pauses or is halted via SyncPlay).
+  $effect(() => { scheduleScreensaver(); });
+
+  // Every input = activity: screensaver away, timer reset.
+  function resetActivity() {
+    if (showScreensaver) showScreensaver = false;
+    scheduleScreensaver();
+  }
+
+  // While the screensaver is running, use the first keypress ONLY to wake and swallow it
+  // (capture phase + stopImmediatePropagation) so it doesn't also e.g. toggle the paused playback
+  // or trigger something under the screensaver.
+  $effect(() => {
+    if (!showScreensaver) return;
+    const swallow = (e) => { e.preventDefault(); e.stopImmediatePropagation(); resetActivity(); };
+    window.addEventListener('keydown', swallow, true);
+    return () => window.removeEventListener('keydown', swallow, true);
+  });
+
+  function onScreensaverSettingsChange(v) {
+    screensaverSettings = v;
+    localStorage.setItem('screensaver_settings', JSON.stringify(screensaverSettings));
+    scheduleScreensaver();
+  }
+
+  // ============================================================
+  // NAVIGATION (in-app)
+  // ============================================================
+  let viewState          = $state('dashboard');
+  let currentDetailItem  = $state(null);
+  let navLibraries               = $state([]);    // real libraries for the menu (reported by the dashboard)
+  let navReordering              = $state(false);  // true while a sidebar entry is "lifted"
+
+  let activeAudioIndex    = $state(-1);
+  let activeSubtitleIndex = $state(-1);
+  let activeMediaSourceId = $state(null);   // chosen version (FullHD/4K), from Details
+  let autoPlayStreak = $state(0);           // "still watching?": episodes auto-played in a row without interaction
+
+  // Remember position: where was Details opened from (scroll/focus now live in Library.svelte)
+  let detailsOrigin      = $state('dashboard');   // 'dashboard' | 'library' | 'search'
+
+  // ── Watch together ─────────────────────────────────────────────────────────
+  // The logged-in (shared) profile references two other profiles. Their tokens
+  // live in savedTokens (tied to "save token"); here only ID + name are remembered.
+  let sharedProfile     = $state({ enabled: false, members: [] });  // members: [{ id, name }]
+  let partnersPlayedIds = $state(null);    // Set: item IDs fully watched by BOTH (current library)
+  let sharedReady = $derived(sharedProfile.enabled
+                   && sharedProfile.members.filter(m => m && m.id).length >= 1);
+  // Cleanup: option on, but no profile set → turn off again when leaving the settings.
+  $effect(() => { if (viewState !== 'settings' && sharedProfile.enabled
+         && sharedProfile.members.filter(m => m && m.id).length === 0) {
+    sharedProfile = { ...sharedProfile, enabled: false };
+    saveUserPrefs();
+  } });
+  // A member's token: own shared store first, otherwise (if the user enabled
+  // the quick switch themselves) the quick-switch store.
+  function memberToken(m) {
+    const sid = selectedServer?.id;
+    return m && (sharedTokens[sid]?.[m.id] || savedTokens[sid]?.[m.id]);
+  }
+  // Provide the profile list for setup if not loaded yet
+  $effect(() => { if (viewState === 'settings' && users.length === 0 && session.serverUrl) fetchUsers(); });
+
+  // ── Shared suggestions (dashboard row "For you both") ──────────────────────
+  let sharedSuggestions = $state([]);
+  let _loadedSugKey     = null;
+  let sharedSugKey = $derived((sharedReady && displaySettings.sharedSuggestions)
+                    ? sharedProfile.members.filter(m => m?.id).map(m => m.id).join('|') : '');
+  $effect(() => { if (!sharedSugKey && sharedSuggestions.length) sharedSuggestions = []; });
+  $effect(() => { if (viewState === 'dashboard' && sharedSugKey && sharedSugKey !== _loadedSugKey) loadSharedSuggestions(); });
+
+  // ── SyncPlay (group playback) — phase 1: manage groups ─────────────────────
+  let showSyncPlay = $state(false);
+  let syncMyGroup  = $state(null);    // { GroupId, GroupName, Participants } or null
+  let syncGroups   = $state([]);      // available groups (excluding my own)
+  let syncLoading  = $state(false);
+  let syncPollTimer = null;
+  let syncJoined   = $state(false);   // is THIS session in a group? (authoritative, not the profile name)
+  let syncMyGroupId = $state(null);   // GroupId of my own group (set from the socket GroupJoined or on join)
+  // Phase 2: received playback commands + current group queue state (passed on to the Player)
+  let syncCommand = $state(null);   // last SyncPlayCommand { ...Data, _seq }
+  let syncCmdSeq  = $state(0);
+  let syncQueue   = $state(null);   // { itemId, playlistItemId, positionTicks, isPlaying }
+
+  // Admin remote control (Jellyfin dashboard): Playstate/GeneralCommand over the same WebSocket.
+  let remoteCommand = $state(null);   // { command, seekTicks?, args?, _seq } → to the Player
+  let remoteCmdSeq  = $state(0);
+  let remoteMessage = $state(null);   // { header, text } – admin message as an overlay
+  let remoteMessageTimer = null;
+  function showRemoteMessage(header, text, timeoutMs) {
+    // Jellyfin's default header ("Message from Server") or an empty header → localize.
+    // Keep a custom header from the admin unchanged.
+    const h = (header || '').trim();
+    const localized = (!h || h.toLowerCase() === 'message from server') ? i18n.t.messageFromServer : h;
+    remoteMessage = { header: localized, text: text || '' };
+    if (remoteMessageTimer) clearTimeout(remoteMessageTimer);
+    const ms = timeoutMs && timeoutMs > 0 ? Math.min(timeoutMs, 30000) : 7000;
+    remoteMessageTimer = setTimeout(() => { remoteMessage = null; }, ms);
+  }
+  function dismissRemoteMessage() { if (remoteMessageTimer) clearTimeout(remoteMessageTimer); remoteMessage = null; }
+  let _lastSyncQueueItem = null;   // last auto-opened group item (no re-opening after leaving)
+  let _syncOpeningId = null;       // currently opening (prevents double open)
+  async function syncRefresh(silent = false) {
+    if (!session.serverUrl || !session.token) return;
+    // The 4s background poll refreshes SILENTLY (no loading flag): otherwise the empty state
+    // ("no groups") would flip to a spinner and back on every poll, causing a flicker.
+    if (!silent) syncLoading = true;
+    const all = await listSyncGroups(session.serverUrl, session.token);
+    syncLoading = false;
+    // My group = the one THIS session joined (by GroupId) — NOT by profile name,
+    // since the same user can be a member on multiple devices at once.
+    const mine = (syncJoined && syncMyGroupId) ? all.find(g => g.GroupId === syncMyGroupId) || null : null;
+    syncMyGroup = mine;
+    syncGroups  = all.filter(g => g.GroupId !== syncMyGroupId);
+  }
+  // Focus return for the SyncPlay modal, same rule as the context menu: back onto the element that
+  // opened it. Opened from the Player this is redundant (the Player restores its own controlOpener,
+  // which is the very same button), but from the SIDEBAR nothing restored the focus at all: the
+  // modal takes it, closing removes those nodes, and the focus fell back to document.body. The
+  // next D-pad press then landed on whatever spatialnav found first instead of the sidebar entry.
+  let syncReturnEl = null;
+  function openSyncPlay() {
+    const el = document.activeElement;
+    if (el instanceof HTMLElement) syncReturnEl = el;
+    showSyncPlay = true;
+    syncRefresh();
+    if (syncPollTimer) clearInterval(syncPollTimer);
+    syncPollTimer = setInterval(() => syncRefresh(true), 4000);   // keep members live-updated while open (silent)
+  }
+  function closeSyncPlay() {
+    showSyncPlay = false;
+    if (syncPollTimer) { clearInterval(syncPollTimer); syncPollTimer = null; }
+    const el = syncReturnEl;
+    syncReturnEl = null;
+    // tick() so the modal is really gone — focusing while it still holds the focus would be undone.
+    if (el && document.contains(el)) tick().then(() => { if (document.contains(el)) el.focus(); });
+  }
+
+  // ── Auto-reconnect: while the server is unreachable, ping it lightly at regular intervals.
+  // /System/Info/Public is unauthenticated → independent of the token state. When the server
+  // comes back, the banner closes by itself (soft-clear, no reload → the spot stays).
+  let reconnectTimer = null;
+  function manageReconnect(lost) {
+    if (lost && session.serverUrl) {
+      if (reconnectTimer) return;
+      reconnectTimer = setInterval(async () => {
+        try {
+          const r = await fetch(`${session.serverUrl}/System/Info/Public`, { cache: 'no-store' });
+          if (r.ok) session.connectionLost = false;
+        } catch { /* keep trying */ }
+      }, 5000);
+    } else if (reconnectTimer) {
+      clearInterval(reconnectTimer); reconnectTimer = null;
+    }
+  }
+  $effect(() => { manageReconnect(session.connectionLost); });
+
+  // Banner buttons. "Try again" checks IMMEDIATELY, without a reload → your spot stays:
+  // if the server is back, the banner closes; otherwise it stays (auto-reconnect keeps running).
+  let retryBtnEl = $state();
+  async function retryNow() {
+    try {
+      const r = await fetch(`${session.serverUrl}/System/Info/Public`, { cache: 'no-store' });
+      if (r.ok) session.connectionLost = false;
+    } catch { /* still gone → banner stays */ }
+  }
+  // Reliably put focus on the button when the banner appears (it mounts due to a
+  // background event; focusOnMount didn't catch it there — tick() after the flush wins).
+  $effect(() => { if (session.connectionLost) tick().then(() => retryBtnEl?.focus()); });
+  async function syncCreate() { await createSyncGroup(session.serverUrl, session.token, selectedUser?.Name || 'OcenFin'); syncJoined = true; await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
+  async function syncJoin(groupId) { await joinSyncGroup(session.serverUrl, session.token, groupId); syncJoined = true; syncMyGroupId = groupId; await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
+  async function syncLeave() { await leaveSyncGroup(session.serverUrl, session.token); syncJoined = false; syncMyGroupId = null; syncQueue = null; _lastSyncQueueItem = null; await syncRefresh(); }
+
+  // Auto-load: open the item the group is playing programmatically in the Player (jumps to the group position via Ready→Unpause).
+  async function openItemInPlayer(itemId) {
+    if (!itemId) return;
+    const norm = (s) => (s || '').replace(/-/g, '');
+    if (viewState === 'player' && norm(currentDetailItem?.Id) === norm(itemId)) return;  // already running
+    if (_syncOpeningId === norm(itemId)) return;                                          // currently opening
+    _syncOpeningId = norm(itemId);
+    try {
+      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${itemId}`, { headers: getAuthHeaders() });
+      if (res.ok) {
+        currentDetailItem   = await res.json();
+        activeAudioIndex    = -1;
+        activeSubtitleIndex = -1;
+        activeMediaSourceId = null;
+        viewState = 'player';
+        dlog('[SyncPlay] auto-load →', currentDetailItem?.Name);
+      }
+    } catch {}
+    _syncOpeningId = null;
+  }
+
+  // ── SyncPlay WebSocket (Phase 2) ───────────────────────────────────────────
+  // Real-time channel: group updates (join/leave) and – from step 2 on –
+  // playback commands (Play/Pause/Seek). Connects after login, keeps itself
+  // open via KeepAlive and reconnects automatically on drop.
+  let syncSocket = null;
+  let syncSocketWanted = false;
+  let syncKeepAlive = null;
+  let syncReconnect = null;
+  function connectSyncSocket() {
+    syncSocketWanted = true;
+    if (!session.serverUrl || !session.token) return;
+    if (syncSocket && (syncSocket.readyState === WebSocket.OPEN || syncSocket.readyState === WebSocket.CONNECTING)) return;
+    let ws;
+    try { ws = new WebSocket(syncSocketUrl(session.serverUrl, session.token, deviceIdFor(selectedUser?.Name))); }
+    catch (e) { console.warn('[SyncPlay] socket could not be opened', e); return; }
+    syncSocket = ws;
+    ws.onopen = () => {
+      dlog('[SyncPlay] socket connected');
+      if (syncKeepAlive) clearInterval(syncKeepAlive);
+      syncKeepAlive = setInterval(() => { try { ws.send(JSON.stringify({ MessageType: 'KeepAlive' })); } catch {} }, 30000);
+    };
+    ws.onmessage = (ev) => {
+      let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+      handleSyncMessage(msg);
+    };
+    ws.onclose = () => {
+      // Only the CURRENT socket may act here. The guard in connectSyncSocket() skips OPEN and
+      // CONNECTING sockets, but not one already in CLOSING — that one gets replaced, and its late
+      // onclose would then clear the NEW socket's KeepAlive interval and queue a pointless
+      // reconnect. The new socket would run unwatched until the server drops it.
+      // This also covers disconnectSyncSocket(), which nulls syncSocket before close() lands; that
+      // path clears the timers itself and wants no reconnect, so returning early is correct there.
+      if (ws !== syncSocket) { dlog('[SyncPlay] a superseded socket closed'); return; }
+      if (syncKeepAlive) { clearInterval(syncKeepAlive); syncKeepAlive = null; }
+      dlog('[SyncPlay] socket disconnected');
+      if (syncSocketWanted) { clearTimeout(syncReconnect); syncReconnect = setTimeout(connectSyncSocket, 5000); }
+    };
+    ws.onerror = () => { /* onclose follows automatically → reconnect there */ };
+  }
+  function disconnectSyncSocket() {
+    syncSocketWanted = false;
+    if (syncReconnect) { clearTimeout(syncReconnect); syncReconnect = null; }
+    if (syncKeepAlive) { clearInterval(syncKeepAlive); syncKeepAlive = null; }
+    if (syncSocket) { try { syncSocket.close(); } catch {} syncSocket = null; }
+  }
+  function handleSyncMessage(msg) {
+    if (!msg || !msg.MessageType) return;
+    if (msg.MessageType === 'SyncPlayGroupUpdate') {
+      const type = msg.Data?.Type;
+      // Anchor my own membership authoritatively on the socket (GroupId), not on the name.
+      if (type === 'GroupJoined') { syncJoined = true; syncMyGroupId = msg.Data?.GroupId || syncMyGroupId; syncRefresh(); }
+      else if (['GroupLeft', 'NotInGroup', 'GroupDoesNotExist'].includes(type)) { syncJoined = false; syncMyGroupId = null; syncQueue = null; syncRefresh(); }
+      else if (['UserJoined', 'UserLeft'].includes(type)) syncRefresh();
+      else if (type === 'PlayQueue') {
+        // Current group queue state (which item, which position) → passed on to the Player.
+        const q = msg.Data?.Data;
+        const entry = q?.Playlist?.[q?.PlayingItemIndex ?? 0];
+        syncQueue = entry
+          ? { itemId: entry.ItemId, playlistItemId: entry.PlaylistItemId, positionTicks: q.StartPositionTicks || 0, isPlaying: !!q.IsPlaying }
+          : null;
+        dlog('[SyncPlay] PlayQueue', syncQueue);
+        // New group item → open automatically (only once per item; not again after manually leaving).
+        const qid = syncQueue?.itemId || null;
+        if (syncMyGroup && qid && qid !== _lastSyncQueueItem) {
+          _lastSyncQueueItem = qid;
+          openItemInPlayer(qid);
+        }
+      }
+    } else if (msg.MessageType === 'SyncPlayCommand') {
+      // Playback command (Play/Pause/Seek) → to the Player; _seq serves the Player as a dedupe marker.
+      syncCommand = { ...msg.Data, _seq: ++syncCmdSeq };
+      dlog('[SyncPlay] command received', syncCommand.Command, syncCommand.PositionTicks);
+    } else if (msg.MessageType === 'Playstate') {
+      // Admin remote control (dashboard): Pause/Unpause/Stop/Seek/PlayPause/NextTrack → to the Player.
+      const cmd = msg.Data?.Command;
+      if (cmd) { remoteCommand = { command: cmd, seekTicks: msg.Data?.SeekPositionTicks ?? null, _seq: ++remoteCmdSeq }; }
+    } else if (msg.MessageType === 'GeneralCommand') {
+      const name = msg.Data?.Name;
+      if (name === 'DisplayMessage') {
+        const a = msg.Data?.Arguments || {};
+        showRemoteMessage(a.Header, a.Text, parseInt(a.TimeoutMs, 10) || 0);
+      } else if (name) {
+        // Volume/mute etc. → pass on to the Player.
+        remoteCommand = { command: name, args: msg.Data?.Arguments || {}, _seq: ++remoteCmdSeq };
+      }
+    } else if (msg.MessageType === 'Play') {
+      // Admin "Play on this device" → open the first item.
+      const itemId = msg.Data?.ItemIds?.[0];
+      if (itemId) openItemInPlayer(itemId);
+    }
+  }
+  // Open the socket once logged in — covers regular login AND auto-recovery on reload.
+  $effect(() => { if (isLoggedIn && session.token && session.serverUrl && !syncSocketWanted) {
+    registerSession(session.serverUrl, session.token);   // register the session as controllable (for SyncPlay)
+    connectSyncSocket();                        // open the SyncPlay real-time channel
+  } });
+
+  let showExitConfirm = $state(false);   // confirmation dialog "Exit app?" (back on the dashboard)
+  let librarySorts = $state({});   // remembered sort per library (saved in the profile)
+  let apiCache = { dashboard: null };   // dashboard only now; the library cache lives in Library.svelte
+
+  // ============================================================
+  // STORAGE HELPERS
+  // ============================================================
+
+  function loadSavedServers() {
+    try { return JSON.parse(localStorage.getItem('jellyfin_servers') || '[]'); } catch { return []; }
+  }
+  function persistSavedServers() {
+    localStorage.setItem('jellyfin_servers', JSON.stringify(savedServers));
+  }
+  function loadSavedTokens() {
+    try { return JSON.parse(localStorage.getItem('jellyfin_tokens_v2') || '{}'); } catch { return {}; }
+  }
+  function persistSavedTokens() {
+    localStorage.setItem('jellyfin_tokens_v2', JSON.stringify(savedTokens));
+  }
+  // Own store for watch together — deliberately separate from the quick switch (savedTokens),
+  // so that setup NEVER affects a profile's quick-switch toggle.
+  function loadSharedTokens() {
+    try { return JSON.parse(localStorage.getItem('jellyfin_shared_tokens_v1') || '{}'); } catch { return {}; }
+  }
+  function persistSharedTokens() {
+    localStorage.setItem('jellyfin_shared_tokens_v1', JSON.stringify(sharedTokens));
+  }
+  function loadScreensaverSettings() {
+    try { return JSON.parse(localStorage.getItem('screensaver_settings') || '{}'); } catch { return {}; }
+  }
+
+  /**
+   * One-time migration from the old format (single server, flat token map).
+   * Runs once and then removes the old keys.
+   */
+  function migrateOldData() {
+    const oldUrl = localStorage.getItem('jellyfin_url');
+    if (!oldUrl) return;
+
+    const serverId  = 'srv_migrated_' + Date.now();
+    const newServer = { id: serverId, url: oldUrl, name: 'Jellyfin Server' };
+    savedServers    = [newServer];
+    persistSavedServers();
+
+    const oldTokensStr = localStorage.getItem('jellyfin_tokens');
+    if (oldTokensStr) {
+      try {
+        const old = JSON.parse(oldTokensStr);
+        savedTokens = { [serverId]: old };
+        persistSavedTokens();
+      } catch { }
+      localStorage.removeItem('jellyfin_tokens');
+    }
+
+    const oldUser  = localStorage.getItem('session_user');
+    const oldToken = localStorage.getItem('session_token');
+    if (oldUser && oldToken) {
+      localStorage.setItem('current_session', JSON.stringify({
+        serverId, userId: oldUser, token: oldToken
+      }));
+      localStorage.removeItem('session_user');
+      localStorage.removeItem('session_token');
+    }
+
+    localStorage.removeItem('jellyfin_url');
+  }
+
+  function saveCurrentSession() {
+    if (selectedServer && selectedUser && session.token) {
+      localStorage.setItem('current_session', JSON.stringify({
+        serverId: selectedServer.id,
+        userId:   selectedUser.Id,
+        token:    session.token
+      }));
+    }
+  }
+  function clearCurrentSession() {
+    localStorage.removeItem('current_session');
+  }
+
+  // ============================================================
+  // LIFECYCLE
+  // ============================================================
+
+  onMount(async () => {
+    migrateOldData();
+    savedServers        = loadSavedServers();
+    savedTokens         = loadSavedTokens();
+    sharedTokens        = loadSharedTokens();
+    screensaverSettings = { enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45, ...loadScreensaverSettings() };
+    setDebug(localStorage.getItem('ocenfin_debug') === '1');   // device-wide diagnostic logging (opt-in)
+
+    // Device language for pre-login screens (server/user selection): last chosen language →
+    // otherwise device language → otherwise English. Validated against existing translations.
+    // Profile-specific settings are only loaded on login via applyUserPrefs.
+    setLang(detectUiLang());
+    prefsReady = true;   // from now on changes are persisted
+
+    // Global back key (webOS remote)
+    window.addEventListener('keydown', handleGlobalBack);
+    // D-pad navigation (group focus model) — active everywhere. The Player is its
+    // own focus group; its slider handles Left/Right itself.
+    createFocusManager(() => !navReordering);
+    // Monitor network status (banner on connection loss). The offline/online events cover the
+    // OS network state; the connection guard additionally catches "server unreachable while the
+    // network is up" (NAS reboot etc.) by watching server fetches for network-level failures.
+    installConnectionGuard();
+    window.addEventListener('offline', () => session.connectionLost = true);
+    window.addEventListener('online',  () => session.connectionLost = false);
+
+    // webOS lifecycle: returning to the (suspended) app via Home fires webOSRelaunch.
+    // On some builds/appinfo configs (handlesRelaunch:true) the app then stays stuck in the
+    // background and appears not to start — so we explicitly bring it to the
+    // foreground. Harmless if webOS handles it itself anyway.
+    const toForeground = () => {
+      dlog('[Lifecycle] webOSRelaunch → activate');
+      try { window.PalmSystem?.activate?.(); } catch (e) { console.warn('[Lifecycle] activate failed:', e); }
+      try { window.webOSSystem?.activate?.(); } catch { /* not present */ }
+    };
+    document.addEventListener('webOSRelaunch', toForeground, true);
+
+    // Actively decline the webOS system screensaver while OcenFin's own screensaver is active —
+    // otherwise two screensavers would stack and you'd have to press twice. webOS asks via
+    // the Luna API before showing; we answer with ack:false (= please don't show, we
+    // protect the OLED ourselves). If OcenFin's screensaver is off, we allow webOS (ack:true).
+    if (window.webOS?.service?.request) {
+      window.webOS.service.request('luna://com.webos.service.tvpower', {
+        method: 'power/registerScreenSaverRequest',
+        parameters: { subscribe: true, clientName: 'ocenfin' },
+        subscribe: true,
+        onSuccess: (res) => {
+          // The first response only confirms the registration (without state); afterwards state comes per request.
+          if (res?.state !== 'Active') { dlog('[Screensaver] Luna registered, returnValue=', res?.returnValue); return; }
+          const decline = screensaverSettings.enabled;   // OcenFin screensaver on → decline webOS
+          dlog('[Screensaver] webOS request →', decline ? 'declined (ack:false)' : 'allowed (ack:true)');
+          window.webOS.service.request('luna://com.webos.service.tvpower', {
+            method: 'power/responseScreenSaverRequest',
+            parameters: { clientName: 'ocenfin', ack: !decline, timestamp: res.timestamp },
+            onFailure: (e) => console.warn('[Screensaver] response error:', e?.errorText || e?.errorCode || e),
+          });
+        },
+        onFailure: (err) => console.warn('[Screensaver] Luna registration failed:', err?.errorText || err?.errorCode || err),
+      });
+    } else {
+      dlog('[Screensaver] webOS service unavailable (no webOS / browser)');
+    }
+
+    try {
+      // Auto-login via a saved session
+      const sessionStr = localStorage.getItem('current_session');
+      dlog('[restore] current_session present:', !!sessionStr);
+      if (sessionStr) {
+        try {
+          const saved = JSON.parse(sessionStr);
+          const server  = savedServers.find(s => s.id === saved.serverId);
+          dlog('[restore] server found:', !!server, '| token:', !!saved.token, '| userId:', !!saved.userId);
+          if (server && saved.token && saved.userId) {
+            selectedServer = server;
+            session.token    = saved.token;
+
+            if (await validateToken(saved.token, server.url)) {
+              const res = await fetch(`${server.url}/Users/${saved.userId}`, {
+                headers: getAuthHeaders()
+              });
+              dlog('[restore] /Users/{id} HTTP', res.status);
+              if (res.ok) {
+                selectedUser = await res.json();
+                isLoggedIn   = true;
+                appPhase     = 'app';
+                applyUserPrefs(selectedUser.Id);   // load profile settings
+                fetchUsers(); // in the background for user switching
+                scheduleScreensaver();
+                dlog('[restore] auto-login successful:', selectedUser.Name);
+                return;
+              }
+            }
+            // Token expired → user screen for this server
+            dlog('[restore] token invalid → back to user screen');
+            clearCurrentSession();
+            // selectedServer is set (above) — the Login component shows the profile selection
+            // and loads the profiles itself (users effect in Login.svelte).
+            appPhase = 'users';
+            return;
+          }
+        } catch (e) { dlog('[restore] restore failed:', e?.message || e); clearCurrentSession(); }
+      }
+
+      // No auto-login → show server selection
+      dlog('[restore] no auto-login → server selection');
+      appPhase = 'servers';
+    } finally {
+      initializing = false;   // hide the splash screen (whichever path)
+    }
+  });
+
+  // ============================================================
+  // REMOVE SERVER — connect/discovery/login flow lives in
+  // components/Login.svelte (lazy-loaded)
+  // ============================================================
+
+  function removeServer(id) {
+    savedServers = savedServers.filter(s => s.id !== id);
+    persistSavedServers();
+    // Remove tokens for this server
+    if (savedTokens[id]) {
+      delete savedTokens[id];
+      savedTokens = { ...savedTokens };
+      persistSavedTokens();
+    }
+  }
+
+  // ============================================================
+  // AUTH
+  // ============================================================
+
+  const getAuthHeaders = () => authHeaders(session.token);
+
+  async function fetchUsers() {
+    try {
+      const res = await fetch(`${session.serverUrl}/Users/Public`);
+      if (res.ok) users = await res.json();
+      else console.warn('[Server] user list HTTP', res.status);
+    } catch (e) { console.warn('[Server] could not load user list:', e); }
+  }
+
+  // ── Watch together: members & data basis ──────────────────────────────────
+  function toggleSharedEnabled() {
+    sharedProfile = { ...sharedProfile, enabled: !sharedProfile.enabled };
+    if (!sharedProfile.enabled) { librarySharedOn = false; partnersPlayedIds = null; partnersPlayedCache = {}; }
+    saveUserPrefs();
+  }
+
+  // Set a profile as a member. Uses a valid saved token; otherwise it
+  // authenticates once with pw. NO session switch — the shared profile stays active.
+  // Returns: 'ok' | 'needPassword' | 'error'
+  async function setSharedMember(slot, user, pw = '') {
+    if (!user || !selectedServer) return 'error';
+    const sid = selectedServer.id;
+    // Reuse an existing token (own store or self-enabled quick switch).
+    let token = sharedTokens[sid]?.[user.Id] || savedTokens[sid]?.[user.Id];
+    if (token && !(await validateToken(token))) token = null;   // expired → re-authenticate
+    if (!token) {
+      if (user.HasPassword && !pw) return 'needPassword';
+      try {
+        const res = await fetch(`${session.serverUrl}/Users/AuthenticateByName`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': authHeaderFor(user.Name) },
+          body:    JSON.stringify({ Username: user.Name, Pw: pw || '' })
+        });
+        if (!res.ok) return 'error';
+        token = (await res.json()).AccessToken;
+      } catch { return 'error'; }
+    }
+    // Store the token ONLY in the own shared store — NEVER in savedTokens. The quick switch
+    // thus stays controllable solely via the profile switch (decided per user themselves).
+    if (!sharedTokens[sid]) sharedTokens[sid] = {};
+    sharedTokens[sid][user.Id] = token;
+    sharedTokens = { ...sharedTokens };
+    persistSharedTokens();
+    const members = [sharedProfile.members[0] || null, sharedProfile.members[1] || null];
+    members[slot] = { id: user.Id, name: user.Name };
+    sharedProfile = { ...sharedProfile, members };
+    _loadedSugKey = null;   // recompute suggestions
+    saveUserPrefs();
+    partnersPlayedCache = {};   // members changed → all cached unions invalid
+    if (librarySharedOn) loadPartnersPlayedIds(currentLibrary?.Id);
+    return 'ok';
+  }
+
+  function removeSharedMember(slot) {
+    const members = [sharedProfile.members[0] || null, sharedProfile.members[1] || null];
+    const removed = members[slot];
+    members[slot] = null;
+    sharedProfile = { ...sharedProfile, members };
+    // Remove only the own shared token — the quick-switch token (savedTokens) stays untouched.
+    const sid = selectedServer?.id;
+    if (removed?.id && sid && sharedTokens[sid]?.[removed.id]) {
+      delete sharedTokens[sid][removed.id];
+      sharedTokens = { ...sharedTokens };
+      persistSharedTokens();
+    }
+    _loadedSugKey = null;   // recompute suggestions
+    saveUserPrefs();
+    partnersPlayedCache = {};   // members changed → all cached unions invalid
+    if (librarySharedOn) loadPartnersPlayedIds(currentLibrary?.Id);
+  }
+
+  // Union of the top-level titles fully watched by the members in the library.
+  // Each profile with its own token (no admin). We fetch all titles with UserData and check
+  // for Played=true ourselves — more reliable than Filters=IsPlayed, which doesn't always work for series.
+  // Cache per library (TTL 10 min): the fetch is the heaviest query in the app (full catalog
+  // per member) — don't reload every time when switching back and forth between libraries.
+  // Invalidated on member change, profile-off, session switch and "clear cache".
+  let partnersPlayedCache = {};   // libraryId → { ids: Set, at: timestamp }
+  const PARTNERS_CACHE_TTL = 10 * 60 * 1000;
+  async function loadPartnersPlayedIds(libraryId) {
+    partnersPlayedIds = null;
+    if (!librarySharedOn || !sharedReady || !libraryId) return;
+    const hit = partnersPlayedCache[libraryId];
+    if (hit && Date.now() - hit.at < PARTNERS_CACHE_TTL) { partnersPlayedIds = hit.ids; return; }
+    const ids = new Set();
+    for (const m of sharedProfile.members) {
+      if (!m || !m.id) continue;
+      const token = memberToken(m);
+      if (!token) { console.warn('[Shared] no valid token for', m.name, '– please re-add profile.'); continue; }
+      try {
+        const res = await fetch(
+          `${session.serverUrl}/Users/${m.id}/Items?ParentId=${libraryId}&Recursive=true` +
+          `&IncludeItemTypes=Movie,Series&Fields=UserData&EnableImages=false` +
+          `&Limit=100000&EnableTotalRecordCount=false`,
+          { headers: authHeaders(token) }
+        );
+        if (!res.ok) { console.warn('[Shared] query failed for', m.name, '· HTTP', res.status); continue; }
+        let n = 0;
+        // Check UserData.Played client-side — more reliable than Filters=IsPlayed (doesn't always work for series).
+        (await res.json()).Items?.forEach(i => { if (i.UserData?.Played) { ids.add(i.Id); n++; } });
+        dlog('[Shared]', m.name, '→', n, 'fully-watched titles');
+      } catch (e) { console.warn('[Shared] error for', m.name, e); }
+    }
+    partnersPlayedIds = ids;
+    partnersPlayedCache[libraryId] = { ids, at: Date.now() };
+  }
+
+  // Load/discard partner IDs for "watch together" as soon as the library or toggle changes.
+  $effect(() => {
+    const lib = currentLibrary;
+    if (lib && librarySharedOn) loadPartnersPlayedIds(lib.Id);
+    else partnersPlayedIds = null;
+  });
+
+  // Suggestions that match the SHARED preference and that no one has watched yet.
+  // Fetch the catalog once per member (with genres) → genre weights (only genres ALL like)
+  // and the union of watched IDs. Then rank unwatched titles by genre score.
+  async function loadSharedSuggestions() {
+    if (!sharedSugKey) { sharedSuggestions = []; return; }
+    _loadedSugKey = sharedSugKey;   // claim the key in advance → no double fetch
+    const memberData = [];
+    for (const m of sharedProfile.members) {
+      if (!m?.id) continue;
+      const token = memberToken(m);
+      if (!token) continue;
+      try {
+        const res = await fetch(
+          `${session.serverUrl}/Users/${m.id}/Items?Recursive=true&IncludeItemTypes=Movie,Series` +
+          `&Fields=Genres,CommunityRating,UserData&EnableImageTypes=Primary&Limit=100000&EnableTotalRecordCount=false`,
+          { headers: authHeaders(token) }
+        );
+        if (!res.ok) continue;
+        const items = (await res.json()).Items || [];
+        const genreCount = {}; const watched = new Set();
+        for (const it of items) {
+          if (it.UserData?.Played) {
+            // Exclude only fully watched titles + derive genre preferences from them.
+            // Started series/movies deliberately stay as suggestions (no extra traffic).
+            watched.add(it.Id);
+            for (const g of it.Genres || []) genreCount[g] = (genreCount[g] || 0) + 1;
+          }
+        }
+        memberData.push({ items, genreCount, watched });
+      } catch { }
+    }
+    if (!memberData.length) { sharedSuggestions = []; return; }
+
+    // Genre weights: genres that ALL members have watched (product of the counts → "both like it").
+    const allGenres = new Set();
+    memberData.forEach(d => Object.keys(d.genreCount).forEach(g => allGenres.add(g)));
+    const weights = {};
+    for (const g of allGenres) {
+      if (memberData.length >= 2) {
+        if (memberData.every(d => d.genreCount[g] > 0))
+          weights[g] = memberData.reduce((p, d) => p * d.genreCount[g], 1);
+      } else {
+        weights[g] = memberData[0].genreCount[g];
+      }
+    }
+    // Fallback: no real intersection → sum over all, so suggestions appear at all.
+    if (!Object.keys(weights).length)
+      for (const g of allGenres) weights[g] = memberData.reduce((s, d) => s + (d.genreCount[g] || 0), 0);
+
+    const exclude = new Set();
+    memberData.forEach(d => d.watched.forEach(id => exclude.add(id)));
+
+    sharedSuggestions = memberData[0].items
+      .filter(it => !exclude.has(it.Id))
+      .map(it => ({ it, score: (it.Genres || []).reduce((s, g) => s + (weights[g] || 0), 0) }))
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score || (b.it.CommunityRating || 0) - (a.it.CommunityRating || 0))
+      .slice(0, 12)   // uniform dashboard row length (ROW_LIMIT in Dashboard.svelte)
+      .map(x => ({ ...x.it, UserData: {} }));   // clear UserData → no progress bar of a member
+    dlog('[Shared] suggestions:', sharedSuggestions.length);
+  }
+
+  // baseUrl can be passed explicitly: on auto-login the reactive session.serverUrl ($:) is not yet
+  // updated (Svelte flushes reactivity only after the synchronous block), so
+  // `${session.serverUrl}` would point to '' there → relative fetch to the app origin instead of the server.
+  async function validateToken(token, baseUrl = session.serverUrl) {
+    try {
+      const res = await fetch(`${baseUrl}/Users/Me`, { headers: authHeaders(token) });
+      if (!res.ok) dlog('[auth] token validation failed — HTTP', res.status);
+      return res.ok;
+    } catch (e) { dlog('[auth] token validation — network error:', e?.message || e); return false; }
+  }
+
+  function finishLogin(user, token) {
+    selectedUser = user;
+    session.token  = token;
+    isLoggedIn   = true;
+    appPhase     = 'app';
+    applyUserPrefs(user.Id);   // load profile settings
+    saveCurrentSession();
+    scheduleScreensaver();
+    detectServerCapabilities();
+    refreshSharedMemberToken(user.Id, token);
+  }
+
+  // Jellyfin binds sessions to the DeviceId — if a profile signs in again on the same device,
+  // its previous token expires. If this profile is a member of the shared profile, we refresh
+  // its stored token snapshot to the new token, otherwise watch together later runs
+  // into a 401. Only refresh profiles already recorded as a member.
+  function refreshSharedMemberToken(userId, token) {
+    const sid = selectedServer?.id;
+    if (!sid || !token) return;
+    if (sharedTokens[sid]?.[userId] && sharedTokens[sid][userId] !== token) {
+      sharedTokens[sid][userId] = token;
+      sharedTokens = { ...sharedTokens };
+      persistSharedTokens();
+    }
+  }
+
+  // Check the server version once → decides whether DVD/VobSub is renderable client-side (libbitsub via
+  // .mks) or still has to be burned in. Faulty/old → false (safe burning).
+  async function detectServerCapabilities() {
+    serverVobSub = false;
+    serverVersion = '';
+    try {
+      const res = await fetch(`${session.serverUrl}/System/Info/Public`);
+      if (res.ok) {
+        const info = await res.json();
+        serverVersion = info?.Version || '';
+        serverVobSub = serverSupportsVobSub(info?.Version);
+      }
+    } catch {}
+    dlog('[OcenFin] server capabilities:', { version: serverVersion || '(unknown)', vobSub: serverVobSub });
+  }
+
+  function toggleCurrentUserSave() {
+    if (!selectedUser || !selectedServer) return;
+    const sid = selectedServer.id;
+    if (!savedTokens[sid]) savedTokens[sid] = {};
+    if (savedTokens[sid][selectedUser.Id]) {
+      delete savedTokens[sid][selectedUser.Id];
+    } else {
+      savedTokens[sid][selectedUser.Id] = session.token;
+    }
+    savedTokens = { ...savedTokens };
+    persistSavedTokens();
+  }
+
+  /** Back to the user screen (keeps the server connection) */
+  function handleSwitchUser() {
+    isLoggedIn       = false;
+    selectedUser     = null;
+    session.token      = '';
+    disconnectSyncSocket();              // close the SyncPlay socket
+    closeSyncPlay(); syncMyGroup = null; syncGroups = []; syncQueue = null; syncCommand = null; _lastSyncQueueItem = null; syncJoined = false; syncMyGroupId = null;   // reset group state
+    remoteCommand = null; dismissRemoteMessage();   // discard admin remote control/message
+    viewState = 'dashboard';
+    apiCache.dashboard = null;   // clear cache (property mutation instead of reassignment → shared reference stays)
+    navLibraries = [];
+    clearCurrentSession();
+    // Back to the user screen, server stays connected
+    appPhase = 'users';
+  }
+
+  /** Fully sign out + disconnect from the server */
+  function handleLogout() {
+    handleSwitchUser();
+    selectedServer    = null;
+    users             = [];
+    appPhase          = 'servers';
+  }
+
+  // ============================================================
+  // GLOBAL BACK KEY (webOS remote)
+  // ============================================================
+
+  function handleGlobalBack(e) {
+    if (!isBackKey(e)) return;   // Escape / Backspace (except in inputs) / remote 461
+    if (appPhase === 'users') {
+      e.preventDefault();
+      // Sub-dialogs (password/manual/QC) are closed by the Login component itself;
+      // otherwise back to the server selection. (Pattern like collectionRef.handleBackKey)
+      if (!loginRef?.handleBackKey()) handleLogout();
+      return;
+    }
+    if (appPhase !== 'app') return;
+    // Confirmation dialog open → Back cancels it (instead of closing)
+    if (showExitConfirm) { showExitConfirm = false; e.preventDefault(); return; }
+    // Close open overlays first (applies to remote Back too)
+    if (showSyncPlay)   { closeSyncPlay();         e.preventDefault(); return; }
+    if (contextItem)    { contextItem = null;     e.preventDefault(); return; }
+    // Navigate within the app; preventDefault stops webOS from closing the app.
+    // At the dashboard (top level) show a confirmation instead of closing the app directly.
+    if      (viewState === 'player')   { viewState = 'details';        e.preventDefault(); }
+    else if (viewState === 'details')  { returnFromDetails();          e.preventDefault(); }
+    else if (viewState === 'person')   { viewState = personReturnView; e.preventDefault(); }
+    else if (viewState === 'collection') { if (!collectionRef?.handleBackKey()) viewState = collectionReturnView; e.preventDefault(); }
+    else if (viewState === 'library')  { viewState = 'dashboard';      e.preventDefault(); }
+    else if (viewState === 'settings') { viewState = 'dashboard';      e.preventDefault(); }
+    else if (viewState === 'search')   { viewState = 'dashboard';      e.preventDefault(); }
+    else if (viewState === 'favorites') { viewState = 'dashboard';      e.preventDefault(); }
+    else if (viewState === 'dashboard') { showExitConfirm = true;      e.preventDefault(); }
+  }
+
+  // Closes the app on webOS (platformBack at the root); window.close as a fallback.
+  function exitApp() {
+    try { window.webOSSystem?.platformBack?.(); } catch {}
+    try { window.close(); } catch {}
+  }
+
+  // ============================================================
+  // EPISODE NAVIGATION
+  // ============================================================
+
+  // The Player now sends the full episode object via dispatch('next/prev', episodeItem).
+  // No separate API call needed anymore — just set currentDetailItem.
+  // The Player sends { episode, resetStreak }. resetStreak=true → the user was awake (manual/interaction),
+  // counter to 0; otherwise increment (for the "still watching?" sleep protection).
+  function handleNextEpisode(detail) {
+    const episodeItem = detail?.episode ?? detail;   // robustness: also accepts a bare episode object
+    if (!episodeItem) return;
+    autoPlayStreak = detail?.resetStreak ? 0 : autoPlayStreak + 1;
+    activeMediaSourceId = null;   // new episode → its own default version, not the previous one's
+    currentDetailItem = episodeItem;
+    syncQueueIndex(episodeItem);
+    // viewState stays 'player' — {#key currentDetailItem.Id} in the template forces a remount
+  }
+
+  function handlePrevEpisode(episodeItem) {
+    if (!episodeItem) return;
+    autoPlayStreak = 0;   // going back is a deliberate action → reset the counter
+    activeMediaSourceId = null;
+    currentDetailItem = episodeItem;
+    syncQueueIndex(episodeItem);
+  }
+
+  // ── Person view (filmography) ───────────────────────────────
+  let currentPerson      = $state(null);       // seed person for the person view (Person.svelte loads itself)
+  let personReturnView   = $state('search');   // where "Back" leads
+
+  // Collections (BoxSets) — own grid view, mirrored from the person view
+  // Collections/playlists — own view (Collection.svelte loads itself).
+  let currentCollection    = $state(null);          // seed BoxSet/playlist
+  let collectionReturnView = $state('dashboard');   // where "Back" leads
+  let collectionRef = $state();                     // bind:this → for the back key (handleBackKey)
+
+  function openCollection(boxSet) {
+    collectionReturnView = viewState;
+    currentCollection    = boxSet;
+    viewState            = 'collection';
+  }
+
+  // Cross effects from the collection view onto the library grid / sidebar:
+  function onCollectionChildCount(id, count) {
+    handlePlaylistItemsChanged(id);            // watchlist edited in the playlist view → re-sync
+    libraryRef?.updateChildCount(id, count);
+  }
+  function onCollectionRenamed(id, name) { libraryRef?.renamePlaylist(id, name); refreshLibraries(); }
+  async function onCollectionDeleted(id) {
+    handlePlaylistDeleted(id);    // if it was the watchlist: clear its in-memory state
+    libraryRef?.removeItem(id);   // immediately out of the grid
+    await refreshLibraries();   // reload sidebar/menu (playlist disappears)
+    // If it was the last playlist, Jellyfin removes the whole "Playlists" library.
+    const playlistsLibGone = !navLibraries.some(l => l.CollectionType === 'playlists');
+    if (playlistsLibGone) {
+      // The dashboard keeps its library list cached — otherwise the "Playlists" folder would stay
+      // in the "My Media" area until you reopen the dashboard. Discard cache + remount.
+      apiCache.dashboard = null;
+      dashboardReloadKey++;
+    }
+    if (collectionReturnView === 'library' && playlistsLibGone) { currentLibrary = null; viewState = 'dashboard'; }
+    else viewState = collectionReturnView;
+  }
+
+  // After creating a playlist/collection a new library view may appear server-side
+  // (e.g. "Playlists") – update the sidebar/menu immediately instead of only on restart.
+  async function refreshLibraries() {
+    try {
+      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Views`, { headers: getAuthHeaders() });
+      if (res.ok) navLibraries = (await res.json()).Items || [];
+    } catch { }
+  }
+
+  // Favorites — own view (Favorites.svelte component). Loads itself on mount; this
+  // key is incremented to reload after a change (e.g. a favorite removed in Details).
+  let favReloadKey = $state(0);
+
+  // Opens a person's filmography (from search, the cast in Details, or favorites).
+  // Only sets the return view + seed person; Person.svelte loads person details + filmography itself.
+  function openPerson(person) {
+    personReturnView = viewState;
+    currentPerson    = person;
+    viewState        = 'person';
+  }
+
+  // After a selection in the sidebar, move focus into the content. Leaving
+  // the sidebar collapses it automatically again (its focusout handler).
+  // So focus lands right where things continue instead of in the open bar.
+  async function focusMain() {
+    await tick();
+    const main = document.querySelector('[data-focus-group="main"]');
+    if (!main) return;
+    const first = main.querySelector(
+      'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    if (first) first.focus();
+  }
+
+  // Reloads the user object (e.g. after a profile-picture upload) → the avatar updates everywhere.
+  async function refreshSelectedUser() {
+    try {
+      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}`, { headers: getAuthHeaders() });
+      if (res.ok) selectedUser = await res.json();
+    } catch { /* ignore */ }
+  }
+
+  function navigateToLibrary(lib, focusFirstCard = false) {
+    if (!lib) return;
+    libraryMounted = true;                  // from now on Library stays mounted (scroll/items survive Details)
+    libraryFocusFirst = focusFirstCard;     // Library focuses the first card itself after loading
+    currentLibrary = { Id: lib.Id, Name: lib.Name };
+    viewState = 'library';
+  }
+
+  function showItemDetails(item) {
+    // Containers (collection/playlist) show their contents instead of a detail page
+    if (item?.Type === 'BoxSet' || item?.Type === 'Playlist') { openCollection(item); return; }
+    // Remember the origin so "Back" leads there again (not always the dashboard)
+    detailsOrigin = viewState;
+    currentDetailItem = item;
+    viewState = 'details';
+    lazyPlayer();   // preload the Player chunk in the background — playback is very likely from here
+  }
+
+  // ============================================================
+  // CONTEXT MENU (long press on a card)
+  // ============================================================
+  let contextItem = $state(null);
+  let contextReturnId = $state(null);     // item ID of the triggering card (focus return, survives reload)
+  let contextReturnEl = $state(null);     // fallback: element reference if no data-item-id is present
+  let contextPickerMode = $state(null);   // null | 'playlist' | 'collection' — AddToPicker from the context menu
+  let contextPickerItem = $state(null);
+  function openContextMenu(item) {
+    contextReturnId = item?.Id ?? null;
+    contextReturnEl = document.activeElement;
+    contextItem = item;
+  }
+  // After closing both the context menu AND the picker, put focus back on the card.
+  // The dashboard NO LONGER reloads after context actions → the card reference still lives and is
+  // focused directly (instant). Library/collection still reload async → the card comes back via
+  // data-item-id (poll briefly), otherwise the first visible entry (instead of focus loss).
+  function restoreContextFocus() {
+    const id = contextReturnId, el = contextReturnEl;
+    contextReturnId = null; contextReturnEl = null;
+    let tries = 0;
+    const attempt = () => {
+      if (el && document.contains(el) && typeof el.focus === 'function') { el.focus(); return; }
+      const target = id ? document.querySelector(`[data-item-id="${id}"]`) : null;
+      if (target) { target.focus(); return; }
+      if (++tries < 12) { setTimeout(attempt, 50); return; }   // wait up to ~600 ms for the reloaded entry
+      document.querySelector('[data-item-id]')?.focus();
+    };
+    tick().then(attempt);
+  }
+  $effect(() => { if (!contextItem && !contextPickerMode && (contextReturnId || contextReturnEl)) restoreContextFocus(); });
+
+  function onContextChanged() {
+    // The ContextMenu already mutated item.UserData in place → deep reactivity updates
+    // badges/progress immediately, without a full reload (no reshuffle, no focus loss).
+    // Library: if the changed item no longer matches the active status filter, it's removed
+    // from the list specifically (the server-loaded list stays untouched otherwise → no mismatch risk).
+    // Dashboard/collection need no action (no membership-relevant status filter).
+    if (viewState === 'library' && contextItem && libraryRef && !libraryRef.matchesStatusFilters(contextItem)) {
+      libraryRef.removeItem(contextItem.Id);
+    }
+  }
+  function contextOpenDetails(item) {
+    contextReturnId = null; contextReturnEl = null;   // Details takes over the focus
+    contextItem = null;
+    showItemDetails(item);
+  }
+  // "Add to playlist" from the context menu → open AddToPicker (the focus-return ID stays
+  // and only takes effect once the picker is also closed).
+  function contextAddToList(item) { contextPickerItem = item; contextPickerMode = 'playlist'; }
+  function contextAddToCollection(item) { contextPickerItem = item; contextPickerMode = 'collection'; }
+
+  // "Play all" from a playlist's context menu → fetch its items, build the queue, play (returns to the
+  // current view afterwards). Series/Season entries are expanded to episodes via buildPlayQueue.
+  async function contextPlayPlaylist(item) {
+    contextReturnId = null; contextReturnEl = null;   // playback takes over the focus
+    contextItem = null;
+    if (!item?.Id) return;
+    detailsOrigin = viewState;
+    try {
+      const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300`, { headers: getAuthHeaders() });
+      const data  = await res.json();
+      const queue = await buildPlayQueue(data.Items || [], { serverUrl: session.serverUrl, userId: activeUserId, headers: getAuthHeaders() });
+      if (queue.length) { playQueue = { items: queue, index: 0 }; startPlayback({ item: queue[0], audioIndex: -1, subtitleIndex: -1 }); }
+    } catch (e) { console.error('play playlist:', e); }
+  }
+
+  // Back from Details/Player → to the origin, restore the library position
+  // Starts playback of an item — used by Details (Play/From-start/Random-episode)
+  // and Collection (random playback). One source instead of two inline copies.
+  // "Play all" (collection/playlist): an ordered playback queue. Lives only while the
+  // Player is open — it's cleared on leaving so later normal playbacks
+  // don't accidentally advance.
+  let playQueue = $state(null);   // { items: [...], index }
+  let queueNext = $derived(playQueue && playQueue.index < playQueue.items.length - 1 ? playQueue.items[playQueue.index + 1] : null);
+  let queuePrev = $derived(playQueue && playQueue.index > 0 ? playQueue.items[playQueue.index - 1] : null);
+  $effect(() => { if (viewState !== 'player' && playQueue) playQueue = null; });
+
+  // Carry the queue pointer along on title change in the Player (covers both next AND prev)
+  function syncQueueIndex(playedItem) {
+    if (!playQueue || !playedItem) return;
+    const qi = playQueue.items.findIndex(x => x.Id === playedItem.Id);
+    if (qi >= 0) playQueue = { ...playQueue, index: qi };
+  }
+  function startPlayback(p) {
+    // Starting playback by hand is a deliberate action → the "still watching?" counter starts over.
+    // Without this a stale streak from an earlier series session would carry into the new one and
+    // could trigger the prompt far too early. Auto-advance never comes through here (it goes via
+    // handleNextEpisode), so the sleep protection stays intact.
+    autoPlayStreak = 0;
+    if (p.item) currentDetailItem = p.item;
+    activeAudioIndex    = p.audioIndex    ?? -1;
+    activeSubtitleIndex = p.subtitleIndex ?? -1;
+    activeMediaSourceId = p.mediaSourceId ?? null;
+    viewState = 'player';
+  }
+
+  async function returnFromDetails() {
+    viewState = detailsOrigin;
+    if (detailsOrigin === 'library') {
+      libraryRef?.restoreView();
+      // Same mechanism as onContextChanged: Details carried item.UserData along in place
+      // (favorite/watched toggles). If the item no longer matches the active status filter
+      // (e.g. favorites filter on + favorite removed in Details), it's removed specifically from
+      // the loaded list — instead of a full reload, so scroll position and focus are preserved.
+      if (currentDetailItem && libraryRef && !libraryRef.matchesStatusFilters(currentDetailItem)) {
+        libraryRef.removeItem(currentDetailItem.Id);
+      }
+    } else if (detailsOrigin === 'favorites') {
+      // Reload favorites — e.g. when a favorite was removed in Details, it would otherwise
+      // still be listed in the overview until you switched views. Increment the key → Favorites reloads.
+      favReloadKey++;
+    }
+  }
+
+  async function loadItemById(itemId) {
+    try {
+      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${itemId}`, { headers: getAuthHeaders() });
+      if (res.ok) { currentDetailItem = await res.json(); viewState = 'details'; }
+    } catch { }
+  }
+
+</script>
+
+<svelte:window
+  onkeydown={resetActivity}
+  onmousemove={resetActivity}
+  onpointermove={resetActivity}
+  onclick={resetActivity}
+/>
+
+<style>
+  /* ── ASS subtitle fonts ──────────────────────────────────────────────────────
+     assjs uses the browser fonts. ASS scripts almost always give the Windows names
+     (Arial / Times New Roman / Courier New), which aren't installed on the TV →
+     system fallback. We register metrically compatible open replacement fonts UNDER
+     exactly these names: Arimo→Arial, Tinos→Times New Roman, Cousine→Courier New. This way
+     assjs picks them up automatically without changing anything in the ASS script.
+     The files (Latin woff2, 4 styles each) live in src/fonts/ and are bundled by Vite
+     (base/path-correct, hashed). The UI itself uses none of these names,
+     so no side effect. font-display: swap → the first line may briefly be in the fallback,
+     cached afterwards. @font-face is emitted globally by Svelte anyway (not scoped). */
+  @font-face { font-family: 'Arial'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/arimo-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Arial'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/arimo-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Arial'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/arimo-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Arial'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/arimo-bolditalic.woff2') format('woff2'); }
+  @font-face { font-family: 'Times New Roman'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/tinos-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Times New Roman'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/tinos-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Times New Roman'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/tinos-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Times New Roman'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/tinos-bolditalic.woff2') format('woff2'); }
+  @font-face { font-family: 'Courier New'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/cousine-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Courier New'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/cousine-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Courier New'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/cousine-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Courier New'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/cousine-bolditalic.woff2') format('woff2'); }
+
+  /* ── Other common fansub fonts (Tahoma / Verdana / Trebuchet MS) ──────────────
+     For these there are NO metrically compatible clones like above. Instead a
+     shared "pot": ONE neutral, modern sans (Noto Sans, latin + latin-ext,
+     4 styles each) is registered under all three Windows names. Only visually
+     similar, NOT metric-accurate — sufficient in practice for dialogue/signs.
+     Noto is narrower than Tahoma/Verdana, but consistent with the rest of the font
+     pipeline (gwfh, latin+latin-ext). The same 4 files for all three names →
+     no extra storage per name. */
+  @font-face { font-family: 'Tahoma'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/notosans-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Tahoma'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Tahoma'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/notosans-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Tahoma'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bolditalic.woff2') format('woff2'); }
+  @font-face { font-family: 'Verdana'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/notosans-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Verdana'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Verdana'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/notosans-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Verdana'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bolditalic.woff2') format('woff2'); }
+  @font-face { font-family: 'Trebuchet MS'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/notosans-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Trebuchet MS'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Trebuchet MS'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/notosans-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Trebuchet MS'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bolditalic.woff2') format('woff2'); }
+
+  /* ── UI/VTT fonts (Settings → Appearance / → Subtitles) ───────────────────────
+     The same files as above, just registered under their REAL names so
+     UI and VTT subtitles can reference them cleanly ('Arimo' instead of going
+     through the 'Arial' alias). Tinos (serif) selectable for VTT only. No extra
+     storage — WOFF2 is loaded only once per file. */
+  @font-face { font-family: 'Arimo'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/arimo-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Arimo'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/arimo-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Arimo'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/arimo-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Arimo'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/arimo-bolditalic.woff2') format('woff2'); }
+  @font-face { font-family: 'Noto Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/notosans-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Noto Sans'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Noto Sans'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/notosans-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Noto Sans'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bolditalic.woff2') format('woff2'); }
+  @font-face { font-family: 'Tinos'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/tinos-regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Tinos'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/tinos-bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Tinos'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/tinos-italic.woff2') format('woff2'); }
+  @font-face { font-family: 'Tinos'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/tinos-bolditalic.woff2') format('woff2'); }
+
+  /* TV scaling (10-foot UI): raises the rem-based base size so text and
+     spacing look larger from couch distance. Standard browsers are 16px; 20px = +25%.
+     Adjust further if needed, if still too small/large on the TV. */
+  :global(html) { font-size: 20px; }
+
+  /* Accent color themes: in Tailwind v4 all blue utilities use CSS variables.
+     We override only these → the whole accent color switches without touching 100+
+     classes. Red (favorite) and green (watched) stay untouched. The tones are
+     chosen to be OLED-friendly (vivid, slightly desaturated, good on deep black). */
+  :global(html[data-theme="emerald"]) {
+    --color-blue-300:#6ee7b7; --color-blue-400:#34d399; --color-blue-500:#10b981; --color-blue-600:#059669; --color-blue-900:#064e3b;
+  }
+  :global(html[data-theme="violet"]) {
+    --color-blue-300:#c4b5fd; --color-blue-400:#a78bfa; --color-blue-500:#8b5cf6; --color-blue-600:#7c3aed; --color-blue-900:#4c1d95;
+  }
+  :global(html[data-theme="amber"]) {
+    --color-blue-300:#fcd34d; --color-blue-400:#fbbf24; --color-blue-500:#f59e0b; --color-blue-600:#d97706; --color-blue-900:#78350f;
+  }
+  :global(html[data-theme="rose"]) {
+    --color-blue-300:#fda4af; --color-blue-400:#fb7185; --color-blue-500:#f43f5e; --color-blue-600:#e11d48; --color-blue-900:#881337;
+  }
+  :global(html[data-theme="sky"]) {
+    --color-blue-300:#7dd3fc; --color-blue-400:#38bdf8; --color-blue-500:#0ea5e9; --color-blue-600:#0284c7; --color-blue-900:#0c4a6e;
+  }
+  :global(html[data-theme="teal"]) {
+    --color-blue-300:#5eead4; --color-blue-400:#2dd4bf; --color-blue-500:#14b8a6; --color-blue-600:#0d9488; --color-blue-900:#134e4a;
+  }
+  :global(html[data-theme="indigo"]) {
+    --color-blue-300:#a5b4fc; --color-blue-400:#818cf8; --color-blue-500:#6366f1; --color-blue-600:#4f46e5; --color-blue-900:#312e81;
+  }
+  :global(html[data-theme="fuchsia"]) {
+    --color-blue-300:#f0abfc; --color-blue-400:#e879f9; --color-blue-500:#d946ef; --color-blue-600:#c026d3; --color-blue-900:#701a75;
+  }
+  :global(html[data-theme="orange"]) {
+    --color-blue-300:#fdba74; --color-blue-400:#fb923c; --color-blue-500:#f97316; --color-blue-600:#ea580c; --color-blue-900:#7c2d12;
+  }
+
+  /* Splash screen: logo pulses gently, overlay fades out */
+  .splash-logo { animation: splashPulse 1.6s ease-in-out infinite; }
+  @keyframes splashPulse {
+    0%, 100% { transform: scale(1);    opacity: 0.9; }
+    50%      { transform: scale(1.07); opacity: 1; }
+  }
+
+  /* Reduce animations — controlled via data-reduce-motion on body */
+  :global([data-reduce-motion="1"] *) {
+    transition-duration: 0ms !important;
+    animation-duration:  0ms !important;
+  }
+  /* backdrop-blur is the most expensive GPU effect — disable it under "reduce
+     animations" so older/weaker TVs stay smooth. */
+  :global([data-reduce-motion="1"] .backdrop-blur-sm),
+  :global([data-reduce-motion="1"] .backdrop-blur-md),
+  :global([data-reduce-motion="1"] .backdrop-blur-lg) {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+</style>
+
+<main class="h-screen w-full bg-gray-900 text-white overflow-hidden relative">
+
+  <!-- ============================================================
+       SPLASH SCREEN — until auto-login/startup is done
+  ============================================================ -->
+  {#if initializing}
+    <div class="fixed inset-0 z-[600] bg-gray-900 flex flex-col items-center justify-center" out:fade={{ duration: 400 }}>
+      <div class="splash-logo">
+        <svg viewBox="0 0 512 512" class="w-28 h-28 drop-shadow-2xl">
+          <defs>
+            <linearGradient id="splashG" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#3B82F6"/>
+              <stop offset="1" stop-color="#1D4ED8"/>
+            </linearGradient>
+          </defs>
+          <rect x="0" y="0" width="512" height="512" rx="118" ry="118" fill="url(#splashG)"/>
+          <circle cx="256" cy="256" r="118" fill="none" stroke="#ffffff" stroke-width="64"/>
+        </svg>
+      </div>
+      <p class="mt-6 text-2xl font-bold tracking-widest text-gray-300 uppercase">OcenFin</p>
+      <div class="mt-8 w-10 h-10 border-4 border-gray-700 border-t-blue-500 rounded-full animate-spin"></div>
+    </div>
+  {/if}
+
+  {#if session.connectionLost && !initializing}
+    <div class="fixed inset-0 z-[500] bg-black/60 flex flex-col items-stretch" data-focus-trap transition:uiFade={{ duration: 200 }} onoutrostart={dropTrapOnOutro}>
+      <div class="bg-red-600/95 text-white px-6 py-4 flex flex-wrap items-center justify-center gap-4 shadow-lg">
+        <svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 010 12.728m-3.536-3.536a4 4 0 010-5.656M12 12h.01M5.636 5.636a9 9 0 000 12.728"/></svg>
+        <span class="font-bold text-lg">{i18n.t.connectionLostMsg}</span>
+        <button onclick={retryNow} bind:this={retryBtnEl}
+          class="bg-white text-red-700 font-bold px-5 py-2 rounded-lg focus:outline-none focus:ring-4 focus:ring-white/70 hover:bg-gray-100 transition-colors">
+          {i18n.t.retry}
+        </button>
+        <button onclick={() => { session.connectionLost = false; handleLogout(); }}
+          class="bg-red-800 text-white font-bold px-5 py-2 rounded-lg focus:outline-none focus:ring-4 focus:ring-white/70 hover:bg-red-900 transition-colors">
+          {i18n.t.switchServer}
+        </button>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Exit-app confirmation (Back at the dashboard) -->
+  {#if showExitConfirm}
+    <div class="fixed inset-0 z-[600] flex items-center justify-center bg-black/70 backdrop-blur-sm" data-focus-trap transition:uiFade={{ duration: 150 }} onoutrostart={dropTrapOnOutro}>
+      <div class="bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl p-8 w-full max-w-md mx-6 flex flex-col gap-6">
+        <div>
+          <h2 class="text-2xl font-bold text-white">{i18n.t.exitTitle}</h2>
+          <p class="text-gray-400 mt-2">{i18n.t.exitMessage}</p>
+        </div>
+        <div class="flex gap-3">
+          <button onclick={() => showExitConfirm = false} {@attach focusOnMount()}
+            class="flex-1 bg-gray-700 text-white font-bold py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-600 transition-colors">
+            {i18n.t.cancel}
+          </button>
+          <button onclick={exitApp}
+            class="flex-1 bg-red-600 text-white font-bold py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-red-500 transition-colors">
+            {i18n.t.exitConfirm}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- ============================================================
+       PHASE: LOGIN — server selection + profile selection.
+       Lazy-loaded: the auto-login path never touches the chunk.
+       Flow state/logic live entirely in components/Login.svelte;
+       App keeps session/selectedServer/users/savedServers/savedTokens.
+  ============================================================ -->
+  {#if appPhase === 'servers' || appPhase === 'users'}
+    {#await lazyLogin()}
+      <div class="h-full flex items-center justify-center"><div class="w-14 h-14 border-4 border-white/25 border-t-white rounded-full animate-spin"></div></div>
+    {:then Login}
+      <Login
+        bind:this={loginRef}
+        bind:phase={appPhase}
+        server={selectedServer}
+        {users}
+        {savedServers}
+        clientAuthHeader={CLIENT_AUTH_HEADER}
+        {authHeaderFor}
+        getStoredToken={(sid, uid) => savedTokens[sid]?.[uid]}
+        onValidateToken={(t) => validateToken(t)}
+        onServerConnected={(s) => { selectedServer = s; }}
+        onFetchUsers={fetchUsers}
+        onSaveServer={(s) => { savedServers = [...savedServers, s]; persistSavedServers(); }}
+        onRemoveServer={removeServer}
+        onRenameServer={(id, name) => {
+          savedServers = savedServers.map(x => x.id === id ? { ...x, name } : x);
+          if (selectedServer?.id === id) selectedServer = { ...selectedServer, name };
+          persistSavedServers();
+        }}
+        onTokenRefreshed={(sid, uid, token) => {
+          // Only refresh if the user has enabled saving (entry exists)
+          if (savedTokens[sid]?.[uid]) { savedTokens[sid][uid] = token; persistSavedTokens(); }
+        }}
+        onSwitchServer={handleLogout}
+        onDone={finishLogin}
+      />
+    {/await}
+
+  <!-- ============================================================
+       PHASE: MAIN APP
+  ============================================================ -->
+  {:else if appPhase === 'app'}
+    <div class="flex h-full w-full">
+
+      <Sidebar
+        {selectedUser}
+        {viewState}
+        showLogo={displaySettings.showLogo}
+        libraries={navLibraries}
+        navOrder={displaySettings.navOrder}
+        navHidden={displaySettings.navHidden}
+        navIcons={displaySettings.navIcons}
+        activeLibraryId={currentLibrary?.Id}
+        onNavigate={(target) => { if (target === 'syncplay') { openSyncPlay(); } else { viewState = target; if (target !== 'favorites') focusMain(); } }}
+        onNavigateLibrary={(lib) => navigateToLibrary(lib, true)}
+        onSwitchUser={handleSwitchUser}
+        onLogOutServer={handleLogout}
+      />
+
+      <div data-focus-group="main" class="flex-1 h-full overflow-y-auto hide-scrollbar bg-gray-900 relative [scroll-padding-top:5rem]">
+
+        {#if viewState === 'dashboard'}
+          {#key dashboardReloadKey}
+          <Dashboard
+            {selectedUser} {apiCache} {reduceAnimations}
+            {resumeStale}
+            onResumeRefreshed={() => resumeStale = false}
+            showHero={displaySettings.hero}
+            dashboardBackdrop={displaySettings.dashboardBackdrop}
+            showLibraries={displaySettings.libraries}
+            showHistory={displaySettings.history}
+            showNextUp={displaySettings.nextUp}
+            showWatchlist={displaySettings.watchlist}
+            showRecommendations={displaySettings.recommendations}
+            recommendationRows={displaySettings.recommendationRows}
+            showLatest={displaySettings.latest}
+            showCollections={displaySettings.collections}
+            {sharedSuggestions}
+            showSharedSuggestions={sharedReady && displaySettings.sharedSuggestions}
+            onOpenLibrary={(lib) => navigateToLibrary(lib, false)}
+            onLibrariesLoaded={(libs) => navLibraries = libs}
+            onOpenDetails={(item) => showItemDetails(item)}
+            onOpenCollection={(col) => openCollection(col)}
+            onOpenContext={(item) => openContextMenu(item)}
+          />
+          {/key}
+
+        {:else if viewState === 'search'}
+          <Search {selectedUser}
+            onOpenDetails={(item) => showItemDetails(item)}
+            onOpenPerson={(person) => openPerson(person)} />
+
+        {:else if viewState === 'settings'}
+          {#await lazySettings()}
+            <div class="h-full flex items-center justify-center"><div class="w-14 h-14 border-4 border-white/25 border-t-white rounded-full animate-spin"></div></div>
+          {:then Settings}
+          <Settings
+            {selectedUser} {selectedServer} {savedTokens}
+            {screensaverSettings} {reduceAnimations} {displaySettings} {playbackPrefs}
+            {serverVersion} {serverVobSub}
+            libraries={navLibraries}
+            publicUsers={users} {sharedProfile} {sharedTokens}
+            onSharedToggle={toggleSharedEnabled}
+            onSharedSetMember={setSharedMember}
+            onSharedRemoveMember={removeSharedMember}
+            onToggleSave={toggleCurrentUserSave}
+            onSwitchUser={handleSwitchUser}
+            onLogout={handleLogout}
+            onScreensaverChange={onScreensaverSettingsChange}
+            onReduceAnimationsChange={onReduceAnimationsChange}
+            onDisplayChange={onDisplayChange}
+            onReorderingChange={(v) => navReordering = v}
+            onProfileImageChanged={refreshSelectedUser}
+            onPlaybackPrefsChange={onPlaybackPrefsChange}
+            onClearCache={clearCache}
+          />
+          {/await}
+        {:else if viewState === 'details' && currentDetailItem}
+          <Details
+            item={currentDetailItem}
+            {selectedUser} {playbackPrefs} {use24h} {serverVobSub}
+            spoilerProtection={displaySettings.spoilerProtection}
+            detailsBackdrop={displaySettings.detailsBackdrop}
+            detailsLogo={displaySettings.detailsLogo}
+            onClose={returnFromDetails}
+            onOpenItemById={(id) => loadItemById(id)}
+            onOpenPerson={(person) => openPerson(person)}
+            onLibChanged={refreshLibraries}
+            onPlayVideo={startPlayback}
+          />
+
+        {:else if viewState === 'person'}
+          <Person person={currentPerson} {selectedUser}
+            onBack={() => viewState = personReturnView}
+            onOpenDetails={showItemDetails} onContextMenu={openContextMenu} />
+        {:else if viewState === 'favorites'}
+          <Favorites {selectedUser} reloadKey={favReloadKey}
+            onOpenDetails={showItemDetails} onContextMenu={openContextMenu}
+            onOpenPerson={openPerson} onFocusFallback={focusMain} />
+        {:else if viewState === 'collection'}
+          <Collection bind:this={collectionRef} collection={currentCollection} {selectedUser}
+            onBack={() => viewState = collectionReturnView}
+            onOpenDetails={showItemDetails} onContextMenu={openContextMenu}
+            onChildCountChanged={onCollectionChildCount}
+            onPlayVideo={(p) => { detailsOrigin = 'collection'; startPlayback(p); }}
+            onPlayQueue={(qItems) => { playQueue = { items: qItems, index: 0 }; detailsOrigin = 'collection'; startPlayback({ item: qItems[0], audioIndex: -1, subtitleIndex: -1 }); }}
+            onPlaylistRenamed={onCollectionRenamed}
+            onPlaylistDeleted={onCollectionDeleted} />
+        {/if}
+
+        <!-- LIBRARY stays permanently mounted (hidden when inactive) so scroll/items/the
+             loaded window are preserved when opening Details — as before, when the state lived in App. -->
+        {#if libraryMounted}
+          <div class="h-full w-full" class:hidden={viewState !== 'library'}>
+            <Library bind:this={libraryRef}
+              {selectedUser} library={currentLibrary} reloadKey={libraryReloadKey}
+              focusFirstOnLoad={libraryFocusFirst}
+              sharedReady={sharedReady} partnerPlayedIds={partnersPlayedIds}
+              {librarySorts} {displaySettings}
+              onOpenDetails={(item) => showItemDetails(item)}
+              onContextMenu={(item) => openContextMenu(item)}
+              onSortPersist={(libId, sort) => { librarySorts[libId] = sort; saveUserPrefs(); }}
+              onSharedWatchToggle={(on) => librarySharedOn = on} />
+          </div>
+        {/if}
+
+      </div>
+    </div>
+  {/if}
+
+  <!-- ============================================================
+       PLAYER — absolute overlay (always on top of everything)
+  ============================================================ -->
+  {#if appPhase === 'app' && viewState === 'player' && currentDetailItem}
+    <!-- Fade OUT only: leaving the player reveals the details underneath (softens the hard cut at
+         the end of a video / on back). Entering stays instant so playback isn't delayed.
+         uiFade honours "reduce animations" (duration 0). -->
+    <div out:uiFade={{ duration: 150 }} class="absolute inset-0 z-[100] bg-black w-full h-full">
+      {#key currentDetailItem.Id}
+        {#await lazyPlayer() then Player}
+        <Player
+          item={currentDetailItem}
+          {selectedUser} {playbackPrefs} {use24h} {serverVobSub}
+          showClock={displaySettings.clock}
+          showChapters={displaySettings.showChapters}
+          seekStep={displaySettings.seekStep}
+          selectedAudioIndex={activeAudioIndex}
+          selectedSubtitleIndex={activeSubtitleIndex}
+          mediaSourceId={activeMediaSourceId}
+          {autoPlayStreak}
+          syncPlayOpen={showSyncPlay}
+          inSyncGroup={!!syncMyGroup}
+          {syncCommand}
+          {remoteCommand}
+          {syncQueue}
+          queueActive={!!playQueue}
+          {queueNext}
+          {queuePrev}
+          onExit={() => { viewState = 'details'; resumeStale = true; }}
+          onPlayState={(p) => playerPlaying = p}
+          onLibChanged={refreshLibraries}
+          onNext={(payload) => handleNextEpisode(payload)}
+          onPrev={(episode) => handlePrevEpisode(episode)}
+          onSyncplay={openSyncPlay}
+        />
+        {/await}
+      {/key}
+    </div>
+  {/if}
+
+  <!-- SYNCPLAY — group modal (on top of everything except the screensaver) -->
+  {#if showSyncPlay}
+    {#await lazySyncPlay() then SyncPlayModal}
+    <SyncPlayModal
+      group={syncMyGroup}
+      groups={syncGroups}
+      loading={syncLoading}
+      onCreate={syncCreate}
+      onJoin={(groupId) => syncJoin(groupId)}
+      onLeave={syncLeave}
+      onRefresh={() => syncRefresh()}
+      onClose={closeSyncPlay}
+    />
+    {/await}
+  {/if}
+
+  <!-- CONTEXT MENU — on top of everything except the screensaver -->
+  {#if contextItem}
+    <ContextMenu
+      item={contextItem}
+      userId={activeUserId}
+      onClose={() => contextItem = null}
+      onChanged={onContextChanged}
+      onOpenDetails={contextOpenDetails}
+      onAddToList={contextAddToList}
+      onAddToCollection={contextAddToCollection}
+      onPlayAll={contextPlayPlaylist}
+      {selectedUser}
+    />
+  {/if}
+
+  <!-- AddToPicker for the context menu (focus returns to the card after closing) -->
+  <AddToPicker mode={contextPickerMode} item={contextPickerItem} {selectedUser} {getAuthHeaders}
+    onCreated={refreshLibraries} onClose={() => contextPickerMode = null} />
+
+  <!-- CLOCK — top right in the app views. In the Player NOT this overlay: the Player brings
+       its OWN clock in the HUD (only when the controls are shown, saves OLED), so it's excluded
+       here via viewState !== 'player'. -->
+  {#if appPhase === 'app' && viewState !== 'player' && displaySettings.clock}
+    <Clock {viewState} {use24h} />
+  {/if}
+
+  <!-- ADMIN MESSAGE — sent from the Jellyfin dashboard (DisplayMessage). Fades itself out. -->
+  {#if remoteMessage}
+    <div role="status" class="fixed top-8 left-1/2 -translate-x-1/2 z-[200] w-[90%] max-w-xl pointer-events-none">
+      <div class="bg-gray-900/95 border border-gray-600 rounded-2xl shadow-2xl px-6 py-5 flex items-start gap-4">
+        <svg class="w-7 h-7 text-blue-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l1.3-3.9A7.96 7.96 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+        </svg>
+        <div class="min-w-0">
+          {#if remoteMessage.header}
+            <p class="text-lg font-bold text-white mb-1 break-words">{remoteMessage.header}</p>
+          {/if}
+          <p class="text-base text-gray-200 break-words whitespace-pre-wrap">{remoteMessage.text}</p>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- ============================================================
+       SCREENSAVER — topmost layer
+  ============================================================ -->
+  {#if showScreensaver}
+    <Screensaver {use24h} userId={activeUserId}
+      mode={screensaverSettings.mode} artSource={screensaverSettings.artSource} brightness={screensaverSettings.brightness}
+      onDismiss={resetActivity} />
+  {/if}
+
+</main>
+
