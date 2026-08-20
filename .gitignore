@@ -10,6 +10,9 @@ com.ocenfin.app.manifest.json
 
 # Internal working docs (not part of the public repo)
 CODE-HEALTH.md
+TechnicalDecisions.md
+FAQ.md
+
 
 # Logs
 logs/
