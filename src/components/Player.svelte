@@ -1697,6 +1697,37 @@
                             || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
       return;
     }
+    // ── Remote shortcuts ──────────────────────────────────────────────────────────────────
+    // Number keys jump straight to n×10 % of the runtime — the YouTube convention. Works with the
+    // HUD hidden or visible, and from the seek bar too (digits bubble up to this container).
+    // Deliberately NOT while the still-watching prompt is up: that one wants an explicit answer,
+    // and the video is paused for a reason. A running auto-play countdown is cancelled first —
+    // jumping around means "I'm not done with this episode", same as Back. The jump overrides any
+    // pending preview seek (fast arrow presses) and goes through seekTo(), so the reactive state,
+    // the outro derivations and the trickplay preview all follow. Both e.key and keyCode are read:
+    // the Magic Remote's 123 overlay reports plain keyCodes.
+    const digit = (e.key?.length === 1 && e.key >= '0' && e.key <= '9') ? e.key.charCodeAt(0) - 48
+                : (e.keyCode >= 48 && e.keyCode <= 57 ? e.keyCode - 48 : null);
+    if (digit !== null && duration > 0 && !showStillWatching) {
+      e.preventDefault(); e.stopPropagation();
+      if (nextCountdown !== null) cancelCountdown();
+      if (seekCommitTimer) { clearTimeout(seekCommitTimer); seekCommitTimer = null; }
+      isSeeking = false;
+      seekTo(duration * digit / 10);
+      resetControlsTimeout();          // reveal the bar so the landing spot is visible
+      return;
+    }
+    // Channel up/down (webOS reports them as PageUp/PageDown, keyCodes 33/34) zap through the
+    // series or the queue like TV channels: up = next episode, down = previous one. This mirrors
+    // the two transport buttons exactly — goToNextEpisode(true) keeps all its own guards
+    // (still-watching, sleep protection, countdown), and the prev path hands off precisely like
+    // the ⏮ button, including the handingOff flag for the focus handling.
+    if ((e.keyCode === 33 || e.keyCode === 34) && !showStillWatching) {
+      e.preventDefault(); e.stopPropagation();
+      if (e.keyCode === 33) { goToNextEpisode(true); }
+      else if (prevEpisode) { handingOff = true; onPrev?.(prevEpisode); }
+      return;
+    }
     // HUD hidden (you're watching) → OK pauses/plays directly and focuses play/pause,
     // so another OK resumes immediately. With an overlay open do NOT intervene — there
     // OK should trigger the focused button (skip intro/outro, keep watching).
