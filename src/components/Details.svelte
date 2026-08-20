@@ -3,6 +3,7 @@
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
   import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint } from '../utils.js';
   import { getRememberedTrack } from '../trackmemory.js';
+  import { playThemeFor, stopTheme } from '../thememusic.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
@@ -333,6 +334,25 @@
   // Reactive: reloads as soon as the 'item' prop changes. untrack() so the effect reacts ONLY to
   // item — not to stores/user that loadFullDetails reads synchronously internally.
   $effect(() => { const id = item?.Id; if (id) untrack(() => loadFullDetails(id)); });
+
+  // Theme music (opt-in): resolve per item and per scope. Movie ↔ scope 'movies', the whole
+  // series family (Series/Season/Episode) ↔ scope 'series'; anything else never plays. The module
+  // keeps ONE audio element across item changes, so browsing within a series doesn't restart the
+  // theme — identity is the ThemeSongsResult.OwnerId, i.e. the series. Everything async and every
+  // failure is silent inside the module. Leaving the view (dashboard OR starting playback — both
+  // unmount Details, the Player replaces the view) fades out via onDestroy below.
+  $effect(() => {
+    const id    = item?.Id;
+    const type  = item?.Type;
+    const on    = !!playbackPrefs.themeMusic;
+    const scope = playbackPrefs.themeMusicScope || 'both';
+    const vol   = playbackPrefs.themeMusicVolume ?? 40;
+    const fits  = (type === 'Movie' && scope !== 'series')
+               || ((type === 'Series' || type === 'Season' || type === 'Episode') && scope !== 'movies');
+    if (on && id && fits) untrack(() => playThemeFor(item, selectedUser.Id, vol));
+    else stopTheme();
+  });
+  onDestroy(stopTheme);
 
   async function loadFullDetails(itemId) {
     const myToken = ++detailToken;
