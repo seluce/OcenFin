@@ -88,8 +88,15 @@ export async function playThemeFor(item, userId, volumePercent) {
     el.src = `${session.serverUrl}/Audio/${songs[0].Id}/stream?static=true&ApiKey=${session.token}`;
     el.volume = 0;
     if (!suppressed) {
-      // play() may reject (decode error, rare autoplay policy) — silence either way.
-      el.play().then(() => fadeTo(targetVolume)).catch(() => { currentOwnerId = null; });
+      // Both callbacks are guarded by mySeq: switching to another themed title while THIS play()
+      // is still pending makes the browser reject the older promise (AbortError on the src swap).
+      // Without the guard that late rejection would null the ownerId the NEWER call just set —
+      // after which stopTheme() considered the module idle and the music kept playing on the
+      // dashboard forever. The then-side re-checks `suppressed` for the same reason: if the
+      // screensaver kicked in while play() was settling, fading up here would undo its fade-down.
+      el.play()
+        .then(() => { if (mySeq === fetchSeq && !suppressed) fadeTo(targetVolume); })
+        .catch(() => { if (mySeq === fetchSeq) currentOwnerId = null; });
     }
     dlog('[OcenFin] theme music start, owner', ownerId);
   } catch { /* network errors stay silent — see module header */ }
@@ -98,8 +105,13 @@ export async function playThemeFor(item, userId, volumePercent) {
 /** Fade out and fully release. Safe to call at any time, including mid-fetch. */
 export function stopTheme() {
   fetchSeq++;                          // invalidate any in-flight ThemeMedia lookup
-  if (!audio || currentOwnerId === null) return;
   currentOwnerId = null;
+  // Release on the ELEMENT's state, not on currentOwnerId: an aborted play() rejection may have
+  // nulled the owner while audio was (or was about to be) audible, and keying the early-return on
+  // the owner would then leave an orphaned loop playing. Idle element (no src, paused) → true no-op,
+  // which matters because the Details effect calls this for every non-fitting item.
+  if (!audio) return;
+  if (audio.paused && !audio.getAttribute('src')) return;
   fadeTo(0, releaseSource);
 }
 

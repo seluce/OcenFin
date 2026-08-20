@@ -1670,6 +1670,11 @@
   }
 
   function handleKeyDown(e) {
+    // Handed off to the next/previous episode: this instance is about to be replaced by {#key}, so
+    // it must not process input any more. Otherwise hammering the channel keys fires
+    // goToNextEpisode/onPrev repeatedly from the DYING instance — mostly absorbed upstream, but
+    // there is no reason to let a corpse steer the app. Back stays global in App.svelte.
+    if (handingOff) return;
     // Error overlay open: arrows/OK control only the two buttons (spatial nav + button click), Back exits.
     if (playbackError) {
       if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); onExit?.(); }
