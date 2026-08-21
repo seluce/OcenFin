@@ -410,17 +410,23 @@
     if (scrollTimer) clearTimeout(scrollTimer);
     scrollTimer = setTimeout(() => {
       if (!libraryGrid || !currentItems.length) return;
-      for (const child of libraryGrid.children) {
-        const rect = child.getBoundingClientRect();
-        if (rect.bottom > 150) {
-          const idx  = [...libraryGrid.children].indexOf(child);
-          const item = currentItems[idx];
-          if (item) {
-            const char = (item.SortName || item.Name)[0].toUpperCase();
-            activeLetter = /[A-Z]/.test(char) ? char : '#';
-          }
-          break;
-        }
+      // Which card is the topmost visible one? Binary search, not a scan from the first child:
+      // grid children follow document order, so their bottom edges only ever increase. Deep in a
+      // large library the old loop measured every card ABOVE the viewport before reaching the
+      // first visible one — hundreds of rect reads on every scroll settle — and then spread the
+      // whole HTMLCollection into an array just to look the index back up. Now it is ~log2(n)
+      // reads and the index falls out of the search.
+      const kids = libraryGrid.children;
+      let lo = 0, hi = kids.length - 1, idx = -1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (kids[mid].getBoundingClientRect().bottom > 150) { idx = mid; hi = mid - 1; }
+        else lo = mid + 1;
+      }
+      const item = idx >= 0 ? currentItems[idx] : null;
+      if (item) {
+        const char = (item.SortName || item.Name)[0].toUpperCase();
+        activeLetter = /[A-Z]/.test(char) ? char : '#';
       }
     }, 150);
   }

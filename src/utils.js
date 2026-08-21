@@ -718,6 +718,24 @@ function b83(str) { let v = 0; for (const c of str) v = v * 83 + B83.indexOf(c);
 function sRGBtoLin(v) { const x = v / 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }
 function linToSRGB(v) { const x = Math.max(0, Math.min(1, v)); return x <= 0.0031308 ? Math.round(x * 12.92 * 255 + 0.5) : Math.round((1.055 * x ** (1 / 2.4) - 0.055) * 255 + 0.5); }
 
+// Cosine basis tables for decodeBlurHash. The basis depends only on the pixel position and the
+// component index — never on the hash itself — so it is identical for every card and gets computed
+// once per (size, components) pair. Without this a 32×32 placeholder ran width*height*numX*numY*2
+// ≈ 25,000 Math.cos() calls, and that happened once per unique poster, on the main thread, while
+// scrolling a library. There are only ever a couple of table variants in memory (a few KB).
+const _cosTables = new Map();
+function cosTable(size, n) {
+  const key = `${size}x${n}`;
+  let t = _cosTables.get(key);
+  if (!t) {
+    t = new Float64Array(size * n);
+    for (let p = 0; p < size; p++)
+      for (let k = 0; k < n; k++) t[p * n + k] = Math.cos(Math.PI * p * k / size);
+    _cosTables.set(key, t);
+  }
+  return t;
+}
+
 export function decodeBlurHash(hash, width = 32, height = 32, punch = 1) {
   if (!hash || hash.length < 6 || typeof document === 'undefined') return null;
   try {
@@ -732,11 +750,15 @@ export function decodeBlurHash(hash, width = 32, height = 32, punch = 1) {
     }
     const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
     const ctx = canvas.getContext('2d'); const imgData = ctx.createImageData(width, height); const d = imgData.data;
+    const cosX = cosTable(width, numX), cosY = cosTable(height, numY);
     for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
       let r = 0, g = 0, b = 0;
-      for (let j = 0; j < numY; j++) for (let i = 0; i < numX; i++) {
-        const basis = Math.cos(Math.PI * x * i / width) * Math.cos(Math.PI * y * j / height);
-        const c = colors[i + j * numX]; r += c[0] * basis; g += c[1] * basis; b += c[2] * basis;
+      for (let j = 0; j < numY; j++) {
+        const by = cosY[y * numY + j];
+        for (let i = 0; i < numX; i++) {
+          const basis = cosX[x * numX + i] * by;
+          const c = colors[i + j * numX]; r += c[0] * basis; g += c[1] * basis; b += c[2] * basis;
+        }
       }
       const idx = 4 * (x + y * width);
       d[idx] = linToSRGB(r); d[idx + 1] = linToSRGB(g); d[idx + 2] = linToSRGB(b); d[idx + 3] = 255;

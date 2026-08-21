@@ -26,6 +26,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Changed
 
+- **Smoother scrolling in large libraries.** Each poster placeholder was running roughly 25,000
+  trigonometric calculations as its card appeared, and the A-Z letter indicator re-measured every
+  card above the screen after each scroll. Both now do a fraction of that work, with no visible
+  difference — the placeholders look exactly as before.
 - **Faster D-pad navigation**, most noticeably deep inside a large library. Every arrow press used
   to measure the same on-screen elements up to four times over, and to run a style check across
   every candidate on screen although the geometry only ever picks one. Each element is now measured
