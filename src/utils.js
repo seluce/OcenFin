@@ -577,6 +577,67 @@ if (typeof console !== 'undefined' && !console.__ocenfinLogHook) {
   console.__ocenfinLogHook = true;
 }
 
+// --- Performance instrumentation (opt-in, shares the debug switch) ---------------------------
+// Inert while debug is off: every entry point tests _debug FIRST, so a normal session pays one
+// boolean per call and nothing else — no timers read, no DOM walked, no strings built.
+//
+// Output is AGGREGATED on purpose. The log buffer holds 300 lines and gets shared through a QR
+// code, so one line per arrow press would push everything else out within seconds. Each metric
+// therefore accumulates and reports one compact summary per window.
+export function perfEnabled() { return _debug; }
+
+const _perfStats = new Map();   // name → { n, sum, max, meta }
+const PERF_WINDOW = 25;         // report a summary every N samples, then start over
+
+// Record one timing in ms. `meta` carries context values — for the D-pad that is how many elements
+// the decision had to measure, the number that explains a slow press.
+//
+// Numeric context is summarised by its PEAK over the window, not by the last sample. The first
+// device run reported "avg=20.7ms max=113.7ms cand=9", where the 9 was simply whatever the final
+// press happened to cost — it said nothing about the presses that took 113 ms.
+export function perfSample(name, ms, meta) {
+  if (!_debug) return;
+  let s = _perfStats.get(name);
+  if (!s) { s = { n: 0, sum: 0, max: 0, peak: null }; _perfStats.set(name, s); }
+  s.n++; s.sum += ms;
+  if (ms > s.max) s.max = ms;
+  if (meta) {
+    s.peak ??= {};
+    for (const [k, v] of Object.entries(meta)) {
+      s.peak[k] = typeof v === 'number' ? Math.max(s.peak[k] ?? 0, v) : v;
+    }
+  }
+  if (s.n < PERF_WINDOW) return;
+  const extra = s.peak ? ' ' + Object.entries(s.peak).map(([k, v]) => `${k}=${v}`).join(' ') : '';
+  dlog(`[perf] ${name} n=${s.n} avg=${(s.sum / s.n).toFixed(1)}ms max=${s.max.toFixed(1)}ms${extra}`);
+  _perfStats.set(name, { n: 0, sum: 0, max: 0, peak: null });
+}
+
+// One-off milestone, reported in ms since the page started loading.
+export function perfMark(label, extra) {
+  if (!_debug) return;
+  dlog(`[perf] ${label} at=${Math.round(performance.now())}ms${extra ? ' ' + extra : ''}`);
+}
+
+// Heap and DOM size once a minute. Reports only when the heap actually moved, plus a heartbeat
+// every tenth sample — aimed at the multi-day sessions this app is built for, where a slow leak
+// is invisible in a five-minute test but obvious across a night. usedJSHeapSize is a Chromium
+// extension (so: real numbers on the TV, zeros in Firefox).
+export function startPerfSampler() {
+  let lastHeap = 0, ticks = 0;
+  return setInterval(() => {
+    if (!_debug) return;
+    ticks++;
+    const mem  = performance.memory;
+    const heap = mem ? Math.round(mem.usedJSHeapSize / 1048576) : 0;
+    if (Math.abs(heap - lastHeap) < 5 && ticks % 10 !== 0) return;
+    const d = heap - lastHeap;
+    dlog(`[perf] heap=${heap}MB (${d >= 0 ? '+' : ''}${d}) nodes=${document.getElementsByTagName('*').length}`
+       + ` up=${Math.round(performance.now() / 60000)}min`);
+    lastHeap = heap;
+  }, 60000);
+}
+
 // --- Versions for the status/diagnostics page --------------------------------------------------
 // Chromium/WebView from the user agent; dependency versions directly from package.json (updates
 // automatically on a bump, immediately available, no runtime detection needed).

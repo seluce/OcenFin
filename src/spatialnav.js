@@ -14,6 +14,8 @@
 //   • Sliders (type=range): Left/Right control them, Up/Down leaves them.
 // ============================================================
 
+import { perfEnabled, perfSample } from './utils.js';
+
 const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const ARROWS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
@@ -21,12 +23,40 @@ const ARROWS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 // Last focused element per group (for re-entry).
 const lastFocus = new WeakMap();
 
+// ── Per-keypress measurement cache ────────────────────────────────────────────────────────
+// getBoundingClientRect() forces layout, getComputedStyle() forces style resolution, and ONE
+// arrow press asks for the same elements up to four times: isVisible() measures every focusable
+// in the group, pickGeometric() then measures the very same candidates again, and the Left/Right
+// fallback runs that whole pick a second time. The library group grows with paging (50 items per
+// page, never trimmed — CODE-HEALTH §8), so this is several hundred elements × 4 in a long
+// browsing session, which is exactly where D-pad latency creeps up.
+//
+// Caching is safe because the decision phase only READS layout: nothing writes to the DOM between
+// the first measurement and the pick. The cache is opened when a navigation key is claimed and
+// closed again in focusEl()/onFocusIn(), i.e. before anything scrolls or moves focus — so no
+// cached value ever outlives the state it was measured in.
+let measureCache = null;   // { rects: Map, vis: Map } while a pick is running, otherwise null
+// t0 doubles as the "measure this press" flag; rects.size is the candidate count for free.
+function beginMeasure() {
+  measureCache = { rects: new Map(), vis: new Map(), t0: perfEnabled() ? performance.now() : 0 };
+}
+function endMeasure() {
+  if (measureCache?.t0) perfSample('nav', performance.now() - measureCache.t0, { candMax: measureCache.rects.size });
+  measureCache = null;
+}
+
 function isVisible(el) {
   if (!el) return false;
-  const r = el.getBoundingClientRect();
-  if (r.width === 0 || r.height === 0) return false;
-  const s = getComputedStyle(el);
-  return s.visibility !== 'hidden' && s.display !== 'none' && s.pointerEvents !== 'none';
+  const cached = measureCache?.vis.get(el);
+  if (cached !== undefined) return cached;
+  const r = rectOf(el);
+  let visible = false;
+  if (r.width !== 0 && r.height !== 0) {
+    const s = getComputedStyle(el);
+    visible = s.visibility !== 'hidden' && s.display !== 'none' && s.pointerEvents !== 'none';
+  }
+  measureCache?.vis.set(el, visible);
+  return visible;
 }
 
 function groupOf(el) { return el ? el.closest('[data-focus-group]') : null; }
@@ -36,11 +66,45 @@ function activeTrap() {
   return traps.length ? traps[traps.length - 1] : null;
 }
 
-function focusablesIn(root) {
-  return Array.from(root.querySelectorAll(FOCUSABLE)).filter(isVisible);
+// Focusables that occupy a real box — WITHOUT the CSS check. Cheap: rects come from the
+// measurement cache, so this is one layout flush for the whole set and no style resolution.
+function focusableBoxes(root) {
+  return Array.from(root.querySelectorAll(FOCUSABLE)).filter(el => {
+    const r = rectOf(el);
+    return r.width !== 0 && r.height !== 0;
+  });
 }
 
-function rectOf(el) { return el.getBoundingClientRect(); }
+// First genuinely visible focusable. Iterates lazily and stops at the first hit — the previous
+// focusablesIn(root)[0] ran the CSS check over EVERY element just to keep one of them.
+function firstFocusable(root) {
+  for (const el of root.querySelectorAll(FOCUSABLE)) if (isVisible(el)) return el;
+  return null;
+}
+
+// Pick geometrically, then verify only the WINNER's CSS visibility.
+//
+// isVisible() needs getComputedStyle, which forces a style resolution per element. Checking the
+// whole field cost ~187 of them per arrow press deep in a library — measured on the B4 at 20 ms
+// average and 132 ms worst case for a single press. The geometry never lets a far-away element
+// win, so all that work decided nothing.
+//
+// If the winner does turn out to be hidden it is dropped and the pick repeats over the fully
+// filtered field. That costs the old price, but only where sized-yet-hidden focusables actually
+// exist — the Player keeps its HUD controls laid out (pointer-events:none) while faded out, and
+// that is a handful of elements, not a library grid.
+function pickVisible(dir, from, candidates, exclude, strictRow = false, rowFirst = false) {
+  const el = pickGeometric(dir, from, candidates, exclude, strictRow, rowFirst);
+  if (!el || isVisible(el)) return el;
+  return pickGeometric(dir, from, candidates.filter(isVisible), exclude, strictRow, rowFirst);
+}
+
+function rectOf(el) {
+  if (!measureCache) return el.getBoundingClientRect();
+  let r = measureCache.rects.get(el);
+  if (!r) { r = el.getBoundingClientRect(); measureCache.rects.set(el, r); }
+  return r;
+}
 function cx(r) { return r.left + r.width / 2; }
 function cy(r) { return r.top + r.height / 2; }
 
@@ -144,6 +208,9 @@ function scrollableAncestor(el) {
 }
 
 function focusEl(el) {
+  // Decision phase over — everything below moves focus and scrolls, so measurements taken
+  // before it must not be reused afterwards.
+  endMeasure();
   el.focus();
   if (el.hasAttribute('data-scroll-top')) {
     const sc = scrollableAncestor(el);
@@ -159,7 +226,7 @@ function entryOf(group, dir, from) {
   // its FIRST card — stable and predictable, no matter which column you came from. Within the group
   // navigation stays geometric (this only applies on the group transition, not row by row).
   if (group.hasAttribute('data-enter-first')) {
-    const first = focusablesIn(group)[0];
+    const first = firstFocusable(group);
     if (first) return first;
   }
   // Prefer the element marked as active (e.g. the current sidebar entry): switching into
@@ -172,13 +239,17 @@ function entryOf(group, dir, from) {
   // A trailing jump bar (the A-Z bar sits AFTER the grid on the right) is reached only by moving
   // into it from the grid — never as the landing spot when entering the group from outside (e.g.
   // the sidebar). Leading bars (settings category nav on the left) are NOT marked → stay valid.
-  let cands = focusablesIn(group).filter(el => !el.closest('[data-hbar-trailing]'));
-  if (!cands.length) cands = focusablesIn(group);
+  let cands = focusableBoxes(group).filter(el => !el.closest('[data-hbar-trailing]'));
+  if (!cands.length) cands = focusableBoxes(group);
   if (!cands.length) return null;
-  const byDir = pickGeometric(dir, from, cands, null);
+  const byDir = pickVisible(dir, from, cands, null);
   if (byDir) return byDir;
-  let best = cands[0], bd = Infinity;
+  // Nothing in the direction → nearest overall. Only this rare path pays the full CSS check.
+  // It now yields null rather than cands[0] when everything is hidden: handing back a hidden
+  // element only moved focus somewhere invisible, whereas null lets the caller try its next route.
+  let best = null, bd = Infinity;
   for (const el of cands) {
+    if (!isVisible(el)) continue;
     const r = rectOf(el);
     const d = Math.hypot(cx(r) - cx(from), cy(r) - cy(from));
     if (d < bd) { bd = d; best = el; }
@@ -188,7 +259,7 @@ function entryOf(group, dir, from) {
 
 function nearestGroup(dir, from, currentGroup) {
   let groups = Array.from(document.querySelectorAll('[data-focus-group]'))
-    .filter(g => g !== currentGroup && isVisible(g) && focusablesIn(g).length
+    .filter(g => g !== currentGroup && isVisible(g) && firstFocusable(g)
               && !(currentGroup && g.contains(currentGroup)));   // Ancestor groups (e.g. the content container "main")
                                                                  // are not a jump target – you are already inside them.
   // Up/Down only transitions to groups that HORIZONTALLY overlap the source. Otherwise focus jumps
@@ -208,12 +279,13 @@ function nearestGroup(dir, from, currentGroup) {
 // disable it. Returns a cleanup function.
 export function createFocusManager(isEnabled) {
   function onFocusIn(e) {
+    endMeasure();   // focus moved → any pending measurement describes the state before that
     // If a modal/banner is open as a trap, focus must not leave it — not even via
     // a programmatic focus() of a view mounting in parallel (e.g. the Movies autofocus
     // while the "server unreachable" banner appears). In that case pull focus back into the modal.
     const trap = activeTrap();
     if (trap && !trap.contains(e.target)) {
-      const back = focusablesIn(trap)[0];
+      const back = firstFocusable(trap);
       if (back && back !== e.target) { back.focus(); return; }
     }
     const g = groupOf(e.target);
@@ -249,6 +321,7 @@ export function createFocusManager(isEnabled) {
     // scroll caused inconsistent context reveal and unwanted page scrolling inside dropdowns.) Row
     // titles / section headers are revealed via scroll-padding-top on the scroll containers instead.
     e.preventDefault();
+    beginMeasure();
 
     const hasActive = active && active !== document.body;
     const from = hasActive ? rectOf(active)
@@ -259,13 +332,14 @@ export function createFocusManager(isEnabled) {
 
     // 1) Within the current group / modal
     if (scope) {
-      let within = pickGeometric(e.key, from, focusablesIn(scope), active, true, true);
+      const scopeCands = focusableBoxes(scope);
+      let within = pickVisible(e.key, from, scopeCands, active, true, true);
       // Fallback for entering a "start-at-top" area (data-enter-top): if the strict
       // row binding found nothing because at the source's height the target area has only NON-focusable
       // content (e.g. the server-info card above "Clear cache" in Account & Server), retry without row
       // binding and enter at its top. Only applies when transitioning into a foreign enter-top area.
       if (!within && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-        const loose = pickGeometric(e.key, from, focusablesIn(scope), active, false);
+        const loose = pickVisible(e.key, from, scopeCands, active, false);
         // Leaving a jump bar toward the grid (Left from the A-Z bar; its focused letter may sit
         // below the last card, so the strict-row pick found nothing) → nearest content element,
         // so focus can't skip the grid and jump straight to the sidebar.
@@ -273,7 +347,7 @@ export function createFocusManager(isEnabled) {
         if (_activeHbar && e.key === 'ArrowLeft' && loose && !_activeHbar.contains(loose)) within = loose;
         const top = loose?.closest('[data-enter-top]');
         if (!within && top && !top.contains(active)) {
-          within = focusablesIn(top)[0] || null;
+          within = firstFocusable(top) || null;
         } else if (!within) {
           // Leaving a start-at-top content area toward a jump bar (data-hbar) in the SAME group —
           // e.g. Left from the settings detail area back to the category navigation. Content rows
@@ -282,7 +356,7 @@ export function createFocusManager(isEnabled) {
           // the sidebar. Enter the bar at its current item instead.
           const bar = loose?.closest('[data-hbar]');
           if (bar && !bar.contains(active))
-            within = bar.querySelector('[data-hbar-current]') || focusablesIn(bar)[0] || null;
+            within = bar.querySelector('[data-hbar-current]') || firstFocusable(bar) || null;
         }
         // Final safety net: leaving a start-at-top content area (data-enter-top) via Left with still
         // no target means the loose pick landed on another content row instead of the leading category
@@ -291,7 +365,7 @@ export function createFocusManager(isEnabled) {
         // wherever the option sits vertically.
         if (!within && e.key === 'ArrowLeft' && active.closest('[data-enter-top]')) {
           const leadingBar = [...scope.querySelectorAll('[data-hbar]')].find(b => !b.contains(active));
-          if (leadingBar) within = leadingBar.querySelector('[data-hbar-current]') || focusablesIn(leadingBar)[0] || null;
+          if (leadingBar) within = leadingBar.querySelector('[data-hbar-current]') || firstFocusable(leadingBar) || null;
         }
       }
       // Entering a jump bar from outside (via Left/Right): jump directly onto the currently
@@ -307,7 +381,7 @@ export function createFocusManager(isEnabled) {
         // outside, always go to its top-most focusable element instead of geometrically into the middle.
         const top = within.closest('[data-enter-top]');
         if (top && !top.contains(active)) {
-          const first = focusablesIn(top)[0];
+          const first = firstFocusable(top);
           if (first) within = first;
         }
       }
@@ -321,7 +395,7 @@ export function createFocusManager(isEnabled) {
         // focus (the Player container is tabindex="0" and its controls are pointer-events-none while
         // the HUD is hidden, so they don't count as focusable).
         if (!hasActive) {
-          const back = focusablesIn(trap)[0] || (trap.tabIndex >= 0 ? trap : null);
+          const back = firstFocusable(trap) || (trap.tabIndex >= 0 ? trap : null);
           if (back) focusEl(back);
         }
         return;   // modal boundary: stay put
@@ -337,7 +411,7 @@ export function createFocusManager(isEnabled) {
 
     // 3) No focus at all yet → take the first focusable element
     if (!hasActive) {
-      const any = focusablesIn(document.body)[0];
+      const any = firstFocusable(document.body);
       if (any) { focusEl(any); return; }
     }
 

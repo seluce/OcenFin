@@ -17,10 +17,21 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   channel rocker is the easiest key to hit by accident, so the switch doubles as protection.
 - **The four colour buttons** can now be assigned. They start out unassigned, and each one can be
   pointed at a single action: previous/next chapter, subtitles on/off, the subtitle menu, the
-  audio menu, previous/next episode, or play/pause. They only do anything during playback.
+  audio menu, previous/next episode, or play/pause. They only do anything during playback. A key
+  bound to one of the two menus closes it again on a second press, and switches straight over if
+  the other menu is showing.
 - **Subtitles on/off** remembers the track that was running, so switching them back on restores
   the same one instead of opening a menu. With nothing to restore it opens the subtitle tab.
 - Seventeen new interface strings in all eight languages.
+
+### Changed
+
+- **Faster D-pad navigation**, most noticeably deep inside a large library. Every arrow press used
+  to measure the same on-screen elements up to four times over, and to run a style check across
+  every candidate on screen although the geometry only ever picks one. Each element is now measured
+  once, and the style check applies to the chosen element. Measured on an LG B4 deep in a large
+  library, the average time spent before focus moves dropped from roughly 19 ms to 4 ms. Nothing
+  about how focus moves has changed — only the work done before it moves.
 
 ### Fixed
 
@@ -48,6 +59,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   nothing — the only way out was the sidebar.
 - **Screensaver:** on the server and profile selection screens neither OcenFin's nor the TV's
   screensaver ran, so a bright static screen could stay on an OLED panel indefinitely.
+- **Libraries could stop loading after their first 50 titles**, with no spinner and no way to
+  continue except jumping ahead with the A-Z bar. A page request could overlap the initial load,
+  come back holding only titles already on screen, and be read as "the library ends here" — which
+  capped the view for the rest of the session. Which library it hit came down to timing, so it
+  looked like it affected only movies, or only shows, and swapped after a restart.
 - **Server load:** six list queries asked the server for a total count that was never used.
 
 ### Internal
@@ -55,6 +71,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - `CODE-HEALTH.md` §10 records the full review pass behind these fixes: eight independent review
   angles, every finding verified individually before being applied, plus seven structural
   refactors that were deliberately deferred.
+- Added diagnostics behind the existing debug switch: boot milestones, D-pad timing with the number
+  of elements measured, heap and DOM size for long sessions, and library paging. All inert while
+  debug is off, and reported through the log buffer that the settings page already shares by QR
+  code. The library bug above was found with them rather than guessed at.
 - Corrected subtitle-delivery comments in `playback.js` that predated client-side ASS/PGS
   rendering, and completed the routing and storage-key lists in the project notes.
 

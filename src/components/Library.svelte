@@ -7,7 +7,7 @@
   import { session } from '../session.svelte.js';
   import { i18n } from '../i18n.svelte.js';
   import { itemProgress, itemBadge, getItemSubtitle, getItemImageUrl, blurUp, itemBlurHash, longPress,
-           focusOnMount, isBackKey, makeFocusReturn, authHeaders, uiFade, dropTrapOnOutro } from '../utils.js';
+           focusOnMount, isBackKey, makeFocusReturn, authHeaders, uiFade, dropTrapOnOutro, dlog } from '../utils.js';
 
   let {
     selectedUser,
@@ -255,6 +255,7 @@
       currentItems      = viewCache[lib.Id].items;
       totalLibraryItems = viewCache[lib.Id].total;
       firstLoadedIndex  = 0;
+      dlog('[Library] from cache', { lib: lib.Name, items: currentItems.length, total: totalLibraryItems });
       return;
     }
 
@@ -276,6 +277,8 @@
         if (myToken !== loadToken) return;
         currentItems      = withoutKnown(data.Items, []);
         totalLibraryItems = data.TotalRecordCount || 0;
+        dlog('[Library] first page', { lib: lib.Name, start: startIndex, got: data.Items?.length ?? 0,
+             kept: currentItems.length, total: totalLibraryItems, hasCount: 'TotalRecordCount' in data });
         if (isCacheableView()) cacheLibraryView(lib.Id, { items: currentItems, total: totalLibraryItems });
       }
       session.connectionLost = false;
@@ -293,7 +296,18 @@
   }
 
   async function loadMoreLibraryItems() {
-    if (isFetchingMore || firstLoadedIndex + currentItems.length >= totalLibraryItems || !currentLibraryId) return;
+    // isLoading is essential, not defensive: loadLibraryItems() empties currentItems and resets
+    // firstLoadedIndex BEFORE awaiting the first page, so a scroll event landing in that window
+    // computed start = 0 + 0 and re-requested page 0. Every item came back a duplicate, and the
+    // "nothing fresh → the count is stale" correction below then clamped the total to 50 — after
+    // which the sentinel never rendered again and the library was stuck for the rest of the
+    // session. Which library it hit depended purely on timing, so it looked like a Movies-vs-TV
+    // difference (observed: Movies 451 items clamped to 50, TV Shows fine, reversed after a restart).
+    if (isLoading || isFetchingMore || firstLoadedIndex + currentItems.length >= totalLibraryItems || !currentLibraryId) {
+      if (!isFetchingMore && currentLibraryId)
+        dlog('[Library] more refused', { have: firstLoadedIndex + currentItems.length, total: totalLibraryItems });
+      return;
+    }
     isFetchingMore = true;
     const myToken = loadToken;   // belongs to the CURRENT list — don't append anymore after a reload
     const start = firstLoadedIndex + currentItems.length;
@@ -306,7 +320,16 @@
         if (myToken !== loadToken) return;
         // Nothing new although the total says more should exist → the count is stale (items
         // deleted server-side, or the page repeated). Correct it so the sentinel stops re-firing.
+        dlog('[Library] more', { start, got: data.Items?.length ?? 0,
+             have: currentItems.length, total: data.TotalRecordCount ?? '-' });
+        // The window may have moved while this page was in flight (a parallel first-page load, or
+        // loadPreviousLibraryItems extending upwards). Then this response describes a range that no
+        // longer joins the list, and merging it — or worse, reading "no fresh items" as a stale
+        // count — would corrupt the view. Drop it; the sentinel simply asks again.
+        if (start !== firstLoadedIndex + currentItems.length) return;
         const fresh = withoutKnown(data.Items, currentItems);
+        // Nothing new although the total says more should exist → the count really is stale (items
+        // deleted server-side). Safe to trust now that an out-of-window response can't land here.
         if (!fresh.length) totalLibraryItems = firstLoadedIndex + currentItems.length;
         currentItems = [...currentItems, ...fresh];
         if (isCacheableView()) cacheLibraryView(currentLibraryId, { items: currentItems, total: totalLibraryItems });
@@ -316,7 +339,9 @@
 
   // Load upward: fetch the block BEFORE the window and prepend it; correct the scroll by the height gain.
   async function loadPreviousLibraryItems() {
-    if (isFetchingPrev || firstLoadedIndex <= 0 || !currentLibraryId) return;
+    // isLoading for the same reason as in loadMoreLibraryItems: no paging onto a list that is
+    // currently being replaced.
+    if (isLoading || isFetchingPrev || firstLoadedIndex <= 0 || !currentLibraryId) return;
     isFetchingPrev = true;
     const myToken = loadToken;   // belongs to the CURRENT list — don't prepend anymore after a reload
     const newStart = Math.max(0, firstLoadedIndex - libraryItemLimit);
@@ -327,6 +352,8 @@
       if (res.ok && myToken === loadToken) {
         const items  = (await res.json()).Items || [];
         if (myToken !== loadToken) return;
+        // Same window check as when paging downwards — this page must still join the top of the list.
+        if (newStart + count !== firstLoadedIndex) return;
         const before = libraryScrollContainer ? libraryScrollContainer.scrollHeight : 0;
         currentItems     = [...withoutKnown(items, currentItems), ...currentItems];
         firstLoadedIndex = newStart;

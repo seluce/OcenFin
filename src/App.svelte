@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, serverSupportsVobSub, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard } from './utils.js';
+  import { isBackKey, focusOnMount, serverSupportsVobSub, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard, perfMark, startPerfSampler } from './utils.js';
   import { buildPlayQueue } from './playback.js';
   import { session } from './session.svelte.js';
   import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
@@ -698,6 +698,12 @@
     // D-pad navigation (group focus model) — active everywhere. The Player is its
     // own focus group; its slider handles Left/Right itself.
     createFocusManager(() => !navReordering);
+    // Boot milestone: the shell is wired up (listeners, focus manager, connection guard). The
+    // second milestone follows below when the splash actually goes away.
+    perfMark('boot shell');
+    // Long-session sampler. App-lifetime by design like the listeners above — the root never
+    // unmounts — and it bails out immediately while debug is off, so it costs one timer.
+    startPerfSampler();
     // Monitor network status (banner on connection loss). The offline/online events cover the
     // OS network state; the connection guard additionally catches "server unreachable while the
     // network is up" (NAS reboot etc.) by watching server fetches for network-level failures.
@@ -790,6 +796,7 @@
       appPhase = 'servers';
     } finally {
       initializing = false;   // hide the splash screen (whichever path)
+      perfMark('boot usable', `phase=${appPhase}`);   // splash gone → first screen is interactive
     }
   });
 
