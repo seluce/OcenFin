@@ -2,8 +2,8 @@
 // PlaybackInfo / transcoding
 // Based on the device profile, the server decides whether a title can be
 // played directly (Direct Play / Direct Stream) or has to be transcoded
-// (e.g. 10-bit H.264 "Hi10P", or ASS subtitles that must be burned into
-// the picture because the browser can only render VTT).
+// (e.g. 10-bit H.264 "Hi10P", or a subtitle that has to be burned into the picture
+// — which ones those are is computed below from the prefs and server capabilities).
 // ============================================================
 
 import { dlog, authHeaders } from './utils.js';
@@ -16,11 +16,13 @@ import { dlog, authHeaders } from './utils.js';
 //  • DTS NOT in Direct Play → the browser often can't decode DTS (otherwise video
 //    plays but there's no sound). The server then does a light audio-only transcode.
 //  • Transcode target: HLS (TS/H.264/AAC) — universally playable via hls.js.
-//  • Subtitles: VTT/SRT external (as a track), ASS/SSA/PGS/VOBSUB are burned into the picture.
+//  • Subtitles: text tracks delivered externally (VTT overlay; ASS via assjs), PGS/VobSub
+//    rendered client-side via libbitsub where possible — burned in only when the prefs or
+//    server capabilities force it (see textSub/pgsSub/vobSub below).
 export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false, clientGraphicSubs = false, serverVobSub = false) {
   // Text subtitles (SubRip/ASS): with burnSubtitles=true burn into the picture (with styling, but
   // transcode + hard switch), otherwise deliver externally as VTT → our own overlay renderer
-  // (no styling, but Direct Play + soft switch). Graphic subtitles are always burned in.
+  // (no styling, but Direct Play + soft switch).
   const textSub = burnSubtitles ? 'Encode' : 'External';
   // Graphic subtitles are rendered client-side via libbitsub (when enabled) → deliver as
   // External → no transcode, Direct Play stays. Otherwise burn in.
@@ -190,7 +192,14 @@ const _pfCache = new Map();   // itemId → { ts, key, promise }
 const _PF_TTL  = 25000;       // valid ~25 s (a transcode session also stays open that long)
 
 function _pfKey(p) {
-  return [p.itemId, p.audioStreamIndex ?? -1, p.subtitleStreamIndex ?? -1, !!p.burnSubtitles, p.mediaSourceId || '', !!p.clientGraphicSubs, !!p.serverVobSub].join('|');
+  // Every parameter that changes the server's decision must be part of the key — a prefetch made
+  // with the default flags must never satisfy a request that needs a transcode (explicit audio
+  // track, burn-in, capped bitrate). Defaults mirror getPlaybackInfo's signature, since the
+  // prefetch call site omits the flags.
+  return [p.itemId, p.audioStreamIndex ?? -1, p.subtitleStreamIndex ?? -1, !!p.burnSubtitles,
+          p.mediaSourceId || '', !!p.clientGraphicSubs, !!p.serverVobSub,
+          p.enableDirectPlay ?? true, p.enableDirectStream ?? true, p.allowAudioStreamCopy ?? true,
+          p.maxBitrate ?? 120000000].join('|');
 }
 
 export function prefetchPlaybackInfo(params) {

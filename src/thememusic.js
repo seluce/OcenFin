@@ -83,6 +83,12 @@ export async function playThemeFor(item, userId, volumePercent) {
     }
 
     const el = ensureAudio();
+    // A stop-fade may still be in flight (leaving a themed page and opening this one within
+    // the ~700 ms fade window). Kill it BEFORE touching the element: its pending
+    // releaseSource() would otherwise fire mid-setup — pausing the element and stripping the
+    // src assigned below — and its remaining ticks would drag the freshly forced volume 0
+    // back up (audible blip). The src swap below releases the old stream anyway.
+    clearFade();
     currentOwnerId = ownerId;
     // First entry of ThemeSongs — multiple themes exist but rotating them adds nothing here.
     el.src = `${session.serverUrl}/Audio/${songs[0].Id}/stream?static=true&ApiKey=${session.token}`;

@@ -55,12 +55,15 @@
     { key: 'episodePrev',    name: i18n.t.prevEpisode },
     { key: 'playPause',      name: i18n.t.remoteActionPlayPause },
   ]);
-  // The four rows, in the order they sit on the remote. `dot` tints the swatch next to the label.
+  // The four rows, in the order they sit on the remote. `dot` is a FIXED hex, not a Tailwind
+  // class: blue-* utilities are the accent and get rewritten by data-theme (App.svelte), so a
+  // bg-blue-500 swatch would render emerald under the emerald theme, right next to the real
+  // green dot. These dots depict the remote's literal button colors and must never follow it.
   let remoteColorRows = $derived([
-    { pref: 'remoteColorRed',    label: i18n.t.remoteColorRed,    dot: 'bg-red-500' },
-    { pref: 'remoteColorGreen',  label: i18n.t.remoteColorGreen,  dot: 'bg-green-500' },
-    { pref: 'remoteColorYellow', label: i18n.t.remoteColorYellow, dot: 'bg-yellow-400' },
-    { pref: 'remoteColorBlue',   label: i18n.t.remoteColorBlue,   dot: 'bg-blue-500' },
+    { pref: 'remoteColorRed',    label: i18n.t.remoteColorRed,    dot: '#ef4444' },
+    { pref: 'remoteColorGreen',  label: i18n.t.remoteColorGreen,  dot: '#22c55e' },
+    { pref: 'remoteColorYellow', label: i18n.t.remoteColorYellow, dot: '#facc15' },
+    { pref: 'remoteColorBlue',   label: i18n.t.remoteColorBlue,   dot: '#3b82f6' },
   ]);
   let remoteActionPref = $state('remoteColorRed');   // which colour the open picker is editing
   const remoteActionName = (pref) =>
@@ -901,7 +904,7 @@
             class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                    focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
             <span class="flex items-center gap-4">
-              <span class="w-5 h-5 rounded-full shrink-0 {row.dot}"></span>
+              <span class="w-5 h-5 rounded-full shrink-0" style="background:{row.dot}"></span>
               <span class="text-2xl text-white font-medium">{row.label}</span>
             </span>
             <span class="text-xl font-bold text-gray-300">{remoteActionName(row.pref)}</span>

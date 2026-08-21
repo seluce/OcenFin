@@ -70,13 +70,18 @@
     timeMode = timeMode === 'total' ? 'remaining' : timeMode === 'remaining' ? 'end' : 'total';
     resetControlsTimeout();
   }
+  // 'end' mode: the label only changes when the remaining MINUTES change, so derive from a
+  // minute bucket instead of full-resolution currentTime — the HUD is only opacity-hidden, so
+  // this derived stays live for the whole film and used to rebuild a Date plus a fresh
+  // Intl.DateTimeFormat (toLocaleTimeString with options) ~4×/s. The formatter is cached per
+  // language/format; the ≤59 s bucketing error is well inside an estimate that drifts anyway.
+  let endTimeFmt   = $derived(new Intl.DateTimeFormat(i18n.lang === 'de' ? 'de-DE' : 'en-US',
+    { hour: '2-digit', minute: '2-digit', hour12: !use24h }));
+  let remainingMin = $derived(duration ? Math.floor(Math.max(0, duration - currentTime) / 60) : 0);
   let rightTimeLabel = $derived.by(() => {
     if (!duration) return formatTime(0);
     if (timeMode === 'remaining') return '-' + formatTime(Math.max(0, duration - displayTime));
-    if (timeMode === 'end') {
-      const end = new Date(Date.now() + Math.max(0, duration - currentTime) * 1000);
-      return end.toLocaleTimeString(i18n.lang === 'de' ? 'de-DE' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: !use24h });
-    }
+    if (timeMode === 'end') return endTimeFmt.format(new Date(Date.now() + remainingMin * 60000));
     return formatTime(duration);
   });
 
@@ -729,8 +734,17 @@
   // callback. The bug is in LG's media integration, not in Chromium → version-independent (on desktop it
   // doesn't occur). assjs drives its render loop with it → ASS subtitles run on desktop but freeze on
   // the TV on the picture at setup time. So on webOS replace rVFC on the <video> with a rAF polyfill
-  // that really calls back (60 fps is plenty for subtitle timing). webOS only — desktop
-  // keeps its native, frame-accurate rVFC. Idempotent.
+  // that really calls back (60 fps is plenty for subtitle timing). Idempotent.
+  //
+  // The check is DELIBERATELY broad (webOSSystem OR the webOS global) and therefore also matches
+  // `npm run dev`, because index.html loads public/webOSTV.js there too and it defines
+  // window.webOS. So the polyfill is active in browser dev as well — not "webOS only", as this
+  // comment used to claim. Left that way on purpose: the failure modes are asymmetric. Patching
+  // where it is not needed costs a little timing precision for ASS cues that stay on screen for
+  // seconds; NOT patching on a TV whose runtime we failed to detect freezes the subtitles on the
+  // first frame — the exact bug this exists for. Narrow it only alongside one shared isWebOS()
+  // helper for the whole project (buildDeviceProfile uses webOSSystem + user agent, i.e. a
+  // different pair — see CODE-HEALTH §10's deferred list).
   let rvfcPatched = false;
   function ensureVideoFrameCallback() {
     if (rvfcPatched || !videoElement) return;
@@ -884,10 +898,25 @@
     return cues;
   }
 
-  // Derive the active cue from the current time (reactive, follows currentTime)
-  let currentSubtitleText = $derived(subtitleCues.length
-    ? (subtitleCues.find(c => (currentTime - subtitleOffset) >= c.start && (currentTime - subtitleOffset) <= c.end)?.text ?? '')
-    : '');
+  // Derive the active cue from the current time (reactive, follows currentTime). Cues are
+  // start-sorted (enforced in applyExternalSubtitleIfNeeded), so a monotonic cursor finds the
+  // cue in O(1) per tick — the old find() re-scanned the whole array on every timeupdate,
+  // walking ALL cues during dialogue gaps and near the end of long films. The cursor is a
+  // plain let, not state: it only memoizes where the last lookup ended, and both loops
+  // re-validate against the actual time, so seeks in either direction and a swapped cue
+  // array simply walk it back to the right place.
+  let _cueCursor = 0;
+  let currentSubtitleText = $derived.by(() => {
+    const cues = subtitleCues;
+    if (!cues.length) return '';
+    const t = currentTime - subtitleOffset;
+    let i = Math.min(_cueCursor, cues.length - 1);
+    while (i > 0 && t < cues[i].start) i--;              // backward seek → walk back
+    while (i < cues.length && t > cues[i].end) i++;      // playback advanced → skip ended cues
+    _cueCursor = Math.min(i, cues.length - 1);
+    const c = cues[i];
+    return c && t >= c.start && t <= c.end ? c.text : '';
+  });
 
   async function applyExternalSubtitleIfNeeded(index, ms) {
     subtitleCues = [];
@@ -906,7 +935,9 @@
       if (!res.ok || myToken !== subtitleFetchToken) return;   // superseded or error
       const text = await res.text();
       if (myToken !== subtitleFetchToken) return;
-      subtitleCues = parseVtt(text);
+      // Start-sorted: parseVtt keeps file order (chronological for every sane VTT), but the
+      // cue-cursor lookup RELIES on the order, so make it a guarantee instead of a hope.
+      subtitleCues = parseVtt(text).sort((a, b) => a.start - b.start);
       dlog('[OcenFin] subtitles loaded:', subtitleCues.length, 'cues');
     } catch (e) { dlog('[OcenFin] subtitle fetch error:', e?.message); }
   }
@@ -1409,14 +1440,23 @@
       // A soft switch is possible when the subtitle doesn't need to be burned in: "Off", or
       // a text subtitle (whether delivered externally or embedded → we fetch it as VTT).
       const graphicCodecs = ['pgssub', 'dvdsub', 'pgs', 'dvbsub', 'vobsub', 'sub'];
+      // Delivery (track vs. burned in) is decided by PlaybackInfo, so it lives on
+      // currentMediaSource.MediaStreams — the item's track list (mediaStreams) NEVER carries
+      // DeliveryMethod (see fetchMediaSources). Check the real source, not the UI copy.
+      const deliveredEncoded = (idx) => (currentMediaSource?.MediaStreams?.find(
+        x => x.Index === idx && x.Type === 'Subtitle')?.DeliveryMethod || '').toLowerCase() === 'encode';
       const isSoftSub = (s, idx) => {
         if (idx === -1) return true;
         if (!s) return false;
-        if ((s.DeliveryMethod || '').toLowerCase() === 'encode') return false;      // burned in → reload
+        if (deliveredEncoded(idx)) return false;                                    // burned in → reload
         const codec = (s.Codec || '').toLowerCase();
         if (['pgssub', 'pgs'].includes(codec)) return clientGraphicRender;          // PGS: client-side → soft, otherwise burned in
         if (['dvdsub', 'vobsub', 'sub'].includes(codec)) return clientGraphicRender && serverVobSub;  // VobSub: soft from Jellyfin 12.0
         if (graphicCodecs.includes(codec)) return false;                            // other graphic → not as VTT
+        // Text target: with burn-in enabled the profile marks every text subtitle Encode, so
+        // switching TO one always needs the reload — the delivery check above only knows about
+        // the track the current source was set up with.
+        if (playbackPrefs.burnSubtitles) return false;
         return true;
       };
       const oldIsExternal = isSoftSub(oldStream, selectedSubtitleIndex);
@@ -1464,6 +1504,10 @@
 
   // manual=true → triggered by the user (button/prompt); manual=false → auto-play (countdown/end/credits).
   function goToNextEpisode(manual = false) {
+    // Already handing off (prev zap / colour key / admin previoustrack): this instance is being
+    // replaced — its still-ticking countdown interval must not fire a SECOND navigation that
+    // would override the first one (pressing "previous" and landing on the next episode).
+    if (handingOff) return;
     stopCountdown();
     // While the "still watching?" prompt is up nothing may advance on its own — not even if a key
     // press has meanwhile marked the user as awake. Only the prompt's button moves on (it calls
@@ -1575,6 +1619,11 @@
   }
   function chapterPrev() {
     if (!videoElement) return;
+    // An explicit chapter jump during the outro countdown means "I'm not done with this episode"
+    // — same intent as the digit jump, which cancels too. Without this a backward jump landing
+    // inside the credits segment keeps nearEnd true, the interval re-anchors and auto-advances
+    // mid-rewatch (the !nearEnd cancel effect never fires there).
+    if (nextCountdown !== null) cancelCountdown();
     const t = videoElement.currentTime;
     // 3 s tolerance: shortly after a chapter start you jump to the previous chapter
     const target = [...chapterStartsSorted()].reverse().find(s => s < t - 3);
@@ -1583,6 +1632,7 @@
   }
   function chapterNext() {
     if (!videoElement) return;
+    if (nextCountdown !== null) cancelCountdown();   // same rule as chapterPrev
     const t = videoElement.currentTime;
     const target = chapterStartsSorted().find(s => s > t + 0.5);
     if (target != null) seekTo(target);
@@ -1590,11 +1640,14 @@
   }
 
   // Focus after closing the panel/switching tracks back onto the triggering button (subtitle/audio/gear),
-  // so a VISIBLE control is focused — not the invisible container. Falls back to the
-  // Player container if the button doesn't (any longer) exist (first start, hard reload).
+  // so a VISIBLE control is focused — not the invisible container. With no usable opener (e.g.
+  // a colour key opened the panel while the HUD was hidden) land on play/pause while the HUD is
+  // up — focusing the invisible container would leave no focus ring and a dead OK (the Enter
+  // shortcut requires !showControls). Last resort stays the container (first start, hard reload).
   function restoreControlFocus() {
-    if (controlOpener && document.contains(controlOpener)) controlOpener.focus();
-    else playerContainer?.focus();
+    if (controlOpener && document.contains(controlOpener)) { controlOpener.focus(); return; }
+    if (showControls && playPauseBtn) { playPauseBtn.focus(); return; }
+    playerContainer?.focus();
   }
 
   // Every overlay that can vanish ON ITS OWN has to hand the focus back. Its button carries
@@ -1622,7 +1675,8 @@
     if (!showSettings) {
       // Remember the opening button (if it's outside the panel)
       const el = document.activeElement;
-      if (el instanceof HTMLElement && !settingsPanel?.contains(el)) controlOpener = el;
+      if (el instanceof HTMLElement && !settingsPanel?.contains(el)
+        && el !== playerContainer && el !== document.body) controlOpener = el;
     }
     showSettings = !showSettings;
     if (showSettings) {
@@ -1646,7 +1700,8 @@
     if (showSettings && settingsTab === tab) { toggleSettings(); return; }
     // Remember the active button on a tab switch too (e.g. from audio to subtitle)
     const el = document.activeElement;
-    if (el instanceof HTMLElement && !settingsPanel?.contains(el)) controlOpener = el;
+    if (el instanceof HTMLElement && !settingsPanel?.contains(el)
+        && el !== playerContainer && el !== document.body) controlOpener = el;
     settingsTab = tab;
     if (!showSettings) { await toggleSettings(); }
     else { await tick(); settingsPanel?.querySelector('button')?.focus(); }
@@ -1662,6 +1717,11 @@
   // between firmware levels. Reading both means a firmware that only sends one of them still works.
   const REMOTE_COLOR_KEYCODES = { 403: 'remoteColorRed', 404: 'remoteColorGreen', 405: 'remoteColorYellow', 406: 'remoteColorBlue' };
   const REMOTE_COLOR_NAMES = { ColorF0Red: 'remoteColorRed', ColorF1Green: 'remoteColorGreen', ColorF2Yellow: 'remoteColorYellow', ColorF3Blue: 'remoteColorBlue' };
+  // The two actions that open the settings panel, and which tab each one wants.
+  const REMOTE_MENU_TABS = { subtitleMenu: 'subtitle', audioMenu: 'audio' };
+  // Which colour pref (if any) a key event addresses — used by the normal dispatch below AND by
+  // the early-return branch that runs while the settings panel is already open.
+  const remoteColorPref = (e) => REMOTE_COLOR_KEYCODES[e.keyCode] || REMOTE_COLOR_NAMES[e.key];
 
   // Last subtitle track that was actually ON in THIS playback — lets the toggle action restore
   // exactly the track the user had, instead of guessing a "first" one. A plain let, not $state:
@@ -1685,10 +1745,10 @@
         else if (lastOnSubtitleIndex !== -1) changeTrack('subtitle', lastOnSubtitleIndex);
         else                                 openSettings('subtitle');   // nothing to restore yet → let them pick
         return true;
-      case 'subtitleMenu':   openSettings('subtitle'); return true;
-      case 'audioMenu':      openSettings('audio');    return true;
+      case 'subtitleMenu':
+      case 'audioMenu':      openSettings(REMOTE_MENU_TABS[action]); return true;
       // Identical to the channel rocker, including the handingOff flag the prev path needs.
-      case 'episodeNext':    goToNextEpisode(true); return true;
+      case 'episodeNext':    if (!nextEpisode) return false; goToNextEpisode(true); return true;
       case 'episodePrev':    if (!prevEpisode) return false; handingOff = true; onPrev?.(prevEpisode); return true;
       case 'playPause':      togglePlay(); return true;
       default:               return false;   // 'off' and anything unknown
@@ -1724,7 +1784,14 @@
       return;
     }
     if (showSettings) {
-      if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); toggleSettings(); }
+      if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); toggleSettings(); return; }
+      // The colour key that OPENED the panel has to be able to close it again — openSettings()
+      // already implements exactly that ("same key with the same tab open → close", and a switch
+      // when the other tab is requested). Only the two menu actions are handled here; every other
+      // colour action stays inert while the panel is up, because the panel owns the remaining keys
+      // (arrows navigate its list, OK activates an entry, Back closes).
+      const tab = REMOTE_MENU_TABS[playbackPrefs[remoteColorPref(e)]];
+      if (tab) { e.preventDefault(); e.stopPropagation(); openSettings(tab); }
       return;
     }
     // If the auto-play countdown is running, Back cancels it first (instead of leaving the Player)
@@ -1783,7 +1850,7 @@
     // (they call it themselves) but is what reveals the HUD for the two menu actions, so a colour
     // button behaves exactly like pressing the HUD's own audio/subtitle button. It cannot fight
     // the open panel: the timeout callback bails out on showSettings.
-    const colorPref = REMOTE_COLOR_KEYCODES[e.keyCode] || REMOTE_COLOR_NAMES[e.key];
+    const colorPref = remoteColorPref(e);
     if (colorPref && !showStillWatching) {
       if (runRemoteAction(playbackPrefs[colorPref])) {
         e.preventDefault(); e.stopPropagation();

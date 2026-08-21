@@ -46,7 +46,7 @@ export async function initWatchlist(userId) {
 async function refreshEntries(userId) {
   if (!watchlist.playlistId) return;
   const res = await fetch(
-    `${session.serverUrl}/Playlists/${watchlist.playlistId}/Items?UserId=${userId}&Limit=500`,
+    `${session.serverUrl}/Playlists/${watchlist.playlistId}/Items?UserId=${userId}&Limit=500&EnableTotalRecordCount=false`,
     { headers: headers() }
   );
   if (!res.ok) return;
@@ -137,13 +137,19 @@ export async function toggleWatchlist(item) {
           `${session.serverUrl}/Playlists?Name=${encodeURIComponent(WATCHLIST_NAME)}&Ids=${target.Id}&UserId=${userId}`,
           { method: 'POST', headers: headers() });
         if (res.ok) watchlist.playlistId = (await res.json()).Id;
+        // Creation failed (403/500): drop the placeholder. refreshEntries can't clean it up
+        // (it early-returns while playlistId is null), the icon would show a saved state that
+        // doesn't exist, and the truthy 'pending' entry would block every retry.
+        else delete watchlist.entries[item.Id];
       }
       // The refresh rebuilds entries (dropping the pending marker) and items — for a
       // series the SeriesId match in inWatchlist takes over seamlessly.
       await refreshEntries(userId);
     }
   } catch {
-    // Network error → re-sync with the server so the UI doesn't lie.
+    // Network error → drop an unconfirmed placeholder first: while no playlist exists yet,
+    // refreshEntries early-returns and could never clean it up. Then re-sync with the server.
+    if (watchlist.entries[item.Id] === 'pending') delete watchlist.entries[item.Id];
     refreshEntries(userId);
   }
 }

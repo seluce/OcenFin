@@ -356,8 +356,15 @@
     const sid = selectedServer?.id;
     return m && (sharedTokens[sid]?.[m.id] || savedTokens[sid]?.[m.id]);
   }
-  // Provide the profile list for setup if not loaded yet
-  $effect(() => { if (viewState === 'settings' && users.length === 0 && session.serverUrl) fetchUsers(); });
+  // Provide the profile list for setup if not loaded yet. ONE SHOT per settings visit:
+  // fetchUsers() reassigns `users`, and a server that hides all public users returns [] —
+  // without the latch the effect would re-fire on the fresh empty array (new reference,
+  // same length) and hammer /Users/Public in an endless loop while Settings is open.
+  let usersFetchTried = false;
+  $effect(() => {
+    if (viewState !== 'settings') { usersFetchTried = false; return; }
+    if (users.length === 0 && session.serverUrl && !usersFetchTried) { usersFetchTried = true; fetchUsers(); }
+  });
 
   // ── Shared suggestions (dashboard row "For you both") ──────────────────────
   let sharedSuggestions = $state([]);
@@ -721,7 +728,10 @@
         onSuccess: (res) => {
           // The first response only confirms the registration (without state); afterwards state comes per request.
           if (res?.state !== 'Active') { dlog('[Screensaver] Luna registered, returnValue=', res?.returnValue); return; }
-          const decline = screensaverSettings.enabled;   // OcenFin screensaver on → decline webOS
+          // Decline only while OcenFin's saver can actually take over: outside the app phase
+          // (server/user selection) scheduleScreensaver refuses to run, so declining would leave
+          // the static login screen with NO screensaver at all — the opposite of OLED protection.
+          const decline = screensaverSettings.enabled && appPhase === 'app';
           dlog('[Screensaver] webOS request →', decline ? 'declined (ack:false)' : 'allowed (ack:true)');
           window.webOS.service.request('luna://com.webos.service.tvpower', {
             method: 'power/responseScreenSaverRequest',
@@ -883,7 +893,9 @@
   // Invalidated on member change, profile-off, session switch and "clear cache".
   let partnersPlayedCache = {};   // libraryId → { ids: Set, at: timestamp }
   const PARTNERS_CACHE_TTL = 10 * 60 * 1000;
+  let _partnersSeq = 0;   // supersede guard: only the LATEST library switch may publish its result
   async function loadPartnersPlayedIds(libraryId) {
+    const seq = ++_partnersSeq;
     partnersPlayedIds = null;
     if (!librarySharedOn || !sharedReady || !libraryId) return;
     const hit = partnersPlayedCache[libraryId];
@@ -907,15 +919,16 @@
         dlog('[Shared]', m.name, '→', n, 'fully-watched titles');
       } catch (e) { console.warn('[Shared] error for', m.name, e); }
     }
+    partnersPlayedCache[libraryId] = { ids, at: Date.now() };   // cache stays valid for ITS library
+    if (seq !== _partnersSeq) return;   // library switched while fetching → don't publish stale IDs
     partnersPlayedIds = ids;
-    partnersPlayedCache[libraryId] = { ids, at: Date.now() };
   }
 
   // Load/discard partner IDs for "watch together" as soon as the library or toggle changes.
   $effect(() => {
     const lib = currentLibrary;
     if (lib && librarySharedOn) loadPartnersPlayedIds(lib.Id);
-    else partnersPlayedIds = null;
+    else { _partnersSeq++; partnersPlayedIds = null; }   // also invalidates any in-flight load
   });
 
   // Suggestions that match the SHARED preference and that no one has watched yet.
@@ -1094,7 +1107,7 @@
     if      (viewState === 'player')   { viewState = 'details';        e.preventDefault(); }
     else if (viewState === 'details')  { returnFromDetails();          e.preventDefault(); }
     else if (viewState === 'person')   { viewState = personReturnView; e.preventDefault(); }
-    else if (viewState === 'collection') { if (!collectionRef?.handleBackKey()) viewState = collectionReturnView; e.preventDefault(); }
+    else if (viewState === 'collection') { if (!collectionRef?.handleBackKey()) returnFromCollection(); e.preventDefault(); }
     else if (viewState === 'library')  { viewState = 'dashboard';      e.preventDefault(); }
     else if (viewState === 'settings') { viewState = 'dashboard';      e.preventDefault(); }
     else if (viewState === 'search')   { viewState = 'dashboard';      e.preventDefault(); }
@@ -1143,11 +1156,24 @@
   let currentCollection    = $state(null);          // seed BoxSet/playlist
   let collectionReturnView = $state('dashboard');   // where "Back" leads
   let collectionRef = $state();                     // bind:this → for the back key (handleBackKey)
+  let collectionStack = [];                         // parent chain when a collection is opened from inside one
 
   function openCollection(boxSet) {
-    collectionReturnView = viewState;
+    // Opened from INSIDE a collection (nested BoxSet/playlist card): push the parent so Back
+    // returns there. Overwriting collectionReturnView with 'collection' made Back assign the
+    // view it was already on — a no-op that trapped the user in the child collection.
+    if (viewState === 'collection' && currentCollection) {
+      collectionStack.push(currentCollection);
+    } else {
+      collectionStack = [];
+      collectionReturnView = viewState;
+    }
     currentCollection    = boxSet;
     viewState            = 'collection';
+  }
+  function returnFromCollection() {
+    if (collectionStack.length) { currentCollection = collectionStack.pop(); return; }
+    viewState = collectionReturnView;
   }
 
   // Cross effects from the collection view onto the library grid / sidebar:
@@ -1168,7 +1194,8 @@
       apiCache.dashboard = null;
       dashboardReloadKey++;
     }
-    if (collectionReturnView === 'library' && playlistsLibGone) { currentLibrary = null; viewState = 'dashboard'; }
+    if (collectionStack.length) { currentCollection = collectionStack.pop(); }
+    else if (collectionReturnView === 'library' && playlistsLibGone) { currentLibrary = null; viewState = 'dashboard'; }
     else viewState = collectionReturnView;
   }
 
@@ -1292,7 +1319,7 @@
     if (!item?.Id) return;
     detailsOrigin = viewState;
     try {
-      const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300`, { headers: getAuthHeaders() });
+      const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300&EnableTotalRecordCount=false`, { headers: getAuthHeaders() });
       const data  = await res.json();
       const queue = await buildPlayQueue(data.Items || [], { serverUrl: session.serverUrl, userId: activeUserId, headers: getAuthHeaders() });
       if (queue.length) { playQueue = { items: queue, index: 0 }; startPlayback({ item: queue[0], audioIndex: -1, subtitleIndex: -1 }); }
@@ -1689,7 +1716,7 @@
             onOpenPerson={openPerson} onFocusFallback={focusMain} />
         {:else if viewState === 'collection'}
           <Collection bind:this={collectionRef} collection={currentCollection} {selectedUser}
-            onBack={() => viewState = collectionReturnView}
+            onBack={returnFromCollection}
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu}
             onChildCountChanged={onCollectionChildCount}
             onPlayVideo={(p) => { detailsOrigin = 'collection'; startPlayback(p); }}

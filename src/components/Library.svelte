@@ -341,7 +341,7 @@
     try {
       const res = await fetch(
         `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}` +
-        `&SortBy=Random&Limit=1&Recursive=true&IncludeItemTypes=Movie,Series&Fields=Overview`,
+        `&SortBy=Random&Limit=1&Recursive=true&IncludeItemTypes=Movie,Series&Fields=Overview&EnableTotalRecordCount=false`,
         authOpts()
       );
       if (res.ok) {

@@ -48,7 +48,7 @@
       try {
         const url = m === 'collection'
           ? `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${target.Id}&Fields=&Limit=300&EnableTotalRecordCount=false`
-          : `${session.serverUrl}/Playlists/${target.Id}/Items?UserId=${selectedUser.Id}&Limit=300`;
+          : `${session.serverUrl}/Playlists/${target.Id}/Items?UserId=${selectedUser.Id}&Limit=300&EnableTotalRecordCount=false`;
         const r = await fetch(url, { headers: getAuthHeaders() });
         if (r.ok) {
           const kids = (await r.json()).Items || [];

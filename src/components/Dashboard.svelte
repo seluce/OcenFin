@@ -228,7 +228,7 @@
       // Fetch recently played movies/series as the hook
       const res = await fetch(
         `${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
-        `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=4&Fields=${fields}`, opts
+        `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=4&Fields=${fields}&EnableTotalRecordCount=false`, opts
       );
       const seeds = (await res.json()).Items || [];
 
