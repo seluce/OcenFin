@@ -4,6 +4,9 @@ node_modules/
 # Build output
 dist/
 
+# Vite dependency cache (local dev server state, regenerated on demand)
+.vite/
+
 # webOS packaging artifacts (built per release, attached to GitHub releases instead)
 *.ipk
 com.ocenfin.app.manifest.json
@@ -12,6 +15,8 @@ com.ocenfin.app.manifest.json
 CODE-HEALTH.md
 TechnicalDecisions.md
 FAQ.md
+CLAUDE.md
+.claude/
 
 
 # Logs

@@ -1652,6 +1652,49 @@
     else { await tick(); settingsPanel?.querySelector('button')?.focus(); }
   }
 
+  // ── Colour buttons ────────────────────────────────────────────────────────────────────
+  // webOS delivers the four colour keys as the CEA-2014 codes (VK_RED … VK_BLUE). They are the
+  // ONLY freely assignable keys in the app: it stays at these four keys — no free remapping of
+  // arbitrary keys, ever. A remapping UI for the whole remote would collide with the D-pad, the
+  // number keys and the channel rocker, all of which already carry fixed meanings here.
+  // Both spellings are matched, exactly like the number keys above: webOS reports the colour keys
+  // as keyCode 403–406 AND as e.key "ColorF0Red" … "ColorF3Blue", and which one arrives has varied
+  // between firmware levels. Reading both means a firmware that only sends one of them still works.
+  const REMOTE_COLOR_KEYCODES = { 403: 'remoteColorRed', 404: 'remoteColorGreen', 405: 'remoteColorYellow', 406: 'remoteColorBlue' };
+  const REMOTE_COLOR_NAMES = { ColorF0Red: 'remoteColorRed', ColorF1Green: 'remoteColorGreen', ColorF2Yellow: 'remoteColorYellow', ColorF3Blue: 'remoteColorBlue' };
+
+  // Last subtitle track that was actually ON in THIS playback — lets the toggle action restore
+  // exactly the track the user had, instead of guessing a "first" one. A plain let, not $state:
+  // only the key handler reads it and it must not cause a re-render. The instance is replaced via
+  // {#key} on an episode change, so it resets per playback by construction. The effect catches
+  // every path that turns a subtitle on: the panel, the remembered per-series track applied during
+  // setup, and a SyncPlay/remote-driven switch.
+  let lastOnSubtitleIndex = -1;
+  $effect(() => { if (selectedSubtitleIndex !== -1) lastOnSubtitleIndex = selectedSubtitleIndex; });
+
+  // Runs the action configured for a colour button. Returns false when nothing was done, so the
+  // caller can let the key fall through untouched instead of swallowing it.
+  function runRemoteAction(action) {
+    switch (action) {
+      // Chapter jumps only where the HUD offers them too — without markers chapterPrev() would
+      // seek to 0, which is a nasty surprise for a button press.
+      case 'chapterPrev':    if (!hasChapterNav) return false; chapterPrev(); return true;
+      case 'chapterNext':    if (!hasChapterNav) return false; chapterNext(); return true;
+      case 'subtitleToggle':
+        if (selectedSubtitleIndex !== -1)    changeTrack('subtitle', -1);
+        else if (lastOnSubtitleIndex !== -1) changeTrack('subtitle', lastOnSubtitleIndex);
+        else                                 openSettings('subtitle');   // nothing to restore yet → let them pick
+        return true;
+      case 'subtitleMenu':   openSettings('subtitle'); return true;
+      case 'audioMenu':      openSettings('audio');    return true;
+      // Identical to the channel rocker, including the handingOff flag the prev path needs.
+      case 'episodeNext':    goToNextEpisode(true); return true;
+      case 'episodePrev':    if (!prevEpisode) return false; handingOff = true; onPrev?.(prevEpisode); return true;
+      case 'playPause':      togglePlay(); return true;
+      default:               return false;   // 'off' and anything unknown
+    }
+  }
+
   // Slider: Left/Right seek (±10 s), Up/Down leaves the bar
   // (the native value change on Up/Down is suppressed; the group navigation
   // takes over the jump to the control buttons).
@@ -1713,7 +1756,7 @@
     // the Magic Remote's 123 overlay reports plain keyCodes.
     const digit = (e.key?.length === 1 && e.key >= '0' && e.key <= '9') ? e.key.charCodeAt(0) - 48
                 : (e.keyCode >= 48 && e.keyCode <= 57 ? e.keyCode - 48 : null);
-    if (digit !== null && duration > 0 && !showStillWatching) {
+    if (digit !== null && duration > 0 && !showStillWatching && playbackPrefs.remoteDigitSeek) {
       e.preventDefault(); e.stopPropagation();
       if (nextCountdown !== null) cancelCountdown();
       if (seekCommitTimer) { clearTimeout(seekCommitTimer); seekCommitTimer = null; }
@@ -1727,11 +1770,26 @@
     // the two transport buttons exactly — goToNextEpisode(true) keeps all its own guards
     // (still-watching, sleep protection, countdown), and the prev path hands off precisely like
     // the ⏮ button, including the handingOff flag for the focus handling.
-    if ((e.keyCode === 33 || e.keyCode === 34) && !showStillWatching) {
+    if ((e.keyCode === 33 || e.keyCode === 34) && !showStillWatching && playbackPrefs.remoteChannelZap) {
       e.preventDefault(); e.stopPropagation();
       if (e.keyCode === 33) { goToNextEpisode(true); }
       else if (prevEpisode) { handingOff = true; onPrev?.(prevEpisode); }
       return;
+    }
+    // Colour buttons: opt-in, unassigned by default. Same lock as the shortcuts above — the
+    // still-watching prompt wants an explicit answer first. Anything the user left on 'off', and
+    // any action that isn't available right now (no chapters, no previous episode), falls THROUGH
+    // untouched rather than being swallowed. resetControlsTimeout() is redundant for most actions
+    // (they call it themselves) but is what reveals the HUD for the two menu actions, so a colour
+    // button behaves exactly like pressing the HUD's own audio/subtitle button. It cannot fight
+    // the open panel: the timeout callback bails out on showSettings.
+    const colorPref = REMOTE_COLOR_KEYCODES[e.keyCode] || REMOTE_COLOR_NAMES[e.key];
+    if (colorPref && !showStillWatching) {
+      if (runRemoteAction(playbackPrefs[colorPref])) {
+        e.preventDefault(); e.stopPropagation();
+        resetControlsTimeout();
+        return;
+      }
     }
     // HUD hidden (you're watching) → OK pauses/plays directly and focuses play/pause,
     // so another OK resumes immediately. With an overlay open do NOT intervene — there
