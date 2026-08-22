@@ -35,6 +35,7 @@
         const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${pick.Id}`
           + `&IncludeItemTypes=Episode${pick.Type === 'Series' ? '&Recursive=true' : ''}&EnableTotalRecordCount=false`;
         const res  = await fetch(url, { headers: getAuthHeaders() });
+        if (!res.ok) { console.warn('playRandom: HTTP', res.status); return; }
         const data = await res.json();
         let pool = (data.Items || []).filter(e => e.Type === 'Episode');
         if (pick.Type === 'Series') pool = pool.filter(e => e.ParentIndexNumber !== 0);
