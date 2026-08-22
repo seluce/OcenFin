@@ -7,7 +7,7 @@
   import { session } from '../session.svelte.js';
   import { i18n } from '../i18n.svelte.js';
   import { itemProgress, itemBadge, getItemSubtitle, getItemImageUrl, blurUp, itemBlurHash, longPress,
-           focusOnMount, isBackKey, makeFocusReturn, authHeaders, uiFade, dropTrapOnOutro, dlog } from '../utils.js';
+           focusOnMount, isBackKey, makeFocusReturn, authHeaders, uiFade, dropTrapOnOutro, dlog, markContentChange } from '../utils.js';
 
   let {
     selectedUser,
@@ -24,7 +24,15 @@
     onSharedWatchToggle,       // (on: boolean) => void — App loads/discards partner IDs
   } = $props();
 
-  const libraryItemLimit = 50;
+  // Page size. Kept at 25 because it feels better while scrolling and the extra requests cost
+  // nothing noticeable — they run 2000 px ahead of the viewport.
+  //
+  // It does NOT fix the navigation stalls, which is what it was first tried for: halving the batch
+  // from 50 left the forced-layout time unchanged (measured on the B4: ~104 ms at batch 50, ~119 ms
+  // at batch 25). That cost tracks neither the batch nor the number of cards on screen (~105 ms at
+  // 187 and at 340) — it is near constant, and its cause is still open. Don't tune this constant
+  // hoping to move it.
+  const libraryItemLimit = 25;
 
   // ── Grid state ──────────────────────────────────────────────
   let currentItems        = $state([]);
@@ -276,6 +284,7 @@
         const data        = await res.json();
         if (myToken !== loadToken) return;
         currentItems      = withoutKnown(data.Items, []);
+        markContentChange();
         totalLibraryItems = data.TotalRecordCount || 0;
         dlog('[Library] first page', { lib: lib.Name, start: startIndex, got: data.Items?.length ?? 0,
              kept: currentItems.length, total: totalLibraryItems, hasCount: 'TotalRecordCount' in data });
@@ -332,6 +341,7 @@
         // deleted server-side). Safe to trust now that an out-of-window response can't land here.
         if (!fresh.length) totalLibraryItems = firstLoadedIndex + currentItems.length;
         currentItems = [...currentItems, ...fresh];
+        markContentChange();
         if (isCacheableView()) cacheLibraryView(currentLibraryId, { items: currentItems, total: totalLibraryItems });
       }
     } catch { } finally { isFetchingMore = false; }
@@ -356,6 +366,7 @@
         if (newStart + count !== firstLoadedIndex) return;
         const before = libraryScrollContainer ? libraryScrollContainer.scrollHeight : 0;
         currentItems     = [...withoutKnown(items, currentItems), ...currentItems];
+        markContentChange();
         firstLoadedIndex = newStart;
         await tick();
         if (libraryScrollContainer) libraryScrollContainer.scrollTop += libraryScrollContainer.scrollHeight - before;

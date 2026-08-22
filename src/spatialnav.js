@@ -14,7 +14,7 @@
 //   • Sliders (type=range): Left/Right control them, Up/Down leaves them.
 // ============================================================
 
-import { perfEnabled, perfSample } from './utils.js';
+import { perfEnabled, perfSample, sinceContentChange } from './utils.js';
 
 const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -38,10 +38,26 @@ const lastFocus = new WeakMap();
 let measureCache = null;   // { rects: Map, vis: Map } while a pick is running, otherwise null
 // t0 doubles as the "measure this press" flag; rects.size is the candidate count for free.
 function beginMeasure() {
-  measureCache = { rects: new Map(), vis: new Map(), t0: perfEnabled() ? performance.now() : 0 };
+  const t0 = perfEnabled() ? performance.now() : 0;
+  let flush = 0;
+  if (t0) {
+    // Force any pending layout NOW and time it on its own. Everything the pick reads afterwards
+    // comes from clean layout and is cheap, so this splits the two candidate explanations for the
+    // 100 ms+ spikes: "the browser had to re-lay out a huge grid" (flush dominates → the DOM size
+    // is the problem) versus "we asked too many questions" (flush small → the pick is).
+    document.documentElement.getBoundingClientRect();
+    flush = performance.now() - t0;
+  }
+  measureCache = { rects: new Map(), vis: new Map(), t0, flush };
 }
 function endMeasure() {
-  if (measureCache?.t0) perfSample('nav', performance.now() - measureCache.t0, { candMax: measureCache.rects.size });
+  if (measureCache?.t0) {
+    perfSample('nav', performance.now() - measureCache.t0, {
+      cand: measureCache.rects.size,
+      flush: +measureCache.flush.toFixed(1),
+      sinceLoad: sinceContentChange(),   // ms since cards were last inserted, -1 = never
+    });
+  }
   measureCache = null;
 }
 
