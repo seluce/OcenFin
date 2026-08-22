@@ -31,17 +31,12 @@
     if (!items.length) return;
     const pick = items[Math.floor(Math.random() * items.length)];
     if (pick.Type === 'Series' || pick.Type === 'Season') {
-      try {
-        const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${pick.Id}`
-          + `&IncludeItemTypes=Episode${pick.Type === 'Series' ? '&Recursive=true' : ''}&EnableTotalRecordCount=false`;
-        const res  = await fetch(url, { headers: getAuthHeaders() });
-        if (!res.ok) { console.warn('playRandom: HTTP', res.status); return; }
-        const data = await res.json();
-        let pool = (data.Items || []).filter(e => e.Type === 'Episode');
-        if (pick.Type === 'Series') pool = pool.filter(e => e.ParentIndexNumber !== 0);
-        if (!pool.length) return;
-        onPlayVideo?.({ item: pool[Math.floor(Math.random() * pool.length)], audioIndex: -1, subtitleIndex: -1 });
-      } catch (e) { console.error(e); }
+      // Same expansion as playAll: buildPlayQueue resolves series/seasons to episodes with the
+      // shared specials rule; the random draw ignores its ordering. Was an inline copy of that
+      // query — the third one in the codebase.
+      const pool = await buildPlayQueue([pick], { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+      if (!pool.length) return;
+      onPlayVideo?.({ item: pool[Math.floor(Math.random() * pool.length)], audioIndex: -1, subtitleIndex: -1 });
     } else {
       onPlayVideo?.({ item: pick, audioIndex: -1, subtitleIndex: -1 });
     }

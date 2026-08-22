@@ -1,9 +1,10 @@
 <script>
   import { i18n, LANGUAGES } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
-  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint } from '../utils.js';
-  import { getRememberedTrack } from '../trackmemory.js';
+  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
+  import { matchRememberedAudioIndex, matchRememberedSubtitleIndex } from '../trackmemory.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
+  import { buildPlayQueue } from '../playback.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
@@ -103,17 +104,12 @@
     let audioSet = false, subSet = false;
 
     if (seriesId && playbackPrefs.rememberAudioTrack) {
-      const remA = getRememberedTrack(seriesId, 'audio');
-      if (remA) { const t = streams.find(s => s.Type === 'Audio' && s.Language === remA); if (t) { selectedAudioIndex = t.Index; audioSet = true; } }
+      const a = matchRememberedAudioIndex(streams, seriesId);
+      if (a != null) { selectedAudioIndex = a; audioSet = true; }
     }
     if (seriesId && playbackPrefs.rememberSubtitleTrack) {
-      const remS = getRememberedTrack(seriesId, 'subtitle');
-      if (remS === 'off') { selectedSubtitleIndex = -1; subSet = true; }
-      else if (remS?.lang) {
-        const subs = streams.filter(s => s.Type === 'Subtitle' && s.Language === remS.lang);
-        const t = subs.find(s => !!s.IsForced === remS.forced && !!s.IsHearingImpaired === remS.sdh) || subs[0];
-        if (t) { selectedSubtitleIndex = t.Index; subSet = true; }
-      }
+      const st = matchRememberedSubtitleIndex(streams, seriesId);
+      if (st != null) { selectedSubtitleIndex = st; subSet = true; }
     }
 
     if (!audioSet) {
@@ -469,19 +465,12 @@
   // seasons, specials/season 0 excluded); season → only from this season. Uniformly distributed, incl. already
   // watched ones (deliberately: comfort rewatch). Ends up in the Player via onPlayVideo like handlePlay.
   async function playRandomEpisode() {
-    const isSeries = fullItem.Type === 'Series';
-    const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}`
-      + `&IncludeItemTypes=Episode${isSeries ? '&Recursive=true' : ''}&EnableTotalRecordCount=false`;
-    try {
-      const res  = await fetch(url, { headers: getAuthHeaders() });
-      if (!res.ok) { console.warn('play random episode: HTTP', res.status); return; }
-      const data = await res.json();
-      let pool = (data.Items || []).filter(e => e.Type === 'Episode');
-      if (isSeries) pool = pool.filter(e => e.ParentIndexNumber !== 0);   // exclude specials (season 0)
-      if (!pool.length) return;
-      const pick = pool[Math.floor(Math.random() * pool.length)];
-      onPlayVideo?.({ item: pick, audioIndex: -1, subtitleIndex: -1 });
-    } catch (e) { console.error(e); }
+    // Shared expansion (playback.js): all episodes across seasons for a series, this season only
+    // for a season, specials excluded — the identical pool the old inline query built; the random
+    // draw ignores buildPlayQueue's ordering.
+    const pool = await buildPlayQueue([fullItem], { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+    if (!pool.length) return;
+    onPlayVideo?.({ item: pool[Math.floor(Math.random() * pool.length)], audioIndex: -1, subtitleIndex: -1 });
   }
 
   async function togglePlayed() {
@@ -526,19 +515,7 @@
     onOpenItemById?.(id);
   }
 
-  function getItemImageUrl(targetItem, format = "portrait") {
-    if (format === 'landscape') {
-      if (targetItem.Type === 'Episode' && targetItem.ImageTags?.Primary)
-        return `${session.serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
-      if (targetItem.BackdropImageTags?.length > 0)
-        return `${session.serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
-    }
-    if (targetItem.ImageTags?.Primary)
-      return `${session.serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&fillHeight=400&quality=80&format=webp`;
-    if (targetItem.SeriesPrimaryImageTag)
-      return `${session.serverUrl}/Items/${targetItem.SeriesId}/Images/Primary?tag=${targetItem.SeriesPrimaryImageTag}&fillHeight=400&quality=80&format=webp`;
-    return null;
-  }
+
 
   function getItemBackdropUrl(targetItem) {
     if (targetItem.BackdropImageTags?.length > 0)

@@ -154,10 +154,17 @@
   let reduceAnimations = $state(false);
 
   // Display elements (clock, hero banner, episode count, libraries) — individually toggleable
-  let displaySettings = $state({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
+  // ONE source for the profile-pref defaults, consumed twice: the $state initializers here and
+  // the applyUserPrefs merge on login. A key added to only one copy ships its feature dead for
+  // existing profiles (their stored prefs are spread over the OTHER copy) — that paste-twice trap
+  // fired once already (theme music). Functions, not shared literals: navOrder/navHidden/navIcons
+  // must be fresh references on every call.
+  const defaultDisplaySettings = () => ({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
+  const defaultPlaybackPrefs   = () => ({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
+  let displaySettings = $state(defaultDisplaySettings());
 
   // Default audio/subtitle language
-  let playbackPrefs = $state({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
+  let playbackPrefs = $state(defaultPlaybackPrefs());
 
   // ── Profile-specific settings ───────────────────────────────
   // Language + display + playback + animations are stored PER USER.
@@ -216,8 +223,8 @@
       setLang(p.language);
       localStorage.setItem('app_language', p.language);   // update "last used"
     }
-    displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
-    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off', ...(p.playbackPrefs || {}) };
+    displaySettings  = { ...defaultDisplaySettings(), ...(p.displaySettings || {}) };
+    playbackPrefs    = { ...defaultPlaybackPrefs(), ...(p.playbackPrefs || {}) };
     reduceAnimations = p.reduceAnimations ?? false;
     librarySorts     = p.librarySorts || {};   // remembered sort per library
     sharedProfile    = p.sharedProfile && Array.isArray(p.sharedProfile.members)

@@ -73,19 +73,23 @@
     remoteActionPref = pref;
     openModal('remoteAction');
   }
-  function setRemoteAction(key) {
-    onPlaybackPrefsChange?.({ ...playbackPrefs, [remoteActionPref]: key });
-    closeModal();
-  }
-
-  function setAudioLang(key) {
-    onPlaybackPrefsChange?.({ ...playbackPrefs, audioLanguage: key });
-    closeModal();
-  }
-  function setSubtitleLang(key) {
-    onPlaybackPrefsChange?.({ ...playbackPrefs, subtitleLanguage: key });
-    closeModal();
-  }
+  // ── One option-picker modal for every "choose one value for a pref" dialog ────────────────
+  // audioLang / subtitleLang / remoteAction shared three near-identical modal bodies that had
+  // already drifted from the app-language picker in padding and focus-ring style — the next tweak
+  // would predictably have landed in some copies and not others. Each entry names its title,
+  // options, current value and where the pick goes; the markup exists once. The app-language
+  // modal stays separate on purpose (flags, immediate setLang semantics).
+  let pickerModals = $derived({
+    audioLang:    { title: i18n.t.audioLanguage,      options: audioLangOptions,
+                    value: playbackPrefs.audioLanguage,
+                    set: (k) => onPlaybackPrefsChange?.({ ...playbackPrefs, audioLanguage: k }) },
+    subtitleLang: { title: i18n.t.subtitleLanguage,   options: subtitleLangOptions,
+                    value: playbackPrefs.subtitleLanguage,
+                    set: (k) => onPlaybackPrefsChange?.({ ...playbackPrefs, subtitleLanguage: k }) },
+    remoteAction: { title: i18n.t.remoteButtonAction, options: remoteActionOptions,
+                    value: playbackPrefs[remoteActionPref],
+                    set: (k) => onPlaybackPrefsChange?.({ ...playbackPrefs, [remoteActionPref]: k }) },
+  });
 
   function togglePlaybackPref(key) {
     onPlaybackPrefsChange?.({ ...playbackPrefs, [key]: !playbackPrefs[key] });
@@ -473,7 +477,7 @@
         : await renderAvatarPng(effectiveIcon, effectiveColor);
       const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Images/Primary`, {
         method: 'POST',
-        headers: { 'Authorization': `MediaBrowser Token="${session.token}"`, 'Content-Type': 'image/png' },
+        headers: { ...authHeaders(session.token), 'Content-Type': 'image/png' },   // one auth scheme, one source
         body: base64,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1968,40 +1972,15 @@
           {/each}
         </div>
 
-      {:else if activeModal === 'audioLang'}
-        <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.audioLanguage}</h2>
+      {:else if pickerModals[activeModal]}
+        {@const picker = pickerModals[activeModal]}
+        <h2 class="text-4xl text-white font-bold mb-2">{picker.title}</h2>
         <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
-          {#each audioLangOptions as opt}
-            <button onclick={() => setAudioLang(opt.key)}
+          {#each picker.options as opt (opt.key)}
+            <button onclick={() => { picker.set(opt.key); closeModal(); }}
               class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
                      focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white
-                     {playbackPrefs.audioLanguage === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
-              {opt.name}
-            </button>
-          {/each}
-        </div>
-
-      {:else if activeModal === 'subtitleLang'}
-        <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.subtitleLanguage}</h2>
-        <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
-          {#each subtitleLangOptions as opt}
-            <button onclick={() => setSubtitleLang(opt.key)}
-              class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
-                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white
-                     {playbackPrefs.subtitleLanguage === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
-              {opt.name}
-            </button>
-          {/each}
-        </div>
-
-      {:else if activeModal === 'remoteAction'}
-        <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.remoteButtonAction}</h2>
-        <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
-          {#each remoteActionOptions as opt (opt.key)}
-            <button onclick={() => setRemoteAction(opt.key)}
-              class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
-                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white
-                     {playbackPrefs[remoteActionPref] === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
+                     {picker.value === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
               {opt.name}
             </button>
           {/each}

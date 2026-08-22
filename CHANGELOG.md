@@ -3,6 +3,22 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## [Unreleased]
+
+### Fixed
+
+- **The shareable diagnostic log no longer contains the access token.** Stream and subtitle URLs
+  embed it as a query parameter, and the player logged such URLs — so sharing the log through the
+  QR code on the status page handed out the server address plus a valid token. Log lines are now
+  masked before they enter the buffer; the browser console keeps full URLs for development.
+
+### Internal
+
+- The seven structural refactors deferred in `CODE-HEALTH.md` §10 are done: one source for the
+  profile-pref defaults, one previous-episode path, one option-picker modal, shared series
+  expansion, shared card-image helper, shared auth header, shared remembered-track matcher.
+  No behavior change intended.
+
 ## 2026.08.22
 
 ### Added

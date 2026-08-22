@@ -211,6 +211,24 @@ export function getItemImageUrl(item, format = 'portrait', preferThumb = false) 
 // Jellyfin sets Played on series/seasons/collections only once ALL contained titles are watched
 // — exactly the desired semantics. Deliberately NO unwatched counter: it would visually
 // duplicate the episode counter in the top right.
+// Card image with fallbacks — Search and Details need more than the plain getItemImageUrl
+// above: episodes prefer their own Primary in landscape, anything falls back to the backdrop,
+// portrait falls back to the series poster. Deliberately separate from getItemImageUrl (different
+// sizing and fallback semantics); both components carried identical private copies of this.
+export function getItemImageUrlWithFallbacks(item, format = 'portrait') {
+  if (format === 'landscape') {
+    if (item.Type === 'Episode' && item.ImageTags?.Primary)
+      return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
+    if (item.BackdropImageTags?.length > 0)
+      return `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+  }
+  if (item.ImageTags?.Primary)
+    return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&quality=80&format=webp`;
+  if (item.SeriesPrimaryImageTag)
+    return `${session.serverUrl}/Items/${item.SeriesId}/Images/Primary?tag=${item.SeriesPrimaryImageTag}&fillHeight=400&quality=80&format=webp`;
+  return null;
+}
+
 export function itemBadge(item) {
   return item?.UserData?.Played ? { check: true } : null;
 }
@@ -456,9 +474,21 @@ function _stringify(args) {
     try { return JSON.stringify(a); } catch { return String(a); }
   }).join(' ');
 }
+// The buffer is SHARED — the on-screen log view and the QR code on the status page. Stream and
+// subtitle URLs embed the access token as a query parameter (Jellyfin requires that for static
+// streams), and the player logs such URLs — so an unmasked buffer handed out server address plus
+// a LIVE token to anyone who scanned a shared log. Redact at this one boundary and every present
+// and future log line is covered; the browser console keeps full URLs for local development.
+function _redactSecrets(msg) {
+  let out = msg;
+  if (session.token && session.token.length >= 8) out = out.split(session.token).join('[token]');
+  // Belt and braces for tokens that are NOT the current session's (member-profile requests, lines
+  // logged before a re-login): mask any api-key query parameter wholesale.
+  return out.replace(/([?&](?:ApiKey|api_key)=)[^&"'\s\\]+/gi, '$1[token]');
+}
 function _pushLog(level, args) {
   try {
-    _logBuffer.push({ t: Date.now(), level, msg: _stringify(args) });
+    _logBuffer.push({ t: Date.now(), level, msg: _redactSecrets(_stringify(args)) });
     if (_logBuffer.length > LOG_BUFFER_MAX) _logBuffer.shift();
   } catch {}
 }

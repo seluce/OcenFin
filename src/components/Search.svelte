@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { personImageUrl, authHeaders, blurUp, itemBlurHash } from '../utils.js';
+  import { personImageUrl, authHeaders, blurUp, itemBlurHash, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy } from 'svelte';
 
@@ -117,19 +117,7 @@
     finally     { if (myToken === searchToken) isLoading = false; }
   }
 
-  function getItemImageUrl(item, format = 'portrait') {
-    if (format === 'landscape') {
-      if (item.Type === 'Episode' && item.ImageTags?.Primary)
-        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
-      if (item.BackdropImageTags?.length > 0)
-        return `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
-    }
-    if (item.ImageTags?.Primary)
-      return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&quality=80&format=webp`;
-    if (item.SeriesPrimaryImageTag)
-      return `${session.serverUrl}/Items/${item.SeriesId}/Images/Primary?tag=${item.SeriesPrimaryImageTag}&fillHeight=400&quality=80&format=webp`;
-    return null;
-  }
+
 </script>
 
 <div class="p-10 pt-16 h-full flex flex-col">
