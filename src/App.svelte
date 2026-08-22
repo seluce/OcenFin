@@ -704,7 +704,25 @@
     // Long-session sampler. App-lifetime by design like the listeners above — the root never
     // unmounts — and it bails out immediately while debug is off, so it costs one timer.
     startPerfSampler();
-    // Monitor network status (banner on connection loss). The offline/online events cover the
+    // Session died server-side (see session.svelte.js). Drop the token that just proved invalid —
+  // otherwise auto-login reuses it on the next start, collects another 401 and bounces straight
+  // back here — then run the normal profile teardown. No banner on purpose: the profile picker
+  // says it better than any message could. Token revoked → the profile is still listed and you
+  // sign in again; account deleted → it is simply gone.
+  $effect(() => {
+    if (!session.authLost) return;
+    // Only while the app is actually running. During restore/login the token is deliberately tried
+    // out and a 401 is an expected answer there — those flows handle it themselves (clear the
+    // session, show the profile list), and running this teardown on top would just repeat it.
+    if (appPhase !== 'app') { session.authLost = false; return; }
+    const sid = selectedServer?.id, uid = selectedUser?.Id;
+    if (sid && uid && savedTokens[sid]?.[uid]) { delete savedTokens[sid][uid]; persistSavedTokens(); }
+    dlog('[auth] server rejected our token — returning to the profile selection');
+    session.authLost = false;
+    handleSwitchUser();
+  });
+
+  // Monitor network status (banner on connection loss). The offline/online events cover the
     // OS network state; the connection guard additionally catches "server unreachable while the
     // network is up" (NAS reboot etc.) by watching server fetches for network-level failures.
     installConnectionGuard();
@@ -1327,6 +1345,7 @@
     detailsOrigin = viewState;
     try {
       const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300&EnableTotalRecordCount=false`, { headers: getAuthHeaders() });
+      if (!res.ok) { console.warn('play playlist: HTTP', res.status); return; }
       const data  = await res.json();
       const queue = await buildPlayQueue(data.Items || [], { serverUrl: session.serverUrl, userId: activeUserId, headers: getAuthHeaders() });
       if (queue.length) { playQueue = { items: queue, index: 0 }; startPlayback({ item: queue[0], audioIndex: -1, subtitleIndex: -1 }); }

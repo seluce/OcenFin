@@ -302,6 +302,9 @@ export async function buildPlayQueue(items, { serverUrl, userId, headers }) {
         + `&SortBy=ParentIndexNumber,IndexNumber&EnableTotalRecordCount=false`;
       try {
         const res  = await fetch(url, { headers });
+        // Without this an error response made res.json() throw straight into the catch below, and
+        // "play all" silently dropped that series from the queue with nothing to show for it.
+        if (!res.ok) { console.warn('buildPlayQueue: HTTP', res.status, 'for', it.Id); continue; }
         const data = await res.json();
         let eps = (data.Items || []).filter(e => e.Type === 'Episode');
         if (it.Type === 'Series') eps = eps.filter(e => e.ParentIndexNumber !== 0);

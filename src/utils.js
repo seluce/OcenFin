@@ -537,6 +537,20 @@ export function hint(delay = 350) {
 // it is deliberately left alone. Scoped to session.serverUrl; external fetches and <img> loads
 // are untouched. Distinguishing "server unreachable" from "server said no" is the whole point.
 let _connectionGuardInstalled = false;
+// Did this request carry the CURRENT session token? Only then does a 401 mean "our session
+// died". The app deliberately makes requests with OTHER profiles' tokens — "watch together"
+// queries each member's watched list, the quick switch validates stored tokens — and those
+// legitimately return 401 when a member's token has gone stale. Logging the user out for that
+// would be the classic overreach of a global auth guard.
+function usesSessionToken(init) {
+  const token = session.token;
+  if (!token) return false;
+  const h = init && init.headers;
+  if (!h) return false;
+  const auth = typeof h.get === 'function' ? h.get('Authorization') : (h.Authorization || h.authorization);
+  return typeof auth === 'string' && auth.includes(token);
+}
+
 export function installConnectionGuard() {
   if (_connectionGuardInstalled) return;
   _connectionGuardInstalled = true;
@@ -547,6 +561,13 @@ export function installConnectionGuard() {
     try {
       const res = await orig(input, init);
       if (isServer && res.ok && session.connectionLost) session.connectionLost = false;
+      // 401 is a SUCCESSFUL response, so it never reaches the catch below — without this the app
+      // kept running against a dead token: empty rows, placeholder posters, playback failing, and
+      // no way back to the sign-in screen short of restarting. 403 behaves the same way here.
+      // NOT 404: missing items, absent plugin endpoints and missing images are all normal.
+      if (isServer && (res.status === 401 || res.status === 403) && usesSessionToken(init)) {
+        session.authLost = true;
+      }
       return res;
     } catch (err) {
       if (isServer) session.connectionLost = true;

@@ -439,6 +439,7 @@
         : `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Filters=IsNotPlayed&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`;
       try {
         const res  = await fetch(url, { headers: getAuthHeaders() });
+        if (!res.ok) { console.warn('play next-up: HTTP', res.status); return; }
         const data = await res.json();
         if (data.Items?.length > 0) {
           onPlayVideo?.({ item: data.Items[0], audioIndex: -1, subtitleIndex: -1 });
@@ -448,6 +449,7 @@
             `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`,
             { headers: getAuthHeaders() }
           );
+          if (!fb.ok) { console.warn('play first episode: HTTP', fb.status); return; }
           const fd = await fb.json();
           if (fd.Items?.length > 0) onPlayVideo?.({ item: fd.Items[0], audioIndex: -1, subtitleIndex: -1 });
         }
@@ -472,6 +474,7 @@
       + `&IncludeItemTypes=Episode${isSeries ? '&Recursive=true' : ''}&EnableTotalRecordCount=false`;
     try {
       const res  = await fetch(url, { headers: getAuthHeaders() });
+      if (!res.ok) { console.warn('play random episode: HTTP', res.status); return; }
       const data = await res.json();
       let pool = (data.Items || []).filter(e => e.Type === 'Episode');
       if (isSeries) pool = pool.filter(e => e.ParentIndexNumber !== 0);   // exclude specials (season 0)

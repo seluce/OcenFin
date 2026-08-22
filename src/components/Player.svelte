@@ -433,7 +433,13 @@
 
   // Fetches the server's decision and attaches the matching source to the <video>.
   // On errors: fall back to the old Direct Play logic (behavior as before).
+  // Supersede guard, same idea as subtitleFetchToken: setupPlayback awaits two round trips, and
+  // it can be re-entered before the first finishes — the transcode fallback, a hard audio or
+  // subtitle switch, a SyncPlay or admin command. Without this the older call could finish last
+  // and attach a stale stream over the newer one. Exactly the shape of the library paging race.
+  let setupToken = 0;
   async function setupPlayback(audioIndex, subtitleIndex, forceTranscode = false) {
+    const mySetup = ++setupToken;
     if (hls) { try { hls.destroy(); } catch {} hls = null; }
     if (!forceTranscode) triedTranscodeFallback = false;   // fresh attempt → allow the fallback again
     try {
@@ -501,6 +507,7 @@
       dlog('[OcenFin] setupPlayback →', { item: item?.Name, audioIndex, subtitleIndex, enableDirectPlay, enableDirectStream, allowAudioStreamCopy, forceTranscode });
       // Direct Play: full bitrate; transcode: cap it so the server keeps up in real time.
       const requestBitrate = enableDirectPlay ? maxBitrate : Math.min(maxBitrate, TRANSCODE_MAX_BITRATE);
+      if (mySetup !== setupToken) return;   // a newer setup started while we fetched the streams
       const info = await getPlaybackInfoFast({
         serverUrl: session.serverUrl, userId: selectedUser.Id, token: session.token, itemId: item.Id,
         audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex,
@@ -510,6 +517,7 @@
         clientGraphicSubs: clientGraphicRender, serverVobSub,
         mediaSourceId,
       });
+      if (mySetup !== setupToken) return;   // superseded while PlaybackInfo was in flight
       if (info.playSessionId) playSessionId = info.playSessionId;
       const ms = info.mediaSource;
       currentMediaSource = ms;   // remember for the on-the-fly subtitle switch

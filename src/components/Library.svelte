@@ -436,7 +436,9 @@
       }
       const item = idx >= 0 ? currentItems[idx] : null;
       if (item) {
-        const char = (item.SortName || item.Name)[0].toUpperCase();
+        // ?? '' rather than a bare [0]: this runs on every scroll settle, and a title without a
+        // usable name would throw inside the timeout on each one.
+        const char = ((item.SortName || item.Name || '')[0] ?? '').toUpperCase();
         activeLetter = /[A-Z]/.test(char) ? char : '#';
       }
     }, 150);
