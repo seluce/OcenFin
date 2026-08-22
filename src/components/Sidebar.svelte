@@ -114,7 +114,7 @@
         <img src={getAvatarUrl(selectedUser)} alt={i18n.t.profile} class="w-full h-full object-cover" />
       {:else}
         <div class="w-full h-full bg-gray-700 flex items-center justify-center">
-          <span class="text-xl font-bold">{selectedUser.Name[0]}</span>
+          <span class="text-xl font-bold">{selectedUser.Name?.[0] ?? '?'}</span>
         </div>
       {/if}
     </div>

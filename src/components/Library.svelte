@@ -7,7 +7,7 @@
   import { session } from '../session.svelte.js';
   import { i18n } from '../i18n.svelte.js';
   import { itemProgress, itemBadge, getItemSubtitle, getItemImageUrl, blurUp, itemBlurHash, longPress,
-           focusOnMount, isBackKey, makeFocusReturn, authHeaders, uiFade, dropTrapOnOutro } from '../utils.js';
+           focusOnMount, isBackKey, makeFocusReturn, authHeaders, uiFade, dropTrapOnOutro, dlog, markContentChange } from '../utils.js';
 
   let {
     selectedUser,
@@ -24,7 +24,15 @@
     onSharedWatchToggle,       // (on: boolean) => void — App loads/discards partner IDs
   } = $props();
 
-  const libraryItemLimit = 50;
+  // Page size. Kept at 25 because it feels better while scrolling and the extra requests cost
+  // nothing noticeable — they run 2000 px ahead of the viewport.
+  //
+  // It does NOT fix the navigation stalls, which is what it was first tried for: halving the batch
+  // from 50 left the forced-layout time unchanged (measured on the B4: ~104 ms at batch 50, ~119 ms
+  // at batch 25). That cost tracks neither the batch nor the number of cards on screen (~105 ms at
+  // 187 and at 340) — it is near constant, and its cause is still open. Don't tune this constant
+  // hoping to move it.
+  const libraryItemLimit = 25;
 
   // ── Grid state ──────────────────────────────────────────────
   let currentItems        = $state([]);
@@ -255,6 +263,7 @@
       currentItems      = viewCache[lib.Id].items;
       totalLibraryItems = viewCache[lib.Id].total;
       firstLoadedIndex  = 0;
+      dlog('[Library] from cache', { lib: lib.Name, items: currentItems.length, total: totalLibraryItems });
       return;
     }
 
@@ -275,7 +284,10 @@
         const data        = await res.json();
         if (myToken !== loadToken) return;
         currentItems      = withoutKnown(data.Items, []);
+        markContentChange();
         totalLibraryItems = data.TotalRecordCount || 0;
+        dlog('[Library] first page', { lib: lib.Name, start: startIndex, got: data.Items?.length ?? 0,
+             kept: currentItems.length, total: totalLibraryItems, hasCount: 'TotalRecordCount' in data });
         if (isCacheableView()) cacheLibraryView(lib.Id, { items: currentItems, total: totalLibraryItems });
       }
       session.connectionLost = false;
@@ -293,7 +305,18 @@
   }
 
   async function loadMoreLibraryItems() {
-    if (isFetchingMore || firstLoadedIndex + currentItems.length >= totalLibraryItems || !currentLibraryId) return;
+    // isLoading is essential, not defensive: loadLibraryItems() empties currentItems and resets
+    // firstLoadedIndex BEFORE awaiting the first page, so a scroll event landing in that window
+    // computed start = 0 + 0 and re-requested page 0. Every item came back a duplicate, and the
+    // "nothing fresh → the count is stale" correction below then clamped the total to 50 — after
+    // which the sentinel never rendered again and the library was stuck for the rest of the
+    // session. Which library it hit depended purely on timing, so it looked like a Movies-vs-TV
+    // difference (observed: Movies 451 items clamped to 50, TV Shows fine, reversed after a restart).
+    if (isLoading || isFetchingMore || firstLoadedIndex + currentItems.length >= totalLibraryItems || !currentLibraryId) {
+      if (!isFetchingMore && currentLibraryId)
+        dlog('[Library] more refused', { have: firstLoadedIndex + currentItems.length, total: totalLibraryItems });
+      return;
+    }
     isFetchingMore = true;
     const myToken = loadToken;   // belongs to the CURRENT list — don't append anymore after a reload
     const start = firstLoadedIndex + currentItems.length;
@@ -306,9 +329,19 @@
         if (myToken !== loadToken) return;
         // Nothing new although the total says more should exist → the count is stale (items
         // deleted server-side, or the page repeated). Correct it so the sentinel stops re-firing.
+        dlog('[Library] more', { start, got: data.Items?.length ?? 0,
+             have: currentItems.length, total: data.TotalRecordCount ?? '-' });
+        // The window may have moved while this page was in flight (a parallel first-page load, or
+        // loadPreviousLibraryItems extending upwards). Then this response describes a range that no
+        // longer joins the list, and merging it — or worse, reading "no fresh items" as a stale
+        // count — would corrupt the view. Drop it; the sentinel simply asks again.
+        if (start !== firstLoadedIndex + currentItems.length) return;
         const fresh = withoutKnown(data.Items, currentItems);
+        // Nothing new although the total says more should exist → the count really is stale (items
+        // deleted server-side). Safe to trust now that an out-of-window response can't land here.
         if (!fresh.length) totalLibraryItems = firstLoadedIndex + currentItems.length;
         currentItems = [...currentItems, ...fresh];
+        markContentChange();
         if (isCacheableView()) cacheLibraryView(currentLibraryId, { items: currentItems, total: totalLibraryItems });
       }
     } catch { } finally { isFetchingMore = false; }
@@ -316,7 +349,9 @@
 
   // Load upward: fetch the block BEFORE the window and prepend it; correct the scroll by the height gain.
   async function loadPreviousLibraryItems() {
-    if (isFetchingPrev || firstLoadedIndex <= 0 || !currentLibraryId) return;
+    // isLoading for the same reason as in loadMoreLibraryItems: no paging onto a list that is
+    // currently being replaced.
+    if (isLoading || isFetchingPrev || firstLoadedIndex <= 0 || !currentLibraryId) return;
     isFetchingPrev = true;
     const myToken = loadToken;   // belongs to the CURRENT list — don't prepend anymore after a reload
     const newStart = Math.max(0, firstLoadedIndex - libraryItemLimit);
@@ -327,8 +362,11 @@
       if (res.ok && myToken === loadToken) {
         const items  = (await res.json()).Items || [];
         if (myToken !== loadToken) return;
+        // Same window check as when paging downwards — this page must still join the top of the list.
+        if (newStart + count !== firstLoadedIndex) return;
         const before = libraryScrollContainer ? libraryScrollContainer.scrollHeight : 0;
         currentItems     = [...withoutKnown(items, currentItems), ...currentItems];
+        markContentChange();
         firstLoadedIndex = newStart;
         await tick();
         if (libraryScrollContainer) libraryScrollContainer.scrollTop += libraryScrollContainer.scrollHeight - before;
@@ -341,7 +379,7 @@
     try {
       const res = await fetch(
         `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}` +
-        `&SortBy=Random&Limit=1&Recursive=true&IncludeItemTypes=Movie,Series&Fields=Overview`,
+        `&SortBy=Random&Limit=1&Recursive=true&IncludeItemTypes=Movie,Series&Fields=Overview&EnableTotalRecordCount=false`,
         authOpts()
       );
       if (res.ok) {
@@ -383,17 +421,25 @@
     if (scrollTimer) clearTimeout(scrollTimer);
     scrollTimer = setTimeout(() => {
       if (!libraryGrid || !currentItems.length) return;
-      for (const child of libraryGrid.children) {
-        const rect = child.getBoundingClientRect();
-        if (rect.bottom > 150) {
-          const idx  = [...libraryGrid.children].indexOf(child);
-          const item = currentItems[idx];
-          if (item) {
-            const char = (item.SortName || item.Name)[0].toUpperCase();
-            activeLetter = /[A-Z]/.test(char) ? char : '#';
-          }
-          break;
-        }
+      // Which card is the topmost visible one? Binary search, not a scan from the first child:
+      // grid children follow document order, so their bottom edges only ever increase. Deep in a
+      // large library the old loop measured every card ABOVE the viewport before reaching the
+      // first visible one — hundreds of rect reads on every scroll settle — and then spread the
+      // whole HTMLCollection into an array just to look the index back up. Now it is ~log2(n)
+      // reads and the index falls out of the search.
+      const kids = libraryGrid.children;
+      let lo = 0, hi = kids.length - 1, idx = -1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (kids[mid].getBoundingClientRect().bottom > 150) { idx = mid; hi = mid - 1; }
+        else lo = mid + 1;
+      }
+      const item = idx >= 0 ? currentItems[idx] : null;
+      if (item) {
+        // ?? '' rather than a bare [0]: this runs on every scroll settle, and a title without a
+        // usable name would throw inside the timeout on each one.
+        const char = ((item.SortName || item.Name || '')[0] ?? '').toUpperCase();
+        activeLetter = /[A-Z]/.test(char) ? char : '#';
       }
     }, 150);
   }

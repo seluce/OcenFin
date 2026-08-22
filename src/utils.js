@@ -537,6 +537,20 @@ export function hint(delay = 350) {
 // it is deliberately left alone. Scoped to session.serverUrl; external fetches and <img> loads
 // are untouched. Distinguishing "server unreachable" from "server said no" is the whole point.
 let _connectionGuardInstalled = false;
+// Did this request carry the CURRENT session token? Only then does a 401 mean "our session
+// died". The app deliberately makes requests with OTHER profiles' tokens — "watch together"
+// queries each member's watched list, the quick switch validates stored tokens — and those
+// legitimately return 401 when a member's token has gone stale. Logging the user out for that
+// would be the classic overreach of a global auth guard.
+function usesSessionToken(init) {
+  const token = session.token;
+  if (!token) return false;
+  const h = init && init.headers;
+  if (!h) return false;
+  const auth = typeof h.get === 'function' ? h.get('Authorization') : (h.Authorization || h.authorization);
+  return typeof auth === 'string' && auth.includes(token);
+}
+
 export function installConnectionGuard() {
   if (_connectionGuardInstalled) return;
   _connectionGuardInstalled = true;
@@ -547,6 +561,13 @@ export function installConnectionGuard() {
     try {
       const res = await orig(input, init);
       if (isServer && res.ok && session.connectionLost) session.connectionLost = false;
+      // 401 is a SUCCESSFUL response, so it never reaches the catch below — without this the app
+      // kept running against a dead token: empty rows, placeholder posters, playback failing, and
+      // no way back to the sign-in screen short of restarting. 403 behaves the same way here.
+      // NOT 404: missing items, absent plugin endpoints and missing images are all normal.
+      if (isServer && (res.status === 401 || res.status === 403) && usesSessionToken(init)) {
+        session.authLost = true;
+      }
       return res;
     } catch (err) {
       if (isServer) session.connectionLost = true;
@@ -575,6 +596,70 @@ if (typeof console !== 'undefined' && !console.__ocenfinLogHook) {
   console.error = (...a) => { _pushLog('error', a); _origErr(...a); };
   console.warn  = (...a) => { _pushLog('warn', a); _origWarn(...a); };
   console.__ocenfinLogHook = true;
+}
+
+// --- Performance instrumentation (opt-in, shares the debug switch) ---------------------------
+// Inert while debug is off: every entry point tests _debug FIRST, so a normal session pays one
+// boolean per call and nothing else — no timers read, no DOM walked, no strings built.
+//
+// Output is AGGREGATED on purpose. The log buffer holds 300 lines and gets shared through a QR
+// code, so one line per arrow press would push everything else out within seconds. Each metric
+// therefore accumulates and reports one compact summary per window.
+export function perfEnabled() { return _debug; }
+
+const _perfStats = new Map();   // name → { n, sum, max, meta }
+const PERF_WINDOW = 25;         // report a summary every N samples, then start over
+
+// Record one timing in ms. `meta` carries context values — for the D-pad that is how many elements
+// the decision had to measure, the number that explains a slow press.
+//
+// Numeric context is summarised by its PEAK over the window, not by the last sample. The first
+// device run reported "avg=20.7ms max=113.7ms cand=9", where the 9 was simply whatever the final
+// press happened to cost — it said nothing about the presses that took 113 ms.
+export function perfSample(name, ms, meta) {
+  if (!_debug) return;
+  let s = _perfStats.get(name);
+  if (!s) { s = { n: 0, sum: 0, max: 0, worst: null }; _perfStats.set(name, s); }
+  s.n++; s.sum += ms;
+  if (ms > s.max) { s.max = ms; s.worst = meta || null; }   // context OF the worst sample
+  if (s.n < PERF_WINDOW) return;
+  const ctx = s.worst ? ' @max{' + Object.entries(s.worst).map(([k, v]) => `${k}:${v}`).join(' ') + '}' : '';
+  dlog(`[perf] ${name} n=${s.n} avg=${(s.sum / s.n).toFixed(1)}ms max=${s.max.toFixed(1)}ms${ctx}`);
+  _perfStats.set(name, { n: 0, sum: 0, max: 0, worst: null });
+}
+
+// Marks a content insertion (new cards appended/prepended). Lets a slow key press report how long
+// ago the DOM last changed — the difference between "this press paid for the insertion" and "the
+// cost is there regardless", which two rounds of guessing failed to separate.
+let _lastContentChange = 0;
+export function markContentChange() { if (_debug) _lastContentChange = performance.now(); }
+export function sinceContentChange() {
+  return _lastContentChange ? Math.round(performance.now() - _lastContentChange) : -1;
+}
+
+// One-off milestone, reported in ms since the page started loading.
+export function perfMark(label, extra) {
+  if (!_debug) return;
+  dlog(`[perf] ${label} at=${Math.round(performance.now())}ms${extra ? ' ' + extra : ''}`);
+}
+
+// Heap and DOM size once a minute. Reports only when the heap actually moved, plus a heartbeat
+// every tenth sample — aimed at the multi-day sessions this app is built for, where a slow leak
+// is invisible in a five-minute test but obvious across a night. usedJSHeapSize is a Chromium
+// extension (so: real numbers on the TV, zeros in Firefox).
+export function startPerfSampler() {
+  let lastHeap = 0, ticks = 0;
+  return setInterval(() => {
+    if (!_debug) return;
+    ticks++;
+    const mem  = performance.memory;
+    const heap = mem ? Math.round(mem.usedJSHeapSize / 1048576) : 0;
+    if (Math.abs(heap - lastHeap) < 5 && ticks % 10 !== 0) return;
+    const d = heap - lastHeap;
+    dlog(`[perf] heap=${heap}MB (${d >= 0 ? '+' : ''}${d}) nodes=${document.getElementsByTagName('*').length}`
+       + ` up=${Math.round(performance.now() / 60000)}min`);
+    lastHeap = heap;
+  }, 60000);
 }
 
 // --- Versions for the status/diagnostics page --------------------------------------------------
@@ -657,8 +742,26 @@ function b83(str) { let v = 0; for (const c of str) v = v * 83 + B83.indexOf(c);
 function sRGBtoLin(v) { const x = v / 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }
 function linToSRGB(v) { const x = Math.max(0, Math.min(1, v)); return x <= 0.0031308 ? Math.round(x * 12.92 * 255 + 0.5) : Math.round((1.055 * x ** (1 / 2.4) - 0.055) * 255 + 0.5); }
 
+// Cosine basis tables for decodeBlurHash. The basis depends only on the pixel position and the
+// component index — never on the hash itself — so it is identical for every card and gets computed
+// once per (size, components) pair. Without this a 32×32 placeholder ran width*height*numX*numY*2
+// ≈ 25,000 Math.cos() calls, and that happened once per unique poster, on the main thread, while
+// scrolling a library. There are only ever a couple of table variants in memory (a few KB).
+const _cosTables = new Map();
+function cosTable(size, n) {
+  const key = `${size}x${n}`;
+  let t = _cosTables.get(key);
+  if (!t) {
+    t = new Float64Array(size * n);
+    for (let p = 0; p < size; p++)
+      for (let k = 0; k < n; k++) t[p * n + k] = Math.cos(Math.PI * p * k / size);
+    _cosTables.set(key, t);
+  }
+  return t;
+}
+
 export function decodeBlurHash(hash, width = 32, height = 32, punch = 1) {
-  if (!hash || hash.length < 6 || typeof document === 'undefined') return null;
+  if (!hash || hash.length < 6) return null;
   try {
     const sizeFlag = b83(hash[0]);
     const numY = Math.floor(sizeFlag / 9) + 1, numX = (sizeFlag % 9) + 1;
@@ -669,20 +772,60 @@ export function decodeBlurHash(hash, width = 32, height = 32, punch = 1) {
       else { const v = b83(hash.substr(4 + (i - 1) * 2, 2)); const q = n => { const c = (n - 9) / 9; return Math.sign(c) * c * c * maxAC; };
              colors.push([q(Math.floor(v / (19 * 19))), q(Math.floor(v / 19) % 19), q(v % 19)]); }
     }
-    const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
-    const ctx = canvas.getContext('2d'); const imgData = ctx.createImageData(width, height); const d = imgData.data;
-    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-      let r = 0, g = 0, b = 0;
-      for (let j = 0; j < numY; j++) for (let i = 0; i < numX; i++) {
-        const basis = Math.cos(Math.PI * x * i / width) * Math.cos(Math.PI * y * j / height);
-        const c = colors[i + j * numX]; r += c[0] * basis; g += c[1] * basis; b += c[2] * basis;
+    // Write straight into the BMP pixel block — no canvas, see bmpDataUrl() for why. Rows are
+    // stored bottom-up and each pixel is B,G,R, which is what the format expects.
+    const rowSize = (width * 3 + 3) & ~3;          // rows padded to a multiple of 4 bytes
+    const pixels  = new Uint8Array(rowSize * height);
+    const cosX = cosTable(width, numX), cosY = cosTable(height, numY);
+    for (let y = 0; y < height; y++) {
+      let o = (height - 1 - y) * rowSize;           // bottom-up
+      for (let x = 0; x < width; x++) {
+        let r = 0, g = 0, b = 0;
+        for (let j = 0; j < numY; j++) {
+          const by = cosY[y * numY + j];
+          for (let i = 0; i < numX; i++) {
+            const basis = cosX[x * numX + i] * by;
+            const c = colors[i + j * numX]; r += c[0] * basis; g += c[1] * basis; b += c[2] * basis;
+          }
+        }
+        pixels[o++] = linToSRGB(b); pixels[o++] = linToSRGB(g); pixels[o++] = linToSRGB(r);
       }
-      const idx = 4 * (x + y * width);
-      d[idx] = linToSRGB(r); d[idx + 1] = linToSRGB(g); d[idx + 2] = linToSRGB(b); d[idx + 3] = 255;
     }
-    ctx.putImageData(imgData, 0, 0);
-    return canvas.toDataURL();
+    return bmpDataUrl(pixels, width, height, rowSize);
   } catch { return null; }
+}
+
+// Wraps raw pixel rows in a 24-bit BMP and returns it as a data URL.
+//
+// This replaces canvas + toDataURL(), which was the single most expensive thing the app did while
+// scrolling: 15-21 ms per poster, and up to 657 ms when the GPU was busy, because toDataURL() has
+// to read canvas memory back from the GPU and waits its turn. Building the bytes in JavaScript has
+// no such dependency — the cost is the same on every call, whatever else the TV is doing, which
+// matters more here than the raw average.
+//
+// 24-bit (not 32) on purpose: with BI_RGB the fourth byte is officially "reserved", and decoders
+// disagree over whether to read it as alpha. Placeholders are opaque, so the ambiguity is simply
+// avoided. Rows bottom-up with a positive height is the universally supported layout — top-down
+// via a negative height would save the row arithmetic but is the less well-trodden path.
+function bmpDataUrl(pixels, width, height, rowSize) {
+  const HEADER = 54;
+  const size = HEADER + pixels.length;
+  const buf = new Uint8Array(size);
+  const dv  = new DataView(buf.buffer);
+  buf[0] = 0x42; buf[1] = 0x4D;                  // "BM"
+  dv.setUint32(2, size, true);                   // file size
+  dv.setUint32(10, HEADER, true);                // offset to the pixel block
+  dv.setUint32(14, 40, true);                    // BITMAPINFOHEADER size
+  dv.setInt32(18, width, true);
+  dv.setInt32(22, height, true);                 // positive → rows are stored bottom-up
+  dv.setUint16(26, 1, true);                     // colour planes
+  dv.setUint16(28, 24, true);                    // bits per pixel
+  dv.setUint32(34, pixels.length, true);         // pixel block size
+  buf.set(pixels, HEADER);
+  // btoa needs a binary string; chunked so the argument list stays well inside engine limits.
+  let bin = '';
+  for (let i = 0; i < size; i += 8192) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 8192));
+  return 'data:image/bmp;base64,' + btoa(bin);
 }
 
 // Returns the BlurHash of an item for an image type ('Primary'/'Backdrop'), or null.
@@ -701,13 +844,45 @@ export function blurUp(hash) {
     // only the blurhash placeholder remains instead of the browser's broken-image icon.
     node.onerror = () => node.removeAttribute('src');
     if (!hash) { node.style.backgroundImage = ''; return; }
-    let url = _blurCache.get(hash);
-    if (url === undefined) {
+
+    const apply = (url) => {
+      if (!url) return;
+      node.style.backgroundImage = `url(${url})`;
+      node.style.backgroundSize = 'cover';
+      node.style.backgroundPosition = 'center';
+    };
+
+    // Already decoded once → free, and the common case after the first screenful.
+    const cached = _blurCache.get(hash);
+    if (cached !== undefined) { apply(cached); return; }
+
+    // First time for this hash: decode OFF the mount path. Measured on the B4, one decode costs
+    // 15-21 ms (worst seen 224 ms) — the cosine tables took care of the maths, but the canvas plus
+    // toDataURL() PNG encode remains, and a page of cards mounts them all in one go. That was half
+    // a second of blocked main thread per page, which is precisely what an arrow press landed in
+    // while scrolling. Deferring costs nothing visually: the placeholder appears a frame or two
+    // later, and the real poster is still on its way regardless.
+    let cancelled = false;
+    const run = () => {
+      if (cancelled) return;
+      const again = _blurCache.get(hash);          // a sibling card with the same hash beat us to it
+      if (again !== undefined) { apply(again); return; }
       // Cap: the app runs on the TV for days without a reload — unbounded, the cache would grow with
       // every hash ever seen. Clearing is cheap (only a few re-decodes afterward).
       if (_blurCache.size > 500) _blurCache.clear();
-      url = decodeBlurHash(hash); _blurCache.set(hash, url);
-    }
-    if (url) { node.style.backgroundImage = `url(${url})`; node.style.backgroundSize = 'cover'; node.style.backgroundPosition = 'center'; }
+      const t = perfEnabled() ? performance.now() : 0;
+      const url = decodeBlurHash(hash);
+      _blurCache.set(hash, url);
+      if (t) perfSample('blur', performance.now() - t, { cached: _blurCache.size });
+      apply(url);
+    };
+    // timeout keeps it bounded: while scrolling hard there may be no idle time at all, and a
+    // placeholder that never arrives would be worse than one that costs a slice of a busy frame.
+    const idle = typeof requestIdleCallback === 'function';
+    const id = idle ? requestIdleCallback(run, { timeout: 300 }) : setTimeout(run, 0);
+    return () => {
+      cancelled = true;
+      if (idle) cancelIdleCallback(id); else clearTimeout(id);
+    };
   };
 }

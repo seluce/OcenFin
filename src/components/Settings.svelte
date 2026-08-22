@@ -42,6 +42,42 @@
   let audioLangName    = $derived((audioLangOptions.find(o => o.key === playbackPrefs.audioLanguage)    || audioLangOptions[0]).name);
   let subtitleLangName = $derived((subtitleLangOptions.find(o => o.key === playbackPrefs.subtitleLanguage) || subtitleLangOptions[0]).name);
 
+  // Colour-button actions — a deliberately curated, closed list (see the wiring comment in
+  // Player.svelte). Labels for chapters/episodes are reused from the player's own strings.
+  let remoteActionOptions = $derived([
+    { key: 'off',            name: i18n.t.remoteActionOff },
+    { key: 'chapterPrev',    name: i18n.t.chapterPrev },
+    { key: 'chapterNext',    name: i18n.t.chapterNext },
+    { key: 'subtitleToggle', name: i18n.t.remoteActionSubtitleToggle },
+    { key: 'subtitleMenu',   name: i18n.t.remoteActionSubtitleMenu },
+    { key: 'audioMenu',      name: i18n.t.remoteActionAudioMenu },
+    { key: 'episodeNext',    name: i18n.t.nextEpisode },
+    { key: 'episodePrev',    name: i18n.t.prevEpisode },
+    { key: 'playPause',      name: i18n.t.remoteActionPlayPause },
+  ]);
+  // The four rows, in the order they sit on the remote. `dot` is a FIXED hex, not a Tailwind
+  // class: blue-* utilities are the accent and get rewritten by data-theme (App.svelte), so a
+  // bg-blue-500 swatch would render emerald under the emerald theme, right next to the real
+  // green dot. These dots depict the remote's literal button colors and must never follow it.
+  let remoteColorRows = $derived([
+    { pref: 'remoteColorRed',    label: i18n.t.remoteColorRed,    dot: '#ef4444' },
+    { pref: 'remoteColorGreen',  label: i18n.t.remoteColorGreen,  dot: '#22c55e' },
+    { pref: 'remoteColorYellow', label: i18n.t.remoteColorYellow, dot: '#facc15' },
+    { pref: 'remoteColorBlue',   label: i18n.t.remoteColorBlue,   dot: '#3b82f6' },
+  ]);
+  let remoteActionPref = $state('remoteColorRed');   // which colour the open picker is editing
+  const remoteActionName = (pref) =>
+    (remoteActionOptions.find(o => o.key === playbackPrefs[pref]) || remoteActionOptions[0]).name;
+
+  function openRemoteAction(pref) {
+    remoteActionPref = pref;
+    openModal('remoteAction');
+  }
+  function setRemoteAction(key) {
+    onPlaybackPrefsChange?.({ ...playbackPrefs, [remoteActionPref]: key });
+    closeModal();
+  }
+
   function setAudioLang(key) {
     onPlaybackPrefsChange?.({ ...playbackPrefs, audioLanguage: key });
     closeModal();
@@ -511,6 +547,7 @@
     { id: 'appearance', label: i18n.t.settingsDisplay,    icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
     { id: 'displayElements', label: i18n.t.displayElements, icon: 'M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z' },
     { id: 'navigation', label: i18n.t.settingsNavigation, icon: 'M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z' },
+    { id: 'remote',     label: i18n.t.settingsRemote,      icon: 'M10.5 3.75h3a2.25 2.25 0 012.25 2.25v12a2.25 2.25 0 01-2.25 2.25h-3A2.25 2.25 0 018.25 18V6a2.25 2.25 0 012.25-2.25zM12 7.5h.008v.008H12V7.5zm0 3h.008v.008H12V10.5zm0 3h.008v.008H12V13.5z' },
     { id: 'oled',       label: i18n.t.screensaverSection, icon: 'M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
     { id: 'playback',   label: i18n.t.playback,           icon: 'M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z' },
     { id: 'subtitles',  label: i18n.t.subtitles,          icon: 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z' },
@@ -811,6 +848,69 @@
           </div>
         </div>
       {/if}
+    </section>
+    {/if}
+
+
+    <!-- ══════════════════════════════════════════
+         REMOTE — shortcuts that only apply inside the player
+    ══════════════════════════════════════════ -->
+    {#if activeCategory === 'remote'}
+    <section class="flex flex-col gap-4">
+      <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{i18n.t.settingsRemote}</h2>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+
+        <!-- Number keys → n×10 % of the runtime. Opt-out: on by default, but the description is the
+             real point of this row — it is where people discover the shortcut in the first place. -->
+        <button onclick={() => togglePlaybackPref('remoteDigitSeek')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.remoteDigitSeek}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.remoteDigitSeekDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.remoteDigitSeek ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.remoteDigitSeek ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Channel rocker → next/previous episode. Same opt-out; turning it off also protects
+             against the accidental press, since the rocker is the easiest key to hit by mistake. -->
+        <button onclick={() => togglePlaybackPref('remoteChannelZap')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.remoteChannelZap}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.remoteChannelZapDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.remoteChannelZap ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.remoteChannelZap ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+      </div>
+
+      <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2 mt-6">{i18n.t.remoteColorButtons}</h2>
+      <p class="text-gray-400 text-sm ml-2 -mt-2">{i18n.t.remoteColorButtonsDesc}</p>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+        {#each remoteColorRows as row, i (row.pref)}
+          {#if i > 0}<div class="h-px bg-gray-700"></div>{/if}
+          <button onclick={() => openRemoteAction(row.pref)}
+            class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+            <span class="flex items-center gap-4">
+              <span class="w-5 h-5 rounded-full shrink-0" style="background:{row.dot}"></span>
+              <span class="text-2xl text-white font-medium">{row.label}</span>
+            </span>
+            <span class="text-xl font-bold text-gray-300">{remoteActionName(row.pref)}</span>
+          </button>
+        {/each}
+      </div>
     </section>
     {/if}
 
@@ -1894,6 +1994,18 @@
           {/each}
         </div>
 
+      {:else if activeModal === 'remoteAction'}
+        <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.remoteButtonAction}</h2>
+        <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
+          {#each remoteActionOptions as opt (opt.key)}
+            <button onclick={() => setRemoteAction(opt.key)}
+              class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
+                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white
+                     {playbackPrefs[remoteActionPref] === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
+              {opt.name}
+            </button>
+          {/each}
+        </div>
       {:else if activeModal === 'password'}
         <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.changePassword}</h2>
         <div class="relative">

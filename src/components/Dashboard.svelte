@@ -228,8 +228,9 @@
       // Fetch recently played movies/series as the hook
       const res = await fetch(
         `${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
-        `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=4&Fields=${fields}`, opts
+        `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=4&Fields=${fields}&EnableTotalRecordCount=false`, opts
       );
+      if (!res.ok) { console.warn('recommendations: HTTP', res.status); return; }
       const seeds = (await res.json()).Items || [];
 
       // Up to two rows of similar titles (cached). Depending on the
@@ -259,6 +260,7 @@
         `${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
         `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=25&Fields=Genres&EnableTotalRecordCount=false`, opts
       );
+      if (!seedRes.ok) { console.warn('taste seeds: HTTP', seedRes.status); return; }
       const seeds = (await seedRes.json()).Items || [];
 
       // 2) Count genres weighted — recently watched (higher up in the DatePlayed list) counts a bit more.
@@ -279,6 +281,7 @@
         `&Filters=IsUnplayed&Genres=${genreParam}&SortBy=CommunityRating&SortOrder=Descending` +
         `&Limit=40&Fields=${FIELDS}&EnableImageTypes=Backdrop,Primary,Logo&EnableTotalRecordCount=false`, opts
       );
+      if (!poolRes.ok) { console.warn('hero pool: HTTP', poolRes.status); return []; }
       const pool = ((await poolRes.json()).Items || []).filter(i => i.BackdropImageTags?.length > 0);
       return pool;
     } catch {
@@ -361,7 +364,9 @@
         if (seriesIds.length) {
           try {
             const r2 = await fetch(`${session.serverUrl}/Users/${uId}/Items?Ids=${seriesIds.join(',')}&Fields=ProductionYear,Status,EndDate`, opts);
-            const info = new Map(((await r2.json()).Items || []).map(s => [s.Id, s]));
+            // Enrichment only — on an error response keep the items we already have rather than
+            // letting res.json() throw and lose the whole row.
+            const info = r2.ok ? new Map(((await r2.json()).Items || []).map(s => [s.Id, s])) : new Map();
             items = items.map(i => {
               const s = i.Type === 'Series' ? info.get(i.Id) : null;
               // Take the REAL series' UserData along: the pseudo-entries from dedupeHistory have

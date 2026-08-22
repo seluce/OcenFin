@@ -6,4 +6,9 @@ export const session = $state({
   serverUrl: '',
   token: '',
   connectionLost: false,
+  // Server answered 401 for a request made with THIS token — it is no longer valid (device
+  // revoked in the Jellyfin dashboard, password changed, account deleted, server restored from a
+  // backup). Deliberately separate from connectionLost: unreachable means "wait", invalid means
+  // "sign in again", and the two must never share a banner.
+  authLost: false,
 });

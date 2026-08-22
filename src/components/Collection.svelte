@@ -35,6 +35,7 @@
         const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${pick.Id}`
           + `&IncludeItemTypes=Episode${pick.Type === 'Series' ? '&Recursive=true' : ''}&EnableTotalRecordCount=false`;
         const res  = await fetch(url, { headers: getAuthHeaders() });
+        if (!res.ok) { console.warn('playRandom: HTTP', res.status); return; }
         const data = await res.json();
         let pool = (data.Items || []).filter(e => e.Type === 'Episode');
         if (pick.Type === 'Series') pool = pool.filter(e => e.ParentIndexNumber !== 0);
@@ -79,7 +80,7 @@
     // Playlists via their own endpoint (reliable + in list order),
     // collections/BoxSets via ParentId.
     const url = collection.Type === 'Playlist'
-      ? `${session.serverUrl}/Playlists/${collection.Id}/Items?UserId=${selectedUser.Id}&Fields=PrimaryImageAspectRatio&Limit=300`
+      ? `${session.serverUrl}/Playlists/${collection.Id}/Items?UserId=${selectedUser.Id}&Fields=PrimaryImageAspectRatio&Limit=300&EnableTotalRecordCount=false`
       : `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${collection.Id}&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=100&EnableTotalRecordCount=false`;
     try {
       const res = await fetch(url, { headers: getAuthHeaders() });

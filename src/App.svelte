@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, serverSupportsVobSub, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard } from './utils.js';
+  import { isBackKey, focusOnMount, serverSupportsVobSub, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard, perfMark, startPerfSampler } from './utils.js';
   import { buildPlayQueue } from './playback.js';
   import { session } from './session.svelte.js';
   import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
@@ -21,6 +21,7 @@
   import Library     from './components/Library.svelte';
   import Collection  from './components/Collection.svelte';
   import { registerSession, listSyncGroups, createSyncGroup, joinSyncGroup, leaveSyncGroup, syncSocketUrl, setSyncIgnoreWait } from './syncplay.js';
+  import { suppressTheme } from './thememusic.js';
 
   // Lazy-loaded views (Vite code-splitting): loaded only on first open, then cached.
   // Keeps the cold-start bundle small — especially the Player pulls the heavy deps (hls.js, assjs) only on
@@ -156,7 +157,7 @@
   let displaySettings = $state({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
 
   // Default audio/subtitle language
-  let playbackPrefs = $state({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true });
+  let playbackPrefs = $state({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
 
   // ── Profile-specific settings ───────────────────────────────
   // Language + display + playback + animations are stored PER USER.
@@ -216,7 +217,7 @@
       localStorage.setItem('app_language', p.language);   // update "last used"
     }
     displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
-    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, ...(p.playbackPrefs || {}) };
+    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off', ...(p.playbackPrefs || {}) };
     reduceAnimations = p.reduceAnimations ?? false;
     librarySorts     = p.librarySorts || {};   // remembered sort per library
     sharedProfile    = p.sharedProfile && Array.isArray(p.sharedProfile.members)
@@ -280,6 +281,8 @@
 
   let screensaverSettings = $state({ enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45 });
   let showScreensaver     = $state(false);
+  // Theme music yields to the screensaver: silence while it is up, resume when it goes.
+  $effect(() => { suppressTheme(showScreensaver); });
   let screensaverTimer    = null;
   let playerPlaying       = $state(false);   // reported by the Player; true ONLY during active playback
 
@@ -353,8 +356,15 @@
     const sid = selectedServer?.id;
     return m && (sharedTokens[sid]?.[m.id] || savedTokens[sid]?.[m.id]);
   }
-  // Provide the profile list for setup if not loaded yet
-  $effect(() => { if (viewState === 'settings' && users.length === 0 && session.serverUrl) fetchUsers(); });
+  // Provide the profile list for setup if not loaded yet. ONE SHOT per settings visit:
+  // fetchUsers() reassigns `users`, and a server that hides all public users returns [] —
+  // without the latch the effect would re-fire on the fresh empty array (new reference,
+  // same length) and hammer /Users/Public in an endless loop while Settings is open.
+  let usersFetchTried = false;
+  $effect(() => {
+    if (viewState !== 'settings') { usersFetchTried = false; return; }
+    if (users.length === 0 && session.serverUrl && !usersFetchTried) { usersFetchTried = true; fetchUsers(); }
+  });
 
   // ── Shared suggestions (dashboard row "For you both") ──────────────────────
   let sharedSuggestions = $state([]);
@@ -688,7 +698,31 @@
     // D-pad navigation (group focus model) — active everywhere. The Player is its
     // own focus group; its slider handles Left/Right itself.
     createFocusManager(() => !navReordering);
-    // Monitor network status (banner on connection loss). The offline/online events cover the
+    // Boot milestone: the shell is wired up (listeners, focus manager, connection guard). The
+    // second milestone follows below when the splash actually goes away.
+    perfMark('boot shell');
+    // Long-session sampler. App-lifetime by design like the listeners above — the root never
+    // unmounts — and it bails out immediately while debug is off, so it costs one timer.
+    startPerfSampler();
+    // Session died server-side (see session.svelte.js). Drop the token that just proved invalid —
+  // otherwise auto-login reuses it on the next start, collects another 401 and bounces straight
+  // back here — then run the normal profile teardown. No banner on purpose: the profile picker
+  // says it better than any message could. Token revoked → the profile is still listed and you
+  // sign in again; account deleted → it is simply gone.
+  $effect(() => {
+    if (!session.authLost) return;
+    // Only while the app is actually running. During restore/login the token is deliberately tried
+    // out and a 401 is an expected answer there — those flows handle it themselves (clear the
+    // session, show the profile list), and running this teardown on top would just repeat it.
+    if (appPhase !== 'app') { session.authLost = false; return; }
+    const sid = selectedServer?.id, uid = selectedUser?.Id;
+    if (sid && uid && savedTokens[sid]?.[uid]) { delete savedTokens[sid][uid]; persistSavedTokens(); }
+    dlog('[auth] server rejected our token — returning to the profile selection');
+    session.authLost = false;
+    handleSwitchUser();
+  });
+
+  // Monitor network status (banner on connection loss). The offline/online events cover the
     // OS network state; the connection guard additionally catches "server unreachable while the
     // network is up" (NAS reboot etc.) by watching server fetches for network-level failures.
     installConnectionGuard();
@@ -718,7 +752,10 @@
         onSuccess: (res) => {
           // The first response only confirms the registration (without state); afterwards state comes per request.
           if (res?.state !== 'Active') { dlog('[Screensaver] Luna registered, returnValue=', res?.returnValue); return; }
-          const decline = screensaverSettings.enabled;   // OcenFin screensaver on → decline webOS
+          // Decline only while OcenFin's saver can actually take over: outside the app phase
+          // (server/user selection) scheduleScreensaver refuses to run, so declining would leave
+          // the static login screen with NO screensaver at all — the opposite of OLED protection.
+          const decline = screensaverSettings.enabled && appPhase === 'app';
           dlog('[Screensaver] webOS request →', decline ? 'declined (ack:false)' : 'allowed (ack:true)');
           window.webOS.service.request('luna://com.webos.service.tvpower', {
             method: 'power/responseScreenSaverRequest',
@@ -777,6 +814,7 @@
       appPhase = 'servers';
     } finally {
       initializing = false;   // hide the splash screen (whichever path)
+      perfMark('boot usable', `phase=${appPhase}`);   // splash gone → first screen is interactive
     }
   });
 
@@ -880,7 +918,9 @@
   // Invalidated on member change, profile-off, session switch and "clear cache".
   let partnersPlayedCache = {};   // libraryId → { ids: Set, at: timestamp }
   const PARTNERS_CACHE_TTL = 10 * 60 * 1000;
+  let _partnersSeq = 0;   // supersede guard: only the LATEST library switch may publish its result
   async function loadPartnersPlayedIds(libraryId) {
+    const seq = ++_partnersSeq;
     partnersPlayedIds = null;
     if (!librarySharedOn || !sharedReady || !libraryId) return;
     const hit = partnersPlayedCache[libraryId];
@@ -904,15 +944,16 @@
         dlog('[Shared]', m.name, '→', n, 'fully-watched titles');
       } catch (e) { console.warn('[Shared] error for', m.name, e); }
     }
+    partnersPlayedCache[libraryId] = { ids, at: Date.now() };   // cache stays valid for ITS library
+    if (seq !== _partnersSeq) return;   // library switched while fetching → don't publish stale IDs
     partnersPlayedIds = ids;
-    partnersPlayedCache[libraryId] = { ids, at: Date.now() };
   }
 
   // Load/discard partner IDs for "watch together" as soon as the library or toggle changes.
   $effect(() => {
     const lib = currentLibrary;
     if (lib && librarySharedOn) loadPartnersPlayedIds(lib.Id);
-    else partnersPlayedIds = null;
+    else { _partnersSeq++; partnersPlayedIds = null; }   // also invalidates any in-flight load
   });
 
   // Suggestions that match the SHARED preference and that no one has watched yet.
@@ -1091,7 +1132,7 @@
     if      (viewState === 'player')   { viewState = 'details';        e.preventDefault(); }
     else if (viewState === 'details')  { returnFromDetails();          e.preventDefault(); }
     else if (viewState === 'person')   { viewState = personReturnView; e.preventDefault(); }
-    else if (viewState === 'collection') { if (!collectionRef?.handleBackKey()) viewState = collectionReturnView; e.preventDefault(); }
+    else if (viewState === 'collection') { if (!collectionRef?.handleBackKey()) returnFromCollection(); e.preventDefault(); }
     else if (viewState === 'library')  { viewState = 'dashboard';      e.preventDefault(); }
     else if (viewState === 'settings') { viewState = 'dashboard';      e.preventDefault(); }
     else if (viewState === 'search')   { viewState = 'dashboard';      e.preventDefault(); }
@@ -1140,11 +1181,24 @@
   let currentCollection    = $state(null);          // seed BoxSet/playlist
   let collectionReturnView = $state('dashboard');   // where "Back" leads
   let collectionRef = $state();                     // bind:this → for the back key (handleBackKey)
+  let collectionStack = [];                         // parent chain when a collection is opened from inside one
 
   function openCollection(boxSet) {
-    collectionReturnView = viewState;
+    // Opened from INSIDE a collection (nested BoxSet/playlist card): push the parent so Back
+    // returns there. Overwriting collectionReturnView with 'collection' made Back assign the
+    // view it was already on — a no-op that trapped the user in the child collection.
+    if (viewState === 'collection' && currentCollection) {
+      collectionStack.push(currentCollection);
+    } else {
+      collectionStack = [];
+      collectionReturnView = viewState;
+    }
     currentCollection    = boxSet;
     viewState            = 'collection';
+  }
+  function returnFromCollection() {
+    if (collectionStack.length) { currentCollection = collectionStack.pop(); return; }
+    viewState = collectionReturnView;
   }
 
   // Cross effects from the collection view onto the library grid / sidebar:
@@ -1165,7 +1219,8 @@
       apiCache.dashboard = null;
       dashboardReloadKey++;
     }
-    if (collectionReturnView === 'library' && playlistsLibGone) { currentLibrary = null; viewState = 'dashboard'; }
+    if (collectionStack.length) { currentCollection = collectionStack.pop(); }
+    else if (collectionReturnView === 'library' && playlistsLibGone) { currentLibrary = null; viewState = 'dashboard'; }
     else viewState = collectionReturnView;
   }
 
@@ -1289,7 +1344,8 @@
     if (!item?.Id) return;
     detailsOrigin = viewState;
     try {
-      const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300`, { headers: getAuthHeaders() });
+      const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300&EnableTotalRecordCount=false`, { headers: getAuthHeaders() });
+      if (!res.ok) { console.warn('play playlist: HTTP', res.status); return; }
       const data  = await res.json();
       const queue = await buildPlayQueue(data.Items || [], { serverUrl: session.serverUrl, userId: activeUserId, headers: getAuthHeaders() });
       if (queue.length) { playQueue = { items: queue, index: 0 }; startPlayback({ item: queue[0], audioIndex: -1, subtitleIndex: -1 }); }
@@ -1686,7 +1742,7 @@
             onOpenPerson={openPerson} onFocusFallback={focusMain} />
         {:else if viewState === 'collection'}
           <Collection bind:this={collectionRef} collection={currentCollection} {selectedUser}
-            onBack={() => viewState = collectionReturnView}
+            onBack={returnFromCollection}
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu}
             onChildCountChanged={onCollectionChildCount}
             onPlayVideo={(p) => { detailsOrigin = 'collection'; startPlayback(p); }}

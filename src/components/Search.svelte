@@ -101,7 +101,7 @@
               `${session.serverUrl}/Users/${selectedUser.Id}/Items?PersonIds=${p.Id}&Recursive=true&IncludeItemTypes=Movie,Series&Limit=0`,
               { headers: getAuthHeaders() }
             );
-            const has = ((await c.json()).TotalRecordCount || 0) > 0;
+            const has = c.ok ? ((await c.json()).TotalRecordCount || 0) > 0 : false;
             personHasTitles.set(p.Id, has);
             return has ? p : null;
           } catch { return null; }

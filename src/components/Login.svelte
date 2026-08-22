@@ -287,6 +287,7 @@
             const poll = await fetch(`${session.serverUrl}/QuickConnect/Connect?Secret=${qcSecret}`, {
               headers: { 'Authorization': clientAuthHeader }
             });
+            if (!poll.ok) return;   // code expired or server hiccup — keep polling, don't throw
             const pd   = await poll.json();
             if (pd.Authenticated) {
               clearInterval(qcPolling);
