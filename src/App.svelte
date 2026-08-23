@@ -348,7 +348,12 @@
   // The logged-in (shared) profile references two other profiles. Their tokens
   // live in savedTokens (tied to "save token"); here only ID + name are remembered.
   let sharedProfile     = $state({ enabled: false, members: [] });  // members: [{ id, name }]
-  let partnersPlayedIds = $state(null);    // Set: item IDs fully watched by BOTH (current library)
+  // Set of item IDs watched by AT LEAST ONE member (a union — the loop below adds every member's
+  // watched items to one Set). Library hides exactly these, which is the documented behaviour:
+  // "hides movies or series that one of you has already seen", i.e. what is left is new to both.
+  // The comment used to say "watched by BOTH" — the opposite; do not "fix" the union into an
+  // intersection on the strength of a comment.
+  let partnersPlayedIds = $state(null);
   let sharedReady = $derived(sharedProfile.enabled
                    && sharedProfile.members.filter(m => m && m.id).length >= 1);
   // Cleanup: option on, but no profile set → turn off again when leaving the settings.

@@ -15,7 +15,8 @@
     reloadKey = 0,             // increment → discard the view cache + reload
     focusFirstOnLoad = false,  // when opened from the menu: focus the first card (not "Random")
     sharedReady = false,       // App level: shared profile active? (shows the "watch together" toggle)
-    partnerPlayedIds = null,   // set of IDs watched by BOTH (App loads, Library filters)
+    partnerPlayedIds = null,   // IDs watched by AT LEAST ONE member — a union, see App.svelte.
+                               // Filtering them out leaves what is new to both. (App loads, Library filters.)
     librarySorts = {},         // remembered sort per library
     displaySettings = {},      // backdropPreview, episodeCount
     onOpenDetails,             // (item) => void
