@@ -631,6 +631,30 @@
   function loadSharedTokens() {
     try { return JSON.parse(localStorage.getItem('jellyfin_shared_tokens_v1') || '{}'); } catch { return {}; }
   }
+  // Tell the server a token is finished with. Deleting our copy only throws away the key — the
+  // token stays valid, and the TV keeps sitting in Dashboard → Devices as a working entry. Someone
+  // who removes a server expects the access to END, not just to be forgotten locally.
+  //
+  // Fire and forget: an unreachable server, or a token the server already rejected, must never
+  // block or delay the local removal. The user has decided; we only try to be tidy on the far side.
+  async function revokeToken(baseUrl, token) {
+    if (!baseUrl || !token) return;
+    try {
+      await fetch(`${baseUrl}/Sessions/Logout`, { method: 'POST', headers: authHeaders(token) });
+      dlog('[auth] token revoked server-side');
+    } catch (e) { dlog('[auth] revoke failed (server gone?):', e?.message || e); }
+  }
+
+  // Is this token STILL held somewhere after the deletion we just did? Revoking one that another
+  // store shares would break that feature: setSharedMember happily reuses an existing quick-switch
+  // token, and turning "remember me" off leaves the very same token running the live session.
+  function tokenStillKept(sid, token) {
+    if (!token) return true;
+    if (token === session.token) return true;                       // the running session uses it
+    return Object.values(savedTokens[sid]  || {}).includes(token)
+        || Object.values(sharedTokens[sid] || {}).includes(token);
+  }
+
   function persistSharedTokens() {
     localStorage.setItem('jellyfin_shared_tokens_v1', JSON.stringify(sharedTokens));
   }
@@ -858,6 +882,13 @@
   // ============================================================
 
   function removeServer(id) {
+    // Capture before deleting: the URL to send the revocations to, and every token this server
+    // holds in either store. Nothing else can be keeping them — the server entry itself is going.
+    const baseUrl = savedServers.find(s => s.id === id)?.url;
+    const doomed  = [...new Set([
+      ...Object.values(savedTokens[id]  || {}),
+      ...Object.values(sharedTokens[id] || {}),
+    ])].filter(t => t && t !== session.token);
     savedServers = savedServers.filter(s => s.id !== id);
     persistSavedServers();
     // Remove tokens for this server — BOTH stores. The quick-switch tokens and the watch-together
@@ -873,6 +904,7 @@
       sharedTokens = { ...sharedTokens };
       persistSharedTokens();
     }
+    for (const t of doomed) revokeToken(baseUrl, t);   // not awaited — see revokeToken
   }
 
   // ============================================================
@@ -942,9 +974,13 @@
     // Remove only the own shared token — the quick-switch token (savedTokens) stays untouched.
     const sid = selectedServer?.id;
     if (removed?.id && sid && sharedTokens[sid]?.[removed.id]) {
+      const tok = sharedTokens[sid][removed.id];
       delete sharedTokens[sid][removed.id];
       sharedTokens = { ...sharedTokens };
       persistSharedTokens();
+      // setSharedMember may have adopted an existing quick-switch token — revoking it here would
+      // break that profile's password-free login. Only revoke once nothing holds it any more.
+      if (!tokenStillKept(sid, tok)) revokeToken(session.serverUrl, tok);
     }
     _loadedSugKey = null;   // recompute suggestions
     saveUserPrefs();
@@ -1147,6 +1183,9 @@
 
   /** Back to the user screen (keeps the server connection) */
   function handleSwitchUser() {
+    // Capture before the teardown clears them. Revoke AFTER session.token is empty, so the
+    // connection guard cannot mistake the revocation's own response for our session dying.
+    const _sid = selectedServer?.id, _url = session.serverUrl, _tok = session.token;
     isLoggedIn       = false;
     selectedUser     = null;
     session.token      = '';
@@ -1157,6 +1196,10 @@
     apiCache.dashboard = null;   // clear cache (property mutation instead of reassignment → shared reference stays)
     navLibraries = [];
     clearCurrentSession();
+    // Only if nothing keeps it: with "remember me" on, the token stays in savedTokens for the
+    // quick switch and must remain valid. Without it, this was the last reference — and leaving it
+    // alive would strand a working key on the server for good.
+    if (!tokenStillKept(_sid, _tok)) revokeToken(_url, _tok);
     // Back to the user screen, server stays connected
     appPhase = 'users';
   }

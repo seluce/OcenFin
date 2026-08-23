@@ -34,6 +34,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   to use (such as SyncPlay) could log you out and make you re-enter your password on the remote. The
   app now confirms the session is really gone before signing out, and no longer treats "not allowed"
   as "signed out".
+- **Removing a server or signing out now really ends the access.** Until now only the local copy of
+  the login was thrown away — on the Jellyfin side it stayed valid, and the TV kept showing up under
+  Dashboard → Devices as a working entry forever. The app now tells the server the login is
+  finished with. Logins you deliberately kept ("remember me", and the linked watch-together
+  profiles) are left alone, so those keep working as before.
 - **Removing a server now clears all of its saved tokens**, including the ones kept for watch
   together; leftovers from very old versions are cleaned up too. **Quick Connect** no longer leaves
   a login code active in the background after a successful sign-in.
