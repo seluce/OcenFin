@@ -931,11 +931,19 @@
   // Set a profile as a member. Uses a valid saved token; otherwise it
   // authenticates once with pw. NO session switch — the shared profile stays active.
   // Returns: 'ok' | 'needPassword' | 'error'
-  async function setSharedMember(slot, user, pw = '') {
+  // presetToken: already authenticated elsewhere (Quick Connect), so no credentials are needed —
+  // the token IS the proof. Everything after the acquisition is shared with the password path.
+  async function setSharedMember(slot, user, pw = '', presetToken = null) {
     if (!user || !selectedServer) return 'error';
     const sid = selectedServer.id;
+    // With Quick Connect the account is only known AFTER confirmation — whoever approves the code
+    // decides it — so the "not yourself, not the other slot" rule cannot be enforced by filtering
+    // the list beforehand and has to be checked here.
+    if (user.Id && (user.Id === selectedUser?.Id || user.Id === sharedProfile.members[slot === 0 ? 1 : 0]?.id)) {
+      return 'sameUser';
+    }
     // Reuse an existing token (own store or self-enabled quick switch).
-    let token = user.Id ? (sharedTokens[sid]?.[user.Id] || savedTokens[sid]?.[user.Id]) : null;
+    let token = presetToken || (user.Id ? (sharedTokens[sid]?.[user.Id] || savedTokens[sid]?.[user.Id]) : null);
     if (token && !(await validateToken(token))) token = null;   // expired → re-authenticate
     if (!token) {
       // HasPassword from /Users/Public is only a hint for WHICH dialog to show first — never the
@@ -1818,6 +1826,7 @@
             {serverVersion} {serverVobSub}
             libraries={navLibraries}
             publicUsers={users} {sharedProfile} {sharedTokens}
+            clientAuthHeader={CLIENT_AUTH_HEADER}
             onSharedToggle={toggleSharedEnabled}
             onSharedSetMember={setSharedMember}
             onSharedRemoveMember={removeSharedMember}

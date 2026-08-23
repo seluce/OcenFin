@@ -13,6 +13,7 @@
   // This component reports results via narrow callbacks.
   // ============================================================
   import { onDestroy } from 'svelte';
+  import { startQuickConnect as startQC } from '../quickconnect.js';
   import { i18n } from '../i18n.svelte.js';
   import { session } from '../session.svelte.js';
   import { focusOnMount, dlog } from '../utils.js';
@@ -53,15 +54,14 @@
   let password           = $state('');
   let qcCode    = $state(null);
   let qcQrSvg   = $state(null);
-  let qcSecret  = null;
-  let qcPolling = null;
+  let qcSession = null;   // { promise, cancel } from quickconnect.js — the flow itself lives there
 
   // Entry directly on the profile choice (profile switch or expired auto-login token):
   // users can be empty then → load once.
   $effect(() => { if (phase === 'users' && server && users.length === 0) onFetchUsers?.(); });
 
   // QC polling never outlives the view (login success or switch unmounts the component)
-  onDestroy(() => clearInterval(qcPolling));
+  onDestroy(() => qcSession?.cancel());
 
   /** Back key, called by App.handleGlobalBack (pattern like Collection.handleBackKey):
    *  true = consumed here (sub-dialog closed), false = App goes to the server selection. */
@@ -332,59 +332,30 @@
     } catch { loginError = i18n.t.errOffline; }
   }
 
-  // Quick Connect — login flow (code on the TV, confirmed on the phone)
+  // Quick Connect — code on the TV, confirmed on a phone that is already signed in. The flow
+  // (initiate, poll, exchange, clean up) lives in quickconnect.js; the watch-together picker runs
+  // the very same one.
   async function startQuickConnect() {
-    clearInterval(qcPolling);   // a double press must not orphan the previous poll — the TV app
-    qcPolling = null;           // never reloads, so an untracked 3 s interval would run for days
+    qcSession?.cancel();        // a double press must not leave the previous attempt polling
     loginError = '';
     showPasswordForm = false;
     showManualLogin  = false;
+    qcSession = startQC(session.serverUrl, clientAuthHeader, ({ code, qrSvg }) => { qcCode = code; qcQrSvg = qrSvg; });
     try {
-      const res = await fetch(`${session.serverUrl}/QuickConnect/Initiate`, {
-        headers: { 'Authorization': clientAuthHeader }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        qcCode   = data.Code;
-        qcSecret = data.Secret;
-        // QR that opens the Jellyfin web Quick Connect page with the code pre-filled — a phone that
-        // is already signed in to the web client then only has to confirm, no typing of the code.
-        try {
-          const { renderSVG } = await import('uqr');
-          qcQrSvg = renderSVG(`${session.serverUrl}/web/#/quickconnect?code=${encodeURIComponent(data.Code)}`, { ecc: 'M', border: 1 });
-        } catch (e) { console.warn('[OcenFin] QC QR generation failed', e); qcQrSvg = null; }
-        qcPolling = setInterval(async () => {
-          try {
-            const poll = await fetch(`${session.serverUrl}/QuickConnect/Connect?Secret=${qcSecret}`, {
-              headers: { 'Authorization': clientAuthHeader }
-            });
-            if (!poll.ok) return;   // code expired or server hiccup — keep polling, don't throw
-            const pd   = await poll.json();
-            if (pd.Authenticated) {
-              clearInterval(qcPolling);
-              const authRes = await fetch(`${session.serverUrl}/Users/AuthenticateWithQuickConnect`, {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': clientAuthHeader },
-                body:    JSON.stringify({ Secret: qcSecret })
-              });
-              if (authRes.ok) {
-                const authData = await authRes.json();
-                qcCode = qcQrSvg = null;
-                qcSecret = null;   // consumed — don't leave a usable secret in memory
-                onDone?.(authData.User, authData.AccessToken);
-              }
-            }
-          } catch { }
-        }, 3000);
-      } else {
-        loginError = i18n.t.qcError;
-      }
-    } catch { loginError = i18n.t.networkError; }
+      const { user, token } = await qcSession.promise;
+      qcCode = qcQrSvg = null;
+      onDone?.(user, token);
+    } catch (err) {
+      if (err === 'cancelled') return;          // the user backed out — not an error to report
+      qcCode = qcQrSvg = null;
+      loginError = err === 'networkError' ? i18n.t.networkError : i18n.t.qcError;
+    }
   }
 
   function cancelQuickConnect() {
-    clearInterval(qcPolling);
-    qcCode = qcSecret = qcQrSvg = null;
+    qcSession?.cancel();
+    qcSession = null;
+    qcCode = qcQrSvg = null;
   }
 </script>
 

@@ -42,6 +42,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Removing a server now clears all of its saved tokens**, including the ones kept for watch
   together; leftovers from very old versions are cleaned up too. **Quick Connect** no longer leaves
   a login code active in the background after a successful sign-in.
+- **Watch together can now be set up with Quick Connect.** Instead of typing the other person's
+  password on the TV, the TV shows a code and they confirm it on their own phone — their password
+  never leaves their device, and they decide for themselves. It also reaches hidden profiles, since
+  no profile list is involved.
 - **Hidden profiles can now be added to watch together.** They never show up in the profile list,
   so there was no way to pick them — the sign-in screen has had a manual entry for that case all
   along, and the picker now offers it too. Name and password, checked by the server as usual.

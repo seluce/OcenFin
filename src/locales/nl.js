@@ -324,6 +324,8 @@ export default {
     selectProfile: "Profiel kiezen",
     sharedMemberReady: "Klaar",
     sharedNeedsLogin: "Inloggen vereist",
+    sharedQuickConnect: "Bevestig op de andere telefoon",
+    sharedInvalidChoice: "Dit profiel kan hier niet: het is je eigen profiel of al gekozen.",
     noProfiles: "Geen andere profielen beschikbaar",
     password: "Wachtwoord",
     confirm: "Bevestigen",

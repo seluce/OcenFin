@@ -1,5 +1,6 @@
 <script>
   import { i18n, setLang, LANGUAGES } from '../i18n.svelte.js';
+  import { startQuickConnect as startQC } from '../quickconnect.js';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
            AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn, uiFade, dropTrapOnOutro } from '../utils.js';
   import { session } from '../session.svelte.js';
@@ -20,8 +21,10 @@
     publicUsers         = [],      // selectable profiles (public list from the server)
     sharedProfile       = { enabled: false, members: [] },
     sharedTokens        = {},      // own token store for watch together
+    clientAuthHeader    = '',      // auth header without a user reference (Quick Connect Initiate)
     onSharedToggle       = () => {},
-    onSharedSetMember    = async () => 'error',   // (slot, user, pw) → 'ok'|'needPassword'|'error'
+    onSharedSetMember    = async () => 'error',   // (slot, user, pw, presetToken)
+                                                 //   → 'ok'|'needPassword'|'sameUser'|'error'
     onSharedRemoveMember = () => {},
     // Callback props (replace the former events)
     onToggleSave, onSwitchUser, onLogout, onScreensaverChange, onReduceAnimationsChange,
@@ -142,6 +145,38 @@
   let sharedError = $state('');
   let sharedMembers = $derived([0, 1].map(i => sharedProfile.members?.[i] || null));
   let sharedManualName = $state('');
+  let sharedQcCode  = $state(null);
+  let sharedQcQr    = $state(null);
+  let sharedQcSess  = null;
+
+  // Quick Connect for a watch-together member. The strongest option of the three: the partner
+  // confirms on their OWN device, so their password is never typed on the TV nor known to whoever
+  // is setting this up — and it reaches hidden profiles too, since no list is involved.
+  async function startSharedQuickConnect() {
+    sharedQcSess?.cancel();
+    sharedError = ''; sharedQcCode = null; sharedQcQr = null;
+    // Assign the session BEFORE any await: closeModal() cancels via sharedQcSess, so backing out
+    // during the modal's own tick would otherwise leave a poll running with no dialog attached.
+    sharedQcSess = startQC(session.serverUrl, clientAuthHeader, ({ code, qrSvg }) => { sharedQcCode = code; sharedQcQr = qrSvg; });
+    await openModal('sharedQc');
+    try {
+      const { user, token } = await sharedQcSess.promise;
+      const r = await onSharedSetMember(sharedPickerSlot, user, '', token);
+      if (r === 'ok') {
+        closeModal();
+        await tick();
+        document.querySelector(`[data-slot-btn="${sharedPickerSlot}"]`)?.focus();
+      } else {
+        sharedQcCode = null; sharedQcQr = null;
+        sharedError = r === 'sameUser' ? i18n.t.sharedInvalidChoice : i18n.t.errLogin;
+      }
+    } catch (err) {
+      if (err === 'cancelled') return;
+      sharedQcCode = null; sharedQcQr = null;
+      sharedError = err === 'networkError' ? i18n.t.networkError : i18n.t.qcError;
+    }
+  }
+  function cancelSharedQuickConnect() { sharedQcSess?.cancel(); sharedQcSess = null; sharedQcCode = sharedQcQr = null; }
 
   let timeoutOptions = $derived([
     { label: `1 ${i18n.t.minuteShort}`,  value: 60  },
@@ -150,7 +185,7 @@
     { label: `5 ${i18n.t.minuteShort}`,  value: 300 },
   ]);
 
-  onDestroy(() => { if (modalTimeout) clearTimeout(modalTimeout); });
+  onDestroy(() => { if (modalTimeout) clearTimeout(modalTimeout); sharedQcSess?.cancel(); });
 
   const getAuthHeaders = () => authHeaders(session.token);
 
@@ -166,6 +201,7 @@
 
   function closeModal() {
     if (modalTimeout) clearTimeout(modalTimeout);
+    cancelSharedQuickConnect();   // back/cancel leaves the dialog — the poll must not survive it
     activeModal = null;
   }
 
@@ -213,6 +249,7 @@
       document.querySelector(`[data-slot-btn="${slot}"]`)?.focus();
     }
     else if (r === 'needPassword')  { sharedPickerUser = user; sharedPw = ''; await openModal('sharedPassword'); }
+    else if (r === 'sameUser')      sharedError = i18n.t.sharedInvalidChoice;
     else                            sharedError = i18n.t.errLogin;
   }
   // Remove the member + focus onto the "choose profile" button of the same slot that then appears.
@@ -2064,6 +2101,12 @@
           {:else}
             <p class="text-gray-400 text-lg p-4">{i18n.t.noProfiles}</p>
           {/each}
+          <button onclick={startSharedQuickConnect}
+            class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
+                   bg-blue-700 hover:bg-blue-600 focus:bg-blue-600
+                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white">
+            {i18n.t.sharedQuickConnect}
+          </button>
           <button onclick={openSharedManual}
             class="w-full text-left p-5 text-xl font-bold text-gray-300 rounded-xl transition-colors
                    bg-transparent border border-gray-600 hover:bg-gray-700 focus:bg-gray-700
@@ -2072,6 +2115,24 @@
           </button>
         </div>
         {#if sharedError}<p class="text-red-400 font-bold">{sharedError}</p>{/if}
+
+      {:else if activeModal === 'sharedQc'}
+        <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.sharedQuickConnect}</h2>
+        {#if sharedQcCode}
+          <div class="flex flex-col items-center gap-5">
+            <span class="text-6xl font-mono font-bold text-white tracking-widest">{sharedQcCode}</span>
+            {#if sharedQcQr}
+              <div class="bg-white p-3 rounded-xl" style="width:220px;height:220px;">{@html sharedQcQr}</div>
+            {/if}
+            <p class="text-gray-400 text-center text-base leading-snug">{i18n.t.qcInstruction}</p>
+            {#if sharedQcQr}<p class="text-gray-400 text-center text-base leading-snug">{i18n.t.qcQrHint}</p>{/if}
+          </div>
+        {:else}
+          <div class="flex justify-center py-10">
+            <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        {/if}
+        {#if sharedError}<p class="text-red-400 font-bold text-lg">{sharedError}</p>{/if}
 
       {:else if activeModal === 'sharedManual'}
         <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.manualLogin}</h2>

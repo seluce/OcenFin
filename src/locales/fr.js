@@ -324,6 +324,8 @@ export default {
     selectProfile: "Choisir un profil",
     sharedMemberReady: "Prêt",
     sharedNeedsLogin: "Connexion requise",
+    sharedQuickConnect: "Confirmer sur l'autre téléphone",
+    sharedInvalidChoice: "Ce profil ne convient pas ici : c'est le vôtre ou il est déjà choisi.",
     noProfiles: "Aucun autre profil disponible",
     password: "Mot de passe",
     confirm: "Confirmer",
