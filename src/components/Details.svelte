@@ -627,6 +627,11 @@
         <div class="flex-1 max-w-4xl" data-focus-group="details-hero">
           <!-- line-clamp-2: an unbounded title wraps and pushes the description and the action
                buttons down, and the hero area is capped at 95vh — so they can leave the screen. -->
+          <!-- Off by default on purpose: the poster to the left already carries the title as
+               artwork, so a logo beside it shows the same thing twice. Kept as a positive opt-in
+               ("show the logo") rather than an inverted "show text instead" — an inverted label
+               reads as a double negative when switched off, and flipping the meaning of a key that
+               is already persisted would silently invert it for everyone who had set it. -->
           {#if detailsLogo}
             <!-- Reserved slot, only while logos are enabled. A logo's height depends entirely on
                  its aspect ratio — a wide wordmark is short, a stacked emblem is tall — and a

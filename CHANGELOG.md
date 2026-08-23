@@ -56,10 +56,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   profiles lost its sign-in, the filter quietly carried on with the other one alone and showed more
   titles than it should have. It now tells you once which profile needs attention.
 
-- **Title logos on the details page are shown by default**, like every other option beside them —
-  it was the only one that had to be switched on. The title area now keeps a steady height, so the
-  cast, description and play buttons stay in the same place from one title to the next instead of
-  shifting with each logo's shape. Titles without a logo still show their name as text.
+- **Turning on title logos no longer makes the details page jump around.** A logo's height depends
+  on its shape — a wide wordmark is short, a stacked emblem tall — so the description and play
+  buttons used to sit somewhere different on every title. The title area now keeps a steady height.
 - **A damaged settings file can no longer stop the app from starting.** If stored settings ended up
   in an unexpected form — a half-written value after a power cut, a leftover from a much older
   version — the app could fail on startup or flash the screensaver continuously, with no way to
