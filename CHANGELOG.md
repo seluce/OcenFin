@@ -72,6 +72,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   in an unexpected form — a half-written value after a power cut, a leftover from a much older
   version — the app could fail on startup or flash the screensaver continuously, with no way to
   clear it from the TV. Such values are now recognised and replaced with their defaults.
+- **Destructive buttons no longer flare up when focus passes over them.** Sign out, clearing the
+  log and leaving a group turned the most saturated red in the palette the moment they were
+  focused — and on the remote, focus crosses a button on the way somewhere else rather than out of
+  intent. They now carry their red quietly and all the time, so you can see what a button does
+  before landing on it. White text on them went from 4.8:1 to 13.8:1 in the process.
 - **Small text is easier to read from the sofa.** The faint grey used for details under posters —
   year, season, "today" — and throughout the status page fell below the accepted contrast minimum,
   which is felt most at the smallest interface size. It is brighter now, while still clearly

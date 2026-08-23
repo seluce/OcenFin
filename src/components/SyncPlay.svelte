@@ -45,7 +45,7 @@
         </div>
       </div>
       <button onclick={() => onLeave?.()} {@attach focusOnMount()}
-        class="w-full bg-red-600 hover:bg-red-500 focus:bg-red-500 text-white font-bold text-xl py-4 rounded-xl
+        class="w-full bg-red-800 hover:bg-red-700 focus:bg-red-700 text-white font-bold text-xl py-4 rounded-xl
                focus:outline-none focus:ring-4 focus:ring-white transition-colors">
         {i18n.t.leaveGroup}
       </button>

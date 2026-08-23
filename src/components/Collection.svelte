@@ -281,7 +281,7 @@
           <div class="flex items-center gap-4 flex-wrap">
             <span class="text-gray-200 font-semibold">{i18n.t.deletePlaylistConfirm}</span>
             <button onclick={deletePlaylist}
-              class="px-6 py-3 rounded-lg font-bold bg-red-600 hover:bg-red-500 focus:bg-red-500 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+              class="px-6 py-3 rounded-lg font-bold bg-red-700 hover:bg-red-600 focus:bg-red-600 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               {i18n.t.deletePlaylist}
             </button>
             <button onclick={() => confirmDeletePlaylist = false} {@attach focusOnMount()}

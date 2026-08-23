@@ -1762,9 +1762,9 @@
 
         <button onclick={() => onLogout?.()}
           class="flex flex-col items-center justify-center p-7 bg-red-900/40 border border-red-800/50 rounded-2xl
-                 hover:bg-red-600 focus:bg-red-600 focus:scale-105
+                 hover:bg-red-900/70 focus:bg-red-900/70 focus:scale-105
                  focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-xl group">
-          <svg class="w-11 h-11 text-red-500 group-hover:text-white group-focus:text-white mb-3 transition-colors"
+          <svg class="w-11 h-11 text-red-400 group-hover:text-red-200 group-focus:text-red-200 mb-3 transition-colors"
             fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
@@ -1996,7 +1996,7 @@
             </button>
           </div>
           <button onclick={clearLog}
-            class="px-6 py-3 rounded-xl font-bold bg-gray-700 hover:bg-red-600 focus:bg-red-600 text-white
+            class="px-6 py-3 rounded-xl font-bold bg-red-900/40 hover:bg-red-900/70 focus:bg-red-900/70 text-red-100
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">{i18n.t.clear}</button>
         </div>
       {/if}
