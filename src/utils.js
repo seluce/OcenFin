@@ -635,6 +635,28 @@ if (typeof console !== 'undefined' && !console.__ocenfinLogHook) {
   console.__ocenfinLogHook = true;
 }
 
+// --- Shape guards for persisted state ---------------------------------------------------------
+// Every JSON.parse of localStorage is already wrapped in try/catch, so MALFORMED data is handled.
+// What was not: VALID json of the wrong shape. `|| '[]'` only rescues a missing key — a stored
+// `{}` parses fine, is truthy, and then reaches code that calls .filter() on it. Verified crashes:
+// savedServers as an object kills the startup, and navOrder/navHidden as objects or numbers take
+// down the sidebar (for..of on a non-iterable, .includes on a non-array).
+//
+// Guarding at the LOAD boundary rather than at each consumer: one place decides the shape, and
+// everything downstream can keep assuming it. Storage can hold anything — a half-written value
+// after a power cut, a hand-edited entry, a format from a much older version — and on a TV a
+// startup crash from bad storage is unrecoverable without a reinstall, since there is no console
+// to clear it from.
+export const asArray  = (v, fb = []) => (Array.isArray(v) ? v : fb);
+export const asObject = (v, fb = {}) =>
+  (v && typeof v === 'object' && !Array.isArray(v) ? v : fb);
+// Numbers arrive as strings from older versions and as anything at all from a corrupted store;
+// clamp so a nonsense value cannot become NaN in a setTimeout (which fires immediately, forever).
+export function asNumber(v, fb, min = -Infinity, max = Infinity) {
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fb;
+}
+
 // --- Performance instrumentation (opt-in, shares the debug switch) ---------------------------
 // Inert while debug is off: every entry point tests _debug FIRST, so a normal session pays one
 // boolean per call and nothing else — no timers read, no DOM walked, no strings built.

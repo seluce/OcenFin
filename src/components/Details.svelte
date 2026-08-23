@@ -625,11 +625,25 @@
         </div>
 
         <div class="flex-1 max-w-4xl" data-focus-group="details-hero">
-          {#if detailsLogo && getItemLogoUrl(fullItem)}
-            <img src={getItemLogoUrl(fullItem)} alt={fullItem.Name} class="max-h-28 max-w-full w-auto object-contain object-left mb-4 drop-shadow-lg" />
+          <!-- line-clamp-2: an unbounded title wraps and pushes the description and the action
+               buttons down, and the hero area is capped at 95vh — so they can leave the screen. -->
+          {#if detailsLogo}
+            <!-- Reserved slot, only while logos are enabled. A logo's height depends entirely on
+                 its aspect ratio — a wide wordmark is short, a stacked emblem is tall — and a
+                 title without a logo falls back to text at a third height again. Without a floor,
+                 the meta row and the play buttons sat at a different height on every title you
+                 opened. min-h (not a fixed h) keeps the common cases identical while still letting
+                 a rare two-line fallback title have its second line, and costs nothing when the
+                 option is off. items-end pins the baseline, so the gap below is always the same. -->
+            <div class="min-h-28 flex items-end mb-4">
+              {#if getItemLogoUrl(fullItem)}
+                <img src={getItemLogoUrl(fullItem)} alt={fullItem.Name}
+                     class="max-h-28 max-w-full w-auto object-contain object-left-bottom drop-shadow-lg" />
+              {:else}
+                <h1 class="text-6xl font-bold text-white drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
+              {/if}
+            </div>
           {:else}
-            <!-- line-clamp-2: an unbounded title wraps and pushes the description and the action
-                 buttons down, and the hero area is capped at 95vh — so they can leave the screen. -->
             <h1 class="text-6xl font-bold text-white mb-4 drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
           {/if}
 

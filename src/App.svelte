@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, serverSupportsVobSub, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard, perfMark, startPerfSampler } from './utils.js';
+  import { isBackKey, focusOnMount, serverSupportsVobSub, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
   import { buildPlayQueue } from './playback.js';
   import { session } from './session.svelte.js';
   import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
@@ -159,7 +159,7 @@
   // existing profiles (their stored prefs are spread over the OTHER copy) — that paste-twice trap
   // fired once already (theme music). Functions, not shared literals: navOrder/navHidden/navIcons
   // must be fresh references on every call.
-  const defaultDisplaySettings = () => ({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
+  const defaultDisplaySettings = () => ({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: true, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
   const defaultPlaybackPrefs   = () => ({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
   let displaySettings = $state(defaultDisplaySettings());
 
@@ -199,7 +199,7 @@
   function userPrefsKey(userId) { return `user_prefs_${userId}`; }
 
   function loadUserPrefs(userId) {
-    try { return JSON.parse(localStorage.getItem(userPrefsKey(userId)) || '{}'); } catch { return {}; }
+    try { return asObject(JSON.parse(localStorage.getItem(userPrefsKey(userId)) || '{}')); } catch { return {}; }
   }
 
   function saveUserPrefs() {
@@ -223,10 +223,17 @@
       setLang(p.language);
       localStorage.setItem('app_language', p.language);   // update "last used"
     }
-    displaySettings  = { ...defaultDisplaySettings(), ...(p.displaySettings || {}) };
-    playbackPrefs    = { ...defaultPlaybackPrefs(), ...(p.playbackPrefs || {}) };
+    displaySettings  = { ...defaultDisplaySettings(), ...asObject(p.displaySettings) };
+    // Three fields whose TYPE is load-bearing, so the merge above is not enough: a stored object
+    // or number here crashed the sidebar outright (for..of over a non-iterable, .includes on a
+    // non-array — both verified). Everything else in displaySettings is a flag or an enum that
+    // simply falls back to its default at the point of use.
+    displaySettings.navOrder  = asArray(displaySettings.navOrder);
+    displaySettings.navHidden = asArray(displaySettings.navHidden);
+    displaySettings.navIcons  = asObject(displaySettings.navIcons);
+    playbackPrefs    = { ...defaultPlaybackPrefs(), ...asObject(p.playbackPrefs) };
     reduceAnimations = p.reduceAnimations ?? false;
-    librarySorts     = p.librarySorts || {};   // remembered sort per library
+    librarySorts     = asObject(p.librarySorts);   // remembered sort per library
     sharedProfile    = p.sharedProfile && Array.isArray(p.sharedProfile.members)
                        ? { enabled: !!p.sharedProfile.enabled,
                            members: [p.sharedProfile.members[0] || null, p.sharedProfile.members[1] || null] }
@@ -615,13 +622,14 @@
   // ============================================================
 
   function loadSavedServers() {
-    try { return JSON.parse(localStorage.getItem('jellyfin_servers') || '[]'); } catch { return []; }
+    // asArray, not just the try/catch: a stored object parses fine and then breaks .filter().
+    try { return asArray(JSON.parse(localStorage.getItem('jellyfin_servers') || '[]')); } catch { return []; }
   }
   function persistSavedServers() {
     localStorage.setItem('jellyfin_servers', JSON.stringify(savedServers));
   }
   function loadSavedTokens() {
-    try { return JSON.parse(localStorage.getItem('jellyfin_tokens_v2') || '{}'); } catch { return {}; }
+    try { return asObject(JSON.parse(localStorage.getItem('jellyfin_tokens_v2') || '{}')); } catch { return {}; }
   }
   function persistSavedTokens() {
     localStorage.setItem('jellyfin_tokens_v2', JSON.stringify(savedTokens));
@@ -629,7 +637,7 @@
   // Own store for watch together — deliberately separate from the quick switch (savedTokens),
   // so that setup NEVER affects a profile's quick-switch toggle.
   function loadSharedTokens() {
-    try { return JSON.parse(localStorage.getItem('jellyfin_shared_tokens_v1') || '{}'); } catch { return {}; }
+    try { return asObject(JSON.parse(localStorage.getItem('jellyfin_shared_tokens_v1') || '{}')); } catch { return {}; }
   }
   // Tell the server a token is finished with. Deleting our copy only throws away the key — the
   // token stays valid, and the TV keeps sitting in Dashboard → Devices as a working entry. Someone
@@ -659,7 +667,7 @@
     localStorage.setItem('jellyfin_shared_tokens_v1', JSON.stringify(sharedTokens));
   }
   function loadScreensaverSettings() {
-    try { return JSON.parse(localStorage.getItem('screensaver_settings') || '{}'); } catch { return {}; }
+    try { return asObject(JSON.parse(localStorage.getItem('screensaver_settings') || '{}')); } catch { return {}; }
   }
 
   /**
@@ -728,6 +736,12 @@
     savedTokens         = loadSavedTokens();
     sharedTokens        = loadSharedTokens();
     screensaverSettings = { enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45, ...loadScreensaverSettings() };
+    // timeout drives setTimeout: a non-numeric value makes that NaN, which fires IMMEDIATELY and
+    // then again on every reschedule — a screensaver flashing over the whole interface, hard to
+    // escape with a remote. Clamped rather than merely defaulted, so an absurd stored number
+    // cannot disable it either. brightness likewise, since it reaches CSS.
+    screensaverSettings.timeout    = asNumber(screensaverSettings.timeout, 90, 10, 3600);
+    screensaverSettings.brightness = asNumber(screensaverSettings.brightness, 0.45, 0, 1);
     setDebug(localStorage.getItem('ocenfin_debug') === '1');   // device-wide diagnostic logging (opt-in)
 
     // Device language for pre-login screens (server/user selection): last chosen language →
