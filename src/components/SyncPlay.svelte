@@ -38,7 +38,7 @@
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{i18n.t.syncGroupActive}</span>
         <span class="text-xl font-bold text-white">{group.GroupName}</span>
         <div class="flex flex-col gap-1">
-          <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">{i18n.t.groupMembers}</span>
+          <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{i18n.t.groupMembers}</span>
           {#each (group.Participants || []) as p (p)}
             <span class="text-gray-200">{p}</span>
           {/each}

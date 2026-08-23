@@ -186,7 +186,7 @@
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
                   <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate">{s.Name}</span>
-                  {#if s.ProductionYear}<span class="text-xs text-gray-500 truncate mt-0.5">{s.ProductionYear}</span>{/if}
+                  {#if s.ProductionYear}<span class="text-xs text-gray-400 truncate mt-0.5">{s.ProductionYear}</span>{/if}
                 </div>
               </button>
             {/each}
@@ -205,7 +205,7 @@
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
                   <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate">{m.Name}</span>
-                  {#if m.ProductionYear}<span class="text-xs text-gray-500 truncate mt-0.5">{m.ProductionYear}</span>{/if}
+                  {#if m.ProductionYear}<span class="text-xs text-gray-400 truncate mt-0.5">{m.ProductionYear}</span>{/if}
                 </div>
               </button>
             {/each}
@@ -224,7 +224,7 @@
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
                   <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate">{ep.Name}</span>
-                  <span class="text-xs text-gray-500 truncate mt-0.5">
+                  <span class="text-xs text-gray-400 truncate mt-0.5">
                     {ep.SeriesName || ''}{#if ep.ParentIndexNumber !== undefined} · S{ep.ParentIndexNumber}:E{ep.IndexNumber || '?'}{/if}
                   </span>
                 </div>

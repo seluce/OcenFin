@@ -510,7 +510,7 @@
           <!-- Divider -->
           <div class="flex items-center gap-3">
             <div class="flex-1 h-px bg-gray-700"></div>
-            <span class="text-gray-500 text-sm">{i18n.t.serverManualEntry}</span>
+            <span class="text-gray-400 text-sm">{i18n.t.serverManualEntry}</span>
             <div class="flex-1 h-px bg-gray-700"></div>
           </div>
 

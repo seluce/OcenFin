@@ -141,11 +141,11 @@
               {item.Type === 'Episode' && item.SeriesName ? item.SeriesName : item.Name}
             </span>
             {#if item._episodeCount}
-              <span class="text-xs text-gray-500 block truncate w-full">{item._episodeCount} {i18n.t.episodes}</span>
+              <span class="text-xs text-gray-400 block truncate w-full">{item._episodeCount} {i18n.t.episodes}</span>
             {:else if item.Type === 'Episode'}
-              <span class="text-xs text-gray-500 block truncate w-full">{item.Name}</span>
+              <span class="text-xs text-gray-400 block truncate w-full">{item.Name}</span>
             {:else if item.ProductionYear}
-              <span class="text-xs text-gray-500 block truncate w-full">{item.ProductionYear}</span>
+              <span class="text-xs text-gray-400 block truncate w-full">{item.ProductionYear}</span>
             {/if}
           </button>
         {/each}

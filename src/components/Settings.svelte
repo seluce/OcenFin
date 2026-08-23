@@ -631,7 +631,7 @@
     {/each}
     <div class="mt-auto pt-6 text-center">
       <span class="text-gray-600 font-mono text-xs tracking-widest block">OcenFin</span>
-      <span class="text-gray-600 font-mono text-xs tracking-widest">{i18n.t.version} {APP_VERSION}</span>
+      <span class="text-gray-400 font-mono text-xs tracking-widest">{i18n.t.version} {APP_VERSION}</span>
     </div>
   </nav>
 
@@ -749,7 +749,7 @@
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
           <!-- Group: interface (general elements) -->
           <div class="px-6 pt-4 pb-2">
-            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{i18n.t.groupInterface}</h3>
+            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupInterface}</h3>
           </div>
           {#each uiToggles as tg}
             <button onclick={() => toggleDisplay(tg.key)}
@@ -780,7 +780,7 @@
 
           <!-- Group: home (dashboard rows) -->
           <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
-            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{i18n.t.groupHome}</h3>
+            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupHome}</h3>
           </div>
           {#each homeToggles as tg}
             <button onclick={() => toggleDisplay(tg.key)}
@@ -813,7 +813,7 @@
 
           <!-- Group: details (detail page of a movie/series) -->
           <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
-            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{i18n.t.groupDetails}</h3>
+            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupDetails}</h3>
           </div>
           {#each detailToggles as tg}
             <button onclick={() => toggleDisplay(tg.key)}
@@ -1019,7 +1019,7 @@
                   class="flex-1 text-left p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-all
                          {screensaverSettings.mode === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                   <span class="block font-bold text-lg">{label}</span>
-                  <span class="block text-sm mt-0.5 {screensaverSettings.mode === val ? 'text-blue-100' : 'text-gray-500'}">{desc}</span>
+                  <span class="block text-sm mt-0.5 {screensaverSettings.mode === val ? 'text-blue-100' : 'text-gray-400'}">{desc}</span>
                 </button>
               {/each}
             </div>
@@ -1703,7 +1703,7 @@
       <!-- Server info -->
       {#if selectedServer}
         <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-5">
-          <p class="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">{i18n.t.connectedServer}</p>
+          <p class="text-xs text-gray-400 uppercase tracking-wider font-bold mb-1">{i18n.t.connectedServer}</p>
           <p class="text-xl text-white font-bold">{selectedServer.name}</p>
           <p class="text-gray-400 mt-0.5 text-sm font-mono">{selectedServer.url}{#if selectedServer.url?.startsWith('http://')}<span title={i18n.t.insecureHttpHint} class="ml-2 inline-block px-1.5 py-0.5 rounded bg-yellow-900/70 text-yellow-300 text-[0.65rem] font-bold align-middle font-sans">HTTP</span>{/if}</p>
         </div>
@@ -1811,36 +1811,36 @@
             <svg class="w-4 h-4 shrink-0 transition-transform {openStatus.tv ? 'rotate-90' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
             {i18n.t.statusTv}
           </span>
-          <span class="font-mono text-xs text-gray-500 truncate">{tvInfo?.available ? `${tvInfo.modelName || ''}${tvInfo.oled === true ? ' · OLED' : ''}` : i18n.t.statusOnlyOnTv}</span>
+          <span class="font-mono text-xs text-gray-400 truncate">{tvInfo?.available ? `${tvInfo.modelName || ''}${tvInfo.oled === true ? ' · OLED' : ''}` : i18n.t.statusOnlyOnTv}</span>
         </button>
         {#if openStatus.tv}
           <div class="px-6 pb-6 flex flex-col gap-4">
             {#if tvInfo?.available}
               <div class="flex justify-between items-baseline gap-4">
-                <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{i18n.t.statusResolution}</span>
+                <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusResolution}</span>
                 <span class="text-white font-mono text-sm">{tvResolution || '—'}</span>
               </div>
               <div class="h-px bg-gray-700/70"></div>
               <div class="flex justify-between items-baseline gap-4">
-                <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">HDR10</span>
+                <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">HDR10</span>
                 <span class="font-mono text-sm font-bold {capClass(tvInfo.hdr10)}">{capText(tvInfo.hdr10)}</span>
               </div>
               <div class="h-px bg-gray-700/70"></div>
               <div class="flex justify-between items-baseline gap-4">
-                <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">Dolby Vision</span>
+                <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">Dolby Vision</span>
                 <span class="font-mono text-sm font-bold {capClass(tvInfo.dolbyVision)}">{capText(tvInfo.dolbyVision)}</span>
               </div>
               <div class="h-px bg-gray-700/70"></div>
               <div class="flex justify-between items-baseline gap-4">
-                <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">Dolby Atmos</span>
+                <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">Dolby Atmos</span>
                 <span class="font-mono text-sm font-bold {capClass(tvInfo.dolbyAtmos)}">{capText(tvInfo.dolbyAtmos)}</span>
               </div>
               {#if tvInfo.dolbyAtmos === false}
-                <p class="text-xs text-gray-500 leading-snug">{i18n.t.statusAtmosHint}</p>
+                <p class="text-xs text-gray-400 leading-snug">{i18n.t.statusAtmosHint}</p>
               {/if}
               <div class="h-px bg-gray-700/70"></div>
             {/if}
-            <span class="text-xs text-gray-500 uppercase tracking-wider font-bold">{i18n.t.statusCodecsBrowser}</span>
+            <span class="text-xs text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusCodecsBrowser}</span>
             <div class="flex flex-wrap gap-x-6 gap-y-2">
               {#each [{ l: 'H.264', k: 'h264' }, { l: 'HEVC', k: 'hevc' }, { l: 'VP9', k: 'vp9' }, { l: 'AV1', k: 'av1' }] as c}
                 <span class="font-mono text-sm font-bold {codecs[c.k] ? 'text-green-400' : 'text-gray-400'}">{c.l}: {codecs[c.k] ? i18n.t.statusYes : i18n.t.statusNo}</span>
@@ -1862,24 +1862,24 @@
         {#if openStatus.runtime}
           <div class="px-6 pb-6 flex flex-col gap-4">
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{i18n.t.statusChromium}</span>
+              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusChromium}</span>
               <span class="text-white font-mono text-sm">{envVersions.chromium || '—'}</span>
             </div>
             <div class="h-px bg-gray-700/70"></div>
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{i18n.t.statusAppVersion}</span>
+              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusAppVersion}</span>
               <span class="text-white font-mono text-sm">{APP_VERSION}</span>
             </div>
             <div class="h-px bg-gray-700/70"></div>
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{i18n.t.statusServerVersion}</span>
+              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusServerVersion}</span>
               <span class="text-white font-mono text-sm">{serverVersion || '—'}</span>
             </div>
             <div class="h-px bg-gray-700/70"></div>
             <div class="flex justify-between items-start gap-4">
               <div class="pr-2">
                 <span class="text-sm text-gray-300 font-bold block">{i18n.t.statusClientGraphicSubs}</span>
-                <span class="text-xs text-gray-500 mt-0.5 block">{i18n.t.statusClientGraphicSubsDesc}</span>
+                <span class="text-xs text-gray-400 mt-0.5 block">{i18n.t.statusClientGraphicSubsDesc}</span>
               </div>
               <span class="font-mono text-sm font-bold shrink-0 mt-0.5 {serverVobSub ? 'text-green-400' : 'text-gray-400'}">
                 {serverVobSub ? i18n.t.statusYes : i18n.t.statusNo}
@@ -1901,17 +1901,17 @@
         {#if openStatus.components}
           <div class="px-6 pb-6 flex flex-col gap-4">
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{i18n.t.statusHls}</span>
+              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusHls}</span>
               <span class="text-white font-mono text-sm">{envVersions.hls || '—'}</span>
             </div>
             <div class="h-px bg-gray-700/70"></div>
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{i18n.t.statusLibbitsub}</span>
+              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusLibbitsub}</span>
               <span class="text-white font-mono text-sm">{envVersions.libbitsub || '—'}</span>
             </div>
             <div class="h-px bg-gray-700/70"></div>
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{i18n.t.statusAssjs}</span>
+              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusAssjs}</span>
               <span class="text-white font-mono text-sm">{envVersions.assjs || '—'}</span>
             </div>
           </div>

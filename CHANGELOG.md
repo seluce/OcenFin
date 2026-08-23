@@ -56,6 +56,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   profiles lost its sign-in, the filter quietly carried on with the other one alone and showed more
   titles than it should have. It now tells you once which profile needs attention.
 
+- **Small text is easier to read from the sofa.** The faint grey used for details under posters —
+  year, season, "today" — and throughout the status page fell below the accepted contrast minimum,
+  which is felt most at the smallest interface size. It is brighter now, while still clearly
+  secondary to the title above it.
+
 ### Internal
 
 - The seven structural refactors deferred in `CODE-HEALTH.md` §10 are done: one source for the

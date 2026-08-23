@@ -92,7 +92,7 @@
   <div class="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden ring-1 ring-white/10">
     <!-- Header -->
     <div class="px-6 pt-6 pb-4 border-b border-white/10">
-      <p class="text-xs uppercase tracking-wider text-gray-500 font-bold mb-1">{i18n.t.options}</p>
+      <p class="text-xs uppercase tracking-wider text-gray-400 font-bold mb-1">{i18n.t.options}</p>
       <h2 class="text-xl font-bold text-white line-clamp-2">{title}</h2>
     </div>
 

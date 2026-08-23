@@ -974,7 +974,7 @@
                   {/if}
                 </div>
                 <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full">{ex.Name}</span>
-                {#if ex.RunTimeTicks}<span class="text-xs text-gray-500">{getRuntimeMinutes(ex.RunTimeTicks)}</span>{/if}
+                {#if ex.RunTimeTicks}<span class="text-xs text-gray-400">{getRuntimeMinutes(ex.RunTimeTicks)}</span>{/if}
               </button>
             {/each}
           </div>
@@ -998,7 +998,7 @@
                   {/if}
                 </div>
                 <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full block">{person.Name}</span>
-                {#if person.Role}<span class="text-xs text-gray-500 truncate w-full block">{person.Role}</span>{/if}
+                {#if person.Role}<span class="text-xs text-gray-400 truncate w-full block">{person.Role}</span>{/if}
               </button>
             {/each}
           </div>
@@ -1095,13 +1095,13 @@
           <!-- File: container / size / total bitrate -->
           <div class="grid grid-cols-3 gap-3">
             {#if src.Container}
-              <div><div class="text-gray-500 text-xs uppercase tracking-wider">Container</div><div class="text-white font-semibold uppercase">{src.Container}</div></div>
+              <div><div class="text-gray-400 text-xs uppercase tracking-wider">Container</div><div class="text-white font-semibold uppercase">{src.Container}</div></div>
             {/if}
             {#if formatBytes(src.Size)}
-              <div><div class="text-gray-500 text-xs uppercase tracking-wider">{i18n.t.miSize}</div><div class="text-white font-semibold">{formatBytes(src.Size)}</div></div>
+              <div><div class="text-gray-400 text-xs uppercase tracking-wider">{i18n.t.miSize}</div><div class="text-white font-semibold">{formatBytes(src.Size)}</div></div>
             {/if}
             {#if formatBitrate(src.Bitrate)}
-              <div><div class="text-gray-500 text-xs uppercase tracking-wider">Bitrate</div><div class="text-white font-semibold">{formatBitrate(src.Bitrate)}</div></div>
+              <div><div class="text-gray-400 text-xs uppercase tracking-wider">Bitrate</div><div class="text-white font-semibold">{formatBitrate(src.Bitrate)}</div></div>
             {/if}
           </div>
 

@@ -661,7 +661,7 @@
             </div>
             <div class="mt-3 flex flex-col items-start w-full overflow-hidden">
               <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate block w-full">{item.Name}</span>
-              <span class="text-xs text-gray-500 group-focus:text-gray-400 block truncate w-full mt-0.5">{getItemSubtitle(item, i18n.t.today)}</span>
+              <span class="text-xs text-gray-400 group-focus:text-gray-300 block truncate w-full mt-0.5">{getItemSubtitle(item, i18n.t.today)}</span>
             </div>
           </button>
         {/each}

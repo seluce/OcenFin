@@ -2462,7 +2462,7 @@
           <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
           {i18n.t.continueWatching}
         </button>
-        <p class="text-gray-500 text-sm">{i18n.t.stillWatchingTimeout}</p>
+        <p class="text-gray-400 text-sm">{i18n.t.stillWatchingTimeout}</p>
       </div>
     </div>
   {/if}

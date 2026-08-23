@@ -163,7 +163,7 @@
               <div class="flex-1 min-w-0">
                 <div class="text-lg truncate {has ? 'text-gray-300' : ''}">{displayName(target)}</div>
                 {#if childrenOf[target.Id]?.length}
-                  <div class="text-sm text-gray-500 truncate">{childrenOf[target.Id].slice(0, 10).map(c => c.Name).join(', ')}</div>
+                  <div class="text-sm text-gray-400 truncate">{childrenOf[target.Id].slice(0, 10).map(c => c.Name).join(', ')}</div>
                 {/if}
                 {#if has}<div class="text-sm text-green-400">{i18n.t.alreadyAdded}</div>{/if}
               </div>

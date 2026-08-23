@@ -116,9 +116,9 @@
                 </div>
                 <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Type === 'Season' ? (item.SeriesName || item.Name) : item.Name}</span>
                 {#if item.Type === 'Season'}
-                  <span class="text-xs text-gray-500 block truncate w-full">{item.Name}</span>
+                  <span class="text-xs text-gray-400 block truncate w-full">{item.Name}</span>
                 {:else if item.ProductionYear}
-                  <span class="text-xs text-gray-500 block truncate w-full">{item.ProductionYear}</span>
+                  <span class="text-xs text-gray-400 block truncate w-full">{item.ProductionYear}</span>
                 {/if}
               </button>
             {/each}
@@ -144,7 +144,7 @@
                 {/if}
               </div>
               <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.SeriesName || item.Name}</span>
-              <span class="text-xs text-gray-500 block truncate w-full">{getItemSubtitle(item, i18n.t.today)}</span>
+              <span class="text-xs text-gray-400 block truncate w-full">{getItemSubtitle(item, i18n.t.today)}</span>
             </button>
           {/each}
         </div>

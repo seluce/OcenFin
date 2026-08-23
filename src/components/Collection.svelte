@@ -341,10 +341,10 @@
                 </div>
                 {#if item.Type === 'Episode'}
                   <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.SeriesName || item.Name}</span>
-                  <span class="text-xs text-gray-500 block truncate w-full">{episodeLabel(item)}</span>
+                  <span class="text-xs text-gray-400 block truncate w-full">{episodeLabel(item)}</span>
                 {:else}
                   <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Name}</span>
-                  {#if item.ProductionYear}<span class="text-xs text-gray-500 block truncate w-full">{item.ProductionYear}</span>{/if}
+                  {#if item.ProductionYear}<span class="text-xs text-gray-400 block truncate w-full">{item.ProductionYear}</span>{/if}
                 {/if}
               </button>
             {/each}
