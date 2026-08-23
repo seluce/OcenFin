@@ -1,6 +1,7 @@
 <script>
   import { i18n, setLang, LANGUAGES } from '../i18n.svelte.js';
   import { startQuickConnect as startQC } from '../quickconnect.js';
+  import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
            AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn, uiFade, dropTrapOnOutro } from '../utils.js';
   import { session } from '../session.svelte.js';
@@ -2007,7 +2008,7 @@
     onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeModal(); } }}>
 
     <div data-modal data-focus-trap
-      class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full max-w-xl flex flex-col gap-6 shadow-2xl">
+      class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full {activeModal === 'sharedQc' && sharedQcQr ? 'max-w-3xl' : 'max-w-xl'} flex flex-col gap-6 shadow-2xl">
 
       {#if activeModal === 'lang'}
         <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.language}</h2>
@@ -2102,8 +2103,8 @@
             <p class="text-gray-400 text-lg p-4">{i18n.t.noProfiles}</p>
           {/each}
           <button onclick={startSharedQuickConnect}
-            class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
-                   bg-blue-700 hover:bg-blue-600 focus:bg-blue-600
+            class="w-full text-left p-5 text-xl font-bold text-gray-300 rounded-xl transition-colors
+                   bg-transparent border border-gray-600 hover:bg-gray-700 focus:bg-gray-700
                    focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white">
             {i18n.t.sharedQuickConnect}
           </button>
@@ -2118,20 +2119,7 @@
 
       {:else if activeModal === 'sharedQc'}
         <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.sharedQuickConnect}</h2>
-        {#if sharedQcCode}
-          <div class="flex flex-col items-center gap-5">
-            <span class="text-6xl font-mono font-bold text-white tracking-widest">{sharedQcCode}</span>
-            {#if sharedQcQr}
-              <div class="bg-white p-3 rounded-xl" style="width:220px;height:220px;">{@html sharedQcQr}</div>
-            {/if}
-            <p class="text-gray-400 text-center text-base leading-snug">{i18n.t.qcInstruction}</p>
-            {#if sharedQcQr}<p class="text-gray-400 text-center text-base leading-snug">{i18n.t.qcQrHint}</p>{/if}
-          </div>
-        {:else}
-          <div class="flex justify-center py-10">
-            <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-          </div>
-        {/if}
+        <QuickConnectPanel code={sharedQcCode} qrSvg={sharedQcQr} />
         {#if sharedError}<p class="text-red-400 font-bold text-lg">{sharedError}</p>{/if}
 
       {:else if activeModal === 'sharedManual'}

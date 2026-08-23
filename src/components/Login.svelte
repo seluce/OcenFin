@@ -14,6 +14,7 @@
   // ============================================================
   import { onDestroy } from 'svelte';
   import { startQuickConnect as startQC } from '../quickconnect.js';
+  import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { i18n } from '../i18n.svelte.js';
   import { session } from '../session.svelte.js';
   import { focusOnMount, dlog } from '../utils.js';
@@ -558,23 +559,7 @@
       {#if qcCode}
         <div class="bg-gray-800 p-10 rounded-2xl shadow-xl w-full {qcQrSvg ? 'max-w-3xl' : 'max-w-xl'} text-center border border-gray-700">
           <h2 class="text-3xl font-bold text-white mb-8">{i18n.t.quickConnect}</h2>
-          <div class="flex items-center justify-center gap-10 mb-8">
-            <!-- Code method (left) -->
-            <div class="flex-1 flex flex-col items-center gap-4">
-              <div class="bg-gray-900 border-2 border-blue-500 rounded-lg py-6 px-6 w-full">
-                <span class="text-6xl font-mono font-bold text-white tracking-widest">{qcCode}</span>
-              </div>
-              <p class="text-gray-400 text-base leading-snug">{i18n.t.qcInstruction}</p>
-            </div>
-            {#if qcQrSvg}
-              <!-- QR method (right) -->
-              <div class="flex flex-col items-center gap-3 shrink-0">
-                <div class="rounded-xl bg-white p-3 [&>svg]:block [&>svg]:w-full [&>svg]:h-full"
-                     style="width:240px;height:240px;">{@html qcQrSvg}</div>
-                <p class="text-gray-400 text-base leading-snug max-w-[240px]">{i18n.t.qcQrHint}</p>
-              </div>
-            {/if}
-          </div>
+          <QuickConnectPanel code={qcCode} qrSvg={qcQrSvg} class="mb-8" />
           <button onclick={cancelQuickConnect} {@attach focusOnMount()}
             class="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-4 rounded-xl
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">
