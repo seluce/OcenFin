@@ -282,7 +282,11 @@
     _appliedSyncSeq = cmd._seq;
     const command = cmd.Command;
     const pos   = (cmd.PositionTicks || 0) / 10000000;
-    const when  = cmd.When ? new Date(cmd.When).getTime() : Date.now();
+    // A malformed/absent When from the server yields NaN, which would poison delay AND
+    // syncSuppressUntil (Date.now() < NaN is always false → the echo-suppression window silently
+    // turns off, and the group can enter a play/pause echo loop). Fall back to "now".
+    const whenRaw = cmd.When ? new Date(cmd.When).getTime() : Date.now();
+    const when  = Number.isFinite(whenRaw) ? whenRaw : Date.now();
     const delay = Math.max(0, when - Date.now());
     syncSuppressUntil = Date.now() + delay + 600;   // backstop for play/pause follow-up events
     dlog('[SyncPlay] ← apply', command, 'pos', Math.round(pos), 'in', delay, 'ms');

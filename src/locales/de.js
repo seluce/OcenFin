@@ -15,6 +15,8 @@ export default {
     discovering: "Suche im Heimnetzwerk…",
     serverFound: "Gefunden:",
     serverManualEntry: "oder manuell eingeben",
+    serverAddressPlaceholder: "z. B. 192.168.1.100:8096",
+    insecureHttpHint: "Unverschlüsselte Verbindung. Bevorzuge HTTPS, wenn dein Server es anbietet — sonst gehen Passwort und Token im Klartext übers Netz.",
     serverRetry: "Nochmal versuchen",
     backToServers: "Zurück zur Auswahl",
     switchServer: "Anderen Server wählen",

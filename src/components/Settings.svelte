@@ -1652,7 +1652,7 @@
         <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-5">
           <p class="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">{i18n.t.connectedServer}</p>
           <p class="text-xl text-white font-bold">{selectedServer.name}</p>
-          <p class="text-gray-400 mt-0.5 text-sm font-mono">{selectedServer.url}</p>
+          <p class="text-gray-400 mt-0.5 text-sm font-mono">{selectedServer.url}{#if selectedServer.url?.startsWith('http://')}<span title={i18n.t.insecureHttpHint} class="ml-2 inline-block px-1.5 py-0.5 rounded bg-yellow-900/70 text-yellow-300 text-[0.65rem] font-bold align-middle font-sans">HTTP</span>{/if}</p>
         </div>
       {/if}
 

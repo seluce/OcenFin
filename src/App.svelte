@@ -638,8 +638,14 @@
    * Runs once and then removes the old keys.
    */
   function migrateOldData() {
+    // Sweep legacy plaintext token keys unconditionally FIRST. They predate jellyfin_url in some
+    // installs, and the old early-return left live full-access tokens under keys nothing reads or
+    // deletes again. removeItem on an absent key is a no-op, so this is safe on a clean install.
+    const sweepLegacy = () => {
+      for (const k of ['jellyfin_tokens', 'session_token', 'session_user']) localStorage.removeItem(k);
+    };
     const oldUrl = localStorage.getItem('jellyfin_url');
-    if (!oldUrl) return;
+    if (!oldUrl) { sweepLegacy(); return; }
 
     const serverId  = 'srv_migrated_' + Date.now();
     const newServer = { id: serverId, url: oldUrl, name: 'Jellyfin Server' };
@@ -666,6 +672,7 @@
       localStorage.removeItem('session_token');
     }
 
+    sweepLegacy();
     localStorage.removeItem('jellyfin_url');
   }
 
@@ -716,17 +723,32 @@
   // back here — then run the normal profile teardown. No banner on purpose: the profile picker
   // says it better than any message could. Token revoked → the profile is still listed and you
   // sign in again; account deleted → it is simply gone.
+  let _authTeardownRunning = false;
   $effect(() => {
     if (!session.authLost) return;
     // Only while the app is actually running. During restore/login the token is deliberately tried
     // out and a 401 is an expected answer there — those flows handle it themselves (clear the
     // session, show the profile list), and running this teardown on top would just repeat it.
     if (appPhase !== 'app') { session.authLost = false; return; }
-    const sid = selectedServer?.id, uid = selectedUser?.Id;
-    if (sid && uid && savedTokens[sid]?.[uid]) { delete savedTokens[sid][uid]; persistSavedTokens(); }
-    dlog('[auth] server rejected our token — returning to the profile selection');
-    session.authLost = false;
-    handleSwitchUser();
+    if (_authTeardownRunning) { session.authLost = false; return; }
+    _authTeardownRunning = true;
+    session.authLost = false;   // consume; the confirmation probe below decides
+    (async () => {
+      // CONFIRM before the destructive teardown. A single sporadic 401 — a reverse proxy reloading,
+      // an auth_request backend flapping, an injected 401 on a plain-HTTP setup — must not delete
+      // the saved token and force a password re-entry on the TV remote. Re-check the same token
+      // once; only tear down if it is genuinely rejected again.
+      const stillValid = await validateToken(session.token, session.serverUrl);
+      if (!stillValid && appPhase === 'app') {
+        const sid = selectedServer?.id, uid = selectedUser?.Id;
+        if (sid && uid && savedTokens[sid]?.[uid]) { delete savedTokens[sid][uid]; persistSavedTokens(); }
+        dlog('[auth] server rejected our token (confirmed) — returning to the profile selection');
+        handleSwitchUser();
+      } else {
+        dlog('[auth] 401 was transient — token still valid, staying put');
+      }
+      _authTeardownRunning = false;
+    })();
   });
 
   // Monitor network status (banner on connection loss). The offline/online events cover the
@@ -833,11 +855,18 @@
   function removeServer(id) {
     savedServers = savedServers.filter(s => s.id !== id);
     persistSavedServers();
-    // Remove tokens for this server
+    // Remove tokens for this server — BOTH stores. The quick-switch tokens and the watch-together
+    // member tokens (sharedTokens) are full-access credentials; leaving the shared ones behind when
+    // the server is gone stranded live secrets in localStorage with no UI left to remove them.
     if (savedTokens[id]) {
       delete savedTokens[id];
       savedTokens = { ...savedTokens };
       persistSavedTokens();
+    }
+    if (sharedTokens[id]) {
+      delete sharedTokens[id];
+      sharedTokens = { ...sharedTokens };
+      persistSharedTokens();
     }
   }
 

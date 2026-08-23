@@ -482,9 +482,13 @@ function _stringify(args) {
 function _redactSecrets(msg) {
   let out = msg;
   if (session.token && session.token.length >= 8) out = out.split(session.token).join('[token]');
-  // Belt and braces for tokens that are NOT the current session's (member-profile requests, lines
-  // logged before a re-login): mask any api-key query parameter wholesale.
-  return out.replace(/([?&](?:ApiKey|api_key)=)[^&"'\s\\]+/gi, '$1[token]');
+  // Belt and braces for secrets that are NOT the current session token — member-profile tokens,
+  // lines logged before a re-login, the QuickConnect secret. Mask the api-key query parameter, the
+  // MediaBrowser Token="..." / Emby Token="..." header form, and the QuickConnect ?Secret=.
+  return out
+    .replace(/([?&](?:ApiKey|api_key)=)[^&"'\s\\]+/gi, '$1[token]')
+    .replace(/([?&]Secret=)[^&"'\s\\]+/gi, '$1[secret]')
+    .replace(/(Token=")[^"]+(")/gi, '$1[token]$2');
 }
 function _pushLog(level, args) {
   try {
@@ -593,9 +597,12 @@ export function installConnectionGuard() {
       if (isServer && res.ok && session.connectionLost) session.connectionLost = false;
       // 401 is a SUCCESSFUL response, so it never reaches the catch below — without this the app
       // kept running against a dead token: empty rows, placeholder posters, playback failing, and
-      // no way back to the sign-in screen short of restarting. 403 behaves the same way here.
-      // NOT 404: missing items, absent plugin endpoints and missing images are all normal.
-      if (isServer && (res.status === 401 || res.status === 403) && usesSessionToken(init)) {
+      // no way back to the sign-in screen short of restarting.
+      // ONLY 401 (token invalid). NOT 403: Jellyfin returns 403 for policy-gated actions with a
+      // perfectly valid token — SyncPlay with SyncPlayHasAccess:None is the common one, and
+      // treating that as a dead session logged the user out every time they touched the feature.
+      // NOT 404 either: missing items, absent plugin endpoints and missing images are all normal.
+      if (isServer && res.status === 401 && usesSessionToken(init)) {
         session.authLost = true;
       }
       return res;

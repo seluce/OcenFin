@@ -15,6 +15,8 @@ export default {
     discovering: "Przeszukiwanie sieci lokalnej…",
     serverFound: "Znaleziono:",
     serverManualEntry: "lub wprowadź ręcznie",
+    serverAddressPlaceholder: "np. 192.168.1.100:8096",
+    insecureHttpHint: "Połączenie nieszyfrowane. Wybierz HTTPS, jeśli serwer je udostępnia — inaczej hasło i token wędrują przez sieć otwartym tekstem.",
     serverRetry: "Spróbuj ponownie",
     backToServers: "Powrót do wyboru",
     switchServer: "Wybierz inny serwer",

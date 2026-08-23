@@ -267,7 +267,11 @@
     // Browser/development (no webOS) or no YouTube URL → via overlay as before.
     if (videoId) {
       trailerEmbedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&playsinline=1&modestbranding=1`;
-    } else {
+    } else if (/^https?:\/\//i.test(url)) {
+      // Raw fallback = a direct video-file trailer. RemoteTrailers[].Url is EXTERNAL metadata
+      // (TMDb/NFO scrape), so accept only an http(s) URL here — a javascript:/data: value must
+      // never reach the <video>/<iframe> src below. The iframe branch is additionally pinned to
+      // our own youtube-nocookie URLs (see the template), so external input can never select it.
       trailerEmbedUrl = url;
     }
   }
@@ -1049,7 +1053,7 @@
     </button>
 
     <!-- Fullscreen: the video fills the screen -->
-    {#if trailerEmbedUrl.includes('/embed/')}
+    {#if trailerEmbedUrl.startsWith('https://www.youtube-nocookie.com/embed/')}
       <iframe
         src={trailerEmbedUrl}
         class="w-full h-full"

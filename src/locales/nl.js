@@ -15,6 +15,8 @@ export default {
     discovering: "Lokaal netwerk doorzoeken…",
     serverFound: "Gevonden:",
     serverManualEntry: "of handmatig invoeren",
+    serverAddressPlaceholder: "bijv. 192.168.1.100:8096",
+    insecureHttpHint: "Onversleutelde verbinding. Gebruik bij voorkeur HTTPS als je server dat aanbiedt — anders gaan je wachtwoord en token onversleuteld over het netwerk.",
     serverRetry: "Opnieuw proberen",
     backToServers: "Terug naar selectie",
     switchServer: "Andere server kiezen",

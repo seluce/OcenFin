@@ -15,6 +15,8 @@ export default {
     discovering: "A procurar na rede local…",
     serverFound: "Encontrado:",
     serverManualEntry: "ou introduzir manualmente",
+    serverAddressPlaceholder: "p. ex. 192.168.1.100:8096",
+    insecureHttpHint: "Ligação não encriptada. Prefira HTTPS se o seu servidor o oferecer — caso contrário, a palavra-passe e o token circulam em texto simples na rede.",
     serverRetry: "Tentar novamente",
     backToServers: "Voltar à seleção",
     switchServer: "Escolher outro servidor",

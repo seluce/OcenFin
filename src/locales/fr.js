@@ -15,6 +15,8 @@ export default {
     discovering: "Recherche sur le réseau local…",
     serverFound: "Trouvé :",
     serverManualEntry: "ou saisir manuellement",
+    serverAddressPlaceholder: "p. ex. 192.168.1.100:8096",
+    insecureHttpHint: "Connexion non chiffrée. Préférez HTTPS si votre serveur le propose, sinon votre mot de passe et votre jeton circulent en clair sur le réseau.",
     serverRetry: "Réessayer",
     backToServers: "Retour à la sélection",
     switchServer: "Choisir un autre serveur",

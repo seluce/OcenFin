@@ -178,31 +178,47 @@
     }
   }
 
+  // Probe /System/Info/Public with a short timeout; returns the response only on a 2xx answer.
+  async function probeServer(url, ms = 4000) {
+    const ctrl  = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try { const r = await fetch(`${url}/System/Info/Public`, { signal: ctrl.signal }); return r.ok ? r : null; }
+    catch { return null; } finally { clearTimeout(timer); }
+  }
+
+  // Turn what the user typed into a concrete server URL. A bare host (no scheme) is tried over
+  // HTTPS FIRST and only falls back to HTTP if that does not answer — so the encrypted default no
+  // longer depends on the user knowing to type "https://". An explicit scheme is always honoured:
+  // someone who deliberately typed http:// (a server with no cert) is not overridden.
+  async function resolveServer(cleanUrl) {
+    if (/^https?:\/\//i.test(cleanUrl)) { const res = await probeServer(cleanUrl); return res ? { url: cleanUrl, res } : null; }
+    const https = await probeServer('https://' + cleanUrl);
+    if (https) return { url: 'https://' + cleanUrl, res: https };
+    const http = await probeServer('http://' + cleanUrl);
+    return http ? { url: 'http://' + cleanUrl, res: http } : null;
+  }
+
   async function addAndConnectServer(url) {
     if (!url.trim()) return;
     const cleanUrl = url.trim().replace(/\/$/, '');
 
-    // Already present?
-    const existing = savedServers.find(s => s.url === cleanUrl);
+    // Already present? Match the bare input against a stored http/https entry too.
+    const existing = savedServers.find(s =>
+      s.url === cleanUrl || s.url === 'https://' + cleanUrl || s.url === 'http://' + cleanUrl);
     if (existing) { await connectToServer(existing); return; }
 
-    // New server: test, then save
     serverConnectError = '';
     isConnecting       = true;
     try {
-      const ctrl  = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 6000);
-      const res   = await fetch(`${cleanUrl}/System/Info/Public`, { signal: ctrl.signal });
-      clearTimeout(timer);
-
-      if (res.ok) {
-        const data = await res.json();
-        const srv  = { id: 'srv_' + Date.now(), url: cleanUrl, name: data.ServerName || 'Jellyfin Server' };
+      const hit = await resolveServer(cleanUrl);
+      if (hit) {
+        const data = await hit.res.json();
+        const srv  = { id: 'srv_' + Date.now(), url: hit.url, name: data.ServerName || 'Jellyfin Server' };
         onSaveServer?.(srv);
         await connectToServer(srv);
         newServerUrl = '';
       } else {
-        serverConnectError = i18n.t.errInvalid;
+        serverConnectError = i18n.t.errOffline;
       }
     } catch (e) {
       console.warn('[Server] connection failed:', e);
@@ -265,6 +281,8 @@
 
   // Quick Connect — login flow (code on the TV, confirmed on the phone)
   async function startQuickConnect() {
+    clearInterval(qcPolling);   // a double press must not orphan the previous poll — the TV app
+    qcPolling = null;           // never reloads, so an untracked 3 s interval would run for days
     loginError = '';
     showPasswordForm = false;
     showManualLogin  = false;
@@ -299,6 +317,7 @@
               if (authRes.ok) {
                 const authData = await authRes.json();
                 qcCode = qcQrSvg = null;
+                qcSecret = null;   // consumed — don't leave a usable secret in memory
                 onDone?.(authData.User, authData.AccessToken);
               }
             }
@@ -346,7 +365,7 @@
               >
                 <div class="overflow-hidden">
                   <span class="text-xl font-bold text-white block truncate">{server.name}</span>
-                  <span class="text-sm text-gray-400 block mt-0.5 truncate">{server.url}</span>
+                  <span class="text-sm text-gray-400 block mt-0.5 truncate">{server.url}{#if server.url.startsWith('http://')}<span title={i18n.t.insecureHttpHint} class="ml-2 inline-block px-1.5 py-0.5 rounded bg-yellow-900/70 text-yellow-300 text-[0.65rem] font-bold align-middle">HTTP</span>{/if}</span>
                 </div>
                 {#if isConnecting && pendingServer?.id === server.id}
                   <div class="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin shrink-0 ml-4"></div>
@@ -476,7 +495,7 @@
               type="text"
               bind:value={newServerUrl}
               onkeydown={(e) => e.key === 'Enter' && addAndConnectServer(newServerUrl)}
-              placeholder="z.B. http://192.168.1.100:8096"
+              placeholder={i18n.t.serverAddressPlaceholder}
               class="flex-1 bg-gray-900 text-white text-lg p-4 rounded-xl border border-gray-600
                      focus:outline-none focus:ring-4 focus:ring-blue-500"
             />

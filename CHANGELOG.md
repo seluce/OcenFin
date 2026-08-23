@@ -5,12 +5,31 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ## [Unreleased]
 
+### Added
+
+- **Connecting prefers HTTPS.** Type just an address like `192.168.1.100:8096` and the app tries
+  the encrypted connection first, falling back to plain HTTP only if the server offers nothing else
+  — you no longer have to know to type `https://`. Servers reached over unencrypted HTTP are marked
+  with a small **HTTP** badge in the server list and settings, as a reminder that the password and
+  token travel the network in the clear. Typing an explicit `http://` is still respected.
+
 ### Fixed
 
 - **The shareable diagnostic log no longer contains the access token.** Stream and subtitle URLs
   embed it as a query parameter, and the player logged such URLs — so sharing the log through the
   QR code on the status page handed out the server address plus a valid token. Log lines are now
   masked before they enter the buffer; the browser console keeps full URLs for development.
+- **A trailer from booby-trapped metadata can no longer run code.** A title's trailer link comes
+  from external sources (TMDb, NFO files); a crafted one could previously reach the video frame and,
+  in the worst case, run in the app's context with access to your stored login. Trailers are now
+  restricted to genuine YouTube embeds and ordinary video links.
+- **Fewer accidental sign-outs.** A single network hiccup or a feature your account isn't permitted
+  to use (such as SyncPlay) could log you out and make you re-enter your password on the remote. The
+  app now confirms the session is really gone before signing out, and no longer treats "not allowed"
+  as "signed out".
+- **Removing a server now clears all of its saved tokens**, including the ones kept for watch
+  together; leftovers from very old versions are cleaned up too. **Quick Connect** no longer leaves
+  a login code active in the background after a successful sign-in.
 
 ### Internal
 

@@ -15,6 +15,8 @@ export default {
     discovering: "Searching local network…",
     serverFound: "Found:",
     serverManualEntry: "or enter manually",
+    serverAddressPlaceholder: "e.g. 192.168.1.100:8096",
+    insecureHttpHint: "Unencrypted connection. Prefer HTTPS if your server offers it — otherwise your password and token travel the network in the clear.",
     serverRetry: "Try Again",
     backToServers: "Back to Selection",
     switchServer: "Choose Different Server",
