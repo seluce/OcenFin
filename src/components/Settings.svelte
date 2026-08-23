@@ -2091,7 +2091,7 @@
 
       {:else if activeModal === 'sharedPicker'}
         <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.selectProfile}</h2>
-        <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
+        <div class="flex flex-col gap-2 max-h-[42vh] overflow-y-auto hide-scrollbar">
           {#each pickableUsers(sharedPickerSlot) as u (u.Id)}
             <button onclick={() => chooseSharedUser(u)}
               class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
@@ -2102,6 +2102,12 @@
           {:else}
             <p class="text-gray-400 text-lg p-4">{i18n.t.noProfiles}</p>
           {/each}
+        </div>
+        <!-- Outside the scroll box on purpose: these two are always available, so a long profile
+             list must not push them out of reach. They stay BELOW the list so opening the dialog
+             still lands focus on the profiles, which is what almost everyone came here for. -->
+        <div class="h-px bg-gray-700"></div>
+        <div class="flex flex-col gap-2">
           <button onclick={startSharedQuickConnect}
             class="w-full text-left p-5 text-xl font-bold text-gray-300 rounded-xl transition-colors
                    bg-transparent border border-gray-600 hover:bg-gray-700 focus:bg-gray-700
