@@ -4,7 +4,7 @@
   import { rememberTrack, matchRememberedAudioIndex, matchRememberedSubtitleIndex } from '../trackmemory.js';
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
-  import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady } from '../syncplay.js';
+  import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady, syncNow } from '../syncplay.js';
   import { PgsRenderer, VobSubRenderer, initWasm, warmup } from 'libbitsub';
   // ASS/SSA with original layout via assjs — a lean DOM/CSS renderer (no WASM/worker). Syncs
   // to the <video> (only time + dimensions, NO pixels → no cross-origin taint, no crossorigin on the <video>).
@@ -285,10 +285,16 @@
     // A malformed/absent When from the server yields NaN, which would poison delay AND
     // syncSuppressUntil (Date.now() < NaN is always false → the echo-suppression window silently
     // turns off, and the group can enter a play/pause echo loop). Fall back to "now".
-    const whenRaw = cmd.When ? new Date(cmd.When).getTime() : Date.now();
-    const when  = Number.isFinite(whenRaw) ? whenRaw : Date.now();
-    const delay = Math.max(0, when - Date.now());
-    syncSuppressUntil = Date.now() + delay + 600;   // backstop for play/pause follow-up events
+    //
+    // syncNow() rather than Date.now(): When is a SERVER timestamp, so it has to be compared
+    // against the server's clock. Measuring against the TV's own clock meant a set running a few
+    // seconds fast or slow acted that much early or late on every command — the group drifting by
+    // exactly the offset. syncNow() is Date.now() plus the measured offset, and that offset stays
+    // 0 when it could not be measured, so this reduces to the previous behaviour.
+    const whenRaw = cmd.When ? new Date(cmd.When).getTime() : syncNow();
+    const when  = Number.isFinite(whenRaw) ? whenRaw : syncNow();
+    const delay = Math.max(0, when - syncNow());
+    syncSuppressUntil = Date.now() + delay + 600;   // local clock: only ever compared to Date.now()
     dlog('[SyncPlay] ← apply', command, 'pos', Math.round(pos), 'in', delay, 'ms');
     if (command === 'Seek') {
       _expectSeekEcho = true; videoElement.currentTime = pos; currentTime = pos;

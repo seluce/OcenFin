@@ -16,6 +16,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **A server found by the automatic search is upgraded to HTTPS if it offers it.** The search itself
   still scans over HTTP so it stays quick; the server you actually pick is then asked once whether
   it also answers encrypted, and is saved that way if it does.
+- **Settings are trimmed down on a profile with an age restriction.** Screen saver, account and
+  server, diagnostics, and the sign-in credentials are hidden, while everything that shapes
+  watching — appearance, content, navigation, remote, playback, subtitles — and the profile picture
+  stay. Note this tidies the interface rather than locking anything: it holds only as far as the
+  other profiles have passwords.
 - **Servers reached over unencrypted HTTP are marked** with a small amber **HTTP** badge in the
   server list and in the settings — a reminder that on that connection your password and access
   token travel the network in the clear. See the FAQ on certificates for what to do about it.
@@ -56,6 +61,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   profiles lost its sign-in, the filter quietly carried on with the other one alone and showed more
   titles than it should have. It now tells you once which profile needs attention.
 
+- **Group playback keeps in step even when the TV's clock is off.** Every SyncPlay instruction
+  carries the server's time, and the app compared it against the television's own clock — so a set
+  running a few seconds fast or slow paused and resumed that much early or late, with the whole
+  group drifting apart. The difference between the two clocks is now measured and accounted for.
 - **Turning on title logos no longer makes the details page jump around.** A logo's height depends
   on its shape — a wide wordmark is short, a stacked emblem tall — so the description and play
   buttons used to sit somewhere different on every title. The title area now keeps a steady height.

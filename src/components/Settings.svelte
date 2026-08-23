@@ -146,6 +146,15 @@
   let sharedError = $state('');
   let sharedMembers = $derived([0, 1].map(i => sharedProfile.members?.[i] || null));
   let sharedManualName = $state('');
+
+  // Age-restricted profile. Derived from Jellyfin's OWN statement about the account rather than an
+  // app-side switch: MaxParentalRating is set exactly when an administrator limited what this
+  // profile may watch, which is the same intent. Nothing new to configure, and it follows the
+  // server if the restriction is lifted.
+  //
+  // This tidies the interface; it is NOT a security boundary. Anyone at the television can pick a
+  // different profile, so it only holds as far as the other profiles are password-protected.
+  const restrictedProfile = $derived(selectedUser?.Policy?.MaxParentalRating != null);
   let sharedQcCode  = $state(null);
   let sharedQcQr    = $state(null);
   let sharedQcSess  = null;
@@ -598,6 +607,10 @@
   // top instead of inheriting the previous category's scroll depth.
   $effect(() => { activeCategory; if (contentEl) contentEl.scrollTop = 0; });
   // Close the "display elements" sub-item as soon as you leave the appearance tab
+  // Everything that changes the television itself, the account, or exposes diagnostics is dropped
+  // for a restricted profile. What shapes their own viewing — appearance, content, navigation,
+  // remote, playback, subtitles — stays, so the profile still feels like theirs.
+  const RESTRICTED_HIDDEN = ['oled', 'account', 'status'];
   let categories = $derived([
     { id: 'appearance', label: i18n.t.settingsDisplay,    icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
     { id: 'displayElements', label: i18n.t.displayElements, icon: 'M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z' },
@@ -609,7 +622,13 @@
     { id: 'security',   label: i18n.t.profileSecurity,    icon: 'M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z' },
     { id: 'account',    label: i18n.t.settingsAccount,    icon: 'M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.7 5.1a3.375 3.375 0 012.7-1.35h7.13c1.06 0 2.06.5 2.7 1.35l2.59 3.45a4.5 4.5 0 01.9 2.7' },
     { id: 'status',     label: i18n.t.statusSection,      icon: 'M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6' },
-  ]);
+  ].filter(c => !(restrictedProfile && RESTRICTED_HIDDEN.includes(c.id))));
+
+  // A hidden category must not stay selected — landing on a blank pane after a profile switch
+  // would look like a broken settings screen.
+  $effect(() => {
+    if (!categories.some(c => c.id === activeCategory)) activeCategory = categories[0]?.id ?? 'appearance';
+  });
 </script>
 
 <div class="flex h-full">
@@ -1642,6 +1661,11 @@
         </div>
       {/if}
 
+      <!-- Credentials, hidden on an age-restricted profile: storing a password for one-touch
+           sign-in, changing it, and above all authorising another device by code are not things a
+           child account should reach. The profile picture above stays — it is the one setting here
+           they actually enjoy, and it affects nobody else. -->
+      {#if !restrictedProfile}
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
         <!-- Save password / quick switch (formerly its own "Profile" category) -->
@@ -1690,6 +1714,7 @@
         </button>
 
       </div>
+      {/if}
     </section>
     {/if}
 

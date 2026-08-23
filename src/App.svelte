@@ -20,7 +20,7 @@
   import Person      from './components/Person.svelte';
   import Library     from './components/Library.svelte';
   import Collection  from './components/Collection.svelte';
-  import { registerSession, listSyncGroups, createSyncGroup, joinSyncGroup, leaveSyncGroup, syncSocketUrl, setSyncIgnoreWait } from './syncplay.js';
+  import { registerSession, listSyncGroups, createSyncGroup, joinSyncGroup, leaveSyncGroup, syncSocketUrl, setSyncIgnoreWait, measureClockOffset } from './syncplay.js';
   import { suppressTheme } from './thememusic.js';
 
   // Lazy-loaded views (Vite code-splitting): loaded only on first open, then cached.
@@ -491,8 +491,8 @@
   // Reliably put focus on the button when the banner appears (it mounts due to a
   // background event; focusOnMount didn't catch it there — tick() after the flush wins).
   $effect(() => { if (session.connectionLost) tick().then(() => retryBtnEl?.focus()); });
-  async function syncCreate() { await createSyncGroup(session.serverUrl, session.token, selectedUser?.Name || 'OcenFin'); syncJoined = true; await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
-  async function syncJoin(groupId) { await joinSyncGroup(session.serverUrl, session.token, groupId); syncJoined = true; syncMyGroupId = groupId; await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
+  async function syncCreate() { await createSyncGroup(session.serverUrl, session.token, selectedUser?.Name || 'OcenFin'); syncJoined = true; measureClockOffset(session.serverUrl, session.token); await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
+  async function syncJoin(groupId) { await joinSyncGroup(session.serverUrl, session.token, groupId); syncJoined = true; syncMyGroupId = groupId; measureClockOffset(session.serverUrl, session.token); await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
   async function syncLeave() { await leaveSyncGroup(session.serverUrl, session.token); syncJoined = false; syncMyGroupId = null; syncQueue = null; _lastSyncQueueItem = null; await syncRefresh(); }
 
   // Auto-load: open the item the group is playing programmatically in the Player (jumps to the group position via Ready→Unpause).
@@ -566,7 +566,7 @@
     if (msg.MessageType === 'SyncPlayGroupUpdate') {
       const type = msg.Data?.Type;
       // Anchor my own membership authoritatively on the socket (GroupId), not on the name.
-      if (type === 'GroupJoined') { syncJoined = true; syncMyGroupId = msg.Data?.GroupId || syncMyGroupId; syncRefresh(); }
+      if (type === 'GroupJoined') { syncJoined = true; syncMyGroupId = msg.Data?.GroupId || syncMyGroupId; measureClockOffset(session.serverUrl, session.token); syncRefresh(); }
       else if (['GroupLeft', 'NotInGroup', 'GroupDoesNotExist'].includes(type)) { syncJoined = false; syncMyGroupId = null; syncQueue = null; syncRefresh(); }
       else if (['UserJoined', 'UserLeft'].includes(type)) syncRefresh();
       else if (type === 'PlayQueue') {
