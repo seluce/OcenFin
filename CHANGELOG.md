@@ -25,6 +25,16 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   server list and in the settings — a reminder that on that connection your password and access
   token travel the network in the clear. See the FAQ on certificates for what to do about it.
 
+### Changed
+
+- **Watch together asks the server far less.** Two scans were running over the same data: the
+  dashboard read each partner's whole catalogue for its suggestions, and every library you opened
+  read it again to know what to hide. The suggestion scan already covers every library, so the
+  filter now takes what it needs from that instead of asking again — with two partners and three
+  libraries, six requests become two. Partners are also fetched side by side rather than one after
+  the other, which roughly halves the wait before a library appears filtered. What you see is
+  unchanged.
+
 ### Fixed
 
 - **The shareable diagnostic log no longer contains the access token.** Stream and subtitle URLs

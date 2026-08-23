@@ -1044,6 +1044,12 @@
 
   let partnersPlayedCache = {};   // libraryId → { ids: Set, at: timestamp }
   const PARTNERS_CACHE_TTL = 10 * 60 * 1000;
+  // The suggestion scan asks every member for their WHOLE catalogue, across all libraries, so its
+  // union of watched IDs already contains every per-library one. It is parked in THIS cache under a
+  // reserved key rather than in a variable of its own: every place that invalidates
+  // partnersPlayedCache — sign-out, server switch, a changed member list — then invalidates it too,
+  // with no second reset site to keep in step. Library IDs are GUIDs, so the key cannot collide.
+  const PARTNERS_ALL_KEY = '__allLibraries';
   let _partnersSeq = 0;   // supersede guard: only the LATEST library switch may publish its result
   async function loadPartnersPlayedIds(libraryId) {
     const seq = ++_partnersSeq;
@@ -1051,11 +1057,22 @@
     if (!librarySharedOn || !sharedReady || !libraryId) return;
     const hit = partnersPlayedCache[libraryId];
     if (hit && Date.now() - hit.at < PARTNERS_CACHE_TTL) { partnersPlayedIds = hit.ids; return; }
+    // Free if the dashboard already ran the suggestion scan. Item IDs are unique server-wide, so
+    // the entries belonging to other libraries can never match anything in this one — the wider set
+    // filters exactly like the narrow one would.
+    const all = partnersPlayedCache[PARTNERS_ALL_KEY];
+    if (all && Date.now() - all.at < PARTNERS_CACHE_TTL) {
+      partnersPlayedIds = all.ids;
+      dlog('[Shared] library filter reused the suggestion scan — no request');
+      return;
+    }
     const ids = new Set();
-    for (const m of sharedProfile.members) {
-      if (!m || !m.id) continue;
+    // Side by side, not one after the other: two profiles are two independent catalogue scans, and
+    // awaiting them in sequence simply doubled the wait before the library could be filtered.
+    await Promise.all(sharedProfile.members.map(async (m) => {
+      if (!m || !m.id) return;
       const token = memberToken(m);
-      if (!token) { warnSharedMember(m); continue; }
+      if (!token) { warnSharedMember(m); return; }
       try {
         const res = await fetch(
           `${session.serverUrl}/Users/${m.id}/Items?ParentId=${libraryId}&Recursive=true` +
@@ -1066,14 +1083,14 @@
         if (!res.ok) {
           console.warn('[Shared] query failed for', m.name, '· HTTP', res.status);
           if (res.status === 401 || res.status === 403) warnSharedMember(m);   // that member's token died
-          continue;
+          return;
         }
         let n = 0;
         // Check UserData.Played client-side — more reliable than Filters=IsPlayed (doesn't always work for series).
         (await res.json()).Items?.forEach(i => { if (i.UserData?.Played) { ids.add(i.Id); n++; } });
         dlog('[Shared]', m.name, '→', n, 'fully-watched titles');
       } catch (e) { console.warn('[Shared] error for', m.name, e); }
-    }
+    }));
     partnersPlayedCache[libraryId] = { ids, at: Date.now() };   // cache stays valid for ITS library
     if (seq !== _partnersSeq) return;   // library switched while fetching → don't publish stale IDs
     partnersPlayedIds = ids;
@@ -1092,18 +1109,19 @@
   async function loadSharedSuggestions() {
     if (!sharedSugKey) { sharedSuggestions = []; return; }
     _loadedSugKey = sharedSugKey;   // claim the key in advance → no double fetch
-    const memberData = [];
-    for (const m of sharedProfile.members) {
-      if (!m?.id) continue;
+    // map + Promise.all rather than a loop: the members are fetched side by side, but the ORDER
+    // survives, and memberData[0] supplying the suggestion pool depends on that.
+    const memberData = (await Promise.all(sharedProfile.members.map(async (m) => {
+      if (!m?.id) return null;
       const token = memberToken(m);
-      if (!token) continue;
+      if (!token) return null;
       try {
         const res = await fetch(
           `${session.serverUrl}/Users/${m.id}/Items?Recursive=true&IncludeItemTypes=Movie,Series` +
           `&Fields=Genres,CommunityRating,UserData&EnableImageTypes=Primary&Limit=100000&EnableTotalRecordCount=false`,
           { headers: authHeaders(token) }
         );
-        if (!res.ok) continue;
+        if (!res.ok) return null;
         const items = (await res.json()).Items || [];
         const genreCount = {}; const watched = new Set();
         for (const it of items) {
@@ -1114,9 +1132,9 @@
             for (const g of it.Genres || []) genreCount[g] = (genreCount[g] || 0) + 1;
           }
         }
-        memberData.push({ items, genreCount, watched });
-      } catch { }
-    }
+        return { items, genreCount, watched };
+      } catch { return null; }
+    }))).filter(Boolean);
     if (!memberData.length) { sharedSuggestions = []; return; }
 
     // Genre weights: genres that ALL members have watched (product of the counts → "both like it").
@@ -1137,6 +1155,9 @@
 
     const exclude = new Set();
     memberData.forEach(d => d.watched.forEach(id => exclude.add(id)));
+    // Exactly what the library filter needs — see PARTNERS_ALL_KEY. Handing it over here spares it
+    // a full catalogue request per member and per library.
+    partnersPlayedCache[PARTNERS_ALL_KEY] = { ids: exclude, at: Date.now() };
 
     sharedSuggestions = memberData[0].items
       .filter(it => !exclude.has(it.Id))
