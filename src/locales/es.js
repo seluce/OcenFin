@@ -240,12 +240,12 @@ export default {
     clearHistory: "Borrar historial",
 
     // Settings — Display
-    settingsDisplay: "Pantalla",
+    settingsDisplay: "Apariencia",
     language: "Idioma",
     languageDesc: "Cambia el idioma de la interfaz.",
     reduceAnimations: "Reducir animaciones",
     reduceAnimationsDesc: "Desactiva las transiciones y efectos — mejora el rendimiento en televisores más lentos.",
-    displayElements: "Elementos de la interfaz",
+    displayElements: "Contenido",
     displayClock: "Reloj",
     displayHero: "Banner destacado",
     displayEpisodeCount: "Número de episodios (series)",

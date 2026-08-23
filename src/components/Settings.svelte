@@ -1297,6 +1297,61 @@
         {/if}
 
       </div>
+
+      <!-- Watch together: merge two profiles. Lives under Playback, not under Profile &
+           Security: setting it up needs sign-ins, but what it DOES is filter your library — a
+           viewing feature. It sat with the credentials purely because of its plumbing. -->
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+        <button onclick={onSharedToggle}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.sharedWatching}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.sharedWatchingDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {sharedProfile.enabled ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {sharedProfile.enabled ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        {#if sharedProfile.enabled}
+          <div class="h-px bg-gray-700"></div>
+          <div class="p-6 flex flex-col gap-4">
+            <span class="text-gray-400 text-sm">{i18n.t.sharedWatchingPick}</span>
+            <div class="grid grid-cols-2 gap-4">
+              {#each [0, 1] as slot}
+                {@const m = sharedMembers[slot]}
+                <div class="bg-gray-900/60 border border-gray-700 rounded-xl p-4 flex flex-col items-center justify-center gap-2 min-h-[8rem]">
+                  {#if m}
+                    <span class="text-white font-bold text-lg text-center break-words">{m.name}</span>
+                    {#if sharedTokens[selectedServer?.id]?.[m.id] || savedTokens[selectedServer?.id]?.[m.id]}
+                      <span class="text-green-400 text-xs font-bold">{i18n.t.sharedMemberReady}</span>
+                    {:else}
+                      <span class="text-amber-400 text-xs font-bold">{i18n.t.sharedNeedsLogin}</span>
+                    {/if}
+                    <button data-slot-btn={slot} onclick={() => removeMember(slot)}
+                      class="mt-1 text-red-400 hover:text-red-300 focus:text-red-300 text-sm font-bold
+                             focus:outline-none focus:ring-2 focus:ring-white rounded px-3 py-1.5">
+                      {i18n.t.remove}
+                    </button>
+                  {:else}
+                    <button data-slot-btn={slot} onclick={() => openSharedPicker(slot)}
+                      class="flex flex-col items-center gap-2 text-gray-400 hover:text-white focus:text-white
+                             focus:outline-none focus:ring-4 focus:ring-white rounded-lg px-4 py-3">
+                      <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+                      </svg>
+                      <span class="text-sm font-bold">{i18n.t.selectProfile}</span>
+                    </button>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      </div>
     </section>
     {/if}
 
@@ -1634,59 +1689,6 @@
           </svg>
         </button>
 
-      </div>
-
-      <!-- Watch together: merge two profiles -->
-      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
-        <button onclick={onSharedToggle}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.sharedWatching}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.sharedWatchingDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {sharedProfile.enabled ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {sharedProfile.enabled ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
-
-        {#if sharedProfile.enabled}
-          <div class="h-px bg-gray-700"></div>
-          <div class="p-6 flex flex-col gap-4">
-            <span class="text-gray-400 text-sm">{i18n.t.sharedWatchingPick}</span>
-            <div class="grid grid-cols-2 gap-4">
-              {#each [0, 1] as slot}
-                {@const m = sharedMembers[slot]}
-                <div class="bg-gray-900/60 border border-gray-700 rounded-xl p-4 flex flex-col items-center justify-center gap-2 min-h-[8rem]">
-                  {#if m}
-                    <span class="text-white font-bold text-lg text-center break-words">{m.name}</span>
-                    {#if sharedTokens[selectedServer?.id]?.[m.id] || savedTokens[selectedServer?.id]?.[m.id]}
-                      <span class="text-green-400 text-xs font-bold">{i18n.t.sharedMemberReady}</span>
-                    {:else}
-                      <span class="text-amber-400 text-xs font-bold">{i18n.t.sharedNeedsLogin}</span>
-                    {/if}
-                    <button data-slot-btn={slot} onclick={() => removeMember(slot)}
-                      class="mt-1 text-red-400 hover:text-red-300 focus:text-red-300 text-sm font-bold
-                             focus:outline-none focus:ring-2 focus:ring-white rounded px-3 py-1.5">
-                      {i18n.t.remove}
-                    </button>
-                  {:else}
-                    <button data-slot-btn={slot} onclick={() => openSharedPicker(slot)}
-                      class="flex flex-col items-center gap-2 text-gray-400 hover:text-white focus:text-white
-                             focus:outline-none focus:ring-4 focus:ring-white rounded-lg px-4 py-3">
-                      <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-                      </svg>
-                      <span class="text-sm font-bold">{i18n.t.selectProfile}</span>
-                    </button>
-                  {/if}
-                </div>
-              {/each}
-            </div>
-          </div>
-        {/if}
       </div>
     </section>
     {/if}

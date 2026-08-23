@@ -240,12 +240,12 @@ export default {
     clearHistory: "Cancella cronologia",
 
     // Settings — Display
-    settingsDisplay: "Schermo",
+    settingsDisplay: "Aspetto",
     language: "Lingua",
     languageDesc: "Cambia la lingua dell'interfaccia.",
     reduceAnimations: "Riduci animazioni",
     reduceAnimationsDesc: "Disattiva transizioni ed effetti — migliora le prestazioni sui TV più lenti.",
-    displayElements: "Elementi dell'interfaccia",
+    displayElements: "Contenuti",
     displayClock: "Orologio",
     displayHero: "Banner in evidenza",
     displayEpisodeCount: "Numero di episodi (serie)",

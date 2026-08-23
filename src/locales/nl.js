@@ -245,7 +245,7 @@ export default {
     languageDesc: "Wijzig de taal van de interface.",
     reduceAnimations: "Animaties verminderen",
     reduceAnimationsDesc: "Schakelt overgangen en effecten uit — verbetert prestaties op tragere tv's.",
-    displayElements: "Weergave-elementen",
+    displayElements: "Inhoud",
     displayClock: "Klok",
     displayHero: "Uitgelichte banner",
     displayEpisodeCount: "Aantal afleveringen (series)",

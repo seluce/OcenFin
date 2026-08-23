@@ -245,7 +245,7 @@ export default {
     languageDesc: "Ändere die Sprache der Benutzeroberfläche.",
     reduceAnimations: "Animationen reduzieren",
     reduceAnimationsDesc: "Deaktiviert Übergänge und Effekte — verbessert die Leistung auf langsameren TVs.",
-    displayElements: "Anzeige-Elemente",
+    displayElements: "Inhalte",
     displayClock: "Uhrzeit",
     displayHero: "Featured-Banner",
     displayEpisodeCount: "Episodenanzahl (Serien)",
