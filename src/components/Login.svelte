@@ -659,7 +659,7 @@
           <input
             type="password"
             bind:value={manualPassword}
-            placeholder="Passwort"
+            placeholder={i18n.t.password}
             onkeydown={(e) => e.key === 'Enter' && authenticateUser(manualUsername, manualPassword)}
             class="w-full bg-gray-900 text-white text-xl p-5 rounded-xl mb-6 border border-gray-600
                    focus:outline-none focus:ring-4 focus:ring-blue-500"

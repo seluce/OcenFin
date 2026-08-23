@@ -141,6 +141,7 @@
   let sharedBusy  = $state(false);
   let sharedError = $state('');
   let sharedMembers = $derived([0, 1].map(i => sharedProfile.members?.[i] || null));
+  let sharedManualName = $state('');
 
   let timeoutOptions = $derived([
     { label: `1 ${i18n.t.minuteShort}`,  value: 60  },
@@ -178,6 +179,18 @@
     sharedPickerSlot = slot; sharedPickerUser = null; sharedPw = ''; sharedError = '';
     await openModal('sharedPicker');
   }
+  // Hidden profiles never appear in /Users/Public, so they cannot be picked from the list — the
+  // same reason the sign-in screen offers a manual entry. Name plus password, verified by the
+  // server exactly like any other profile.
+  async function openSharedManual() {
+    sharedManualName = ''; sharedPw = ''; sharedError = '';
+    await openModal('sharedManual');
+  }
+  async function commitSharedManual() {
+    const name = sharedManualName.trim();
+    if (!name) return;
+    await commitSharedUser({ Name: name }, sharedPw);   // no Id yet — the server supplies it
+  }
   async function chooseSharedUser(user) {
     sharedError = '';
     const sid = selectedServer?.id;
@@ -199,7 +212,7 @@
       await tick();   // the slot now shows the remove button → focus there (instead of lost to the sidebar)
       document.querySelector(`[data-slot-btn="${slot}"]`)?.focus();
     }
-    else if (r === 'needPassword')  { sharedPickerUser = user; await openModal('sharedPassword'); }
+    else if (r === 'needPassword')  { sharedPickerUser = user; sharedPw = ''; await openModal('sharedPassword'); }
     else                            sharedError = i18n.t.errLogin;
   }
   // Remove the member + focus onto the "choose profile" button of the same slot that then appears.
@@ -2051,8 +2064,30 @@
           {:else}
             <p class="text-gray-400 text-lg p-4">{i18n.t.noProfiles}</p>
           {/each}
+          <button onclick={openSharedManual}
+            class="w-full text-left p-5 text-xl font-bold text-gray-300 rounded-xl transition-colors
+                   bg-transparent border border-gray-600 hover:bg-gray-700 focus:bg-gray-700
+                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white">
+            {i18n.t.manualLogin}
+          </button>
         </div>
         {#if sharedError}<p class="text-red-400 font-bold">{sharedError}</p>{/if}
+
+      {:else if activeModal === 'sharedManual'}
+        <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.manualLogin}</h2>
+        <input type="text" bind:value={sharedManualName} placeholder={i18n.t.username}
+          {@attach tvKeyboard} {@attach focusOnMount()}
+          class="w-full bg-gray-900 text-white text-2xl p-6 rounded-xl border border-gray-600
+                 focus:outline-none focus:ring-4 focus:ring-blue-500" />
+        <input type="password" bind:value={sharedPw} placeholder={i18n.t.password}
+          {@attach tvKeyboard}
+          onkeydown={(e) => e.key === 'Enter' && commitSharedManual()}
+          class="w-full bg-gray-900 text-white text-2xl p-6 rounded-xl border border-gray-600
+                 focus:outline-none focus:ring-4 focus:ring-blue-500" />
+        {#if sharedError}<p class="text-red-400 font-bold text-lg">{sharedError}</p>{/if}
+        <button onclick={commitSharedManual} disabled={sharedBusy || !sharedManualName.trim()}
+          class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-2xl py-6 rounded-xl
+                 focus:outline-none focus:ring-4 focus:ring-white mt-2 disabled:opacity-50">{i18n.t.confirm}</button>
 
       {:else if activeModal === 'sharedPassword'}
         <h2 class="text-4xl text-white font-bold mb-2">{sharedPickerUser?.Name}</h2>

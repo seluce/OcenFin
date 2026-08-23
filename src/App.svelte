@@ -935,9 +935,14 @@
     if (!user || !selectedServer) return 'error';
     const sid = selectedServer.id;
     // Reuse an existing token (own store or self-enabled quick switch).
-    let token = sharedTokens[sid]?.[user.Id] || savedTokens[sid]?.[user.Id];
+    let token = user.Id ? (sharedTokens[sid]?.[user.Id] || savedTokens[sid]?.[user.Id]) : null;
     if (token && !(await validateToken(token))) token = null;   // expired → re-authenticate
     if (!token) {
+      // HasPassword from /Users/Public is only a hint for WHICH dialog to show first — never the
+      // thing that decides access. The gate is AuthenticateByName below: a profile with a password
+      // cannot be added without it, because the SERVER refuses. Treat a rejected attempt as "needs
+      // a password" rather than a generic error, so the prompt still appears when that hint is
+      // missing or wrong (older servers, a proxy trimming the DTO, a hidden profile typed by hand).
       if (user.HasPassword && !pw) return 'needPassword';
       try {
         const res = await fetch(`${session.serverUrl}/Users/AuthenticateByName`, {
@@ -945,8 +950,14 @@
           headers: { 'Content-Type': 'application/json', 'Authorization': authHeaderFor(user.Name) },
           body:    JSON.stringify({ Username: user.Name, Pw: pw || '' })
         });
+        if (res.status === 401) return pw ? 'error' : 'needPassword';
         if (!res.ok) return 'error';
-        token = (await res.json()).AccessToken;
+        const data = await res.json();
+        token = data.AccessToken;
+        // A hand-typed profile (hidden ones are absent from /Users/Public) has no Id yet — take
+        // the identity the server just confirmed rather than anything the user typed.
+        if (!user.Id && data.User?.Id) user = { Id: data.User.Id, Name: data.User.Name };
+        if (!user.Id) return 'error';
       } catch { return 'error'; }
     }
     // Store the token ONLY in the own shared store — NEVER in savedTokens. The quick switch

@@ -42,6 +42,12 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Removing a server now clears all of its saved tokens**, including the ones kept for watch
   together; leftovers from very old versions are cleaned up too. **Quick Connect** no longer leaves
   a login code active in the background after a successful sign-in.
+- **Hidden profiles can now be added to watch together.** They never show up in the profile list,
+  so there was no way to pick them — the sign-in screen has had a manual entry for that case all
+  along, and the picker now offers it too. Name and password, checked by the server as usual.
+- **The password prompt now appears whenever the server asks for one**, instead of relying on what
+  the profile list reported. A profile with a password could previously end up showing a generic
+  sign-in error with no way to enter it.
 - **Watch together says something when a profile needs signing in again.** If one of the two linked
   profiles lost its sign-in, the filter quietly carried on with the other one alone and showed more
   titles than it should have. It now tells you once which profile needs attention.
