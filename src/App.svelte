@@ -929,6 +929,7 @@
     _loadedSugKey = null;   // recompute suggestions
     saveUserPrefs();
     partnersPlayedCache = {};   // members changed → all cached unions invalid
+    _sharedWarned = new Set();  // a re-added profile must be able to warn again if it breaks later
     if (librarySharedOn) loadPartnersPlayedIds(currentLibrary?.Id);
     return 'ok';
   }
@@ -948,6 +949,7 @@
     _loadedSugKey = null;   // recompute suggestions
     saveUserPrefs();
     partnersPlayedCache = {};   // members changed → all cached unions invalid
+    _sharedWarned = new Set();  // a re-added profile must be able to warn again if it breaks later
     if (librarySharedOn) loadPartnersPlayedIds(currentLibrary?.Id);
   }
 
@@ -957,6 +959,20 @@
   // Cache per library (TTL 10 min): the fetch is the heaviest query in the app (full catalog
   // per member) — don't reload every time when switching back and forth between libraries.
   // Invalidated on member change, profile-off, session switch and "clear cache".
+  // One member's token being gone degrades "watch together" SILENTLY: the union below is then
+  // built from the other member alone, so the library filters with half the data and simply shows
+  // more than it should. The settings page marks the profile, but nobody browsing a library looks
+  // there. Say it once per member per session — repeating it on every library switch would be
+  // worse than saying nothing. Reuses the admin-message overlay and two existing strings, so this
+  // costs no new translations.
+  let _sharedWarned = new Set();
+  function warnSharedMember(m) {
+    console.warn('[Shared] no valid token for', m.name, '– please re-add profile.');
+    if (_sharedWarned.has(m.id)) return;
+    _sharedWarned.add(m.id);
+    showRemoteMessage(i18n.t.sharedWatching, `${m.name}: ${i18n.t.sharedNeedsLogin}`, 9000);
+  }
+
   let partnersPlayedCache = {};   // libraryId → { ids: Set, at: timestamp }
   const PARTNERS_CACHE_TTL = 10 * 60 * 1000;
   let _partnersSeq = 0;   // supersede guard: only the LATEST library switch may publish its result
@@ -970,7 +986,7 @@
     for (const m of sharedProfile.members) {
       if (!m || !m.id) continue;
       const token = memberToken(m);
-      if (!token) { console.warn('[Shared] no valid token for', m.name, '– please re-add profile.'); continue; }
+      if (!token) { warnSharedMember(m); continue; }
       try {
         const res = await fetch(
           `${session.serverUrl}/Users/${m.id}/Items?ParentId=${libraryId}&Recursive=true` +
@@ -978,7 +994,11 @@
           `&Limit=100000&EnableTotalRecordCount=false`,
           { headers: authHeaders(token) }
         );
-        if (!res.ok) { console.warn('[Shared] query failed for', m.name, '· HTTP', res.status); continue; }
+        if (!res.ok) {
+          console.warn('[Shared] query failed for', m.name, '· HTTP', res.status);
+          if (res.status === 401 || res.status === 403) warnSharedMember(m);   // that member's token died
+          continue;
+        }
         let n = 0;
         // Check UserData.Played client-side — more reliable than Filters=IsPlayed (doesn't always work for series).
         (await res.json()).Items?.forEach(i => { if (i.UserData?.Played) { ids.add(i.Id); n++; } });

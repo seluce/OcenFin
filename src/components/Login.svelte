@@ -186,12 +186,41 @@
     catch { return null; } finally { clearTimeout(timer); }
   }
 
+  // An http:// URL that was DISCOVERED (or typed with the scheme by habit) may well have an https
+  // counterpart. Ask the server once, at the moment one is actually chosen — the LAN scan itself
+  // stays fast and http-only, and this costs a single round trip for the one server being kept.
+  // Two candidates, probed in parallel so the wait is one timeout and not two: the same port
+  // (Jellyfin behind a proxy that serves both) and 8920 (Jellyfin's own https port). The same port
+  // wins if both answer, since that is what was actually found. Returns the original URL unchanged
+  // when nothing answers — an http server stays http, it simply gets the badge.
+  async function upgradeToHttps(url) {
+    const m = url.match(/^http:\/\/([^/]+)$/i);
+    if (!m) return url;
+    const host = m[1].replace(/:\d+$/, '');
+    const port = m[1].match(/:(\d+)$/)?.[1];
+    const candidates = [];
+    if (port) candidates.push(`https://${host}:${port}`);
+    if (port !== '8920') candidates.push(`https://${host}:8920`);
+    if (!candidates.length) candidates.push(`https://${host}`);
+    const hits = await Promise.all(candidates.map(c => probeServer(c, 2500).then(r => r ? c : null)));
+    return hits.find(Boolean) || url;
+  }
+
   // Turn what the user typed into a concrete server URL. A bare host (no scheme) is tried over
   // HTTPS FIRST and only falls back to HTTP if that does not answer — so the encrypted default no
   // longer depends on the user knowing to type "https://". An explicit scheme is always honoured:
   // someone who deliberately typed http:// (a server with no cert) is not overridden.
   async function resolveServer(cleanUrl) {
-    if (/^https?:\/\//i.test(cleanUrl)) { const res = await probeServer(cleanUrl); return res ? { url: cleanUrl, res } : null; }
+    if (/^https?:\/\//i.test(cleanUrl)) {
+      // Explicit http:// — from the discovery list or typed out of habit. Offer the encrypted
+      // counterpart before committing; if there is none, keep exactly what was asked for.
+      const target = cleanUrl.startsWith('http://') ? await upgradeToHttps(cleanUrl) : cleanUrl;
+      const res = await probeServer(target);
+      if (res) return { url: target, res };
+      if (target === cleanUrl) return null;
+      const orig = await probeServer(cleanUrl);          // upgrade probe raced us — fall back
+      return orig ? { url: cleanUrl, res: orig } : null;
+    }
     const https = await probeServer('https://' + cleanUrl);
     if (https) return { url: 'https://' + cleanUrl, res: https };
     const http = await probeServer('http://' + cleanUrl);
