@@ -7,11 +7,18 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Added
 
-- **Connecting prefers HTTPS.** Type just an address like `192.168.1.100:8096` and the app tries
-  the encrypted connection first, falling back to plain HTTP only if the server offers nothing else
-  — you no longer have to know to type `https://`. Servers reached over unencrypted HTTP are marked
-  with a small **HTTP** badge in the server list and settings, as a reminder that the password and
-  token travel the network in the clear. Typing an explicit `http://` is still respected.
+- **Connecting prefers HTTPS, and fills in the rest.** Type as little as `192.168.1.100` or
+  `jellyfin.example.com` — the app works out the scheme and the port for you, trying the encrypted
+  connection first. It looks in the places Jellyfin actually lives: port 8920 for HTTPS and 8096 for
+  HTTP, and for a domain name port 443 first, since that is usually where a reverse proxy sits.
+  Anything you do type wins — give a port and it is used as-is, write `http://` on purpose and that
+  is respected.
+- **A server found by the automatic search is upgraded to HTTPS if it offers it.** The search itself
+  still scans over HTTP so it stays quick; the server you actually pick is then asked once whether
+  it also answers encrypted, and is saved that way if it does.
+- **Servers reached over unencrypted HTTP are marked** with a small amber **HTTP** badge in the
+  server list and in the settings — a reminder that on that connection your password and access
+  token travel the network in the clear. See the FAQ on certificates for what to do about it.
 
 ### Fixed
 
@@ -30,6 +37,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Removing a server now clears all of its saved tokens**, including the ones kept for watch
   together; leftovers from very old versions are cleaned up too. **Quick Connect** no longer leaves
   a login code active in the background after a successful sign-in.
+- **Watch together says something when a profile needs signing in again.** If one of the two linked
+  profiles lost its sign-in, the filter quietly carried on with the other one alone and showed more
+  titles than it should have. It now tells you once which profile needs attention.
 
 ### Internal
 

@@ -210,6 +210,27 @@
   // HTTPS FIRST and only falls back to HTTP if that does not answer — so the encrypted default no
   // longer depends on the user knowing to type "https://". An explicit scheme is always honoured:
   // someone who deliberately typed http:// (a server with no cert) is not overridden.
+  // What to try for an input without a scheme, in order of preference. Jellyfin almost never sits
+  // on 443/80, so appending a scheme alone would probe the two ports it is least likely to answer
+  // on. Whatever the user DID supply always wins: an explicit port is used verbatim.
+  //   host:port  → exactly that, https first
+  //   1.2.3.4    → 8920 (Jellyfin https) then 8096 (Jellyfin http); an IP rarely has a proxy
+  //   my.domain  → 443 first (a reverse proxy on a real domain is the common case), then 8920,
+  //                then the plain ports — a domain is the one case where 443/80 are plausible
+  function schemeCandidates(input) {
+    if (/:\d+$/.test(input))                       return { https: [`https://${input}`], http: [`http://${input}`] };
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(input))     return { https: [`https://${input}:8920`], http: [`http://${input}:8096`] };
+    return { https: [`https://${input}`, `https://${input}:8920`],
+             http:  [`http://${input}:8096`, `http://${input}`] };
+  }
+
+  // First reachable candidate from a list, probed in PARALLEL so the wait is one timeout rather
+  // than one per candidate; list order decides which wins when several answer.
+  async function firstReachable(urls) {
+    const hits = await Promise.all(urls.map(u => probeServer(u, 3000).then(r => r ? { url: u, res: r } : null)));
+    return hits.find(Boolean) || null;
+  }
+
   async function resolveServer(cleanUrl) {
     if (/^https?:\/\//i.test(cleanUrl)) {
       // Explicit http:// — from the discovery list or typed out of habit. Offer the encrypted
@@ -221,19 +242,17 @@
       const orig = await probeServer(cleanUrl);          // upgrade probe raced us — fall back
       return orig ? { url: cleanUrl, res: orig } : null;
     }
-    const https = await probeServer('https://' + cleanUrl);
-    if (https) return { url: 'https://' + cleanUrl, res: https };
-    const http = await probeServer('http://' + cleanUrl);
-    return http ? { url: 'http://' + cleanUrl, res: http } : null;
+    const { https, http } = schemeCandidates(cleanUrl);
+    return (await firstReachable(https)) || (await firstReachable(http));
   }
 
   async function addAndConnectServer(url) {
     if (!url.trim()) return;
     const cleanUrl = url.trim().replace(/\/$/, '');
 
-    // Already present? Match the bare input against a stored http/https entry too.
-    const existing = savedServers.find(s =>
-      s.url === cleanUrl || s.url === 'https://' + cleanUrl || s.url === 'http://' + cleanUrl);
+    // Fast path: the exact input, or it with a scheme, is already a saved server.
+    const known = (u) => savedServers.find(s => s.url === u);
+    const existing = known(cleanUrl) || known('https://' + cleanUrl) || known('http://' + cleanUrl);
     if (existing) { await connectToServer(existing); return; }
 
     serverConnectError = '';
@@ -241,6 +260,11 @@
     try {
       const hit = await resolveServer(cleanUrl);
       if (hit) {
+        // Resolution may have filled in a port or upgraded the scheme — check again before saving,
+        // otherwise typing "192.168.1.5" would add a second entry for a server already stored as
+        // https://192.168.1.5:8920.
+        const already = known(hit.url);
+        if (already) { await connectToServer(already); newServerUrl = ''; return; }
         const data = await hit.res.json();
         const srv  = { id: 'srv_' + Date.now(), url: hit.url, name: data.ServerName || 'Jellyfin Server' };
         onSaveServer?.(srv);
