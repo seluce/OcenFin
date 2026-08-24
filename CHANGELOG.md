@@ -91,6 +91,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   focused — and on the remote, focus crosses a button on the way somewhere else rather than out of
   intent. They now carry their red quietly and all the time, so you can see what a button does
   before landing on it. White text on them went from 4.8:1 to 13.8:1 in the process.
+- **Scrolling a large library asks the server for less.** The queries that fetch the next and the
+  previous page still had the server count the whole library each time, although nothing used that
+  number — the same needless work that was cleaned up elsewhere in the last release, missed in the
+  two hottest queries. The dashboard's series lookup had it too.
 - **Small text is easier to read from the sofa.** The faint grey used for details under posters —
   year, season, "today" — and throughout the status page fell below the accepted contrast minimum,
   which is felt most at the smallest interface size. It is brighter now, while still clearly

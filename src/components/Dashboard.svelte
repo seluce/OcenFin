@@ -363,7 +363,7 @@
         const seriesIds = items.filter(i => i.Type === 'Series').map(i => i.Id);
         if (seriesIds.length) {
           try {
-            const r2 = await fetch(`${session.serverUrl}/Users/${uId}/Items?Ids=${seriesIds.join(',')}&Fields=ProductionYear,Status,EndDate`, opts);
+            const r2 = await fetch(`${session.serverUrl}/Users/${uId}/Items?Ids=${seriesIds.join(',')}&Fields=ProductionYear,Status,EndDate&EnableTotalRecordCount=false`, opts);
             // Enrichment only — on an error response keep the items we already have rather than
             // letting res.json() throw and lose the whole row.
             const info = r2.ok ? new Map(((await r2.json()).Items || []).map(s => [s.Id, s])) : new Map();

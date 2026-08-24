@@ -321,7 +321,7 @@
     isFetchingMore = true;
     const myToken = loadToken;   // belongs to the CURRENT list — don't append anymore after a reload
     const start = firstLoadedIndex + currentItems.length;
-    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}`;
+    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}&EnableTotalRecordCount=false`;
     url += getFilterQuery();
     try {
       const res = await fetch(url, authOpts());
@@ -357,7 +357,7 @@
     const myToken = loadToken;   // belongs to the CURRENT list — don't prepend anymore after a reload
     const newStart = Math.max(0, firstLoadedIndex - libraryItemLimit);
     const count    = firstLoadedIndex - newStart;
-    const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}`;
+    const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}&EnableTotalRecordCount=false`;
     try {
       const res = await fetch(url, authOpts());
       if (res.ok && myToken === loadToken) {
