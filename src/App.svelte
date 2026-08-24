@@ -1067,12 +1067,14 @@
       return;
     }
     const ids = new Set();
+    const tAll = Date.now();
     // Side by side, not one after the other: two profiles are two independent catalogue scans, and
     // awaiting them in sequence simply doubled the wait before the library could be filtered.
     await Promise.all(sharedProfile.members.map(async (m) => {
       if (!m || !m.id) return;
       const token = memberToken(m);
       if (!token) { warnSharedMember(m); return; }
+      const t0 = Date.now();
       try {
         const res = await fetch(
           `${session.serverUrl}/Users/${m.id}/Items?ParentId=${libraryId}&Recursive=true` +
@@ -1087,10 +1089,14 @@
         }
         let n = 0;
         // Check UserData.Played client-side — more reliable than Filters=IsPlayed (doesn't always work for series).
-        (await res.json()).Items?.forEach(i => { if (i.UserData?.Played) { ids.add(i.Id); n++; } });
-        dlog('[Shared]', m.name, '→', n, 'fully-watched titles');
+        const list = (await res.json()).Items || [];
+        list.forEach(i => { if (i.UserData?.Played) { ids.add(i.Id); n++; } });
+        // Item count and duration are what settle whether a scan is worth avoiding on a given
+        // library — guessing at it from a desktop browser says nothing about the television.
+        dlog('[Shared]', m.name, '→', n, 'of', list.length, 'titles watched ·', Date.now() - t0, 'ms');
       } catch (e) { console.warn('[Shared] error for', m.name, e); }
     }));
+    dlog('[Shared] library filter scanned in', Date.now() - tAll, 'ms (members in parallel)');
     partnersPlayedCache[libraryId] = { ids, at: Date.now() };   // cache stays valid for ITS library
     if (seq !== _partnersSeq) return;   // library switched while fetching → don't publish stale IDs
     partnersPlayedIds = ids;
@@ -1115,6 +1121,7 @@
       if (!m?.id) return null;
       const token = memberToken(m);
       if (!token) return null;
+      const t0 = Date.now();
       try {
         const res = await fetch(
           `${session.serverUrl}/Users/${m.id}/Items?Recursive=true&IncludeItemTypes=Movie,Series` +
@@ -1132,6 +1139,8 @@
             for (const g of it.Genres || []) genreCount[g] = (genreCount[g] || 0) + 1;
           }
         }
+        dlog('[Shared] suggestion scan', m.name, '→', watched.size, 'of', items.length,
+             'titles watched ·', Date.now() - t0, 'ms');
         return { items, genreCount, watched };
       } catch { return null; }
     }))).filter(Boolean);
