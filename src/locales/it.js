@@ -239,6 +239,7 @@ export default {
     searchHistory: "Ricerche recenti",
     clearHistory: "Cancella cronologia",
 
+    clearSearch: "Cancella ricerca",
     // Settings — Display
     settingsDisplay: "Aspetto",
     language: "Lingua",

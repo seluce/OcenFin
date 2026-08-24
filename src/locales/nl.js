@@ -239,6 +239,7 @@ export default {
     searchHistory: "Recente zoekopdrachten",
     clearHistory: "Geschiedenis wissen",
 
+    clearSearch: "Zoekopdracht wissen",
     // Settings — Display
     settingsDisplay: "Weergave",
     language: "Taal",

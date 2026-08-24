@@ -37,7 +37,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   search results and coming back used to leave an empty field: the query, the results and how far
   you had scrolled were all thrown away, and finding the next result meant searching again. It now
   returns to the list exactly where you left it. Opening Search from the menu still starts blank, as
-  a search screen should.
+  a search screen should. And once something is typed, a small **✕** appears at the right of the
+  field to empty it in one press — no more holding Backspace on the remote to get rid of a long
+  entry. Reach it by pressing Right past the end of the text.
 - **The same is now true for favourites, collections and watchlists.** Favourites always jumped back
   to the very first entry, and a collection or watchlist put you on its Back button instead of on
   the title you had just looked at. Opening a watchlist and leaving it again also lost the spot

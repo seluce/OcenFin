@@ -239,6 +239,7 @@ export default {
     searchHistory: "Búsquedas recientes",
     clearHistory: "Borrar historial",
 
+    clearSearch: "Borrar búsqueda",
     // Settings — Display
     settingsDisplay: "Apariencia",
     language: "Idioma",

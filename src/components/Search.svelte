@@ -154,9 +154,16 @@
 
 <div class="p-10 pt-16 h-full flex flex-col">
 
-  <!-- SEARCH FIELD -->
-  <div class="mb-8 relative shrink-0">
-    <svg class="w-8 h-8 absolute left-6 top-1/2 -translate-y-1/2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <!-- SEARCH FIELD — the field's chrome (background, rounding, border) sits on the WRAPPER, so the
+       clear button can be a real sibling of the input and still look like it is inside the field.
+       That matters for the remote: as siblings their boxes lie next to each other, so Right at the
+       end of the text reaches the button geometrically. spatialnav only releases a text field once
+       the caret sits at its edge, so typing and correcting still work exactly as before.
+       The button only exists while something is typed — its whole purpose is emptying a long entry
+       without holding Backspace on the remote or leaving the view and coming back. -->
+  <div class="mb-8 shrink-0 relative flex items-center bg-gray-800 rounded-2xl border-2 border-transparent
+              focus-within:border-white shadow-xl transition-colors">
+    <svg class="w-8 h-8 absolute left-6 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
     </svg>
     <input
@@ -165,9 +172,19 @@
       oninput={onSearchInput}
       type="text"
       placeholder={i18n.t.searchPlaceholder}
-      class="w-full bg-gray-800 text-white text-3xl pl-20 pr-6 py-6 rounded-2xl border-2 border-transparent
-             focus:outline-none focus:border-white shadow-xl placeholder-gray-500 transition-colors"
+      class="flex-1 min-w-0 bg-transparent text-white text-3xl pl-20 pr-4 py-6 rounded-2xl
+             focus:outline-none placeholder-gray-500"
     />
+    {#if query.length > 0}
+      <button onclick={reset} aria-label={i18n.t.clearSearch}
+        class="mr-4 shrink-0 w-14 h-14 rounded-full flex items-center justify-center text-gray-400
+               hover:bg-gray-700 hover:text-white focus:bg-gray-700 focus:text-white
+               focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    {/if}
   </div>
 
   <!-- SEARCH HISTORY -->
