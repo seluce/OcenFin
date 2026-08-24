@@ -315,9 +315,22 @@
       const opts  = { headers: getAuthHeaders() };
       const fields = FIELDS;
 
-      // Start all 5 fetches at once — no sequential waiting
+      // Dispatch order is deliberate. Views + Resume go on the wire first — they release the UI and
+      // keep their priority on an HTTP/1.1 connection pool. Directly after them, still BEFORE the
+      // await they used to sit behind, the hero chain: it depends on nothing but uId and the
+      // headers, yet is the longest serial path on screen — loadHeroForYou is two round trips by
+      // construction (taste seeds, then the genre pool), so every round trip it queues behind is
+      // one more skeleton second before the banner appears. Until the chain decides, buildHero stays blocked (heroForYouPending) — same trade as
+      // before: a bit more skeleton time for the better hero, reserved space prevents shift-up.
       const pViews        = fetch(`${session.serverUrl}/Users/${uId}/Views`, opts);
       const pResume       = fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
+      heroForYouPending = true;
+      const pHeroForYou = loadHeroForYou(uId, opts)
+        .then(pool => { heroForYouPending = false; if (!heroBuilt && !applyHeroPool(pool)) buildHero(); })
+        .catch(() => { heroForYouPending = false; if (!heroBuilt) buildHero(); });
+      // Derive recommendations ("Because you watched X") from recently watched — independent of
+      // Views/Resume, so it also goes out before the await.
+      loadRecommendations(uId, opts, fields);
       const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
       const pLatestMovies = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Movie&Limit=${ROW_LIMIT}&Fields=${fields}`, opts);
       const pLatestSeries = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Series&Limit=${ROW_LIMIT}&Fields=${fields}`, opts);
@@ -344,16 +357,6 @@
         apiCache.dashboard.collections = collections;
       }).catch(() => {});
 
-      // Derive recommendations ("Because you watched X") from recently watched
-      loadRecommendations(uId, opts, fields);
-
-      // Kick off the "For You" hero (variant A) in parallel: it decides between the genre pool and
-      // the new-additions fallback. Until then buildHero is blocked (heroForYouPending) — a bit more
-      // skeleton time, but the better hero; the reserved space prevents shifting up.
-      heroForYouPending = true;
-      const pHeroForYou = loadHeroForYou(uId, opts)
-        .then(pool => { heroForYouPending = false; if (!heroBuilt && !applyHeroPool(pool)) buildHero(); })
-        .catch(() => { heroForYouPending = false; if (!heroBuilt) buildHero(); });
 
       // Load history + collapse by series
       pHistory.then(r => r.json()).then(async d => {

@@ -27,6 +27,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Changed
 
+- **The home screen's featured banner appears sooner.** Its two requests waited for the home
+  screen's first answers although they never needed them, which put the banner three server round
+  trips away on a cold start where the rest of the page needed one. They now go out immediately,
+  behind the two requests that release the rest of the screen. One round trip gone.
 - **Opening the sidebar is a little smoother.** The highlight behind the current entry cast a soft
   glow, and because the bar changes width as it opens, the TV had to redraw that blur on every
   single frame of the animation. The glow is gone; the entry is now flat blue. Nothing else about
