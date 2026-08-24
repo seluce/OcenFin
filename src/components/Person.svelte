@@ -119,7 +119,7 @@
       <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-10">
         {#each group.items as item (item.Id)}
               {@const badge = itemBadge(item)}
-          <button onclick={() => onOpenDetails(item)}
+          <button onclick={() => onOpenDetails(item)} data-item-id={item.Id}
             {@attach longPress()} onlongpress={() => onContextMenu(item)}
             class="group focus:outline-none text-left scroll-my-4">
             <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl relative">

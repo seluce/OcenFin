@@ -383,6 +383,12 @@
 
   // Remember position: where was Details opened from (scroll/focus now live in Library.svelte)
   let detailsOrigin      = $state('dashboard');   // 'dashboard' | 'library' | 'search'
+  // The card Details was opened from, so Back can hand focus straight back to it. Without this the
+  // view returns but nothing is focused: activeElement falls to <body>, and the next D-pad press
+  // then runs spatialnav's no-focus path, which picks geometrically from the screen corner and
+  // lands in the sidebar — the menu flying open after every look at a title.
+  let detailsReturnId    = null;
+  let detailsReturnEl    = null;
 
   // ── Watch together ─────────────────────────────────────────────────────────
   // The logged-in (shared) profile references two other profiles. Their tokens
@@ -1477,8 +1483,11 @@
   function showItemDetails(item) {
     // Containers (collection/playlist) show their contents instead of a detail page
     if (item?.Type === 'BoxSet' || item?.Type === 'Playlist') { openCollection(item); return; }
-    // Remember the origin so "Back" leads there again (not always the dashboard)
-    detailsOrigin = viewState;
+    // Remember the origin so "Back" leads there again (not always the dashboard), and the card
+    // itself so focus can return to it rather than to nothing.
+    detailsOrigin   = viewState;
+    detailsReturnId = item?.Id ?? null;
+    detailsReturnEl = document.activeElement;
     currentDetailItem = item;
     viewState = 'details';
     lazyPlayer();   // preload the Player chunk in the background — playback is very likely from here
@@ -1497,22 +1506,42 @@
     contextReturnEl = document.activeElement;
     contextItem = item;
   }
-  // After closing both the context menu AND the picker, put focus back on the card.
-  // The dashboard NO LONGER reloads after context actions → the card reference still lives and is
-  // focused directly (instant). Library/collection still reload async → the card comes back via
-  // data-item-id (poll briefly), otherwise the first visible entry (instead of focus loss).
-  function restoreContextFocus() {
-    const id = contextReturnId, el = contextReturnEl;
-    contextReturnId = null; contextReturnEl = null;
+  // Put focus back on a card that may not exist yet, because the view it belongs to can still be
+  // reloading. Three routes, in order: the live element (instant where the view stayed mounted, e.g.
+  // the dashboard after a context action), the item's data-item-id once its card is back, and only
+  // then the first card in the view rather than losing focus altogether.
+  //
+  // Every attempt stands down if something else holds focus by then, so a poll running over half a
+  // second can never fight a user who has already navigated on. Bounded and self-terminating — the
+  // shape to copy for anything that must focus an element which does not exist yet (see CLAUDE.md).
+  function focusCardAgain(id, el, why = '') {
     let tries = 0;
     const attempt = () => {
-      if (el && document.contains(el) && typeof el.focus === 'function') { el.focus(); return; }
+      const active = document.activeElement;
+      if (active && active !== document.body) {
+        // Stood down — something else restored focus first. Logged with the reason, because that is
+        // how we tell a needed call from a redundant one: every view but the dashboard owns this.
+        dlog('[focus] card restore', why, '· stood down, already on',
+             (active.textContent || active.tagName || '').trim().slice(0, 24));
+        return;
+      }
+      if (el && document.contains(el) && typeof el.focus === 'function') {
+        el.focus(); dlog('[focus] card restore', why, '· live element'); return;
+      }
       const target = id ? document.querySelector(`[data-item-id="${id}"]`) : null;
-      if (target) { target.focus(); return; }
-      if (++tries < 12) { setTimeout(attempt, 50); return; }   // wait up to ~600 ms for the reloaded entry
+      if (target) { target.focus(); dlog('[focus] card restore', why, '· by id after', tries, 'tries'); return; }
+      if (++tries < 12) { setTimeout(attempt, 50); return; }   // wait up to ~600 ms for the reload
+      dlog('[focus] card restore', why, '· fell back to the first card');
       document.querySelector('[data-item-id]')?.focus();
     };
     tick().then(attempt);
+  }
+
+  // After closing both the context menu AND the picker, put focus back on the card.
+  function restoreContextFocus() {
+    const id = contextReturnId, el = contextReturnEl;
+    contextReturnId = null; contextReturnEl = null;
+    focusCardAgain(id, el, '(context menu)');
   }
   $effect(() => { if (!contextItem && !contextPickerMode && (contextReturnId || contextReturnEl)) restoreContextFocus(); });
 
@@ -1583,6 +1612,8 @@
   }
 
   async function returnFromDetails() {
+    const backId = detailsReturnId, backEl = detailsReturnEl;
+    detailsReturnId = null; detailsReturnEl = null;
     viewState = detailsOrigin;
     if (detailsOrigin === 'library') {
       libraryRef?.restoreView();
@@ -1598,6 +1629,14 @@
       // still be listed in the overview until you switched views. Increment the key → Favorites reloads.
       favReloadKey++;
     }
+    // The dashboard is the ONLY origin that establishes no focus of its own when it comes back, so
+    // it is the only one handed the card here. Every other view already owns this (see CLAUDE.md):
+    // Library restores scroll AND focus in restoreView() above, Favourites focuses its first card
+    // after each load, Search focuses its input on mount, Collection and Person focus their Back
+    // button. Calling this for them would either be inert or fight their own logic.
+    // Unlike those, the dashboard remounts from scratch, so focusing the card also brings its
+    // scroll position back — the browser scrolls a focused element into view.
+    if (detailsOrigin === 'dashboard') focusCardAgain(backId, backEl, '(back from details → dashboard)');
   }
 
   async function loadItemById(itemId) {
@@ -1860,7 +1899,7 @@
         onLogOutServer={handleLogout}
       />
 
-      <div data-focus-group="main" class="flex-1 h-full overflow-y-auto hide-scrollbar bg-gray-900 relative [scroll-padding-top:5rem]">
+      <div data-focus-group="main" data-enter-first-fresh class="flex-1 h-full overflow-y-auto hide-scrollbar bg-gray-900 relative [scroll-padding-top:5rem]">
 
         {#if viewState === 'dashboard'}
           {#key dashboardReloadKey}

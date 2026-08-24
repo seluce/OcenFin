@@ -180,7 +180,7 @@
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.series}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each series as s (s.Id)}
-              <button onclick={() => onOpenDetails?.(s)} class="shrink-0 w-48 scroll-m-4 group focus:outline-none text-left">
+              <button onclick={() => onOpenDetails?.(s)} data-item-id={s.Id} class="shrink-0 w-48 scroll-m-4 group focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl">
                   {#if getItemImageUrl(s, 'portrait')}<img src={getItemImageUrl(s, 'portrait')} {@attach blurUp(itemBlurHash(s))} alt={s.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>
@@ -199,7 +199,7 @@
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.movies}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each movies as m (m.Id)}
-              <button onclick={() => onOpenDetails?.(m)} class="shrink-0 w-48 scroll-m-4 group focus:outline-none text-left">
+              <button onclick={() => onOpenDetails?.(m)} data-item-id={m.Id} class="shrink-0 w-48 scroll-m-4 group focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl">
                   {#if getItemImageUrl(m, 'portrait')}<img src={getItemImageUrl(m, 'portrait')} {@attach blurUp(itemBlurHash(m))} alt={m.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>
@@ -218,7 +218,7 @@
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.episodes}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each episodes as ep (ep.Id)}
-              <button onclick={() => onOpenDetails?.(ep)} class="shrink-0 w-80 scroll-m-4 group focus:outline-none text-left">
+              <button onclick={() => onOpenDetails?.(ep)} data-item-id={ep.Id} class="shrink-0 w-80 scroll-m-4 group focus:outline-none text-left">
                 <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl">
                   {#if getItemImageUrl(ep, 'landscape')}<img src={getItemImageUrl(ep, 'landscape')} {@attach blurUp(itemBlurHash(ep))} alt={ep.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>

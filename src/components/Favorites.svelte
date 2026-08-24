@@ -96,7 +96,7 @@
           <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-12">
             {#each group.items as item (item.Id)}
               {@const badge = itemBadge(item)}
-              <button onclick={() => onOpenDetails(item)}
+              <button onclick={() => onOpenDetails(item)} data-item-id={item.Id}
                 {@attach longPress()} onlongpress={() => onContextMenu(item)}
                 class="group focus:outline-none text-left scroll-my-4">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
@@ -130,7 +130,7 @@
         <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.episodes}</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pr-4 mb-12">
           {#each favEpisodes as item (item.Id)}
-            <button onclick={() => onOpenDetails(item)}
+            <button onclick={() => onOpenDetails(item)} data-item-id={item.Id}
               {@attach longPress()} onlongpress={() => onContextMenu(item)}
               class="group focus:outline-none text-left scroll-my-4">
               <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
