@@ -390,13 +390,27 @@
   let detailsReturnId    = null;
   let detailsReturnEl    = null;
   let detailsReturnNth   = 0;
+  let detailsReturnScroll = 0;
   // Views that UNMOUNT cannot remember their own focus, so the card to return to is held here and
   // handed down as a prop. Favourites and Collection focus at the end of their own load, so an
   // outside call would race them — they take the id and decide themselves. The dashboard has no
   // such logic of its own and is served directly by focusCardAgain().
   let pendingCardFocusId = $state(null);
+  let pendingCardScrollTop = $state(0);
+  // Favourites and Collection each own a scroll container that unmounts WITH the view, so unlike
+  // Library (which keeps its savedScroll internally) their offset has to be remembered out here.
+  // The dashboard needs none: it scrolls in the persistent main container.
+  function scrollTopOf(el) {
+    for (let n = el?.parentElement; n; n = n.parentElement) {
+      const oy = getComputedStyle(n).overflowY;
+      if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight) return n.scrollTop;
+    }
+    return 0;
+  }
   // Same three things for a collection/watchlist, whose Back leads somewhere else entirely.
-  let collectionReturnId = null, collectionReturnEl = null, collectionReturnNth = 0;
+  let collectionReturnId = null, collectionReturnEl = null, collectionReturnNth = 0, collectionReturnScroll = 0;
+  // A person page is reached from the cast list, from search and from favourites — same deal.
+  let personReturnId = null, personReturnEl = null, personReturnNth = 0, personReturnScroll = 0;
 
   // ── Watch together ─────────────────────────────────────────────────────────
   // The logged-in (shared) profile references two other profiles. Their tokens
@@ -1410,6 +1424,7 @@
     collectionReturnId  = boxSet?.Id ?? null;
     collectionReturnEl  = document.activeElement;
     collectionReturnNth = cardOrdinal(collectionReturnEl, collectionReturnId);
+    collectionReturnScroll = scrollTopOf(collectionReturnEl);
     pendingCardFocusId  = null;
     currentCollection    = boxSet;
     viewState            = 'collection';
@@ -1418,12 +1433,15 @@
     // Nested collection: pop back to the parent, which stays on screen — nothing to restore.
     if (collectionStack.length) { currentCollection = collectionStack.pop(); return; }
     const id = collectionReturnId, el = collectionReturnEl, nth = collectionReturnNth;
-    collectionReturnId = null; collectionReturnEl = null; collectionReturnNth = 0;
+    const sc = collectionReturnScroll;
+    collectionReturnId = null; collectionReturnEl = null; collectionReturnNth = 0; collectionReturnScroll = 0;
     viewState = collectionReturnView;
     // Same split as returnFromDetails: Library restores itself, the two self-focusing views take
     // the id, and the dashboard is focused directly.
     if (collectionReturnView === 'library') libraryRef?.restoreView();
-    else if (collectionReturnView === 'favorites' || collectionReturnView === 'collection') pendingCardFocusId = id;
+    else if (collectionReturnView === 'favorites' || collectionReturnView === 'collection') {
+      pendingCardFocusId = id; pendingCardScrollTop = sc;
+    }
     else focusCardAgain(id, el, '(back from collection)', nth);
   }
 
@@ -1466,9 +1484,25 @@
   // Opens a person's filmography (from search, the cast in Details, or favorites).
   // Only sets the return view + seed person; Person.svelte loads person details + filmography itself.
   function openPerson(person) {
-    personReturnView = viewState;
+    personReturnView   = viewState;
+    personReturnId     = document.activeElement?.getAttribute?.('data-item-id') ?? null;
+    personReturnEl     = document.activeElement;
+    personReturnNth    = cardOrdinal(personReturnEl, personReturnId);
+    personReturnScroll = scrollTopOf(personReturnEl);
+    pendingCardFocusId = null;
     currentPerson    = person;
     viewState        = 'person';
+  }
+
+  // Back from a person page — routed exactly like returnFromDetails/returnFromCollection.
+  function returnFromPerson() {
+    const id = personReturnId, el = personReturnEl, nth = personReturnNth, sc = personReturnScroll;
+    personReturnId = null; personReturnEl = null; personReturnNth = 0; personReturnScroll = 0;
+    viewState = personReturnView;
+    if (personReturnView === 'library') libraryRef?.restoreView();
+    else if (personReturnView === 'favorites' || personReturnView === 'collection') {
+      pendingCardFocusId = id; pendingCardScrollTop = sc;
+    } else focusCardAgain(id, el, '(back from person)', nth);
   }
 
   // After a selection in the sidebar, move focus into the content. Leaving
@@ -1510,6 +1544,7 @@
     detailsReturnId  = item?.Id ?? null;
     detailsReturnEl  = document.activeElement;
     detailsReturnNth = cardOrdinal(detailsReturnEl, detailsReturnId);
+    detailsReturnScroll = scrollTopOf(detailsReturnEl);
     currentDetailItem = item;
     viewState = 'details';
     lazyPlayer();   // preload the Player chunk in the background — playback is very likely from here
@@ -1659,7 +1694,8 @@
 
   async function returnFromDetails() {
     const backId = detailsReturnId, backEl = detailsReturnEl, backNth = detailsReturnNth;
-    detailsReturnId = null; detailsReturnEl = null; detailsReturnNth = 0;
+    const backScroll = detailsReturnScroll;
+    detailsReturnId = null; detailsReturnEl = null; detailsReturnNth = 0; detailsReturnScroll = 0;
     viewState = detailsOrigin;
     if (detailsOrigin === 'library') {
       libraryRef?.restoreView();
@@ -1685,7 +1721,9 @@
     if (detailsOrigin === 'dashboard') focusCardAgain(backId, backEl, '(back from details → dashboard)', backNth);
     // Favourites and Collection focus themselves at the end of their load — hand them the target
     // instead of calling into them, so there is one decision rather than two racing ones.
-    else if (detailsOrigin === 'favorites' || detailsOrigin === 'collection') pendingCardFocusId = backId;
+    else if (detailsOrigin === 'favorites' || detailsOrigin === 'collection') {
+      pendingCardFocusId = backId; pendingCardScrollTop = backScroll;
+    }
   }
 
   async function loadItemById(itemId) {
@@ -2023,15 +2061,16 @@
 
         {:else if viewState === 'person'}
           <Person person={currentPerson} {selectedUser}
-            onBack={() => viewState = personReturnView}
+            onBack={returnFromPerson}
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu} />
         {:else if viewState === 'favorites'}
           <Favorites {selectedUser} reloadKey={favReloadKey} focusItemId={pendingCardFocusId}
+            focusScrollTop={pendingCardScrollTop}
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu}
             onOpenPerson={openPerson} onFocusFallback={focusMain} />
         {:else if viewState === 'collection'}
           <Collection bind:this={collectionRef} collection={currentCollection} {selectedUser}
-            focusItemId={pendingCardFocusId}
+            focusItemId={pendingCardFocusId} focusScrollTop={pendingCardScrollTop}
             onBack={returnFromCollection}
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu}
             onChildCountChanged={onCollectionChildCount}

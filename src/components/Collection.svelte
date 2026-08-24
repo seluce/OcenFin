@@ -10,11 +10,12 @@
   // While one is pending the Back button does NOT grab focus on mount, or it would win the race
   // against the card, which only exists once the items have loaded.
   let {
-    collection, selectedUser, focusItemId = null,
+    collection, selectedUser, focusItemId = null, focusScrollTop = 0,
     onBack, onOpenDetails, onContextMenu, onPlayVideo, onPlayQueue,
     onChildCountChanged, onPlaylistRenamed, onPlaylistDeleted,
   } = $props();
   let backBtn;   // bind:this → fallback focus when the remembered card is gone
+  let scrollEl;  // own scroll container — unmounts with the view, so App remembers the offset
 
   let items     = $state([]);
   let isLoading = $state(false);
@@ -96,6 +97,7 @@
     // out empty the Back button — which was left unfocused on mount precisely for this case.
     const back = document.querySelector(`[data-focus-group="main"] [data-item-id="${focusItemId}"]`)
               || document.querySelector('[data-focus-group="main"] [data-item-id]');
+    if (scrollEl) scrollEl.scrollTop = focusScrollTop;   // the view first, then the focus
     (back || backBtn)?.focus();
   }
 
@@ -176,7 +178,7 @@
   });
 </script>
 
-<div class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
+<div bind:this={scrollEl} class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
   <div class="flex items-center gap-6 mb-8">
     <button onclick={onBack} bind:this={backBtn} {@attach focusOnMount(!focusItemId)}
       class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">

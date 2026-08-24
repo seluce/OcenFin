@@ -36,8 +36,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **The same is now true for favourites, collections and watchlists.** Favourites always jumped back
   to the very first entry, and a collection or watchlist put you on its Back button instead of on
   the title you had just looked at. Opening a watchlist and leaving it again also lost the spot
-  entirely. All three now return you to where you were; if that entry is gone in the meantime, the
-  first one takes over.
+  entirely. All three now return you to where you were — including how far you had scrolled, and
+  including favourite people. If that entry is gone in the meantime, the first one takes over.
 - **The app now opens on your first library instead of on the menu.** Starting the app used to put
   focus on the menu entry you were on, which unfolded the sidebar over the artwork before you had
   done anything. Focus now lands on the first tile of "My media"; hide that row and it moves to the

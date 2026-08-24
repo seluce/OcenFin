@@ -8,8 +8,9 @@
   // rather than resolved here, because this view unmounts — the memory has to live in App.svelte.
   // Given as a prop instead of letting App focus it from outside on purpose: this component focuses
   // at the END of its own load, so an outside call would either be overridden by it or race it.
-  let { selectedUser, reloadKey = 0, focusItemId = null,
+  let { selectedUser, reloadKey = 0, focusItemId = null, focusScrollTop = 0,
         onOpenDetails, onContextMenu, onOpenPerson, onFocusFallback } = $props();
+  let scrollEl;   // own scroll container — it unmounts with the view, so App remembers the offset
 
   let favoriteItems      = $state([]);
   let isLoadingFavorites = $state(false);
@@ -66,6 +67,10 @@
     // Back from a title → that title's card; otherwise (opened fresh from the menu) the first one.
     const card = (focusItemId && favoritesGrid?.querySelector(`[data-item-id="${focusItemId}"]`))
               || favoritesGrid?.querySelector('button');
+    // Put the view back where it was BEFORE focusing. Without this the container starts at 0 and
+    // focus() only drags the card barely into view, landing on a different part of the page than
+    // the one that was left. Focusing afterwards then moves nothing, because it is already visible.
+    if (scrollEl && focusItemId) scrollEl.scrollTop = focusScrollTop;
     if (card) card.focus(); else onFocusFallback?.();
   }
 
@@ -76,7 +81,7 @@
   });
 </script>
 
-<div class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
+<div bind:this={scrollEl} class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
   <div class="flex items-center gap-4 mb-10">
     <svg class="w-10 h-10 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0z"/></svg>
     <h1 class="text-4xl font-bold text-white">{i18n.t.favorites}</h1>
@@ -161,7 +166,7 @@
         <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.people}</h2>
         <div class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-6 pr-4 mb-12">
           {#each favPersons as p (p.Id)}
-            <button onclick={() => onOpenPerson(p)} class="group focus:outline-none text-center scroll-my-4">
+            <button onclick={() => onOpenPerson(p)} data-item-id={p.Id} class="group focus:outline-none text-center scroll-my-4">
               <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl">
                 {#if personImageUrl(session.serverUrl, p)}
                   <img src={personImageUrl(session.serverUrl, p)} {@attach blurUp(itemBlurHash(p))} alt={p.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
