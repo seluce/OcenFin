@@ -27,6 +27,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Changed
 
+- **Opening the sidebar is a little smoother.** The highlight behind the current entry cast a soft
+  glow, and because the bar changes width as it opens, the TV had to redraw that blur on every
+  single frame of the animation. The glow is gone; the entry is now flat blue. Nothing else about
+  the sidebar changed.
 - **Watch together asks the server far less.** Two scans were running over the same data: the
   dashboard read each partner's whole catalogue for its suggestions, and every library you opened
   read it again to know what to hide. The suggestion scan already covers every library, so the
