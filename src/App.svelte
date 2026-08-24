@@ -389,6 +389,7 @@
   // lands in the sidebar — the menu flying open after every look at a title.
   let detailsReturnId    = null;
   let detailsReturnEl    = null;
+  let detailsReturnNth   = 0;
 
   // ── Watch together ─────────────────────────────────────────────────────────
   // The logged-in (shared) profile references two other profiles. Their tokens
@@ -1486,8 +1487,9 @@
     // Remember the origin so "Back" leads there again (not always the dashboard), and the card
     // itself so focus can return to it rather than to nothing.
     detailsOrigin   = viewState;
-    detailsReturnId = item?.Id ?? null;
-    detailsReturnEl = document.activeElement;
+    detailsReturnId  = item?.Id ?? null;
+    detailsReturnEl  = document.activeElement;
+    detailsReturnNth = cardOrdinal(detailsReturnEl, detailsReturnId);
     currentDetailItem = item;
     viewState = 'details';
     lazyPlayer();   // preload the Player chunk in the background — playback is very likely from here
@@ -1499,11 +1501,13 @@
   let contextItem = $state(null);
   let contextReturnId = $state(null);     // item ID of the triggering card (focus return, survives reload)
   let contextReturnEl = $state(null);     // fallback: element reference if no data-item-id is present
+  let contextReturnNth = 0;               // which occurrence of that id — see cardOrdinal()
   let contextPickerMode = $state(null);   // null | 'playlist' | 'collection' — AddToPicker from the context menu
   let contextPickerItem = $state(null);
   function openContextMenu(item) {
-    contextReturnId = item?.Id ?? null;
-    contextReturnEl = document.activeElement;
+    contextReturnId  = item?.Id ?? null;
+    contextReturnEl  = document.activeElement;
+    contextReturnNth = cardOrdinal(contextReturnEl, contextReturnId);
     contextItem = item;
   }
   // Put focus back on a card that may not exist yet, because the view it belongs to can still be
@@ -1514,7 +1518,18 @@
   // Every attempt stands down if something else holds focus by then, so a poll running over half a
   // second can never fight a user who has already navigated on. Bounded and self-terminating — the
   // shape to copy for anything that must focus an element which does not exist yet (see CLAUDE.md).
-  function focusCardAgain(id, el, why = '') {
+  // The same title can sit in SEVERAL rows at once — "Continue watching" and the watchlist show it
+  // together, and the two card snippets are reused across eight rows. data-item-id is therefore not
+  // unique, and querySelector would always hand back the topmost row. So remember WHICH occurrence
+  // the card was, and go back to that one.
+  function cardOrdinal(el, id) {
+    if (!el || !id) return 0;
+    const all = [...document.querySelectorAll(`[data-item-id="${id}"]`)];
+    const i = all.indexOf(el);
+    return i < 0 ? 0 : i;
+  }
+
+  function focusCardAgain(id, el, why = '', nth = 0) {
     let tries = 0;
     const attempt = () => {
       const active = document.activeElement;
@@ -1528,9 +1543,20 @@
       if (el && document.contains(el) && typeof el.focus === 'function') {
         el.focus(); dlog('[focus] card restore', why, '· live element'); return;
       }
-      const target = id ? document.querySelector(`[data-item-id="${id}"]`) : null;
-      if (target) { target.focus(); dlog('[focus] card restore', why, '· by id after', tries, 'tries'); return; }
+      const matches = id ? [...document.querySelectorAll(`[data-item-id="${id}"]`)] : [];
+      if (matches.length > nth) {
+        matches[nth].focus();
+        dlog('[focus] card restore', why, '· by id, occurrence', nth, 'of', matches.length, 'after', tries, 'tries');
+        return;
+      }
+      // Fewer occurrences than remembered: either rows are still coming in, or the one it sat in is
+      // gone (row switched off, watchlist changed). Wait the window out before settling for another.
       if (++tries < 12) { setTimeout(attempt, 50); return; }   // wait up to ~600 ms for the reload
+      if (matches.length) {
+        matches[0].focus();
+        dlog('[focus] card restore', why, '· occurrence', nth, 'gone, took the first of', matches.length);
+        return;
+      }
       dlog('[focus] card restore', why, '· fell back to the first card');
       document.querySelector('[data-item-id]')?.focus();
     };
@@ -1539,9 +1565,9 @@
 
   // After closing both the context menu AND the picker, put focus back on the card.
   function restoreContextFocus() {
-    const id = contextReturnId, el = contextReturnEl;
-    contextReturnId = null; contextReturnEl = null;
-    focusCardAgain(id, el, '(context menu)');
+    const id = contextReturnId, el = contextReturnEl, nth = contextReturnNth;
+    contextReturnId = null; contextReturnEl = null; contextReturnNth = 0;
+    focusCardAgain(id, el, '(context menu)', nth);
   }
   $effect(() => { if (!contextItem && !contextPickerMode && (contextReturnId || contextReturnEl)) restoreContextFocus(); });
 
@@ -1612,8 +1638,8 @@
   }
 
   async function returnFromDetails() {
-    const backId = detailsReturnId, backEl = detailsReturnEl;
-    detailsReturnId = null; detailsReturnEl = null;
+    const backId = detailsReturnId, backEl = detailsReturnEl, backNth = detailsReturnNth;
+    detailsReturnId = null; detailsReturnEl = null; detailsReturnNth = 0;
     viewState = detailsOrigin;
     if (detailsOrigin === 'library') {
       libraryRef?.restoreView();
@@ -1636,7 +1662,7 @@
     // button. Calling this for them would either be inert or fight their own logic.
     // Unlike those, the dashboard remounts from scratch, so focusing the card also brings its
     // scroll position back — the browser scrolls a focused element into view.
-    if (detailsOrigin === 'dashboard') focusCardAgain(backId, backEl, '(back from details → dashboard)');
+    if (detailsOrigin === 'dashboard') focusCardAgain(backId, backEl, '(back from details → dashboard)', backNth);
   }
 
   async function loadItemById(itemId) {

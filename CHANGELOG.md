@@ -30,7 +30,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Going back from a title to the home screen returns you to where you were.** Libraries already
   did this; the home screen did not — it came back scrolled to the top with nothing focused, so the
   next press of the remote opened the menu instead of moving within the page. It now returns to the
-  card you opened. If you navigate on in the meantime, your own focus is kept.
+  card you opened — the exact one, even when the same title is showing in several rows at once, for
+  instance in Continue watching and on the watchlist. If you navigate on in the meantime, your own
+  focus is kept.
 - **The app now opens on your first library instead of on the menu.** Starting the app used to put
   focus on the menu entry you were on, which unfolded the sidebar over the artwork before you had
   done anything. Focus now lands on the first tile of "My media"; hide that row and it moves to the
