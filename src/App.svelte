@@ -390,6 +390,13 @@
   let detailsReturnId    = null;
   let detailsReturnEl    = null;
   let detailsReturnNth   = 0;
+  // Views that UNMOUNT cannot remember their own focus, so the card to return to is held here and
+  // handed down as a prop. Favourites and Collection focus at the end of their own load, so an
+  // outside call would race them — they take the id and decide themselves. The dashboard has no
+  // such logic of its own and is served directly by focusCardAgain().
+  let pendingCardFocusId = $state(null);
+  // Same three things for a collection/watchlist, whose Back leads somewhere else entirely.
+  let collectionReturnId = null, collectionReturnEl = null, collectionReturnNth = 0;
 
   // ── Watch together ─────────────────────────────────────────────────────────
   // The logged-in (shared) profile references two other profiles. Their tokens
@@ -1400,12 +1407,24 @@
       collectionStack = [];
       collectionReturnView = viewState;
     }
+    collectionReturnId  = boxSet?.Id ?? null;
+    collectionReturnEl  = document.activeElement;
+    collectionReturnNth = cardOrdinal(collectionReturnEl, collectionReturnId);
+    pendingCardFocusId  = null;
     currentCollection    = boxSet;
     viewState            = 'collection';
   }
   function returnFromCollection() {
+    // Nested collection: pop back to the parent, which stays on screen — nothing to restore.
     if (collectionStack.length) { currentCollection = collectionStack.pop(); return; }
+    const id = collectionReturnId, el = collectionReturnEl, nth = collectionReturnNth;
+    collectionReturnId = null; collectionReturnEl = null; collectionReturnNth = 0;
     viewState = collectionReturnView;
+    // Same split as returnFromDetails: Library restores itself, the two self-focusing views take
+    // the id, and the dashboard is focused directly.
+    if (collectionReturnView === 'library') libraryRef?.restoreView();
+    else if (collectionReturnView === 'favorites' || collectionReturnView === 'collection') pendingCardFocusId = id;
+    else focusCardAgain(id, el, '(back from collection)', nth);
   }
 
   // Cross effects from the collection view onto the library grid / sidebar:
@@ -1487,6 +1506,7 @@
     // Remember the origin so "Back" leads there again (not always the dashboard), and the card
     // itself so focus can return to it rather than to nothing.
     detailsOrigin   = viewState;
+    pendingCardFocusId = null;   // a new trip — the previous view's card is no longer the target
     detailsReturnId  = item?.Id ?? null;
     detailsReturnEl  = document.activeElement;
     detailsReturnNth = cardOrdinal(detailsReturnEl, detailsReturnId);
@@ -1663,6 +1683,9 @@
     // Unlike those, the dashboard remounts from scratch, so focusing the card also brings its
     // scroll position back — the browser scrolls a focused element into view.
     if (detailsOrigin === 'dashboard') focusCardAgain(backId, backEl, '(back from details → dashboard)', backNth);
+    // Favourites and Collection focus themselves at the end of their load — hand them the target
+    // instead of calling into them, so there is one decision rather than two racing ones.
+    else if (detailsOrigin === 'favorites' || detailsOrigin === 'collection') pendingCardFocusId = backId;
   }
 
   async function loadItemById(itemId) {
@@ -1919,7 +1942,7 @@
         navHidden={displaySettings.navHidden}
         navIcons={displaySettings.navIcons}
         activeLibraryId={currentLibrary?.Id}
-        onNavigate={(target) => { if (target === 'syncplay') { openSyncPlay(); } else { viewState = target; if (target !== 'favorites') focusMain(); } }}
+        onNavigate={(target) => { if (target === 'syncplay') { openSyncPlay(); } else { pendingCardFocusId = null; viewState = target; if (target !== 'favorites') focusMain(); } }}
         onNavigateLibrary={(lib) => navigateToLibrary(lib, true)}
         onSwitchUser={handleSwitchUser}
         onLogOutServer={handleLogout}
@@ -2003,11 +2026,12 @@
             onBack={() => viewState = personReturnView}
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu} />
         {:else if viewState === 'favorites'}
-          <Favorites {selectedUser} reloadKey={favReloadKey}
+          <Favorites {selectedUser} reloadKey={favReloadKey} focusItemId={pendingCardFocusId}
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu}
             onOpenPerson={openPerson} onFocusFallback={focusMain} />
         {:else if viewState === 'collection'}
           <Collection bind:this={collectionRef} collection={currentCollection} {selectedUser}
+            focusItemId={pendingCardFocusId}
             onBack={returnFromCollection}
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu}
             onChildCountChanged={onCollectionChildCount}

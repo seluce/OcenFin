@@ -4,7 +4,12 @@
   import { session } from '../session.svelte.js';
   import { tick } from 'svelte';
 
-  let { selectedUser, reloadKey = 0, onOpenDetails, onContextMenu, onOpenPerson, onFocusFallback } = $props();
+  // focusItemId: the card to land on after the parent brought us back (from Details, say). Passed in
+  // rather than resolved here, because this view unmounts — the memory has to live in App.svelte.
+  // Given as a prop instead of letting App focus it from outside on purpose: this component focuses
+  // at the END of its own load, so an outside call would either be overridden by it or race it.
+  let { selectedUser, reloadKey = 0, focusItemId = null,
+        onOpenDetails, onContextMenu, onOpenPerson, onFocusFallback } = $props();
 
   let favoriteItems      = $state([]);
   let isLoadingFavorites = $state(false);
@@ -58,7 +63,9 @@
     } catch (e) { dlog('[OcenFin] favorites error:', e?.message); }
     finally { isLoadingFavorites = false; }
     await tick();
-    const card = favoritesGrid?.querySelector('button');
+    // Back from a title → that title's card; otherwise (opened fresh from the menu) the first one.
+    const card = (focusItemId && favoritesGrid?.querySelector(`[data-item-id="${focusItemId}"]`))
+              || favoritesGrid?.querySelector('button');
     if (card) card.focus(); else onFocusFallback?.();
   }
 

@@ -1,14 +1,20 @@
 <script>
+  import { tick } from 'svelte';
   import { i18n } from '../i18n.svelte.js';
   import { itemProgress, itemBadge, itemBlurHash, blurUp, longPress, authHeaders, focusOnMount, getItemImageUrl } from '../utils.js';
   import { buildPlayQueue } from '../playback.js';
   import { session } from '../session.svelte.js';
 
+  // focusItemId: the card to land on after the parent brought us back (from Details, say). Passed
+  // in rather than resolved here, because this view unmounts — the memory has to live in App.svelte.
+  // While one is pending the Back button does NOT grab focus on mount, or it would win the race
+  // against the card, which only exists once the items have loaded.
   let {
-    collection, selectedUser,
+    collection, selectedUser, focusItemId = null,
     onBack, onOpenDetails, onContextMenu, onPlayVideo, onPlayQueue,
     onChildCountChanged, onPlaylistRenamed, onPlaylistDeleted,
   } = $props();
+  let backBtn;   // bind:this → fallback focus when the remembered card is gone
 
   let items     = $state([]);
   let isLoading = $state(false);
@@ -84,6 +90,13 @@
       if (loaded) items = loaded;
     } catch { /* ignore */ }
     finally { if (myId === loadedId) isLoading = false; }
+    if (myId !== loadedId || !focusItemId) return;
+    await tick();
+    // Land on the card we came back from; failing that the first one, and if the collection turns
+    // out empty the Back button — which was left unfocused on mount precisely for this case.
+    const back = document.querySelector(`[data-focus-group="main"] [data-item-id="${focusItemId}"]`)
+              || document.querySelector('[data-focus-group="main"] [data-item-id]');
+    (back || backBtn)?.focus();
   }
 
   // Reorder: optimistically local, then confirm server-side.
@@ -165,7 +178,7 @@
 
 <div class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
   <div class="flex items-center gap-6 mb-8">
-    <button onclick={onBack} {@attach focusOnMount()}
+    <button onclick={onBack} bind:this={backBtn} {@attach focusOnMount(!focusItemId)}
       class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
       {i18n.t.back}
     </button>
