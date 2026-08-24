@@ -95,8 +95,10 @@
     await tick();
     // Land on the card we came back from; failing that the first one, and if the collection turns
     // out empty the Back button — which was left unfocused on mount precisely for this case.
-    const back = document.querySelector(`[data-focus-group="main"] [data-item-id="${focusItemId}"]`)
-              || document.querySelector('[data-focus-group="main"] [data-item-id]');
+    // Scoped to our own container: Search and Library stay mounted while hidden, so a document-wide
+    // query would also match their cards, which cannot take focus.
+    const back = scrollEl?.querySelector(`[data-item-id="${focusItemId}"]`)
+              || scrollEl?.querySelector('[data-item-id]');
     if (scrollEl) scrollEl.scrollTop = focusScrollTop;   // the view first, then the focus
     (back || backBtn)?.focus();
   }

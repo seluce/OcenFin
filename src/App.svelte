@@ -40,6 +40,12 @@
   // ============================================================
   let appPhase = $state('servers');   // current step in the onboarding flow
 
+  // Search and Library stay mounted while inactive, hidden with display:none. Any document-wide
+  // lookup therefore also sees THEIR cards — which cannot take focus (so focusing one fails
+  // silently) and, worse, would be counted in the card occurrence index and shift it. Every focus
+  // lookup in this file is filtered through this.
+  const isShown = (el) => !!el && el.offsetParent !== null;
+
   // On first entering the app, put focus into the CONTENT — normally the first tile of "My media".
   // A freshly loaded app has no focus at all, and the first D-pad press would otherwise be spent
   // establishing it, landing top-left across hero and first row: with nothing focused, spatialnav
@@ -75,7 +81,8 @@
       const cands = main ? [...main.querySelectorAll(
         'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
       )] : [];
-      const target = cands.find(el => !el.closest('[data-hero]')) || cands[0];
+      const shown  = cands.filter(isShown);
+      const target = shown.find(el => !el.closest('[data-hero]')) || shown[0];
       if (target) { target.focus(); dlog('[focus] start →', (target.textContent || '').trim().slice(0, 24)); return; }
       if (++tries < 30) { setTimeout(attempt, 100); return; }   // ~3 s while the dashboard loads
       dlog('[focus] start → sidebar (no content to focus)');
@@ -92,6 +99,8 @@
   let libraryFocusFirst  = $state(false); // when opened from the menu, focus the first card
   let librarySharedOn    = $state(false); // "watch together" active (reported by Library)
   let libraryMounted     = $state(false); // permanently mounted from the first library visit on (state persists)
+  let searchMounted      = $state(false); // same for Search — mounted from its first visit on
+  let searchRef          = $state();      // bind:this → reset() on a fresh open, restoreView() on the way back
   let libraryRef = $state();              // bind:this → restoreView / grid mutations
 
   // Clear cache (settings): discard the in-memory cache and reload the dashboard fresh.
@@ -1438,7 +1447,8 @@
     viewState = collectionReturnView;
     // Same split as returnFromDetails: Library restores itself, the two self-focusing views take
     // the id, and the dashboard is focused directly.
-    if (collectionReturnView === 'library') libraryRef?.restoreView();
+    if (collectionReturnView === 'search') searchRef?.restoreView();
+    else if (collectionReturnView === 'library') libraryRef?.restoreView();
     else if (collectionReturnView === 'favorites' || collectionReturnView === 'collection') {
       pendingCardFocusId = id; pendingCardScrollTop = sc;
     }
@@ -1499,7 +1509,8 @@
     const id = personReturnId, el = personReturnEl, nth = personReturnNth, sc = personReturnScroll;
     personReturnId = null; personReturnEl = null; personReturnNth = 0; personReturnScroll = 0;
     viewState = personReturnView;
-    if (personReturnView === 'library') libraryRef?.restoreView();
+    if (personReturnView === 'search') searchRef?.restoreView();
+    else if (personReturnView === 'library') libraryRef?.restoreView();
     else if (personReturnView === 'favorites' || personReturnView === 'collection') {
       pendingCardFocusId = id; pendingCardScrollTop = sc;
     } else focusCardAgain(id, el, '(back from person)', nth);
@@ -1579,7 +1590,7 @@
   // the card was, and go back to that one.
   function cardOrdinal(el, id) {
     if (!el || !id) return 0;
-    const all = [...document.querySelectorAll(`[data-item-id="${id}"]`)];
+    const all = [...document.querySelectorAll(`[data-item-id="${id}"]`)].filter(isShown);
     const i = all.indexOf(el);
     return i < 0 ? 0 : i;
   }
@@ -1595,10 +1606,10 @@
              (active.textContent || active.tagName || '').trim().slice(0, 24));
         return;
       }
-      if (el && document.contains(el) && typeof el.focus === 'function') {
+      if (el && document.contains(el) && isShown(el) && typeof el.focus === 'function') {
         el.focus(); dlog('[focus] card restore', why, '· live element'); return;
       }
-      const matches = id ? [...document.querySelectorAll(`[data-item-id="${id}"]`)] : [];
+      const matches = id ? [...document.querySelectorAll(`[data-item-id="${id}"]`)].filter(isShown) : [];
       if (matches.length > nth) {
         matches[nth].focus();
         dlog('[focus] card restore', why, '· by id, occurrence', nth, 'of', matches.length, 'after', tries, 'tries');
@@ -1613,7 +1624,7 @@
         return;
       }
       dlog('[focus] card restore', why, '· fell back to the first card');
-      document.querySelector('[data-item-id]')?.focus();
+      [...document.querySelectorAll('[data-item-id]')].find(isShown)?.focus();
     };
     tick().then(attempt);
   }
@@ -1718,7 +1729,8 @@
     // button. Calling this for them would either be inert or fight their own logic.
     // Unlike those, the dashboard remounts from scratch, so focusing the card also brings its
     // scroll position back — the browser scrolls a focused element into view.
-    if (detailsOrigin === 'dashboard') focusCardAgain(backId, backEl, '(back from details → dashboard)', backNth);
+    if (detailsOrigin === 'search') searchRef?.restoreView();
+    else if (detailsOrigin === 'dashboard') focusCardAgain(backId, backEl, '(back from details → dashboard)', backNth);
     // Favourites and Collection focus themselves at the end of their load — hand them the target
     // instead of calling into them, so there is one decision rather than two racing ones.
     else if (detailsOrigin === 'favorites' || detailsOrigin === 'collection') {
@@ -1980,7 +1992,14 @@
         navHidden={displaySettings.navHidden}
         navIcons={displaySettings.navIcons}
         activeLibraryId={currentLibrary?.Id}
-        onNavigate={(target) => { if (target === 'syncplay') { openSyncPlay(); } else { pendingCardFocusId = null; viewState = target; if (target !== 'favorites') focusMain(); } }}
+        onNavigate={(target) => {
+          if (target === 'syncplay') { openSyncPlay(); return; }
+          pendingCardFocusId = null;
+          // Search from the menu is always a FRESH search — mount it on first use, then clear it.
+          if (target === 'search') { searchMounted = true; viewState = target; tick().then(() => searchRef?.reset()); return; }
+          viewState = target;
+          if (target !== 'favorites') focusMain();
+        }}
         onNavigateLibrary={(lib) => navigateToLibrary(lib, true)}
         onSwitchUser={handleSwitchUser}
         onLogOutServer={handleLogout}
@@ -2013,11 +2032,6 @@
             onOpenContext={(item) => openContextMenu(item)}
           />
           {/key}
-
-        {:else if viewState === 'search'}
-          <Search {selectedUser}
-            onOpenDetails={(item) => showItemDetails(item)}
-            onOpenPerson={(person) => openPerson(person)} />
 
         {:else if viewState === 'settings'}
           {#await lazySettings()}
@@ -2078,6 +2092,19 @@
             onPlayQueue={(qItems) => { playQueue = { items: qItems, index: 0 }; detailsOrigin = 'collection'; startPlayback({ item: qItems[0], audioIndex: -1, subtitleIndex: -1 }); }}
             onPlaylistRenamed={onCollectionRenamed}
             onPlaylistDeleted={onCollectionDeleted} />
+        {/if}
+
+        <!-- SEARCH stays mounted for the same reason as LIBRARY below: a trip into Details or a
+             person page would otherwise discard the query, up to 24 results, the 10 people AND the
+             per-person count cache the component keeps — so coming back meant retyping and paying
+             two requests plus a count probe per person again. Opened FRESH from the menu it is
+             reset instead, because a search screen showing a two-day-old query reads as stale. -->
+        {#if searchMounted}
+          <div class="h-full w-full" class:hidden={viewState !== 'search'}>
+            <Search bind:this={searchRef} {selectedUser}
+              onOpenDetails={(item) => showItemDetails(item)}
+              onOpenPerson={(person) => openPerson(person)} />
+          </div>
         {/if}
 
         <!-- LIBRARY stays permanently mounted (hidden when inactive) so scroll/items/the

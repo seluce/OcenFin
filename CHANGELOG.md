@@ -33,6 +33,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   card you opened — the exact one, even when the same title is showing in several rows at once, for
   instance in Continue watching and on the watchlist. If you navigate on in the meantime, your own
   focus is kept.
+- **Search keeps its results while you look at one of them.** Opening a title or a person from the
+  search results and coming back used to leave an empty field: the query, the results and how far
+  you had scrolled were all thrown away, and finding the next result meant searching again. It now
+  returns to the list exactly where you left it. Opening Search from the menu still starts blank, as
+  a search screen should.
 - **The same is now true for favourites, collections and watchlists.** Favourites always jumped back
   to the very first entry, and a collection or watchlist put you on its Back button instead of on
   the title you had just looked at. Opening a watchlist and leaving it again also lost the spot
