@@ -40,16 +40,49 @@
   // ============================================================
   let appPhase = $state('servers');   // current step in the onboarding flow
 
-  // On first entering the app, put focus on the sidebar's active item. A freshly loaded app has no
-  // focus, so the first D-pad press would otherwise be spent just establishing it (landing top-left,
-  // overlapping hero + first row) instead of navigating. Guarded to only run when nothing is focused
-  // yet, so it never steals focus from a modal, the connection-lost retry button or a restore path.
+  // On first entering the app, put focus into the CONTENT — normally the first tile of "My media".
+  // A freshly loaded app has no focus at all, and the first D-pad press would otherwise be spent
+  // establishing it, landing top-left across hero and first row: with nothing focused, spatialnav
+  // picks a group geometrically from a synthetic corner origin, and the sidebar owns x=0.
+  //
+  // This used to solve that by grabbing the sidebar's active entry one tick in — the only element
+  // that reliably exists that early. It worked, but opened the app with the menu unfolded over the
+  // artwork. The content is the app's default surface, so that entry is now the FALLBACK and the
+  // first content tile is the target.
+  //
+  // Waiting is unavoidable: one tick in, the dashboard is still loading and its skeletons are plain
+  // <div>s, so nothing there is focusable yet. Bounded retries in the shape of
+  // restoreContextFocus() below — no interval, ends by itself, and cancelled if the phase changes
+  // underneath it. The window is short in practice: the libraries row comes out of the FIRST
+  // response round (Views/Resume), the same one that releases the rest of the screen.
+  //
+  // The hero ([data-hero]) is skipped deliberately: OK on its play button jumps into a rotating
+  // random title, whereas a library tile is a calm and predictable landing spot. Rows are
+  // configurable, so the pick is "first focusable that is not in the hero" rather than any fixed
+  // assumption about what the page shows; with every row hidden the hero button is taken after all,
+  // and with nothing focusable at all the sidebar entry closes the chain.
+  //
+  // Guard unchanged: it only ever acts while nothing holds focus, so it never steals from a modal,
+  // the connection-lost retry button or a restore path.
   $effect(() => {
     if (appPhase !== 'app') return;
-    tick().then(() => {
-      if (document.activeElement && document.activeElement !== document.body) return;
+    let cancelled = false, tries = 0;
+    const attempt = () => {
+      if (cancelled) return;
+      const active = document.activeElement;
+      if (active && active !== document.body) return;   // someone got there first — leave it be
+      const main  = document.querySelector('[data-focus-group="main"]');
+      const cands = main ? [...main.querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )] : [];
+      const target = cands.find(el => !el.closest('[data-hero]')) || cands[0];
+      if (target) { target.focus(); dlog('[focus] start →', (target.textContent || '').trim().slice(0, 24)); return; }
+      if (++tries < 30) { setTimeout(attempt, 100); return; }   // ~3 s while the dashboard loads
+      dlog('[focus] start → sidebar (no content to focus)');
       document.querySelector('[data-focus-group="sidebar"] [data-group-current]')?.focus();
-    });
+    };
+    tick().then(attempt);
+    return () => { cancelled = true; };
   });
   let initializing = $state(true);    // splash screen until auto-login/startup is done
   let dashboardReloadKey = $state(0); // incrementing forces a fresh reload of the dashboard

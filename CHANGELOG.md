@@ -27,6 +27,13 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Changed
 
+- **The app now opens on your first library instead of on the menu.** Starting the app used to put
+  focus on the menu entry you were on, which unfolded the sidebar over the artwork before you had
+  done anything. Focus now lands on the first tile of "My media"; hide that row and it moves to the
+  first row you do show. The menu stays closed and is one press of Left away, as everywhere else.
+  It still waits for the home screen and never takes focus away from you: press a key while it is
+  loading and your own focus is kept, and a home screen with nothing to focus falls back to the
+  menu as before.
 - **The home screen's featured banner appears sooner.** Its two requests waited for the home
   screen's first answers although they never needed them, which put the banner three server round
   trips away on a cold start where the rest of the page needed one. They now go out immediately,

@@ -636,7 +636,9 @@
 
     <!-- HERO BANNER — rotating featured item -->
     {#if showHero && heroCurrent}
-      <div transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gray-900">
+      <!-- data-hero: the app's start focus (App.svelte) skips this section and takes the first
+           tile below it instead, so a session opens on a library rather than on a rotating title. -->
+      <div data-hero transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gray-900">
         <!-- Full-bleed backdrop: crossfade — the PREVIOUS image stays as a base,
              the new one fades in on top (no more dip-to-black). Blurhash → sharp. -->
         {#if prevHeroIndex >= 0 && prevHeroIndex !== heroIndex && heroItems[prevHeroIndex] && getHeroBackdrop(heroItems[prevHeroIndex])}
