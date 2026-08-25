@@ -448,9 +448,16 @@
   // ── Open details: remember scroll/focus, then to App ───────
   let savedScroll  = 0;
   let lastFocusedId = null;
+  let lastFocusedIdx = -1;
   function openDetails(item) {
     savedScroll   = libraryScrollContainer?.scrollTop || 0;
     lastFocusedId = item.Id;
+    // The POSITION in the rendered grid as well, because the card may not be there on the way back:
+    // App removes an item that no longer matches an active status filter (favourite taken off in
+    // Details), and it does so while restoreView() is already suspended on its tick — so the card
+    // is reliably gone by the time the id is looked up. Position is what survives that.
+    lastFocusedIdx = [...(libraryGrid?.querySelectorAll('[data-item-id]') || [])]
+      .findIndex(el => el.getAttribute('data-item-id') === item.Id);
     onOpenDetails?.(item);
   }
 
@@ -459,7 +466,16 @@
     await tick();
     if (libraryScrollContainer) libraryScrollContainer.scrollTop = savedScroll;
     if (lastFocusedId && libraryGrid) {
-      const btn = libraryGrid.querySelector(`[data-item-id="${lastFocusedId}"]`);
+      const cards = libraryGrid.querySelectorAll('[data-item-id]');
+      let btn = libraryGrid.querySelector(`[data-item-id="${lastFocusedId}"]`);
+      // Gone: the card that moved up into its place, so focus stays where the offset just put the
+      // view — falling back to the FIRST card would tear you out of position 200. Clamped, for an
+      // item removed from the end. Landing nowhere is the one option that is not available: the
+      // next key press would open the sidebar.
+      if (!btn && lastFocusedIdx >= 0 && cards.length) {
+        btn = cards[Math.min(lastFocusedIdx, cards.length - 1)];
+        dlog('[focus] library restore · card gone, took position', lastFocusedIdx, 'of', cards.length);
+      }
       if (btn) btn.focus();
     }
   }

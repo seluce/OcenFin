@@ -23,6 +23,20 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   the title you had originally opened, and landed somewhere else on the page or at the top of it.
   Every level now keeps its own place: you return to the collection you went into, at the position
   you left it, and the last step back takes you to where the chain started.
+- **Picking a term from the search history no longer leaves the remote stranded.** The list of past
+  searches disappears the moment a term is chosen — together with the button you had just pressed,
+  so nothing on screen held focus and the next press of the remote opened the menu instead of moving
+  into the results that had meanwhile arrived. Focus now moves on to the first result, or back to
+  the search field when the term finds nothing. Emptying the history does the same.
+- **Editing a playlist keeps the remote working.** Removing an entry took the button you pressed
+  down with its row, and moving an entry all the way to the top or bottom greyed out the very arrow
+  you were on — both left the page without focus, so the next press jumped to the menu. Removing now
+  lands on the entry that moved up into the gap, so a series of deletions works from the same spot,
+  and an entry that reaches the end hands focus to the opposite arrow.
+- **Leaving a title returns you into a filtered library properly.** With a filter active — say
+  favourites only — taking the favourite off inside the title and going back correctly dropped it
+  from the list, but left focus nowhere at all, so the next press opened the menu. Focus now lands
+  on the title that moved up into the gap, at the place on the page you left.
 
 ## 2026.08.25
 
