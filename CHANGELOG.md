@@ -59,6 +59,12 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   the player. Only Back still responded, which meant leaving the title to get the remote back.
 - **After watching, a title page puts you back on its play button.** Having reached the title
   through a cast member's page, it came back focused on that actor instead.
+- **Choosing a symbol for a menu entry no longer strands the remote.** Picking one — or leaving the
+  chooser with Back — left the settings with nothing focused, so the next press opened the menu
+  instead of continuing where you were. Focus returns to the entry you were editing.
+- **Lists in the settings open on the setting you actually have.** The language, font, theme and
+  seek-step choosers started at the top of the list, which for a long list meant scrolling down to
+  find what was already selected. They now open on it.
 
 ## 2026.08.25
 

@@ -206,7 +206,13 @@
     if (modalTimeout) clearTimeout(modalTimeout);
     activeModal = name;
     await tick();
-    document.querySelector('[data-modal] input, [data-modal] button')?.focus();
+    // Land on the entry that is IN FORCE, not on the first of a list that can scroll far past it —
+    // the same reasoning as landing on a card rather than on a Back button. Failing that the first
+    // control, which is what the form dialogs (password, manual login) want anyway. Note the
+    // fallback needs its own querySelector: a selector LIST returns the first match in document
+    // order, not the first selector that matches, so it cannot express a preference on its own.
+    const modal = document.querySelector('[data-modal]');
+    (modal?.querySelector('[data-modal-current]') || modal?.querySelector('input, button'))?.focus();
   }
 
   function closeModal() {
@@ -454,12 +460,22 @@
     await tick();
     iconGridEl?.querySelector('button')?.focus();
   }
+  // The one dialog here that does not run through modalFocus, and it never handed focus back:
+  // choosing a symbol, the ✕ and the Back key all just dropped the picker, so the focused button
+  // was removed and the next key press opened the sidebar. Re-queried by entry id rather than kept
+  // as an element reference, because choosing a symbol re-renders that row — attribute before
+  // reference, the same order focusCardAgain() follows.
+  function closeIconPicker() {
+    const id = iconPickerFor;
+    iconPickerFor = null;
+    tick().then(() => navListEl?.querySelector(`[data-icon-btn="${id}"]`)?.focus());
+  }
   function pickIcon(key) {
     onDisplayChange?.({ ...displaySettings, navIcons: { ...(displaySettings.navIcons || {}), [iconPickerFor]: key } });
-    iconPickerFor = null;
+    closeIconPicker();
   }
   function onIconPickerKey(e) {
-    if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); iconPickerFor = null; }
+    if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); closeIconPicker(); }
   }
 
   // --- Profile picture (symbol avatar OR poster of a recently watched title → Jellyfin) ---
@@ -483,7 +499,17 @@
   $effect(() => { if (activeCategory !== 'security' && hasEditedAvatar) {
     hasEditedAvatar = false; avatarIcon = null; avatarColor = null; avatarPoster = null;
   } });
-  $effect(() => { if (activeCategory !== 'security' && avatarModalOpen) avatarModalOpen = false; });
+  // Closed because the surface underneath changed — only reachable with the pointer, since the
+  // dialog's focus trap keeps the D-pad away from the category bar. Its trigger button belongs to
+  // the category we just left and is gone with it, so the remembered return is dropped and the top
+  // of the new content takes over; restoring it would aim at a node no longer in the document.
+  $effect(() => {
+    if (activeCategory !== 'security' && avatarModalOpen) {
+      avatarModalOpen = false;
+      modalFocus.cancel();
+      tick().then(() => contentEl?.querySelector('button')?.focus());
+    }
+  });
 
   // After closing a modal (whichever/however), put focus back on the triggering button.
   $effect(() => {
@@ -876,7 +902,7 @@
               {/if}
             </button>
             <!-- Choose icon -->
-            <button onclick={() => openIconPicker(entry)}
+            <button onclick={() => openIconPicker(entry)} data-icon-btn={entry.id}
               class="p-3 rounded-xl text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors"
               title={i18n.t.chooseIcon}>
               <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d={entry.icon}/></svg>
@@ -909,7 +935,7 @@
           <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-2xl max-w-xl w-full">
             <div class="flex justify-between items-center mb-5">
               <h3 class="text-2xl font-bold text-white">{i18n.t.chooseIcon}</h3>
-              <button onclick={() => iconPickerFor = null} aria-label={i18n.t.close} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
+              <button onclick={closeIconPicker} aria-label={i18n.t.close} class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-2 focus:ring-white rounded-lg p-1">
                 <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
             </div>
@@ -2044,6 +2070,7 @@
         <div class="flex flex-col gap-3 max-h-[60vh] overflow-y-auto hide-scrollbar p-2 -m-2">
           {#each LANGUAGES as l (l.key)}
             <button onclick={() => setLanguage(l.key)}
+              data-modal-current={i18n.lang === l.key ? '' : null}
               class="w-full text-left p-6 text-2xl font-bold text-white rounded-xl transition-colors
                      focus:outline-none focus:ring-4 focus:ring-white
                      {i18n.lang === l.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
@@ -2058,6 +2085,7 @@
         <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
           {#each picker.options as opt (opt.key)}
             <button onclick={() => { picker.set(opt.key); closeModal(); }}
+              data-modal-current={picker.value === opt.key ? '' : null}
               class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
                      focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white
                      {picker.value === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">

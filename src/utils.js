@@ -33,6 +33,10 @@ export function makeFocusReturn() {
       const el = saved; saved = null;
       if (el && typeof el.focus === 'function') tick().then(() => el.focus());
     },
+    // The remembered element can stop existing before it is used — a dialog closed because the
+    // surface underneath it changed takes its own trigger with it. Only the caller knows what to
+    // land on instead, so it drops the target and decides for itself.
+    cancel() { saved = null; },
     get pending() { return !!saved; },
   };
 }
