@@ -3,6 +3,21 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## 2026.08.26
+
+### Fixed
+
+- **Back from a cast member's page now returns you to where you were with the remote's Back key
+  too.** The on-screen button already did: back into the search results, the library or the list you
+  came from, on the entry you had opened. The remote's own key took a shortcut past all of that and
+  only changed the view, so the search came back with nothing focused and the next press opened the
+  menu instead of moving within the results. Both do the same thing now.
+- **A collection or watchlist opens on its first title instead of on the Back button.** Returning to
+  one from a title already put you back on the entry you had opened, but opening one fresh left
+  focus sitting on Back — so the first press of the remote led straight out of the list you had just
+  asked for. It now starts on the first title, the way favourites already did, and falls back to the
+  Back button only when there is nothing in the list.
+
 ## 2026.08.25
 
 ### Added

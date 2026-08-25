@@ -1369,7 +1369,7 @@
     // At the dashboard (top level) show a confirmation instead of closing the app directly.
     if      (viewState === 'player')   { viewState = 'details';        e.preventDefault(); }
     else if (viewState === 'details')  { if (!detailsRef?.handleBackKey()) returnFromDetails(); e.preventDefault(); }
-    else if (viewState === 'person')   { viewState = personReturnView; e.preventDefault(); }
+    else if (viewState === 'person')   { returnFromPerson();           e.preventDefault(); }
     else if (viewState === 'collection') { if (!collectionRef?.handleBackKey()) returnFromCollection(); e.preventDefault(); }
     else if (viewState === 'library')  { viewState = 'dashboard';      e.preventDefault(); }
     else if (viewState === 'settings') { viewState = 'dashboard';      e.preventDefault(); }

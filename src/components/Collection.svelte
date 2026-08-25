@@ -91,15 +91,18 @@
       if (loaded) items = loaded;
     } catch { /* ignore */ }
     finally { if (myId === loadedId) isLoading = false; }
-    if (myId !== loadedId || !focusItemId) return;
+    if (myId !== loadedId) return;
     await tick();
-    // Land on the card we came back from; failing that the first one, and if the collection turns
-    // out empty the Back button — which was left unfocused on mount precisely for this case.
-    // Scoped to our own container: Search and Library stay mounted while hidden, so a document-wide
-    // query would also match their cards, which cannot take focus.
-    const back = scrollEl?.querySelector(`[data-item-id="${focusItemId}"]`)
+    // Land on the card we came back from; failing that the first one, and only if the list is empty
+    // the Back button. Opened FRESH there is no card to return to, but the first one is still the
+    // right place to stand — the Back button holds focus while the skeletons are up (nothing else
+    // there can) and hands it on here, the same landing favourites gives. The remembered offset is
+    // applied only on a return: on a fresh open it belongs to some earlier view and would scroll
+    // this one to a stale position. Scoped to our own container: Search and Library stay mounted
+    // while hidden, so a document-wide query would also match their cards, which cannot take focus.
+    const back = (focusItemId && scrollEl?.querySelector(`[data-item-id="${focusItemId}"]`))
               || scrollEl?.querySelector('[data-item-id]');
-    if (scrollEl) scrollEl.scrollTop = focusScrollTop;   // the view first, then the focus
+    if (scrollEl && focusItemId) scrollEl.scrollTop = focusScrollTop;   // the view first, then the focus
     (back || backBtn)?.focus();
   }
 
