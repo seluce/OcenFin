@@ -1,10 +1,10 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro, getItemImageUrl } from '../utils.js';
-  import { rememberTrack, getRememberedTrack } from '../trackmemory.js';
+  import { rememberTrack, matchRememberedAudioIndex, matchRememberedSubtitleIndex } from '../trackmemory.js';
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
-  import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady } from '../syncplay.js';
+  import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady, syncNow } from '../syncplay.js';
   import { PgsRenderer, VobSubRenderer, initWasm, warmup } from 'libbitsub';
   // ASS/SSA with original layout via assjs — a lean DOM/CSS renderer (no WASM/worker). Syncs
   // to the <video> (only time + dimensions, NO pixels → no cross-origin taint, no crossorigin on the <video>).
@@ -282,9 +282,19 @@
     _appliedSyncSeq = cmd._seq;
     const command = cmd.Command;
     const pos   = (cmd.PositionTicks || 0) / 10000000;
-    const when  = cmd.When ? new Date(cmd.When).getTime() : Date.now();
-    const delay = Math.max(0, when - Date.now());
-    syncSuppressUntil = Date.now() + delay + 600;   // backstop for play/pause follow-up events
+    // A malformed/absent When from the server yields NaN, which would poison delay AND
+    // syncSuppressUntil (Date.now() < NaN is always false → the echo-suppression window silently
+    // turns off, and the group can enter a play/pause echo loop). Fall back to "now".
+    //
+    // syncNow() rather than Date.now(): When is a SERVER timestamp, so it has to be compared
+    // against the server's clock. Measuring against the TV's own clock meant a set running a few
+    // seconds fast or slow acted that much early or late on every command — the group drifting by
+    // exactly the offset. syncNow() is Date.now() plus the measured offset, and that offset stays
+    // 0 when it could not be measured, so this reduces to the previous behaviour.
+    const whenRaw = cmd.When ? new Date(cmd.When).getTime() : syncNow();
+    const when  = Number.isFinite(whenRaw) ? whenRaw : syncNow();
+    const delay = Math.max(0, when - syncNow());
+    syncSuppressUntil = Date.now() + delay + 600;   // local clock: only ever compared to Date.now()
     dlog('[SyncPlay] ← apply', command, 'pos', Math.round(pos), 'in', delay, 'ms');
     if (command === 'Seek') {
       _expectSeekEcho = true; videoElement.currentTime = pos; currentTime = pos;
@@ -321,7 +331,7 @@
       videoElement.currentTime = t; currentTime = t;
     }
     else if (cmd === 'nexttrack') { if (nextEpisode) goToNextEpisode(true); }
-    else if (cmd === 'previoustrack') { if (prevEpisode) { handingOff = true; onPrev?.(prevEpisode); } }
+    else if (cmd === 'previoustrack') { goToPrevEpisode(); }
     // Volume/mute (GeneralCommand)
     else if (cmd === 'setvolume' && videoElement) { const v = parseInt(c.args?.Volume, 10); if (!isNaN(v)) videoElement.volume = Math.max(0, Math.min(1, v / 100)); }
     else if (cmd === 'volumeup'   && videoElement) videoElement.volume = Math.min(1, videoElement.volume + 0.1);
@@ -461,19 +471,12 @@
         _trackMemApplied = true;
         if (item?.SeriesId && titleStreams.length) {
           if (playbackPrefs.rememberAudioTrack) {
-            const remA = getRememberedTrack(item.SeriesId, 'audio');
-            if (remA) { const t = titleStreams.find(s => s.Type === 'Audio' && s.Language === remA); if (t) { audioIndex = t.Index; selectedAudioIndex = t.Index; } }
+            const a = matchRememberedAudioIndex(titleStreams, item.SeriesId);
+            if (a != null) { audioIndex = a; selectedAudioIndex = a; }
           }
           if (playbackPrefs.rememberSubtitleTrack) {
-            const remS = getRememberedTrack(item.SeriesId, 'subtitle');
-            if (remS === 'off') { subtitleIndex = -1; selectedSubtitleIndex = -1; }
-            else if (remS?.lang) {
-              const subs = titleStreams.filter(s => s.Type === 'Subtitle' && s.Language === remS.lang);
-              // Prefer an exact match on the forced/SDH flags (distinguishes Full vs Forced vs SDH of the
-              // same language); fall back to any track of that language.
-              const t = subs.find(s => !!s.IsForced === remS.forced && !!s.IsHearingImpaired === remS.sdh) || subs[0];
-              if (t) { subtitleIndex = t.Index; selectedSubtitleIndex = t.Index; }
-            }
+            const st = matchRememberedSubtitleIndex(titleStreams, item.SeriesId);
+            if (st != null) { subtitleIndex = st; selectedSubtitleIndex = st; }
           }
         }
       }
@@ -1540,6 +1543,17 @@
     onNext?.({ episode: nextEpisode, resetStreak: awake });
   }
 
+  // Mirror of goToNextEpisode for the four "previous" callers (HUD button, channel rocker, colour
+  // key, admin previoustrack) — each carried its own copy of the handoff, which is how a guard
+  // added to one path historically missed the others. Returns false when there is nothing to go
+  // back to, so the colour-key dispatch can let the key fall through untouched.
+  function goToPrevEpisode() {
+    if (handingOff || !prevEpisode) return false;
+    handingOff = true;
+    onPrev?.(prevEpisode);
+    return true;
+  }
+
   async function toggleFavorite() {
     isFavorite = !isFavorite;
     resetControlsTimeout();
@@ -1757,7 +1771,7 @@
       case 'audioMenu':      openSettings(REMOTE_MENU_TABS[action]); return true;
       // Identical to the channel rocker, including the handingOff flag the prev path needs.
       case 'episodeNext':    if (!nextEpisode) return false; goToNextEpisode(true); return true;
-      case 'episodePrev':    if (!prevEpisode) return false; handingOff = true; onPrev?.(prevEpisode); return true;
+      case 'episodePrev':    return goToPrevEpisode();
       case 'playPause':      togglePlay(); return true;
       default:               return false;   // 'off' and anything unknown
     }
@@ -1848,7 +1862,7 @@
     if ((e.keyCode === 33 || e.keyCode === 34) && !showStillWatching && playbackPrefs.remoteChannelZap) {
       e.preventDefault(); e.stopPropagation();
       if (e.keyCode === 33) { goToNextEpisode(true); }
-      else if (prevEpisode) { handingOff = true; onPrev?.(prevEpisode); }
+      else goToPrevEpisode();
       return;
     }
     // Colour buttons: opt-in, unassigned by default. Same lock as the shortcuts above — the
@@ -2136,7 +2150,7 @@
         <div class="flex items-center gap-6">
 
           <!-- Previous episode: |◄ — transport navigation (sequential) -->
-          <button onclick={() => { if (prevEpisode) { handingOff = true; onPrev?.(prevEpisode); } }}
+          <button onclick={goToPrevEpisode}
             disabled={!prevEpisode}
             class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none disabled:opacity-30"
             title={i18n.t.prevEpisode}>
@@ -2454,7 +2468,7 @@
           <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
           {i18n.t.continueWatching}
         </button>
-        <p class="text-gray-500 text-sm">{i18n.t.stillWatchingTimeout}</p>
+        <p class="text-gray-400 text-sm">{i18n.t.stillWatchingTimeout}</p>
       </div>
     </div>
   {/if}

@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, serverSupportsVobSub, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard, perfMark, startPerfSampler } from './utils.js';
+  import { isBackKey, focusOnMount, serverSupportsVobSub, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
   import { buildPlayQueue } from './playback.js';
   import { session } from './session.svelte.js';
   import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
@@ -20,7 +20,7 @@
   import Person      from './components/Person.svelte';
   import Library     from './components/Library.svelte';
   import Collection  from './components/Collection.svelte';
-  import { registerSession, listSyncGroups, createSyncGroup, joinSyncGroup, leaveSyncGroup, syncSocketUrl, setSyncIgnoreWait } from './syncplay.js';
+  import { registerSession, listSyncGroups, createSyncGroup, joinSyncGroup, leaveSyncGroup, syncSocketUrl, setSyncIgnoreWait, measureClockOffset } from './syncplay.js';
   import { suppressTheme } from './thememusic.js';
 
   // Lazy-loaded views (Vite code-splitting): loaded only on first open, then cached.
@@ -40,16 +40,56 @@
   // ============================================================
   let appPhase = $state('servers');   // current step in the onboarding flow
 
-  // On first entering the app, put focus on the sidebar's active item. A freshly loaded app has no
-  // focus, so the first D-pad press would otherwise be spent just establishing it (landing top-left,
-  // overlapping hero + first row) instead of navigating. Guarded to only run when nothing is focused
-  // yet, so it never steals focus from a modal, the connection-lost retry button or a restore path.
+  // Search and Library stay mounted while inactive, hidden with display:none. Any document-wide
+  // lookup therefore also sees THEIR cards — which cannot take focus (so focusing one fails
+  // silently) and, worse, would be counted in the card occurrence index and shift it. Every focus
+  // lookup in this file is filtered through this.
+  const isShown = (el) => !!el && el.offsetParent !== null;
+
+  // On first entering the app, put focus into the CONTENT — normally the first tile of "My media".
+  // A freshly loaded app has no focus at all, and the first D-pad press would otherwise be spent
+  // establishing it, landing top-left across hero and first row: with nothing focused, spatialnav
+  // picks a group geometrically from a synthetic corner origin, and the sidebar owns x=0.
+  //
+  // This used to solve that by grabbing the sidebar's active entry one tick in — the only element
+  // that reliably exists that early. It worked, but opened the app with the menu unfolded over the
+  // artwork. The content is the app's default surface, so that entry is now the FALLBACK and the
+  // first content tile is the target.
+  //
+  // Waiting is unavoidable: one tick in, the dashboard is still loading and its skeletons are plain
+  // <div>s, so nothing there is focusable yet. Bounded retries in the shape of
+  // restoreContextFocus() below — no interval, ends by itself, and cancelled if the phase changes
+  // underneath it. The window is short in practice: the libraries row comes out of the FIRST
+  // response round (Views/Resume), the same one that releases the rest of the screen.
+  //
+  // The hero ([data-hero]) is skipped deliberately: OK on its play button jumps into a rotating
+  // random title, whereas a library tile is a calm and predictable landing spot. Rows are
+  // configurable, so the pick is "first focusable that is not in the hero" rather than any fixed
+  // assumption about what the page shows; with every row hidden the hero button is taken after all,
+  // and with nothing focusable at all the sidebar entry closes the chain.
+  //
+  // Guard unchanged: it only ever acts while nothing holds focus, so it never steals from a modal,
+  // the connection-lost retry button or a restore path.
   $effect(() => {
     if (appPhase !== 'app') return;
-    tick().then(() => {
-      if (document.activeElement && document.activeElement !== document.body) return;
+    let cancelled = false, tries = 0;
+    const attempt = () => {
+      if (cancelled) return;
+      const active = document.activeElement;
+      if (active && active !== document.body) return;   // someone got there first — leave it be
+      const main  = document.querySelector('[data-focus-group="main"]');
+      const cands = main ? [...main.querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )] : [];
+      const shown  = cands.filter(isShown);
+      const target = shown.find(el => !el.closest('[data-hero]')) || shown[0];
+      if (target) { target.focus(); dlog('[focus] start →', (target.textContent || '').trim().slice(0, 24)); return; }
+      if (++tries < 30) { setTimeout(attempt, 100); return; }   // ~3 s while the dashboard loads
+      dlog('[focus] start → sidebar (no content to focus)');
       document.querySelector('[data-focus-group="sidebar"] [data-group-current]')?.focus();
-    });
+    };
+    tick().then(attempt);
+    return () => { cancelled = true; };
   });
   let initializing = $state(true);    // splash screen until auto-login/startup is done
   let dashboardReloadKey = $state(0); // incrementing forces a fresh reload of the dashboard
@@ -59,6 +99,8 @@
   let libraryFocusFirst  = $state(false); // when opened from the menu, focus the first card
   let librarySharedOn    = $state(false); // "watch together" active (reported by Library)
   let libraryMounted     = $state(false); // permanently mounted from the first library visit on (state persists)
+  let searchMounted      = $state(false); // same for Search — mounted from its first visit on
+  let searchRef          = $state();      // bind:this → reset() on a fresh open, restoreView() on the way back
   let libraryRef = $state();              // bind:this → restoreView / grid mutations
 
   // Clear cache (settings): discard the in-memory cache and reload the dashboard fresh.
@@ -154,10 +196,17 @@
   let reduceAnimations = $state(false);
 
   // Display elements (clock, hero banner, episode count, libraries) — individually toggleable
-  let displaySettings = $state({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
+  // ONE source for the profile-pref defaults, consumed twice: the $state initializers here and
+  // the applyUserPrefs merge on login. A key added to only one copy ships its feature dead for
+  // existing profiles (their stored prefs are spread over the OTHER copy) — that paste-twice trap
+  // fired once already (theme music). Functions, not shared literals: navOrder/navHidden/navIcons
+  // must be fresh references on every call.
+  const defaultDisplaySettings = () => ({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
+  const defaultPlaybackPrefs   = () => ({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
+  let displaySettings = $state(defaultDisplaySettings());
 
   // Default audio/subtitle language
-  let playbackPrefs = $state({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
+  let playbackPrefs = $state(defaultPlaybackPrefs());
 
   // ── Profile-specific settings ───────────────────────────────
   // Language + display + playback + animations are stored PER USER.
@@ -192,7 +241,7 @@
   function userPrefsKey(userId) { return `user_prefs_${userId}`; }
 
   function loadUserPrefs(userId) {
-    try { return JSON.parse(localStorage.getItem(userPrefsKey(userId)) || '{}'); } catch { return {}; }
+    try { return asObject(JSON.parse(localStorage.getItem(userPrefsKey(userId)) || '{}')); } catch { return {}; }
   }
 
   function saveUserPrefs() {
@@ -216,10 +265,17 @@
       setLang(p.language);
       localStorage.setItem('app_language', p.language);   // update "last used"
     }
-    displaySettings  = { clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {}, ...(p.displaySettings || {}) };
-    playbackPrefs    = { audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off', ...(p.playbackPrefs || {}) };
+    displaySettings  = { ...defaultDisplaySettings(), ...asObject(p.displaySettings) };
+    // Three fields whose TYPE is load-bearing, so the merge above is not enough: a stored object
+    // or number here crashed the sidebar outright (for..of over a non-iterable, .includes on a
+    // non-array — both verified). Everything else in displaySettings is a flag or an enum that
+    // simply falls back to its default at the point of use.
+    displaySettings.navOrder  = asArray(displaySettings.navOrder);
+    displaySettings.navHidden = asArray(displaySettings.navHidden);
+    displaySettings.navIcons  = asObject(displaySettings.navIcons);
+    playbackPrefs    = { ...defaultPlaybackPrefs(), ...asObject(p.playbackPrefs) };
     reduceAnimations = p.reduceAnimations ?? false;
-    librarySorts     = p.librarySorts || {};   // remembered sort per library
+    librarySorts     = asObject(p.librarySorts);   // remembered sort per library
     sharedProfile    = p.sharedProfile && Array.isArray(p.sharedProfile.members)
                        ? { enabled: !!p.sharedProfile.enabled,
                            members: [p.sharedProfile.members[0] || null, p.sharedProfile.members[1] || null] }
@@ -326,6 +382,7 @@
   // ============================================================
   let viewState          = $state('dashboard');
   let currentDetailItem  = $state(null);
+  let detailsRef         = $state();      // bind:this → ask its own navigation chain before leaving
   let navLibraries               = $state([]);    // real libraries for the menu (reported by the dashboard)
   let navReordering              = $state(false);  // true while a sidebar entry is "lifted"
 
@@ -336,12 +393,45 @@
 
   // Remember position: where was Details opened from (scroll/focus now live in Library.svelte)
   let detailsOrigin      = $state('dashboard');   // 'dashboard' | 'library' | 'search'
+  // The card Details was opened from, so Back can hand focus straight back to it. Without this the
+  // view returns but nothing is focused: activeElement falls to <body>, and the next D-pad press
+  // then runs spatialnav's no-focus path, which picks geometrically from the screen corner and
+  // lands in the sidebar — the menu flying open after every look at a title.
+  let detailsReturnId    = null;
+  let detailsReturnEl    = null;
+  let detailsReturnNth   = 0;
+  let detailsReturnScroll = 0;
+  // Views that UNMOUNT cannot remember their own focus, so the card to return to is held here and
+  // handed down as a prop. Favourites and Collection focus at the end of their own load, so an
+  // outside call would race them — they take the id and decide themselves. The dashboard has no
+  // such logic of its own and is served directly by focusCardAgain().
+  let pendingCardFocusId = $state(null);
+  let pendingCardScrollTop = $state(0);
+  // Favourites and Collection each own a scroll container that unmounts WITH the view, so unlike
+  // Library (which keeps its savedScroll internally) their offset has to be remembered out here.
+  // The dashboard needs none: it scrolls in the persistent main container.
+  function scrollTopOf(el) {
+    for (let n = el?.parentElement; n; n = n.parentElement) {
+      const oy = getComputedStyle(n).overflowY;
+      if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight) return n.scrollTop;
+    }
+    return 0;
+  }
+  // Same three things for a collection/watchlist, whose Back leads somewhere else entirely.
+  let collectionReturnId = null, collectionReturnEl = null, collectionReturnNth = 0, collectionReturnScroll = 0;
+  // A person page is reached from the cast list, from search and from favourites — same deal.
+  let personReturnId = null, personReturnEl = null, personReturnNth = 0, personReturnScroll = 0;
 
   // ── Watch together ─────────────────────────────────────────────────────────
   // The logged-in (shared) profile references two other profiles. Their tokens
   // live in savedTokens (tied to "save token"); here only ID + name are remembered.
   let sharedProfile     = $state({ enabled: false, members: [] });  // members: [{ id, name }]
-  let partnersPlayedIds = $state(null);    // Set: item IDs fully watched by BOTH (current library)
+  // Set of item IDs watched by AT LEAST ONE member (a union — the loop below adds every member's
+  // watched items to one Set). Library hides exactly these, which is the documented behaviour:
+  // "hides movies or series that one of you has already seen", i.e. what is left is new to both.
+  // The comment used to say "watched by BOTH" — the opposite; do not "fix" the union into an
+  // intersection on the strength of a comment.
+  let partnersPlayedIds = $state(null);
   let sharedReady = $derived(sharedProfile.enabled
                    && sharedProfile.members.filter(m => m && m.id).length >= 1);
   // Cleanup: option on, but no profile set → turn off again when leaving the settings.
@@ -472,8 +562,8 @@
   // Reliably put focus on the button when the banner appears (it mounts due to a
   // background event; focusOnMount didn't catch it there — tick() after the flush wins).
   $effect(() => { if (session.connectionLost) tick().then(() => retryBtnEl?.focus()); });
-  async function syncCreate() { await createSyncGroup(session.serverUrl, session.token, selectedUser?.Name || 'OcenFin'); syncJoined = true; await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
-  async function syncJoin(groupId) { await joinSyncGroup(session.serverUrl, session.token, groupId); syncJoined = true; syncMyGroupId = groupId; await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
+  async function syncCreate() { await createSyncGroup(session.serverUrl, session.token, selectedUser?.Name || 'OcenFin'); syncJoined = true; measureClockOffset(session.serverUrl, session.token); await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
+  async function syncJoin(groupId) { await joinSyncGroup(session.serverUrl, session.token, groupId); syncJoined = true; syncMyGroupId = groupId; measureClockOffset(session.serverUrl, session.token); await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
   async function syncLeave() { await leaveSyncGroup(session.serverUrl, session.token); syncJoined = false; syncMyGroupId = null; syncQueue = null; _lastSyncQueueItem = null; await syncRefresh(); }
 
   // Auto-load: open the item the group is playing programmatically in the Player (jumps to the group position via Ready→Unpause).
@@ -547,7 +637,7 @@
     if (msg.MessageType === 'SyncPlayGroupUpdate') {
       const type = msg.Data?.Type;
       // Anchor my own membership authoritatively on the socket (GroupId), not on the name.
-      if (type === 'GroupJoined') { syncJoined = true; syncMyGroupId = msg.Data?.GroupId || syncMyGroupId; syncRefresh(); }
+      if (type === 'GroupJoined') { syncJoined = true; syncMyGroupId = msg.Data?.GroupId || syncMyGroupId; measureClockOffset(session.serverUrl, session.token); syncRefresh(); }
       else if (['GroupLeft', 'NotInGroup', 'GroupDoesNotExist'].includes(type)) { syncJoined = false; syncMyGroupId = null; syncQueue = null; syncRefresh(); }
       else if (['UserJoined', 'UserLeft'].includes(type)) syncRefresh();
       else if (type === 'PlayQueue') {
@@ -603,13 +693,14 @@
   // ============================================================
 
   function loadSavedServers() {
-    try { return JSON.parse(localStorage.getItem('jellyfin_servers') || '[]'); } catch { return []; }
+    // asArray, not just the try/catch: a stored object parses fine and then breaks .filter().
+    try { return asArray(JSON.parse(localStorage.getItem('jellyfin_servers') || '[]')); } catch { return []; }
   }
   function persistSavedServers() {
     localStorage.setItem('jellyfin_servers', JSON.stringify(savedServers));
   }
   function loadSavedTokens() {
-    try { return JSON.parse(localStorage.getItem('jellyfin_tokens_v2') || '{}'); } catch { return {}; }
+    try { return asObject(JSON.parse(localStorage.getItem('jellyfin_tokens_v2') || '{}')); } catch { return {}; }
   }
   function persistSavedTokens() {
     localStorage.setItem('jellyfin_tokens_v2', JSON.stringify(savedTokens));
@@ -617,13 +708,37 @@
   // Own store for watch together — deliberately separate from the quick switch (savedTokens),
   // so that setup NEVER affects a profile's quick-switch toggle.
   function loadSharedTokens() {
-    try { return JSON.parse(localStorage.getItem('jellyfin_shared_tokens_v1') || '{}'); } catch { return {}; }
+    try { return asObject(JSON.parse(localStorage.getItem('jellyfin_shared_tokens_v1') || '{}')); } catch { return {}; }
   }
+  // Tell the server a token is finished with. Deleting our copy only throws away the key — the
+  // token stays valid, and the TV keeps sitting in Dashboard → Devices as a working entry. Someone
+  // who removes a server expects the access to END, not just to be forgotten locally.
+  //
+  // Fire and forget: an unreachable server, or a token the server already rejected, must never
+  // block or delay the local removal. The user has decided; we only try to be tidy on the far side.
+  async function revokeToken(baseUrl, token) {
+    if (!baseUrl || !token) return;
+    try {
+      await fetch(`${baseUrl}/Sessions/Logout`, { method: 'POST', headers: authHeaders(token) });
+      dlog('[auth] token revoked server-side');
+    } catch (e) { dlog('[auth] revoke failed (server gone?):', e?.message || e); }
+  }
+
+  // Is this token STILL held somewhere after the deletion we just did? Revoking one that another
+  // store shares would break that feature: setSharedMember happily reuses an existing quick-switch
+  // token, and turning "remember me" off leaves the very same token running the live session.
+  function tokenStillKept(sid, token) {
+    if (!token) return true;
+    if (token === session.token) return true;                       // the running session uses it
+    return Object.values(savedTokens[sid]  || {}).includes(token)
+        || Object.values(sharedTokens[sid] || {}).includes(token);
+  }
+
   function persistSharedTokens() {
     localStorage.setItem('jellyfin_shared_tokens_v1', JSON.stringify(sharedTokens));
   }
   function loadScreensaverSettings() {
-    try { return JSON.parse(localStorage.getItem('screensaver_settings') || '{}'); } catch { return {}; }
+    try { return asObject(JSON.parse(localStorage.getItem('screensaver_settings') || '{}')); } catch { return {}; }
   }
 
   /**
@@ -631,8 +746,14 @@
    * Runs once and then removes the old keys.
    */
   function migrateOldData() {
+    // Sweep legacy plaintext token keys unconditionally FIRST. They predate jellyfin_url in some
+    // installs, and the old early-return left live full-access tokens under keys nothing reads or
+    // deletes again. removeItem on an absent key is a no-op, so this is safe on a clean install.
+    const sweepLegacy = () => {
+      for (const k of ['jellyfin_tokens', 'session_token', 'session_user']) localStorage.removeItem(k);
+    };
     const oldUrl = localStorage.getItem('jellyfin_url');
-    if (!oldUrl) return;
+    if (!oldUrl) { sweepLegacy(); return; }
 
     const serverId  = 'srv_migrated_' + Date.now();
     const newServer = { id: serverId, url: oldUrl, name: 'Jellyfin Server' };
@@ -659,6 +780,7 @@
       localStorage.removeItem('session_token');
     }
 
+    sweepLegacy();
     localStorage.removeItem('jellyfin_url');
   }
 
@@ -685,6 +807,12 @@
     savedTokens         = loadSavedTokens();
     sharedTokens        = loadSharedTokens();
     screensaverSettings = { enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45, ...loadScreensaverSettings() };
+    // timeout drives setTimeout: a non-numeric value makes that NaN, which fires IMMEDIATELY and
+    // then again on every reschedule — a screensaver flashing over the whole interface, hard to
+    // escape with a remote. Clamped rather than merely defaulted, so an absurd stored number
+    // cannot disable it either. brightness likewise, since it reaches CSS.
+    screensaverSettings.timeout    = asNumber(screensaverSettings.timeout, 90, 10, 3600);
+    screensaverSettings.brightness = asNumber(screensaverSettings.brightness, 0.45, 0, 1);
     setDebug(localStorage.getItem('ocenfin_debug') === '1');   // device-wide diagnostic logging (opt-in)
 
     // Device language for pre-login screens (server/user selection): last chosen language →
@@ -709,17 +837,32 @@
   // back here — then run the normal profile teardown. No banner on purpose: the profile picker
   // says it better than any message could. Token revoked → the profile is still listed and you
   // sign in again; account deleted → it is simply gone.
+  let _authTeardownRunning = false;
   $effect(() => {
     if (!session.authLost) return;
     // Only while the app is actually running. During restore/login the token is deliberately tried
     // out and a 401 is an expected answer there — those flows handle it themselves (clear the
     // session, show the profile list), and running this teardown on top would just repeat it.
     if (appPhase !== 'app') { session.authLost = false; return; }
-    const sid = selectedServer?.id, uid = selectedUser?.Id;
-    if (sid && uid && savedTokens[sid]?.[uid]) { delete savedTokens[sid][uid]; persistSavedTokens(); }
-    dlog('[auth] server rejected our token — returning to the profile selection');
-    session.authLost = false;
-    handleSwitchUser();
+    if (_authTeardownRunning) { session.authLost = false; return; }
+    _authTeardownRunning = true;
+    session.authLost = false;   // consume; the confirmation probe below decides
+    (async () => {
+      // CONFIRM before the destructive teardown. A single sporadic 401 — a reverse proxy reloading,
+      // an auth_request backend flapping, an injected 401 on a plain-HTTP setup — must not delete
+      // the saved token and force a password re-entry on the TV remote. Re-check the same token
+      // once; only tear down if it is genuinely rejected again.
+      const stillValid = await validateToken(session.token, session.serverUrl);
+      if (!stillValid && appPhase === 'app') {
+        const sid = selectedServer?.id, uid = selectedUser?.Id;
+        if (sid && uid && savedTokens[sid]?.[uid]) { delete savedTokens[sid][uid]; persistSavedTokens(); }
+        dlog('[auth] server rejected our token (confirmed) — returning to the profile selection');
+        handleSwitchUser();
+      } else {
+        dlog('[auth] 401 was transient — token still valid, staying put');
+      }
+      _authTeardownRunning = false;
+    })();
   });
 
   // Monitor network status (banner on connection loss). The offline/online events cover the
@@ -824,14 +967,29 @@
   // ============================================================
 
   function removeServer(id) {
+    // Capture before deleting: the URL to send the revocations to, and every token this server
+    // holds in either store. Nothing else can be keeping them — the server entry itself is going.
+    const baseUrl = savedServers.find(s => s.id === id)?.url;
+    const doomed  = [...new Set([
+      ...Object.values(savedTokens[id]  || {}),
+      ...Object.values(sharedTokens[id] || {}),
+    ])].filter(t => t && t !== session.token);
     savedServers = savedServers.filter(s => s.id !== id);
     persistSavedServers();
-    // Remove tokens for this server
+    // Remove tokens for this server — BOTH stores. The quick-switch tokens and the watch-together
+    // member tokens (sharedTokens) are full-access credentials; leaving the shared ones behind when
+    // the server is gone stranded live secrets in localStorage with no UI left to remove them.
     if (savedTokens[id]) {
       delete savedTokens[id];
       savedTokens = { ...savedTokens };
       persistSavedTokens();
     }
+    if (sharedTokens[id]) {
+      delete sharedTokens[id];
+      sharedTokens = { ...sharedTokens };
+      persistSharedTokens();
+    }
+    for (const t of doomed) revokeToken(baseUrl, t);   // not awaited — see revokeToken
   }
 
   // ============================================================
@@ -858,13 +1016,26 @@
   // Set a profile as a member. Uses a valid saved token; otherwise it
   // authenticates once with pw. NO session switch — the shared profile stays active.
   // Returns: 'ok' | 'needPassword' | 'error'
-  async function setSharedMember(slot, user, pw = '') {
+  // presetToken: already authenticated elsewhere (Quick Connect), so no credentials are needed —
+  // the token IS the proof. Everything after the acquisition is shared with the password path.
+  async function setSharedMember(slot, user, pw = '', presetToken = null) {
     if (!user || !selectedServer) return 'error';
     const sid = selectedServer.id;
+    // With Quick Connect the account is only known AFTER confirmation — whoever approves the code
+    // decides it — so the "not yourself, not the other slot" rule cannot be enforced by filtering
+    // the list beforehand and has to be checked here.
+    if (user.Id && (user.Id === selectedUser?.Id || user.Id === sharedProfile.members[slot === 0 ? 1 : 0]?.id)) {
+      return 'sameUser';
+    }
     // Reuse an existing token (own store or self-enabled quick switch).
-    let token = sharedTokens[sid]?.[user.Id] || savedTokens[sid]?.[user.Id];
+    let token = presetToken || (user.Id ? (sharedTokens[sid]?.[user.Id] || savedTokens[sid]?.[user.Id]) : null);
     if (token && !(await validateToken(token))) token = null;   // expired → re-authenticate
     if (!token) {
+      // HasPassword from /Users/Public is only a hint for WHICH dialog to show first — never the
+      // thing that decides access. The gate is AuthenticateByName below: a profile with a password
+      // cannot be added without it, because the SERVER refuses. Treat a rejected attempt as "needs
+      // a password" rather than a generic error, so the prompt still appears when that hint is
+      // missing or wrong (older servers, a proxy trimming the DTO, a hidden profile typed by hand).
       if (user.HasPassword && !pw) return 'needPassword';
       try {
         const res = await fetch(`${session.serverUrl}/Users/AuthenticateByName`, {
@@ -872,8 +1043,14 @@
           headers: { 'Content-Type': 'application/json', 'Authorization': authHeaderFor(user.Name) },
           body:    JSON.stringify({ Username: user.Name, Pw: pw || '' })
         });
+        if (res.status === 401) return pw ? 'error' : 'needPassword';
         if (!res.ok) return 'error';
-        token = (await res.json()).AccessToken;
+        const data = await res.json();
+        token = data.AccessToken;
+        // A hand-typed profile (hidden ones are absent from /Users/Public) has no Id yet — take
+        // the identity the server just confirmed rather than anything the user typed.
+        if (!user.Id && data.User?.Id) user = { Id: data.User.Id, Name: data.User.Name };
+        if (!user.Id) return 'error';
       } catch { return 'error'; }
     }
     // Store the token ONLY in the own shared store — NEVER in savedTokens. The quick switch
@@ -888,6 +1065,7 @@
     _loadedSugKey = null;   // recompute suggestions
     saveUserPrefs();
     partnersPlayedCache = {};   // members changed → all cached unions invalid
+    _sharedWarned = new Set();  // a re-added profile must be able to warn again if it breaks later
     if (librarySharedOn) loadPartnersPlayedIds(currentLibrary?.Id);
     return 'ok';
   }
@@ -900,13 +1078,18 @@
     // Remove only the own shared token — the quick-switch token (savedTokens) stays untouched.
     const sid = selectedServer?.id;
     if (removed?.id && sid && sharedTokens[sid]?.[removed.id]) {
+      const tok = sharedTokens[sid][removed.id];
       delete sharedTokens[sid][removed.id];
       sharedTokens = { ...sharedTokens };
       persistSharedTokens();
+      // setSharedMember may have adopted an existing quick-switch token — revoking it here would
+      // break that profile's password-free login. Only revoke once nothing holds it any more.
+      if (!tokenStillKept(sid, tok)) revokeToken(session.serverUrl, tok);
     }
     _loadedSugKey = null;   // recompute suggestions
     saveUserPrefs();
     partnersPlayedCache = {};   // members changed → all cached unions invalid
+    _sharedWarned = new Set();  // a re-added profile must be able to warn again if it breaks later
     if (librarySharedOn) loadPartnersPlayedIds(currentLibrary?.Id);
   }
 
@@ -916,8 +1099,28 @@
   // Cache per library (TTL 10 min): the fetch is the heaviest query in the app (full catalog
   // per member) — don't reload every time when switching back and forth between libraries.
   // Invalidated on member change, profile-off, session switch and "clear cache".
+  // One member's token being gone degrades "watch together" SILENTLY: the union below is then
+  // built from the other member alone, so the library filters with half the data and simply shows
+  // more than it should. The settings page marks the profile, but nobody browsing a library looks
+  // there. Say it once per member per session — repeating it on every library switch would be
+  // worse than saying nothing. Reuses the admin-message overlay and two existing strings, so this
+  // costs no new translations.
+  let _sharedWarned = new Set();
+  function warnSharedMember(m) {
+    console.warn('[Shared] no valid token for', m.name, '– please re-add profile.');
+    if (_sharedWarned.has(m.id)) return;
+    _sharedWarned.add(m.id);
+    showRemoteMessage(i18n.t.sharedWatching, `${m.name}: ${i18n.t.sharedNeedsLogin}`, 9000);
+  }
+
   let partnersPlayedCache = {};   // libraryId → { ids: Set, at: timestamp }
   const PARTNERS_CACHE_TTL = 10 * 60 * 1000;
+  // The suggestion scan asks every member for their WHOLE catalogue, across all libraries, so its
+  // union of watched IDs already contains every per-library one. It is parked in THIS cache under a
+  // reserved key rather than in a variable of its own: every place that invalidates
+  // partnersPlayedCache — sign-out, server switch, a changed member list — then invalidates it too,
+  // with no second reset site to keep in step. Library IDs are GUIDs, so the key cannot collide.
+  const PARTNERS_ALL_KEY = '__allLibraries';
   let _partnersSeq = 0;   // supersede guard: only the LATEST library switch may publish its result
   async function loadPartnersPlayedIds(libraryId) {
     const seq = ++_partnersSeq;
@@ -925,11 +1128,24 @@
     if (!librarySharedOn || !sharedReady || !libraryId) return;
     const hit = partnersPlayedCache[libraryId];
     if (hit && Date.now() - hit.at < PARTNERS_CACHE_TTL) { partnersPlayedIds = hit.ids; return; }
+    // Free if the dashboard already ran the suggestion scan. Item IDs are unique server-wide, so
+    // the entries belonging to other libraries can never match anything in this one — the wider set
+    // filters exactly like the narrow one would.
+    const all = partnersPlayedCache[PARTNERS_ALL_KEY];
+    if (all && Date.now() - all.at < PARTNERS_CACHE_TTL) {
+      partnersPlayedIds = all.ids;
+      dlog('[Shared] library filter reused the suggestion scan — no request');
+      return;
+    }
     const ids = new Set();
-    for (const m of sharedProfile.members) {
-      if (!m || !m.id) continue;
+    const tAll = Date.now();
+    // Side by side, not one after the other: two profiles are two independent catalogue scans, and
+    // awaiting them in sequence simply doubled the wait before the library could be filtered.
+    await Promise.all(sharedProfile.members.map(async (m) => {
+      if (!m || !m.id) return;
       const token = memberToken(m);
-      if (!token) { console.warn('[Shared] no valid token for', m.name, '– please re-add profile.'); continue; }
+      if (!token) { warnSharedMember(m); return; }
+      const t0 = Date.now();
       try {
         const res = await fetch(
           `${session.serverUrl}/Users/${m.id}/Items?ParentId=${libraryId}&Recursive=true` +
@@ -937,13 +1153,21 @@
           `&Limit=100000&EnableTotalRecordCount=false`,
           { headers: authHeaders(token) }
         );
-        if (!res.ok) { console.warn('[Shared] query failed for', m.name, '· HTTP', res.status); continue; }
+        if (!res.ok) {
+          console.warn('[Shared] query failed for', m.name, '· HTTP', res.status);
+          if (res.status === 401 || res.status === 403) warnSharedMember(m);   // that member's token died
+          return;
+        }
         let n = 0;
         // Check UserData.Played client-side — more reliable than Filters=IsPlayed (doesn't always work for series).
-        (await res.json()).Items?.forEach(i => { if (i.UserData?.Played) { ids.add(i.Id); n++; } });
-        dlog('[Shared]', m.name, '→', n, 'fully-watched titles');
+        const list = (await res.json()).Items || [];
+        list.forEach(i => { if (i.UserData?.Played) { ids.add(i.Id); n++; } });
+        // Item count and duration are what settle whether a scan is worth avoiding on a given
+        // library — guessing at it from a desktop browser says nothing about the television.
+        dlog('[Shared]', m.name, '→', n, 'of', list.length, 'titles watched ·', Date.now() - t0, 'ms');
       } catch (e) { console.warn('[Shared] error for', m.name, e); }
-    }
+    }));
+    dlog('[Shared] library filter scanned in', Date.now() - tAll, 'ms (members in parallel)');
     partnersPlayedCache[libraryId] = { ids, at: Date.now() };   // cache stays valid for ITS library
     if (seq !== _partnersSeq) return;   // library switched while fetching → don't publish stale IDs
     partnersPlayedIds = ids;
@@ -962,18 +1186,20 @@
   async function loadSharedSuggestions() {
     if (!sharedSugKey) { sharedSuggestions = []; return; }
     _loadedSugKey = sharedSugKey;   // claim the key in advance → no double fetch
-    const memberData = [];
-    for (const m of sharedProfile.members) {
-      if (!m?.id) continue;
+    // map + Promise.all rather than a loop: the members are fetched side by side, but the ORDER
+    // survives, and memberData[0] supplying the suggestion pool depends on that.
+    const memberData = (await Promise.all(sharedProfile.members.map(async (m) => {
+      if (!m?.id) return null;
       const token = memberToken(m);
-      if (!token) continue;
+      if (!token) return null;
+      const t0 = Date.now();
       try {
         const res = await fetch(
           `${session.serverUrl}/Users/${m.id}/Items?Recursive=true&IncludeItemTypes=Movie,Series` +
           `&Fields=Genres,CommunityRating,UserData&EnableImageTypes=Primary&Limit=100000&EnableTotalRecordCount=false`,
           { headers: authHeaders(token) }
         );
-        if (!res.ok) continue;
+        if (!res.ok) return null;
         const items = (await res.json()).Items || [];
         const genreCount = {}; const watched = new Set();
         for (const it of items) {
@@ -984,9 +1210,11 @@
             for (const g of it.Genres || []) genreCount[g] = (genreCount[g] || 0) + 1;
           }
         }
-        memberData.push({ items, genreCount, watched });
-      } catch { }
-    }
+        dlog('[Shared] suggestion scan', m.name, '→', watched.size, 'of', items.length,
+             'titles watched ·', Date.now() - t0, 'ms');
+        return { items, genreCount, watched };
+      } catch { return null; }
+    }))).filter(Boolean);
     if (!memberData.length) { sharedSuggestions = []; return; }
 
     // Genre weights: genres that ALL members have watched (product of the counts → "both like it").
@@ -1007,6 +1235,9 @@
 
     const exclude = new Set();
     memberData.forEach(d => d.watched.forEach(id => exclude.add(id)));
+    // Exactly what the library filter needs — see PARTNERS_ALL_KEY. Handing it over here spares it
+    // a full catalogue request per member and per library.
+    partnersPlayedCache[PARTNERS_ALL_KEY] = { ids: exclude, at: Date.now() };
 
     sharedSuggestions = memberData[0].items
       .filter(it => !exclude.has(it.Id))
@@ -1086,6 +1317,9 @@
 
   /** Back to the user screen (keeps the server connection) */
   function handleSwitchUser() {
+    // Capture before the teardown clears them. Revoke AFTER session.token is empty, so the
+    // connection guard cannot mistake the revocation's own response for our session dying.
+    const _sid = selectedServer?.id, _url = session.serverUrl, _tok = session.token;
     isLoggedIn       = false;
     selectedUser     = null;
     session.token      = '';
@@ -1096,6 +1330,10 @@
     apiCache.dashboard = null;   // clear cache (property mutation instead of reassignment → shared reference stays)
     navLibraries = [];
     clearCurrentSession();
+    // Only if nothing keeps it: with "remember me" on, the token stays in savedTokens for the
+    // quick switch and must remain valid. Without it, this was the last reference — and leaving it
+    // alive would strand a working key on the server for good.
+    if (!tokenStillKept(_sid, _tok)) revokeToken(_url, _tok);
     // Back to the user screen, server stays connected
     appPhase = 'users';
   }
@@ -1130,7 +1368,7 @@
     // Navigate within the app; preventDefault stops webOS from closing the app.
     // At the dashboard (top level) show a confirmation instead of closing the app directly.
     if      (viewState === 'player')   { viewState = 'details';        e.preventDefault(); }
-    else if (viewState === 'details')  { returnFromDetails();          e.preventDefault(); }
+    else if (viewState === 'details')  { if (!detailsRef?.handleBackKey()) returnFromDetails(); e.preventDefault(); }
     else if (viewState === 'person')   { viewState = personReturnView; e.preventDefault(); }
     else if (viewState === 'collection') { if (!collectionRef?.handleBackKey()) returnFromCollection(); e.preventDefault(); }
     else if (viewState === 'library')  { viewState = 'dashboard';      e.preventDefault(); }
@@ -1193,12 +1431,29 @@
       collectionStack = [];
       collectionReturnView = viewState;
     }
+    collectionReturnId  = boxSet?.Id ?? null;
+    collectionReturnEl  = document.activeElement;
+    collectionReturnNth = cardOrdinal(collectionReturnEl, collectionReturnId);
+    collectionReturnScroll = scrollTopOf(collectionReturnEl);
+    pendingCardFocusId  = null;
     currentCollection    = boxSet;
     viewState            = 'collection';
   }
   function returnFromCollection() {
+    // Nested collection: pop back to the parent, which stays on screen — nothing to restore.
     if (collectionStack.length) { currentCollection = collectionStack.pop(); return; }
+    const id = collectionReturnId, el = collectionReturnEl, nth = collectionReturnNth;
+    const sc = collectionReturnScroll;
+    collectionReturnId = null; collectionReturnEl = null; collectionReturnNth = 0; collectionReturnScroll = 0;
     viewState = collectionReturnView;
+    // Same split as returnFromDetails: Library restores itself, the two self-focusing views take
+    // the id, and the dashboard is focused directly.
+    if (collectionReturnView === 'search') searchRef?.restoreView();
+    else if (collectionReturnView === 'library') libraryRef?.restoreView();
+    else if (collectionReturnView === 'favorites' || collectionReturnView === 'collection') {
+      pendingCardFocusId = id; pendingCardScrollTop = sc;
+    }
+    else focusCardAgain(id, el, '(back from collection)', nth);
   }
 
   // Cross effects from the collection view onto the library grid / sidebar:
@@ -1240,9 +1495,29 @@
   // Opens a person's filmography (from search, the cast in Details, or favorites).
   // Only sets the return view + seed person; Person.svelte loads person details + filmography itself.
   function openPerson(person) {
-    personReturnView = viewState;
+    personReturnView   = viewState;
+    personReturnId     = document.activeElement?.getAttribute?.('data-item-id') ?? null;
+    personReturnEl     = document.activeElement;
+    personReturnNth    = cardOrdinal(personReturnEl, personReturnId);
+    personReturnScroll = scrollTopOf(personReturnEl);
+    pendingCardFocusId = null;
     currentPerson    = person;
     viewState        = 'person';
+  }
+
+  // Back from a person page — routed exactly like returnFromDetails/returnFromCollection.
+  function returnFromPerson() {
+    const id = personReturnId, el = personReturnEl, nth = personReturnNth, sc = personReturnScroll;
+    personReturnId = null; personReturnEl = null; personReturnNth = 0; personReturnScroll = 0;
+    viewState = personReturnView;
+    if (personReturnView === 'search') searchRef?.restoreView();
+    else if (personReturnView === 'library') libraryRef?.restoreView();
+    // Details focuses its play button on mount, so it takes the target as a prop like the other
+    // self-focusing views rather than being focused into from here.
+    else if (personReturnView === 'favorites' || personReturnView === 'collection'
+             || personReturnView === 'details') {
+      pendingCardFocusId = id; pendingCardScrollTop = sc;
+    } else focusCardAgain(id, el, '(back from person)', nth);
   }
 
   // After a selection in the sidebar, move focus into the content. Leaving
@@ -1277,8 +1552,14 @@
   function showItemDetails(item) {
     // Containers (collection/playlist) show their contents instead of a detail page
     if (item?.Type === 'BoxSet' || item?.Type === 'Playlist') { openCollection(item); return; }
-    // Remember the origin so "Back" leads there again (not always the dashboard)
-    detailsOrigin = viewState;
+    // Remember the origin so "Back" leads there again (not always the dashboard), and the card
+    // itself so focus can return to it rather than to nothing.
+    detailsOrigin   = viewState;
+    pendingCardFocusId = null;   // a new trip — the previous view's card is no longer the target
+    detailsReturnId  = item?.Id ?? null;
+    detailsReturnEl  = document.activeElement;
+    detailsReturnNth = cardOrdinal(detailsReturnEl, detailsReturnId);
+    detailsReturnScroll = scrollTopOf(detailsReturnEl);
     currentDetailItem = item;
     viewState = 'details';
     lazyPlayer();   // preload the Player chunk in the background — playback is very likely from here
@@ -1290,29 +1571,73 @@
   let contextItem = $state(null);
   let contextReturnId = $state(null);     // item ID of the triggering card (focus return, survives reload)
   let contextReturnEl = $state(null);     // fallback: element reference if no data-item-id is present
+  let contextReturnNth = 0;               // which occurrence of that id — see cardOrdinal()
   let contextPickerMode = $state(null);   // null | 'playlist' | 'collection' — AddToPicker from the context menu
   let contextPickerItem = $state(null);
   function openContextMenu(item) {
-    contextReturnId = item?.Id ?? null;
-    contextReturnEl = document.activeElement;
+    contextReturnId  = item?.Id ?? null;
+    contextReturnEl  = document.activeElement;
+    contextReturnNth = cardOrdinal(contextReturnEl, contextReturnId);
     contextItem = item;
   }
-  // After closing both the context menu AND the picker, put focus back on the card.
-  // The dashboard NO LONGER reloads after context actions → the card reference still lives and is
-  // focused directly (instant). Library/collection still reload async → the card comes back via
-  // data-item-id (poll briefly), otherwise the first visible entry (instead of focus loss).
-  function restoreContextFocus() {
-    const id = contextReturnId, el = contextReturnEl;
-    contextReturnId = null; contextReturnEl = null;
+  // Put focus back on a card that may not exist yet, because the view it belongs to can still be
+  // reloading. Three routes, in order: the live element (instant where the view stayed mounted, e.g.
+  // the dashboard after a context action), the item's data-item-id once its card is back, and only
+  // then the first card in the view rather than losing focus altogether.
+  //
+  // Every attempt stands down if something else holds focus by then, so a poll running over half a
+  // second can never fight a user who has already navigated on. Bounded and self-terminating — the
+  // shape to copy for anything that must focus an element which does not exist yet (see CLAUDE.md).
+  // The same title can sit in SEVERAL rows at once — "Continue watching" and the watchlist show it
+  // together, and the two card snippets are reused across eight rows. data-item-id is therefore not
+  // unique, and querySelector would always hand back the topmost row. So remember WHICH occurrence
+  // the card was, and go back to that one.
+  function cardOrdinal(el, id) {
+    if (!el || !id) return 0;
+    const all = [...document.querySelectorAll(`[data-item-id="${id}"]`)].filter(isShown);
+    const i = all.indexOf(el);
+    return i < 0 ? 0 : i;
+  }
+
+  function focusCardAgain(id, el, why = '', nth = 0) {
     let tries = 0;
     const attempt = () => {
-      if (el && document.contains(el) && typeof el.focus === 'function') { el.focus(); return; }
-      const target = id ? document.querySelector(`[data-item-id="${id}"]`) : null;
-      if (target) { target.focus(); return; }
-      if (++tries < 12) { setTimeout(attempt, 50); return; }   // wait up to ~600 ms for the reloaded entry
-      document.querySelector('[data-item-id]')?.focus();
+      const active = document.activeElement;
+      if (active && active !== document.body) {
+        // Stood down — something else restored focus first. Logged with the reason, because that is
+        // how we tell a needed call from a redundant one: every view but the dashboard owns this.
+        dlog('[focus] card restore', why, '· stood down, already on',
+             (active.textContent || active.tagName || '').trim().slice(0, 24));
+        return;
+      }
+      if (el && document.contains(el) && isShown(el) && typeof el.focus === 'function') {
+        el.focus(); dlog('[focus] card restore', why, '· live element'); return;
+      }
+      const matches = id ? [...document.querySelectorAll(`[data-item-id="${id}"]`)].filter(isShown) : [];
+      if (matches.length > nth) {
+        matches[nth].focus();
+        dlog('[focus] card restore', why, '· by id, occurrence', nth, 'of', matches.length, 'after', tries, 'tries');
+        return;
+      }
+      // Fewer occurrences than remembered: either rows are still coming in, or the one it sat in is
+      // gone (row switched off, watchlist changed). Wait the window out before settling for another.
+      if (++tries < 12) { setTimeout(attempt, 50); return; }   // wait up to ~600 ms for the reload
+      if (matches.length) {
+        matches[0].focus();
+        dlog('[focus] card restore', why, '· occurrence', nth, 'gone, took the first of', matches.length);
+        return;
+      }
+      dlog('[focus] card restore', why, '· fell back to the first card');
+      [...document.querySelectorAll('[data-item-id]')].find(isShown)?.focus();
     };
     tick().then(attempt);
+  }
+
+  // After closing both the context menu AND the picker, put focus back on the card.
+  function restoreContextFocus() {
+    const id = contextReturnId, el = contextReturnEl, nth = contextReturnNth;
+    contextReturnId = null; contextReturnEl = null; contextReturnNth = 0;
+    focusCardAgain(id, el, '(context menu)', nth);
   }
   $effect(() => { if (!contextItem && !contextPickerMode && (contextReturnId || contextReturnEl)) restoreContextFocus(); });
 
@@ -1383,6 +1708,9 @@
   }
 
   async function returnFromDetails() {
+    const backId = detailsReturnId, backEl = detailsReturnEl, backNth = detailsReturnNth;
+    const backScroll = detailsReturnScroll;
+    detailsReturnId = null; detailsReturnEl = null; detailsReturnNth = 0; detailsReturnScroll = 0;
     viewState = detailsOrigin;
     if (detailsOrigin === 'library') {
       libraryRef?.restoreView();
@@ -1398,13 +1726,20 @@
       // still be listed in the overview until you switched views. Increment the key → Favorites reloads.
       favReloadKey++;
     }
-  }
-
-  async function loadItemById(itemId) {
-    try {
-      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${itemId}`, { headers: getAuthHeaders() });
-      if (res.ok) { currentDetailItem = await res.json(); viewState = 'details'; }
-    } catch { }
+    // The dashboard is the ONLY origin that establishes no focus of its own when it comes back, so
+    // it is the only one handed the card here. Every other view already owns this (see CLAUDE.md):
+    // Library restores scroll AND focus in restoreView() above, Favourites focuses its first card
+    // after each load, Search focuses its input on mount, Collection and Person focus their Back
+    // button. Calling this for them would either be inert or fight their own logic.
+    // Unlike those, the dashboard remounts from scratch, so focusing the card also brings its
+    // scroll position back — the browser scrolls a focused element into view.
+    if (detailsOrigin === 'search') searchRef?.restoreView();
+    else if (detailsOrigin === 'dashboard') focusCardAgain(backId, backEl, '(back from details → dashboard)', backNth);
+    // Favourites and Collection focus themselves at the end of their load — hand them the target
+    // instead of calling into them, so there is one decision rather than two racing ones.
+    else if (detailsOrigin === 'favorites' || detailsOrigin === 'collection') {
+      pendingCardFocusId = backId; pendingCardScrollTop = backScroll;
+    }
   }
 
 </script>
@@ -1654,13 +1989,20 @@
         navHidden={displaySettings.navHidden}
         navIcons={displaySettings.navIcons}
         activeLibraryId={currentLibrary?.Id}
-        onNavigate={(target) => { if (target === 'syncplay') { openSyncPlay(); } else { viewState = target; if (target !== 'favorites') focusMain(); } }}
+        onNavigate={(target) => {
+          if (target === 'syncplay') { openSyncPlay(); return; }
+          pendingCardFocusId = null;
+          // Search from the menu is always a FRESH search — mount it on first use, then clear it.
+          if (target === 'search') { searchMounted = true; viewState = target; tick().then(() => searchRef?.reset()); return; }
+          viewState = target;
+          if (target !== 'favorites') focusMain();
+        }}
         onNavigateLibrary={(lib) => navigateToLibrary(lib, true)}
         onSwitchUser={handleSwitchUser}
         onLogOutServer={handleLogout}
       />
 
-      <div data-focus-group="main" class="flex-1 h-full overflow-y-auto hide-scrollbar bg-gray-900 relative [scroll-padding-top:5rem]">
+      <div data-focus-group="main" data-enter-first-fresh class="flex-1 h-full overflow-y-auto hide-scrollbar bg-gray-900 relative [scroll-padding-top:5rem]">
 
         {#if viewState === 'dashboard'}
           {#key dashboardReloadKey}
@@ -1688,11 +2030,6 @@
           />
           {/key}
 
-        {:else if viewState === 'search'}
-          <Search {selectedUser}
-            onOpenDetails={(item) => showItemDetails(item)}
-            onOpenPerson={(person) => openPerson(person)} />
-
         {:else if viewState === 'settings'}
           {#await lazySettings()}
             <div class="h-full flex items-center justify-center"><div class="w-14 h-14 border-4 border-white/25 border-t-white rounded-full animate-spin"></div></div>
@@ -1703,6 +2040,7 @@
             {serverVersion} {serverVobSub}
             libraries={navLibraries}
             publicUsers={users} {sharedProfile} {sharedTokens}
+            clientAuthHeader={CLIENT_AUTH_HEADER}
             onSharedToggle={toggleSharedEnabled}
             onSharedSetMember={setSharedMember}
             onSharedRemoveMember={removeSharedMember}
@@ -1719,14 +2057,14 @@
           />
           {/await}
         {:else if viewState === 'details' && currentDetailItem}
-          <Details
+          <Details bind:this={detailsRef}
+            focusItemId={pendingCardFocusId} focusScrollTop={pendingCardScrollTop}
             item={currentDetailItem}
             {selectedUser} {playbackPrefs} {use24h} {serverVobSub}
             spoilerProtection={displaySettings.spoilerProtection}
             detailsBackdrop={displaySettings.detailsBackdrop}
             detailsLogo={displaySettings.detailsLogo}
             onClose={returnFromDetails}
-            onOpenItemById={(id) => loadItemById(id)}
             onOpenPerson={(person) => openPerson(person)}
             onLibChanged={refreshLibraries}
             onPlayVideo={startPlayback}
@@ -1734,14 +2072,16 @@
 
         {:else if viewState === 'person'}
           <Person person={currentPerson} {selectedUser}
-            onBack={() => viewState = personReturnView}
+            onBack={returnFromPerson}
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu} />
         {:else if viewState === 'favorites'}
-          <Favorites {selectedUser} reloadKey={favReloadKey}
+          <Favorites {selectedUser} reloadKey={favReloadKey} focusItemId={pendingCardFocusId}
+            focusScrollTop={pendingCardScrollTop}
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu}
             onOpenPerson={openPerson} onFocusFallback={focusMain} />
         {:else if viewState === 'collection'}
           <Collection bind:this={collectionRef} collection={currentCollection} {selectedUser}
+            focusItemId={pendingCardFocusId} focusScrollTop={pendingCardScrollTop}
             onBack={returnFromCollection}
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu}
             onChildCountChanged={onCollectionChildCount}
@@ -1749,6 +2089,19 @@
             onPlayQueue={(qItems) => { playQueue = { items: qItems, index: 0 }; detailsOrigin = 'collection'; startPlayback({ item: qItems[0], audioIndex: -1, subtitleIndex: -1 }); }}
             onPlaylistRenamed={onCollectionRenamed}
             onPlaylistDeleted={onCollectionDeleted} />
+        {/if}
+
+        <!-- SEARCH stays mounted for the same reason as LIBRARY below: a trip into Details or a
+             person page would otherwise discard the query, up to 24 results, the 10 people AND the
+             per-person count cache the component keeps — so coming back meant retyping and paying
+             two requests plus a count probe per person again. Opened FRESH from the menu it is
+             reset instead, because a search screen showing a two-day-old query reads as stale. -->
+        {#if searchMounted}
+          <div class="h-full w-full" class:hidden={viewState !== 'search'}>
+            <Search bind:this={searchRef} {selectedUser}
+              onOpenDetails={(item) => showItemDetails(item)}
+              onOpenPerson={(person) => openPerson(person)} />
+          </div>
         {/if}
 
         <!-- LIBRARY stays permanently mounted (hidden when inactive) so scroll/items/the

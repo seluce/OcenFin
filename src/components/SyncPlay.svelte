@@ -38,14 +38,14 @@
         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{i18n.t.syncGroupActive}</span>
         <span class="text-xl font-bold text-white">{group.GroupName}</span>
         <div class="flex flex-col gap-1">
-          <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">{i18n.t.groupMembers}</span>
+          <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{i18n.t.groupMembers}</span>
           {#each (group.Participants || []) as p (p)}
             <span class="text-gray-200">{p}</span>
           {/each}
         </div>
       </div>
       <button onclick={() => onLeave?.()} {@attach focusOnMount()}
-        class="w-full bg-red-600 hover:bg-red-500 focus:bg-red-500 text-white font-bold text-xl py-4 rounded-xl
+        class="w-full bg-red-800 hover:bg-red-700 focus:bg-red-700 text-white font-bold text-xl py-4 rounded-xl
                focus:outline-none focus:ring-4 focus:ring-white transition-colors">
         {i18n.t.leaveGroup}
       </button>

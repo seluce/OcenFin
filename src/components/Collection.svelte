@@ -1,14 +1,21 @@
 <script>
+  import { tick } from 'svelte';
   import { i18n } from '../i18n.svelte.js';
   import { itemProgress, itemBadge, itemBlurHash, blurUp, longPress, authHeaders, focusOnMount, getItemImageUrl } from '../utils.js';
   import { buildPlayQueue } from '../playback.js';
   import { session } from '../session.svelte.js';
 
+  // focusItemId: the card to land on after the parent brought us back (from Details, say). Passed
+  // in rather than resolved here, because this view unmounts — the memory has to live in App.svelte.
+  // While one is pending the Back button does NOT grab focus on mount, or it would win the race
+  // against the card, which only exists once the items have loaded.
   let {
-    collection, selectedUser,
+    collection, selectedUser, focusItemId = null, focusScrollTop = 0,
     onBack, onOpenDetails, onContextMenu, onPlayVideo, onPlayQueue,
     onChildCountChanged, onPlaylistRenamed, onPlaylistDeleted,
   } = $props();
+  let backBtn;   // bind:this → fallback focus when the remembered card is gone
+  let scrollEl;  // own scroll container — unmounts with the view, so App remembers the offset
 
   let items     = $state([]);
   let isLoading = $state(false);
@@ -31,17 +38,12 @@
     if (!items.length) return;
     const pick = items[Math.floor(Math.random() * items.length)];
     if (pick.Type === 'Series' || pick.Type === 'Season') {
-      try {
-        const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${pick.Id}`
-          + `&IncludeItemTypes=Episode${pick.Type === 'Series' ? '&Recursive=true' : ''}&EnableTotalRecordCount=false`;
-        const res  = await fetch(url, { headers: getAuthHeaders() });
-        if (!res.ok) { console.warn('playRandom: HTTP', res.status); return; }
-        const data = await res.json();
-        let pool = (data.Items || []).filter(e => e.Type === 'Episode');
-        if (pick.Type === 'Series') pool = pool.filter(e => e.ParentIndexNumber !== 0);
-        if (!pool.length) return;
-        onPlayVideo?.({ item: pool[Math.floor(Math.random() * pool.length)], audioIndex: -1, subtitleIndex: -1 });
-      } catch (e) { console.error(e); }
+      // Same expansion as playAll: buildPlayQueue resolves series/seasons to episodes with the
+      // shared specials rule; the random draw ignores its ordering. Was an inline copy of that
+      // query — the third one in the codebase.
+      const pool = await buildPlayQueue([pick], { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+      if (!pool.length) return;
+      onPlayVideo?.({ item: pool[Math.floor(Math.random() * pool.length)], audioIndex: -1, subtitleIndex: -1 });
     } else {
       onPlayVideo?.({ item: pick, audioIndex: -1, subtitleIndex: -1 });
     }
@@ -89,6 +91,16 @@
       if (loaded) items = loaded;
     } catch { /* ignore */ }
     finally { if (myId === loadedId) isLoading = false; }
+    if (myId !== loadedId || !focusItemId) return;
+    await tick();
+    // Land on the card we came back from; failing that the first one, and if the collection turns
+    // out empty the Back button — which was left unfocused on mount precisely for this case.
+    // Scoped to our own container: Search and Library stay mounted while hidden, so a document-wide
+    // query would also match their cards, which cannot take focus.
+    const back = scrollEl?.querySelector(`[data-item-id="${focusItemId}"]`)
+              || scrollEl?.querySelector('[data-item-id]');
+    if (scrollEl) scrollEl.scrollTop = focusScrollTop;   // the view first, then the focus
+    (back || backBtn)?.focus();
   }
 
   // Reorder: optimistically local, then confirm server-side.
@@ -168,9 +180,9 @@
   });
 </script>
 
-<div class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
+<div bind:this={scrollEl} class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
   <div class="flex items-center gap-6 mb-8">
-    <button onclick={onBack} {@attach focusOnMount()}
+    <button onclick={onBack} bind:this={backBtn} {@attach focusOnMount(!focusItemId)}
       class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
       {i18n.t.back}
     </button>
@@ -286,7 +298,7 @@
           <div class="flex items-center gap-4 flex-wrap">
             <span class="text-gray-200 font-semibold">{i18n.t.deletePlaylistConfirm}</span>
             <button onclick={deletePlaylist}
-              class="px-6 py-3 rounded-lg font-bold bg-red-600 hover:bg-red-500 focus:bg-red-500 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+              class="px-6 py-3 rounded-lg font-bold bg-red-700 hover:bg-red-600 focus:bg-red-600 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               {i18n.t.deletePlaylist}
             </button>
             <button onclick={() => confirmDeletePlaylist = false} {@attach focusOnMount()}
@@ -326,7 +338,7 @@
           <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
             {#each group.items as item (item.PlaylistItemId ?? item.Id)}
               {@const badge = itemBadge(item)}
-              <button onclick={() => onOpenDetails(item)}
+              <button onclick={() => onOpenDetails(item)} data-item-id={item.Id}
                 {@attach longPress()} onlongpress={() => onContextMenu(item)}
                 class="group focus:outline-none text-left scroll-my-4">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
@@ -346,10 +358,10 @@
                 </div>
                 {#if item.Type === 'Episode'}
                   <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.SeriesName || item.Name}</span>
-                  <span class="text-xs text-gray-500 block truncate w-full">{episodeLabel(item)}</span>
+                  <span class="text-xs text-gray-400 block truncate w-full">{episodeLabel(item)}</span>
                 {:else}
                   <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Name}</span>
-                  {#if item.ProductionYear}<span class="text-xs text-gray-500 block truncate w-full">{item.ProductionYear}</span>{/if}
+                  {#if item.ProductionYear}<span class="text-xs text-gray-400 block truncate w-full">{item.ProductionYear}</span>{/if}
                 {/if}
               </button>
             {/each}

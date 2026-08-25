@@ -1,10 +1,42 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { personImageUrl, authHeaders, blurUp, itemBlurHash } from '../utils.js';
+  import { personImageUrl, authHeaders, blurUp, itemBlurHash, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
   import { session } from '../session.svelte.js';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
 
   let { selectedUser, onOpenDetails, onOpenPerson } = $props();
+
+  // This view stays mounted for the whole session (see App.svelte), so a trip into Details or a
+  // person page comes back to the same query, the same results and the same per-person cache
+  // instead of an empty field. Hiding is display:none, which drops focus and the scroll offset —
+  // hence the same save/restore pair the library uses.
+  let scrollEl = $state();
+  let savedScroll = 0;
+  let lastFocusedId = null;
+  function leaveTo(fn, item) {
+    savedScroll   = scrollEl?.scrollTop || 0;
+    lastFocusedId = item?.Id ?? null;
+    fn?.(item);
+  }
+
+  // Called from App when the view is shown again after Details/a person page.
+  export async function restoreView() {
+    await tick();
+    if (scrollEl) scrollEl.scrollTop = savedScroll;
+    const card = lastFocusedId && scrollEl?.querySelector(`[data-item-id="${lastFocusedId}"]`);
+    (card || searchInput)?.focus();
+  }
+
+  // Called from App when the view is opened FRESH from the menu. A search screen that reopens on
+  // the query from two days ago reads as stale, so this is where everything is dropped — including
+  // a debounce that may still be pending, which would otherwise fire into a discarded state.
+  export function reset() {
+    clearTimeout(searchTimeout);
+    query = ''; results = []; people = []; isLoading = false;
+    savedScroll = 0; lastFocusedId = null;
+    searchToken++;                 // any response still in flight is discarded
+    tick().then(() => searchInput?.focus());
+  }
 
   let query   = $state("");
   let results = $state([]);
@@ -117,26 +149,21 @@
     finally     { if (myToken === searchToken) isLoading = false; }
   }
 
-  function getItemImageUrl(item, format = 'portrait') {
-    if (format === 'landscape') {
-      if (item.Type === 'Episode' && item.ImageTags?.Primary)
-        return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
-      if (item.BackdropImageTags?.length > 0)
-        return `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
-    }
-    if (item.ImageTags?.Primary)
-      return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&quality=80&format=webp`;
-    if (item.SeriesPrimaryImageTag)
-      return `${session.serverUrl}/Items/${item.SeriesId}/Images/Primary?tag=${item.SeriesPrimaryImageTag}&fillHeight=400&quality=80&format=webp`;
-    return null;
-  }
+
 </script>
 
 <div class="p-10 pt-16 h-full flex flex-col">
 
-  <!-- SEARCH FIELD -->
-  <div class="mb-8 relative shrink-0">
-    <svg class="w-8 h-8 absolute left-6 top-1/2 -translate-y-1/2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <!-- SEARCH FIELD — the field's chrome (background, rounding, border) sits on the WRAPPER, so the
+       clear button can be a real sibling of the input and still look like it is inside the field.
+       That matters for the remote: as siblings their boxes lie next to each other, so Right at the
+       end of the text reaches the button geometrically. spatialnav only releases a text field once
+       the caret sits at its edge, so typing and correcting still work exactly as before.
+       The button only exists while something is typed — its whole purpose is emptying a long entry
+       without holding Backspace on the remote or leaving the view and coming back. -->
+  <div class="mb-8 shrink-0 relative flex items-center bg-gray-800 rounded-2xl border-2 border-transparent
+              focus-within:border-white shadow-xl transition-colors">
+    <svg class="w-8 h-8 absolute left-6 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
     </svg>
     <input
@@ -145,9 +172,19 @@
       oninput={onSearchInput}
       type="text"
       placeholder={i18n.t.searchPlaceholder}
-      class="w-full bg-gray-800 text-white text-3xl pl-20 pr-6 py-6 rounded-2xl border-2 border-transparent
-             focus:outline-none focus:border-white shadow-xl placeholder-gray-500 transition-colors"
+      class="flex-1 min-w-0 bg-transparent text-white text-3xl pl-20 pr-4 py-6 rounded-2xl
+             focus:outline-none placeholder-gray-500"
     />
+    {#if query.length > 0}
+      <button onclick={reset} aria-label={i18n.t.clearSearch}
+        class="mr-4 shrink-0 w-14 h-14 rounded-full flex items-center justify-center text-gray-400
+               hover:bg-gray-700 hover:text-white focus:bg-gray-700 focus:text-white
+               focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    {/if}
   </div>
 
   <!-- SEARCH HISTORY -->
@@ -185,20 +222,20 @@
     </div>
 
   {:else if results.length > 0 || people.length > 0}
-    <div class="flex flex-col gap-12 overflow-y-auto hide-scrollbar pb-32">
+    <div bind:this={scrollEl} class="flex flex-col gap-12 overflow-y-auto hide-scrollbar pb-32">
 
       {#if series.length > 0}
         <div>
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.series}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each series as s (s.Id)}
-              <button onclick={() => onOpenDetails?.(s)} class="shrink-0 w-48 scroll-m-4 group focus:outline-none text-left">
+              <button onclick={() => leaveTo(onOpenDetails, s)} data-item-id={s.Id} class="shrink-0 w-48 scroll-m-4 group focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl">
                   {#if getItemImageUrl(s, 'portrait')}<img src={getItemImageUrl(s, 'portrait')} {@attach blurUp(itemBlurHash(s))} alt={s.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
                   <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate">{s.Name}</span>
-                  {#if s.ProductionYear}<span class="text-xs text-gray-500 truncate mt-0.5">{s.ProductionYear}</span>{/if}
+                  {#if s.ProductionYear}<span class="text-xs text-gray-400 truncate mt-0.5">{s.ProductionYear}</span>{/if}
                 </div>
               </button>
             {/each}
@@ -211,13 +248,13 @@
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.movies}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each movies as m (m.Id)}
-              <button onclick={() => onOpenDetails?.(m)} class="shrink-0 w-48 scroll-m-4 group focus:outline-none text-left">
+              <button onclick={() => leaveTo(onOpenDetails, m)} data-item-id={m.Id} class="shrink-0 w-48 scroll-m-4 group focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl">
                   {#if getItemImageUrl(m, 'portrait')}<img src={getItemImageUrl(m, 'portrait')} {@attach blurUp(itemBlurHash(m))} alt={m.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
                   <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate">{m.Name}</span>
-                  {#if m.ProductionYear}<span class="text-xs text-gray-500 truncate mt-0.5">{m.ProductionYear}</span>{/if}
+                  {#if m.ProductionYear}<span class="text-xs text-gray-400 truncate mt-0.5">{m.ProductionYear}</span>{/if}
                 </div>
               </button>
             {/each}
@@ -230,13 +267,13 @@
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.episodes}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each episodes as ep (ep.Id)}
-              <button onclick={() => onOpenDetails?.(ep)} class="shrink-0 w-80 scroll-m-4 group focus:outline-none text-left">
+              <button onclick={() => leaveTo(onOpenDetails, ep)} data-item-id={ep.Id} class="shrink-0 w-80 scroll-m-4 group focus:outline-none text-left">
                 <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl">
                   {#if getItemImageUrl(ep, 'landscape')}<img src={getItemImageUrl(ep, 'landscape')} {@attach blurUp(itemBlurHash(ep))} alt={ep.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
                   <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate">{ep.Name}</span>
-                  <span class="text-xs text-gray-500 truncate mt-0.5">
+                  <span class="text-xs text-gray-400 truncate mt-0.5">
                     {ep.SeriesName || ''}{#if ep.ParentIndexNumber !== undefined} · S{ep.ParentIndexNumber}:E{ep.IndexNumber || '?'}{/if}
                   </span>
                 </div>
@@ -252,7 +289,7 @@
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.people}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each people as p (p.Id)}
-              <button onclick={() => onOpenPerson?.(p)} class="shrink-0 w-40 scroll-m-4 group focus:outline-none text-center">
+              <button onclick={() => leaveTo(onOpenPerson, p)} data-item-id={p.Id} class="shrink-0 w-40 scroll-m-4 group focus:outline-none text-center">
                 <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl mx-auto">
                   {#if personImageUrl(session.serverUrl, p)}
                     <img src={personImageUrl(session.serverUrl, p)} {@attach blurUp(itemBlurHash(p))} alt={p.Name} class="w-full h-full object-cover" loading="lazy" />

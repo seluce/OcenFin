@@ -315,12 +315,43 @@
       const opts  = { headers: getAuthHeaders() };
       const fields = FIELDS;
 
-      // Start all 5 fetches at once — no sequential waiting
+      // Dispatch order is deliberate. Views + Resume go on the wire first — they release the UI and
+      // keep their priority on an HTTP/1.1 connection pool. Directly after them, still BEFORE the
+      // await they used to sit behind, the hero chain: it depends on nothing but uId and the
+      // headers, yet is the longest serial path on screen — loadHeroForYou is two round trips by
+      // construction (taste seeds, then the genre pool), so every round trip it queues behind is
+      // one more skeleton second before the banner appears. Until the chain decides, buildHero stays blocked (heroForYouPending) — same trade as
+      // before: a bit more skeleton time for the better hero, reserved space prevents shift-up.
       const pViews        = fetch(`${session.serverUrl}/Users/${uId}/Views`, opts);
       const pResume       = fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
+      heroForYouPending = true;
+      const pHeroForYou = loadHeroForYou(uId, opts)
+        .then(pool => { heroForYouPending = false; if (!heroBuilt && !applyHeroPool(pool)) buildHero(); })
+        .catch(() => { heroForYouPending = false; if (!heroBuilt) buildHero(); });
+      // Derive recommendations ("Because you watched X") from recently watched — independent of
+      // Views/Resume, so it also goes out before the await.
+      loadRecommendations(uId, opts, fields);
       const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
-      const pLatestMovies = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Movie&Limit=${ROW_LIMIT}&Fields=${fields}`, opts);
-      const pLatestSeries = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Series&Limit=${ROW_LIMIT}&Fields=${fields}`, opts);
+      // Both "recently added" rows ask by DateCreated rather than through /Items/Latest. Measured
+      // against a real library, that endpoint answers in 504 ms for Movie but 9951 ms for Series —
+      // same endpoint, same fields — and neither dropping the fields nor GroupItems=false changes it
+      // (9635 ms, 9132 ms), so the cost is in how the server resolves that type. The plain sort
+      // returned the same twelve titles in 197 ms. Series was the one that hurt; movies follow the
+      // same shape so both rows mean the same thing and are built the same way.
+      //
+      // The meanings are not identical for series: this lists series whose own entry is new, while
+      // Latest also surfaces a long-running one that just gained an episode. "Recently added" is
+      // what the rows are called, and new episodes are what Up next and Continue watching cover.
+      // For a movie the two coincide anyway — it has no episodes to gain.
+      //
+      // Deliberately NO played filter. "Recently added" is a statement about the library, not about
+      // what is left to watch — hiding what you have seen would misreport what actually arrived.
+      // Rows about what to watch next exist separately: Continue watching and Up next.
+      const latestQuery = (type) =>
+        `${session.serverUrl}/Users/${uId}/Items?IncludeItemTypes=${type}&Recursive=true` +
+        `&SortBy=DateCreated&SortOrder=Descending&Limit=${ROW_LIMIT}&Fields=${fields}&EnableTotalRecordCount=false`;
+      const pLatestMovies = fetch(latestQuery('Movie'), opts);
+      const pLatestSeries = fetch(latestQuery('Series'), opts);
       // History: recently watched movies/episodes. Fetch more (40), since series are then
       // collapsed to one entry each (buffer for a good mix).
       const pHistory      = fetch(`${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}&EnableTotalRecordCount=false`, opts);
@@ -344,16 +375,6 @@
         apiCache.dashboard.collections = collections;
       }).catch(() => {});
 
-      // Derive recommendations ("Because you watched X") from recently watched
-      loadRecommendations(uId, opts, fields);
-
-      // Kick off the "For You" hero (variant A) in parallel: it decides between the genre pool and
-      // the new-additions fallback. Until then buildHero is blocked (heroForYouPending) — a bit more
-      // skeleton time, but the better hero; the reserved space prevents shifting up.
-      heroForYouPending = true;
-      const pHeroForYou = loadHeroForYou(uId, opts)
-        .then(pool => { heroForYouPending = false; if (!heroBuilt && !applyHeroPool(pool)) buildHero(); })
-        .catch(() => { heroForYouPending = false; if (!heroBuilt) buildHero(); });
 
       // Load history + collapse by series
       pHistory.then(r => r.json()).then(async d => {
@@ -363,7 +384,7 @@
         const seriesIds = items.filter(i => i.Type === 'Series').map(i => i.Id);
         if (seriesIds.length) {
           try {
-            const r2 = await fetch(`${session.serverUrl}/Users/${uId}/Items?Ids=${seriesIds.join(',')}&Fields=ProductionYear,Status,EndDate`, opts);
+            const r2 = await fetch(`${session.serverUrl}/Users/${uId}/Items?Ids=${seriesIds.join(',')}&Fields=ProductionYear,Status,EndDate&EnableTotalRecordCount=false`, opts);
             // Enrichment only — on an error response keep the items we already have rather than
             // letting res.json() throw and lose the whole row.
             const info = r2.ok ? new Map(((await r2.json()).Items || []).map(s => [s.Id, s])) : new Map();
@@ -633,7 +654,9 @@
 
     <!-- HERO BANNER — rotating featured item -->
     {#if showHero && heroCurrent}
-      <div transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gray-900">
+      <!-- data-hero: the app's start focus (App.svelte) skips this section and takes the first
+           tile below it instead, so a session opens on a library rather than on a rotating title. -->
+      <div data-hero transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gray-900">
         <!-- Full-bleed backdrop: crossfade — the PREVIOUS image stays as a base,
              the new one fades in on top (no more dip-to-black). Blurhash → sharp. -->
         {#if prevHeroIndex >= 0 && prevHeroIndex !== heroIndex && heroItems[prevHeroIndex] && getHeroBackdrop(heroItems[prevHeroIndex])}

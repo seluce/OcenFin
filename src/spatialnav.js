@@ -252,6 +252,19 @@ function entryOf(group, dir, from) {
   const remembered = lastFocus.get(group);
   if (remembered && group.contains(remembered) && isVisible(remembered)
       && !remembered.closest('[data-hbar-trailing]')) return remembered;
+  // Opt-in [data-enter-first-fresh]: a group entered for the FIRST time — no remembered element yet
+  // — lands on its first focusable instead of on a geometric guess. Unlike data-enter-first above
+  // this sits AFTER the memory check, so returning to a group still restores where you were.
+  // The content area carries it: entering it from the sidebar with no history used to run the
+  // geometric pick from the sidebar entry's height, which lands wherever a row happens to overlap
+  // that band — a few cards into the row rather than at its start. That is only reachable when the
+  // start focus never got to place focus in the content (a key pressed while the dashboard was
+  // still loading), but it is exactly the jump that made the start focus get parked in the sidebar
+  // in the first place. See CLAUDE.md → D-pad navigation.
+  if (group.hasAttribute('data-enter-first-fresh')) {
+    const first = firstFocusable(group);
+    if (first) return first;
+  }
   // A trailing jump bar (the A-Z bar sits AFTER the grid on the right) is reached only by moving
   // into it from the grid — never as the landing spot when entering the group from outside (e.g.
   // the sidebar). Leading bars (settings category nav on the left) are NOT marked → stay valid.
@@ -425,7 +438,12 @@ export function createFocusManager(isEnabled) {
       if (entry) { focusEl(entry); return; }
     }
 
-    // 3) No focus at all yet → take the first focusable element
+    // 3) No focus at all yet → take the first focusable element.
+    // NOTE: this is NOT where the app's initial focus comes from. On start an $effect at the top of
+    // App.svelte places focus in the content (falling back to the sidebar); this path only catches a
+    // key pressed before that effect has a target, or after a view unmounted the focused node. It
+    // picks geometrically from `from`, which is then the synthetic {0,0,0,0} corner — so the sidebar
+    // wins, since it owns x=0. Don't "fix" the start focus here; fix it in that effect.
     if (!hasActive) {
       const any = firstFocusable(document.body);
       if (any) { focusEl(any); return; }

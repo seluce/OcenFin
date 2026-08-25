@@ -155,6 +155,13 @@
   {/if}
 
   <!-- NAV BUTTONS — activeNavId is $: reactive, the class is updated correctly -->
+  <!-- The active row deliberately has NO box-shadow. It used to carry shadow-lg shadow-blue-600/30,
+       which is precisely the case the edge-shadow note above rules out: a BLURRED shadow on an
+       element whose width animates is re-rasterized on every frame of the expand on the B4. That
+       rule was applied to the bar's own edge but never to the rows, so one blurred shadow kept
+       being re-blurred 300 ms long, every time. The focus ring stays — ring-4 has no blur radius,
+       so it rasterizes cheaply. Cost of dropping it: the active row is flat blue instead of blue
+       with a soft glow. -->
   <!-- flex-1 + min-h-0 + overflow-y-auto: with more entries than space, the list scrolls
        so even the bottom entry (e.g. Settings) always stays reachable. -->
   <!-- py-2 + scroll-my-2 on the buttons: the focus ring (ring-4) extends beyond the button
@@ -168,7 +175,7 @@
         onfocus={(e) => e.currentTarget.scrollIntoView({ block: 'nearest' })}
         class="w-full flex items-center gap-6 px-4 py-3.5 rounded-xl transition-colors focus:outline-none shrink-0 scroll-my-2
                {activeNavId === navItem.id
-                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 focus:ring-4 focus:ring-white'
+                 ? 'bg-blue-600 text-white focus:ring-4 focus:ring-white'
                  : 'text-gray-400 hover:bg-gray-800 hover:text-white focus:bg-gray-800 focus:text-white focus:ring-4 focus:ring-white'}"
       >
         <svg class="w-8 h-8 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

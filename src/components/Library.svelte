@@ -15,7 +15,8 @@
     reloadKey = 0,             // increment → discard the view cache + reload
     focusFirstOnLoad = false,  // when opened from the menu: focus the first card (not "Random")
     sharedReady = false,       // App level: shared profile active? (shows the "watch together" toggle)
-    partnerPlayedIds = null,   // set of IDs watched by BOTH (App loads, Library filters)
+    partnerPlayedIds = null,   // IDs watched by AT LEAST ONE member — a union, see App.svelte.
+                               // Filtering them out leaves what is new to both. (App loads, Library filters.)
     librarySorts = {},         // remembered sort per library
     displaySettings = {},      // backdropPreview, episodeCount
     onOpenDetails,             // (item) => void
@@ -320,7 +321,7 @@
     isFetchingMore = true;
     const myToken = loadToken;   // belongs to the CURRENT list — don't append anymore after a reload
     const start = firstLoadedIndex + currentItems.length;
-    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}`;
+    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}&EnableTotalRecordCount=false`;
     url += getFilterQuery();
     try {
       const res = await fetch(url, authOpts());
@@ -356,7 +357,7 @@
     const myToken = loadToken;   // belongs to the CURRENT list — don't prepend anymore after a reload
     const newStart = Math.max(0, firstLoadedIndex - libraryItemLimit);
     const count    = firstLoadedIndex - newStart;
-    const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}`;
+    const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}&EnableTotalRecordCount=false`;
     try {
       const res = await fetch(url, authOpts());
       if (res.ok && myToken === loadToken) {
@@ -660,7 +661,7 @@
             </div>
             <div class="mt-3 flex flex-col items-start w-full overflow-hidden">
               <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate block w-full">{item.Name}</span>
-              <span class="text-xs text-gray-500 group-focus:text-gray-400 block truncate w-full mt-0.5">{getItemSubtitle(item, i18n.t.today)}</span>
+              <span class="text-xs text-gray-400 group-focus:text-gray-300 block truncate w-full mt-0.5">{getItemSubtitle(item, i18n.t.today)}</span>
             </div>
           </button>
         {/each}

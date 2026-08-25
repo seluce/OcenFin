@@ -13,6 +13,8 @@
   // This component reports results via narrow callbacks.
   // ============================================================
   import { onDestroy } from 'svelte';
+  import { startQuickConnect as startQC } from '../quickconnect.js';
+  import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { i18n } from '../i18n.svelte.js';
   import { session } from '../session.svelte.js';
   import { focusOnMount, dlog } from '../utils.js';
@@ -53,15 +55,14 @@
   let password           = $state('');
   let qcCode    = $state(null);
   let qcQrSvg   = $state(null);
-  let qcSecret  = null;
-  let qcPolling = null;
+  let qcSession = null;   // { promise, cancel } from quickconnect.js — the flow itself lives there
 
   // Entry directly on the profile choice (profile switch or expired auto-login token):
   // users can be empty then → load once.
   $effect(() => { if (phase === 'users' && server && users.length === 0) onFetchUsers?.(); });
 
   // QC polling never outlives the view (login success or switch unmounts the component)
-  onDestroy(() => clearInterval(qcPolling));
+  onDestroy(() => qcSession?.cancel());
 
   /** Back key, called by App.handleGlobalBack (pattern like Collection.handleBackKey):
    *  true = consumed here (sub-dialog closed), false = App goes to the server selection. */
@@ -178,31 +179,100 @@
     }
   }
 
+  // Probe /System/Info/Public with a short timeout; returns the response only on a 2xx answer.
+  async function probeServer(url, ms = 4000) {
+    const ctrl  = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try { const r = await fetch(`${url}/System/Info/Public`, { signal: ctrl.signal }); return r.ok ? r : null; }
+    catch { return null; } finally { clearTimeout(timer); }
+  }
+
+  // An http:// URL that was DISCOVERED (or typed with the scheme by habit) may well have an https
+  // counterpart. Ask the server once, at the moment one is actually chosen — the LAN scan itself
+  // stays fast and http-only, and this costs a single round trip for the one server being kept.
+  // Two candidates, probed in parallel so the wait is one timeout and not two: the same port
+  // (Jellyfin behind a proxy that serves both) and 8920 (Jellyfin's own https port). The same port
+  // wins if both answer, since that is what was actually found. Returns the original URL unchanged
+  // when nothing answers — an http server stays http, it simply gets the badge.
+  async function upgradeToHttps(url) {
+    const m = url.match(/^http:\/\/([^/]+)$/i);
+    if (!m) return url;
+    const host = m[1].replace(/:\d+$/, '');
+    const port = m[1].match(/:(\d+)$/)?.[1];
+    const candidates = [];
+    if (port) candidates.push(`https://${host}:${port}`);
+    if (port !== '8920') candidates.push(`https://${host}:8920`);
+    if (!candidates.length) candidates.push(`https://${host}`);
+    const hits = await Promise.all(candidates.map(c => probeServer(c, 2500).then(r => r ? c : null)));
+    return hits.find(Boolean) || url;
+  }
+
+  // Turn what the user typed into a concrete server URL. A bare host (no scheme) is tried over
+  // HTTPS FIRST and only falls back to HTTP if that does not answer — so the encrypted default no
+  // longer depends on the user knowing to type "https://". An explicit scheme is always honoured:
+  // someone who deliberately typed http:// (a server with no cert) is not overridden.
+  // What to try for an input without a scheme, in order of preference. Jellyfin almost never sits
+  // on 443/80, so appending a scheme alone would probe the two ports it is least likely to answer
+  // on. Whatever the user DID supply always wins: an explicit port is used verbatim.
+  //   host:port  → exactly that, https first
+  //   1.2.3.4    → 8920 (Jellyfin https) then 8096 (Jellyfin http); an IP rarely has a proxy
+  //   my.domain  → 443 first (a reverse proxy on a real domain is the common case), then 8920,
+  //                then the plain ports — a domain is the one case where 443/80 are plausible
+  function schemeCandidates(input) {
+    if (/:\d+$/.test(input))                       return { https: [`https://${input}`], http: [`http://${input}`] };
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(input))     return { https: [`https://${input}:8920`], http: [`http://${input}:8096`] };
+    return { https: [`https://${input}`, `https://${input}:8920`],
+             http:  [`http://${input}:8096`, `http://${input}`] };
+  }
+
+  // First reachable candidate from a list, probed in PARALLEL so the wait is one timeout rather
+  // than one per candidate; list order decides which wins when several answer.
+  async function firstReachable(urls) {
+    const hits = await Promise.all(urls.map(u => probeServer(u, 3000).then(r => r ? { url: u, res: r } : null)));
+    return hits.find(Boolean) || null;
+  }
+
+  async function resolveServer(cleanUrl) {
+    if (/^https?:\/\//i.test(cleanUrl)) {
+      // Explicit http:// — from the discovery list or typed out of habit. Offer the encrypted
+      // counterpart before committing; if there is none, keep exactly what was asked for.
+      const target = cleanUrl.startsWith('http://') ? await upgradeToHttps(cleanUrl) : cleanUrl;
+      const res = await probeServer(target);
+      if (res) return { url: target, res };
+      if (target === cleanUrl) return null;
+      const orig = await probeServer(cleanUrl);          // upgrade probe raced us — fall back
+      return orig ? { url: cleanUrl, res: orig } : null;
+    }
+    const { https, http } = schemeCandidates(cleanUrl);
+    return (await firstReachable(https)) || (await firstReachable(http));
+  }
+
   async function addAndConnectServer(url) {
     if (!url.trim()) return;
     const cleanUrl = url.trim().replace(/\/$/, '');
 
-    // Already present?
-    const existing = savedServers.find(s => s.url === cleanUrl);
+    // Fast path: the exact input, or it with a scheme, is already a saved server.
+    const known = (u) => savedServers.find(s => s.url === u);
+    const existing = known(cleanUrl) || known('https://' + cleanUrl) || known('http://' + cleanUrl);
     if (existing) { await connectToServer(existing); return; }
 
-    // New server: test, then save
     serverConnectError = '';
     isConnecting       = true;
     try {
-      const ctrl  = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 6000);
-      const res   = await fetch(`${cleanUrl}/System/Info/Public`, { signal: ctrl.signal });
-      clearTimeout(timer);
-
-      if (res.ok) {
-        const data = await res.json();
-        const srv  = { id: 'srv_' + Date.now(), url: cleanUrl, name: data.ServerName || 'Jellyfin Server' };
+      const hit = await resolveServer(cleanUrl);
+      if (hit) {
+        // Resolution may have filled in a port or upgraded the scheme — check again before saving,
+        // otherwise typing "192.168.1.5" would add a second entry for a server already stored as
+        // https://192.168.1.5:8920.
+        const already = known(hit.url);
+        if (already) { await connectToServer(already); newServerUrl = ''; return; }
+        const data = await hit.res.json();
+        const srv  = { id: 'srv_' + Date.now(), url: hit.url, name: data.ServerName || 'Jellyfin Server' };
         onSaveServer?.(srv);
         await connectToServer(srv);
         newServerUrl = '';
       } else {
-        serverConnectError = i18n.t.errInvalid;
+        serverConnectError = i18n.t.errOffline;
       }
     } catch (e) {
       console.warn('[Server] connection failed:', e);
@@ -263,56 +333,30 @@
     } catch { loginError = i18n.t.errOffline; }
   }
 
-  // Quick Connect — login flow (code on the TV, confirmed on the phone)
+  // Quick Connect — code on the TV, confirmed on a phone that is already signed in. The flow
+  // (initiate, poll, exchange, clean up) lives in quickconnect.js; the watch-together picker runs
+  // the very same one.
   async function startQuickConnect() {
+    qcSession?.cancel();        // a double press must not leave the previous attempt polling
     loginError = '';
     showPasswordForm = false;
     showManualLogin  = false;
+    qcSession = startQC(session.serverUrl, clientAuthHeader, ({ code, qrSvg }) => { qcCode = code; qcQrSvg = qrSvg; });
     try {
-      const res = await fetch(`${session.serverUrl}/QuickConnect/Initiate`, {
-        headers: { 'Authorization': clientAuthHeader }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        qcCode   = data.Code;
-        qcSecret = data.Secret;
-        // QR that opens the Jellyfin web Quick Connect page with the code pre-filled — a phone that
-        // is already signed in to the web client then only has to confirm, no typing of the code.
-        try {
-          const { renderSVG } = await import('uqr');
-          qcQrSvg = renderSVG(`${session.serverUrl}/web/#/quickconnect?code=${encodeURIComponent(data.Code)}`, { ecc: 'M', border: 1 });
-        } catch (e) { console.warn('[OcenFin] QC QR generation failed', e); qcQrSvg = null; }
-        qcPolling = setInterval(async () => {
-          try {
-            const poll = await fetch(`${session.serverUrl}/QuickConnect/Connect?Secret=${qcSecret}`, {
-              headers: { 'Authorization': clientAuthHeader }
-            });
-            if (!poll.ok) return;   // code expired or server hiccup — keep polling, don't throw
-            const pd   = await poll.json();
-            if (pd.Authenticated) {
-              clearInterval(qcPolling);
-              const authRes = await fetch(`${session.serverUrl}/Users/AuthenticateWithQuickConnect`, {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': clientAuthHeader },
-                body:    JSON.stringify({ Secret: qcSecret })
-              });
-              if (authRes.ok) {
-                const authData = await authRes.json();
-                qcCode = qcQrSvg = null;
-                onDone?.(authData.User, authData.AccessToken);
-              }
-            }
-          } catch { }
-        }, 3000);
-      } else {
-        loginError = i18n.t.qcError;
-      }
-    } catch { loginError = i18n.t.networkError; }
+      const { user, token } = await qcSession.promise;
+      qcCode = qcQrSvg = null;
+      onDone?.(user, token);
+    } catch (err) {
+      if (err === 'cancelled') return;          // the user backed out — not an error to report
+      qcCode = qcQrSvg = null;
+      loginError = err === 'networkError' ? i18n.t.networkError : i18n.t.qcError;
+    }
   }
 
   function cancelQuickConnect() {
-    clearInterval(qcPolling);
-    qcCode = qcSecret = qcQrSvg = null;
+    qcSession?.cancel();
+    qcSession = null;
+    qcCode = qcQrSvg = null;
   }
 </script>
 
@@ -346,7 +390,7 @@
               >
                 <div class="overflow-hidden">
                   <span class="text-xl font-bold text-white block truncate">{server.name}</span>
-                  <span class="text-sm text-gray-400 block mt-0.5 truncate">{server.url}</span>
+                  <span class="text-sm text-gray-400 block mt-0.5 truncate">{server.url}{#if server.url.startsWith('http://')}<span title={i18n.t.insecureHttpHint} class="ml-2 inline-block px-1.5 py-0.5 rounded bg-yellow-900/70 text-yellow-300 text-[0.65rem] font-bold align-middle">HTTP</span>{/if}</span>
                 </div>
                 {#if isConnecting && pendingServer?.id === server.id}
                   <div class="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin shrink-0 ml-4"></div>
@@ -466,7 +510,7 @@
           <!-- Divider -->
           <div class="flex items-center gap-3">
             <div class="flex-1 h-px bg-gray-700"></div>
-            <span class="text-gray-500 text-sm">{i18n.t.serverManualEntry}</span>
+            <span class="text-gray-400 text-sm">{i18n.t.serverManualEntry}</span>
             <div class="flex-1 h-px bg-gray-700"></div>
           </div>
 
@@ -476,7 +520,7 @@
               type="text"
               bind:value={newServerUrl}
               onkeydown={(e) => e.key === 'Enter' && addAndConnectServer(newServerUrl)}
-              placeholder="z.B. http://192.168.1.100:8096"
+              placeholder={i18n.t.serverAddressPlaceholder}
               class="flex-1 bg-gray-900 text-white text-lg p-4 rounded-xl border border-gray-600
                      focus:outline-none focus:ring-4 focus:ring-blue-500"
             />
@@ -515,23 +559,7 @@
       {#if qcCode}
         <div class="bg-gray-800 p-10 rounded-2xl shadow-xl w-full {qcQrSvg ? 'max-w-3xl' : 'max-w-xl'} text-center border border-gray-700">
           <h2 class="text-3xl font-bold text-white mb-8">{i18n.t.quickConnect}</h2>
-          <div class="flex items-center justify-center gap-10 mb-8">
-            <!-- Code method (left) -->
-            <div class="flex-1 flex flex-col items-center gap-4">
-              <div class="bg-gray-900 border-2 border-blue-500 rounded-lg py-6 px-6 w-full">
-                <span class="text-6xl font-mono font-bold text-white tracking-widest">{qcCode}</span>
-              </div>
-              <p class="text-gray-400 text-base leading-snug">{i18n.t.qcInstruction}</p>
-            </div>
-            {#if qcQrSvg}
-              <!-- QR method (right) -->
-              <div class="flex flex-col items-center gap-3 shrink-0">
-                <div class="rounded-xl bg-white p-3 [&>svg]:block [&>svg]:w-full [&>svg]:h-full"
-                     style="width:240px;height:240px;">{@html qcQrSvg}</div>
-                <p class="text-gray-400 text-base leading-snug max-w-[240px]">{i18n.t.qcQrHint}</p>
-              </div>
-            {/if}
-          </div>
+          <QuickConnectPanel code={qcCode} qrSvg={qcQrSvg} class="mb-8" />
           <button onclick={cancelQuickConnect} {@attach focusOnMount()}
             class="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-4 rounded-xl
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">
@@ -587,7 +615,7 @@
           <input
             type="password"
             bind:value={manualPassword}
-            placeholder="Passwort"
+            placeholder={i18n.t.password}
             onkeydown={(e) => e.key === 'Enter' && authenticateUser(manualUsername, manualPassword)}
             class="w-full bg-gray-900 text-white text-xl p-5 rounded-xl mb-6 border border-gray-600
                    focus:outline-none focus:ring-4 focus:ring-blue-500"

@@ -211,6 +211,24 @@ export function getItemImageUrl(item, format = 'portrait', preferThumb = false) 
 // Jellyfin sets Played on series/seasons/collections only once ALL contained titles are watched
 // — exactly the desired semantics. Deliberately NO unwatched counter: it would visually
 // duplicate the episode counter in the top right.
+// Card image with fallbacks — Search and Details need more than the plain getItemImageUrl
+// above: episodes prefer their own Primary in landscape, anything falls back to the backdrop,
+// portrait falls back to the series poster. Deliberately separate from getItemImageUrl (different
+// sizing and fallback semantics); both components carried identical private copies of this.
+export function getItemImageUrlWithFallbacks(item, format = 'portrait') {
+  if (format === 'landscape') {
+    if (item.Type === 'Episode' && item.ImageTags?.Primary)
+      return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
+    if (item.BackdropImageTags?.length > 0)
+      return `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
+  }
+  if (item.ImageTags?.Primary)
+    return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&quality=80&format=webp`;
+  if (item.SeriesPrimaryImageTag)
+    return `${session.serverUrl}/Items/${item.SeriesId}/Images/Primary?tag=${item.SeriesPrimaryImageTag}&fillHeight=400&quality=80&format=webp`;
+  return null;
+}
+
 export function itemBadge(item) {
   return item?.UserData?.Played ? { check: true } : null;
 }
@@ -456,9 +474,25 @@ function _stringify(args) {
     try { return JSON.stringify(a); } catch { return String(a); }
   }).join(' ');
 }
+// The buffer is SHARED — the on-screen log view and the QR code on the status page. Stream and
+// subtitle URLs embed the access token as a query parameter (Jellyfin requires that for static
+// streams), and the player logs such URLs — so an unmasked buffer handed out server address plus
+// a LIVE token to anyone who scanned a shared log. Redact at this one boundary and every present
+// and future log line is covered; the browser console keeps full URLs for local development.
+function _redactSecrets(msg) {
+  let out = msg;
+  if (session.token && session.token.length >= 8) out = out.split(session.token).join('[token]');
+  // Belt and braces for secrets that are NOT the current session token — member-profile tokens,
+  // lines logged before a re-login, the QuickConnect secret. Mask the api-key query parameter, the
+  // MediaBrowser Token="..." / Emby Token="..." header form, and the QuickConnect ?Secret=.
+  return out
+    .replace(/([?&](?:ApiKey|api_key)=)[^&"'\s\\]+/gi, '$1[token]')
+    .replace(/([?&]Secret=)[^&"'\s\\]+/gi, '$1[secret]')
+    .replace(/(Token=")[^"]+(")/gi, '$1[token]$2');
+}
 function _pushLog(level, args) {
   try {
-    _logBuffer.push({ t: Date.now(), level, msg: _stringify(args) });
+    _logBuffer.push({ t: Date.now(), level, msg: _redactSecrets(_stringify(args)) });
     if (_logBuffer.length > LOG_BUFFER_MAX) _logBuffer.shift();
   } catch {}
 }
@@ -563,9 +597,12 @@ export function installConnectionGuard() {
       if (isServer && res.ok && session.connectionLost) session.connectionLost = false;
       // 401 is a SUCCESSFUL response, so it never reaches the catch below — without this the app
       // kept running against a dead token: empty rows, placeholder posters, playback failing, and
-      // no way back to the sign-in screen short of restarting. 403 behaves the same way here.
-      // NOT 404: missing items, absent plugin endpoints and missing images are all normal.
-      if (isServer && (res.status === 401 || res.status === 403) && usesSessionToken(init)) {
+      // no way back to the sign-in screen short of restarting.
+      // ONLY 401 (token invalid). NOT 403: Jellyfin returns 403 for policy-gated actions with a
+      // perfectly valid token — SyncPlay with SyncPlayHasAccess:None is the common one, and
+      // treating that as a dead session logged the user out every time they touched the feature.
+      // NOT 404 either: missing items, absent plugin endpoints and missing images are all normal.
+      if (isServer && res.status === 401 && usesSessionToken(init)) {
         session.authLost = true;
       }
       return res;
@@ -596,6 +633,28 @@ if (typeof console !== 'undefined' && !console.__ocenfinLogHook) {
   console.error = (...a) => { _pushLog('error', a); _origErr(...a); };
   console.warn  = (...a) => { _pushLog('warn', a); _origWarn(...a); };
   console.__ocenfinLogHook = true;
+}
+
+// --- Shape guards for persisted state ---------------------------------------------------------
+// Every JSON.parse of localStorage is already wrapped in try/catch, so MALFORMED data is handled.
+// What was not: VALID json of the wrong shape. `|| '[]'` only rescues a missing key — a stored
+// `{}` parses fine, is truthy, and then reaches code that calls .filter() on it. Verified crashes:
+// savedServers as an object kills the startup, and navOrder/navHidden as objects or numbers take
+// down the sidebar (for..of on a non-iterable, .includes on a non-array).
+//
+// Guarding at the LOAD boundary rather than at each consumer: one place decides the shape, and
+// everything downstream can keep assuming it. Storage can hold anything — a half-written value
+// after a power cut, a hand-edited entry, a format from a much older version — and on a TV a
+// startup crash from bad storage is unrecoverable without a reinstall, since there is no console
+// to clear it from.
+export const asArray  = (v, fb = []) => (Array.isArray(v) ? v : fb);
+export const asObject = (v, fb = {}) =>
+  (v && typeof v === 'object' && !Array.isArray(v) ? v : fb);
+// Numbers arrive as strings from older versions and as anything at all from a corrupted store;
+// clamp so a nonsense value cannot become NaN in a setTimeout (which fires immediately, forever).
+export function asNumber(v, fb, min = -Infinity, max = Infinity) {
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fb;
 }
 
 // --- Performance instrumentation (opt-in, shares the debug switch) ---------------------------

@@ -1,9 +1,10 @@
 <script>
   import { i18n, LANGUAGES } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
-  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint } from '../utils.js';
-  import { getRememberedTrack } from '../trackmemory.js';
+  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
+  import { matchRememberedAudioIndex, matchRememberedSubtitleIndex } from '../trackmemory.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
+  import { buildPlayQueue } from '../playback.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
@@ -17,7 +18,8 @@
     spoilerProtection = true,   // slightly obscure thumbnails of unwatched episodes
     detailsBackdrop = true,     // show the hero backdrop on the detail page (own toggle, decoupled from reduceAnimations)
     detailsLogo = false,        // title as a logo graphic instead of text (falls back to text if no logo exists)
-    onClose, onLibChanged, onOpenItemById, onOpenPerson, onPlayVideo,   // callback props (instead of events)
+    focusItemId = null, focusScrollTop = 0,   // where to land when App brings us back (person page)
+    onClose, onLibChanged, onOpenPerson, onPlayVideo,   // callback props (instead of events)
   } = $props();
 
   let fullItem     = $state(null);
@@ -103,17 +105,12 @@
     let audioSet = false, subSet = false;
 
     if (seriesId && playbackPrefs.rememberAudioTrack) {
-      const remA = getRememberedTrack(seriesId, 'audio');
-      if (remA) { const t = streams.find(s => s.Type === 'Audio' && s.Language === remA); if (t) { selectedAudioIndex = t.Index; audioSet = true; } }
+      const a = matchRememberedAudioIndex(streams, seriesId);
+      if (a != null) { selectedAudioIndex = a; audioSet = true; }
     }
     if (seriesId && playbackPrefs.rememberSubtitleTrack) {
-      const remS = getRememberedTrack(seriesId, 'subtitle');
-      if (remS === 'off') { selectedSubtitleIndex = -1; subSet = true; }
-      else if (remS?.lang) {
-        const subs = streams.filter(s => s.Type === 'Subtitle' && s.Language === remS.lang);
-        const t = subs.find(s => !!s.IsForced === remS.forced && !!s.IsHearingImpaired === remS.sdh) || subs[0];
-        if (t) { selectedSubtitleIndex = t.Index; subSet = true; }
-      }
+      const st = matchRememberedSubtitleIndex(streams, seriesId);
+      if (st != null) { selectedSubtitleIndex = st; subSet = true; }
     }
 
     if (!audioSet) {
@@ -271,7 +268,11 @@
     // Browser/development (no webOS) or no YouTube URL → via overlay as before.
     if (videoId) {
       trailerEmbedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&playsinline=1&modestbranding=1`;
-    } else {
+    } else if (/^https?:\/\//i.test(url)) {
+      // Raw fallback = a direct video-file trailer. RemoteTrailers[].Url is EXTERNAL metadata
+      // (TMDb/NFO scrape), so accept only an http(s) URL here — a javascript:/data: value must
+      // never reach the <video>/<iframe> src below. The iframe branch is additionally pinned to
+      // our own youtube-nocookie URLs (see the template), so external input can never select it.
       trailerEmbedUrl = url;
     }
   }
@@ -333,7 +334,18 @@
 
   // Reactive: reloads as soon as the 'item' prop changes. untrack() so the effect reacts ONLY to
   // item — not to stores/user that loadFullDetails reads synchronously internally.
-  $effect(() => { const id = item?.Id; if (id) untrack(() => loadFullDetails(id)); });
+  // A change of `item` means a FRESH entry from App, never internal navigation — so the chain
+  // starts over and Back leads back out rather than sideways into the previous visit.
+  $effect(() => {
+    const id = item?.Id;
+    if (!id) return;
+    untrack(() => {
+      navStack = [];
+      restorePending = !!focusItemId;   // set BEFORE the load, so the play button holds back
+      loadFullDetails(id);
+      restoreSpot({ focusId: focusItemId, scrollTop: focusScrollTop });
+    });
+  });
 
   // Theme music (opt-in): resolve per item and per scope. Movie ↔ scope 'movies', the whole
   // series family (Series/Season/Episode) ↔ scope 'series'; anything else never plays. The module
@@ -469,19 +481,12 @@
   // seasons, specials/season 0 excluded); season → only from this season. Uniformly distributed, incl. already
   // watched ones (deliberately: comfort rewatch). Ends up in the Player via onPlayVideo like handlePlay.
   async function playRandomEpisode() {
-    const isSeries = fullItem.Type === 'Series';
-    const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}`
-      + `&IncludeItemTypes=Episode${isSeries ? '&Recursive=true' : ''}&EnableTotalRecordCount=false`;
-    try {
-      const res  = await fetch(url, { headers: getAuthHeaders() });
-      if (!res.ok) { console.warn('play random episode: HTTP', res.status); return; }
-      const data = await res.json();
-      let pool = (data.Items || []).filter(e => e.Type === 'Episode');
-      if (isSeries) pool = pool.filter(e => e.ParentIndexNumber !== 0);   // exclude specials (season 0)
-      if (!pool.length) return;
-      const pick = pool[Math.floor(Math.random() * pool.length)];
-      onPlayVideo?.({ item: pick, audioIndex: -1, subtitleIndex: -1 });
-    } catch (e) { console.error(e); }
+    // Shared expansion (playback.js): all episodes across seasons for a series, this season only
+    // for a season, specials excluded — the identical pool the old inline query built; the random
+    // draw ignores buildPlayQueue's ordering.
+    const pool = await buildPlayQueue([fullItem], { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+    if (!pool.length) return;
+    onPlayVideo?.({ item: pool[Math.floor(Math.random() * pool.length)], audioIndex: -1, subtitleIndex: -1 });
   }
 
   async function togglePlayed() {
@@ -518,27 +523,109 @@
     }
   }
 
-  // FIX: only dispatch — the reactive $: if(item) in this file takes over the loading.
-  // No direct loadFullDetails() here anymore, otherwise a duplicate API call.
-  function navigateTo(id) {
+  // Navigating INSIDE this page — a season from a series, an episode from a season, the series or
+  // season from the breadcrumb, another title from "more like this". All of it stays here rather
+  // than going through App: `item` is the ENTRY point and App's return logic depends on it staying
+  // that way (which card to focus again, whether the opened title still matches the library's
+  // filter). What is currently shown is `fullItem`, and that is what this chain tracks.
+  //
+  // Ids, not objects: coming back reloads through the same path, so related titles, extras and the
+  // rest are rebuilt as well instead of a restored item sitting next to stale lists.
+  // Each step also carries where you were standing on that page — the card and how far it was
+  // scrolled — so coming back lands exactly there instead of at the top, as everywhere else in
+  // the app.
+  let navStack = [];
+  let scrollEl = $state();
+  // While a spot is being restored the play button must NOT grab focus on mount, or it would win
+  // the race against the card, which only exists once its row has loaded.
+  //
+  // Deliberately NOT $state, and deliberately never cleared while a restore runs. `{@attach}` is a
+  // reactive expression: making this a rune meant Svelte tore the attachment down and built it
+  // again the moment the flag flipped back — and building it CALLS it, so the play button grabbed
+  // focus right after the card had been given it. Measured with a probe: mount ran with
+  // enabled=false (the brake worked), then flipping the flag ran it again with enabled=true and
+  // moved focus. It was never the brake that failed, it was releasing it.
+  //
+  // As a plain variable it is read once, when the button mounts. Every ENTRY point sets it — a
+  // forward jump to false, a step back or a hand-off from App to true — so it is always correct at
+  // that moment and nothing has to touch it in between.
+  let restorePending = false;
+  // Passed to {@attach} as the function ITSELF, never as focusOnMount(!restorePending): a call in
+  // the template would read the flag there, which both makes Svelte demand $state for it and brings
+  // back the bug that costs — as $state the attachment is rebuilt when the flag flips, and building
+  // an attachment RUNS it, so the play button stole focus right after the card had it. Read here,
+  // the flag is evaluated once, at mount.
+  const focusUnlessRestoring = (node) => { if (!restorePending) node.focus(); };
+  const NAV_STACK_MAX = 30;   // the app runs for days; series ↔ season ping-pong must not grow forever
+
+  // rememberSpot=false for the suggestions row: /Items/{id}/Similar has to be scored by the server
+  // and lands well after the rest of the page, measured still absent after 24 tries on the device.
+  // Waiting that long means either no focus at all meanwhile, or focus visibly jumping from the top
+  // of the page down to the row once it finally arrives. Landing at the top is the better answer
+  // there, and an honest one: the row you came from was not on screen yet anyway. The step is still
+  // pushed, so Back keeps stepping up the chain — only the spot is not restored.
+  function navigateTo(id, rememberSpot = true) {
+    restorePending = false;   // going forward: the play button is the right landing spot again
+    if (fullItem?.Id) {
+      navStack.push({
+        id: fullItem.Id,
+        focusId: rememberSpot ? (document.activeElement?.getAttribute?.('data-item-id') ?? null) : null,
+        scrollTop: rememberSpot ? (scrollEl?.scrollTop || 0) : 0,
+      });
+      if (navStack.length > NAV_STACK_MAX) navStack.shift();
+    }
     isLoading = true;
     fullItem  = null;   // show the spinner immediately
-    onOpenItemById?.(id);
+    loadFullDetails(id);
   }
 
-  function getItemImageUrl(targetItem, format = "portrait") {
-    if (format === 'landscape') {
-      if (targetItem.Type === 'Episode' && targetItem.ImageTags?.Primary)
-        return `${session.serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&maxWidth=600&quality=80&format=webp`;
-      if (targetItem.BackdropImageTags?.length > 0)
-        return `${session.serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=600&quality=80&format=webp`;
-    }
-    if (targetItem.ImageTags?.Primary)
-      return `${session.serverUrl}/Items/${targetItem.Id}/Images/Primary?tag=${targetItem.ImageTags.Primary}&fillHeight=400&quality=80&format=webp`;
-    if (targetItem.SeriesPrimaryImageTag)
-      return `${session.serverUrl}/Items/${targetItem.SeriesId}/Images/Primary?tag=${targetItem.SeriesPrimaryImageTag}&fillHeight=400&quality=80&format=webp`;
-    return null;
+  // Back: one level up inside the page first. Returns false once the chain is empty, which is the
+  // parent's signal to leave Details altogether — same contract as Collection.handleBackKey().
+  export function handleBackKey() {
+    const prev = navStack.pop();
+    if (prev === undefined) return false;
+    restorePending = !!prev.focusId;
+    isLoading = true;
+    fullItem  = null;
+    loadFullDetails(prev.id);
+    restoreSpot(prev);
+    return true;
   }
+
+  // The row holding that card is fetched separately and arrives after the title itself, so this
+  // waits for it — bounded attempts, no interval, in the shape App uses for the same job. Scroll
+  // first, then focus: focusing alone would only drag the card barely into view and leave the page
+  // somewhere else. Stands down as soon as anything else holds focus, so it cannot fight a user
+  // who navigated on, and gives up quietly if that card is gone.
+  async function restoreSpot({ focusId, scrollTop }) {
+    if (!focusId) return;
+    const myToken = detailToken;
+    let tries = 0, lastTop = null, settled = 0;
+
+    // Applying the offset once is not enough: the page arrives in stages, so with rows still
+    // missing below it gets clamped (900 became 602 in a measurement) and with a row arriving above
+    // the card slides down. So it re-applies until the card's position and the offset hold still.
+    // Only rows that are there quickly are restored at all — see navigateTo's rememberSpot.
+    const attempt = () => {
+      if (myToken !== detailToken) return;             // a newer navigation took over
+      const card = scrollEl?.querySelector(`[data-item-id="${focusId}"]`);
+      const active = document.activeElement;
+      if (active && active !== document.body && active !== card) return;   // focus moved on
+      if (card) {
+        scrollEl.scrollTop = scrollTop;                // the view first, then the focus
+        card.focus();
+        const pos = card.offsetTop;
+        settled = (pos === lastTop && scrollEl.scrollTop === scrollTop) ? settled + 1 : 0;
+        lastTop = pos;
+        if (settled >= 3) return;                      // nothing moved any more — done
+      }
+      if (++tries < 24) setTimeout(attempt, 50);       // ~1.2 s, ample for those rows
+    };
+    await tick();
+    attempt();
+  }
+
+
 
   function getItemBackdropUrl(targetItem) {
     if (targetItem.BackdropImageTags?.length > 0)
@@ -594,7 +681,7 @@
     <!-- scroll-padding-top: spatial navigation scrolls with block:'nearest', which parks an
          element flush against the top edge — the back button would sit at the very screen
          edge with its ring-4 focus ring clipped. Same value as in Library/Settings. -->
-    <div class="flex-1 overflow-y-auto hide-scrollbar [scroll-padding-top:4rem]">
+    <div bind:this={scrollEl} class="flex-1 overflow-y-auto hide-scrollbar [scroll-padding-top:4rem]">
 
       <!-- ════ CINEMATIC HERO BANNER — the backdrop scrolls along, fading into the app gray at bottom/left ════ -->
       <div class="relative">
@@ -613,7 +700,7 @@
 
           <!-- BREADCRUMB + BACK -->
       <div class="flex items-center gap-6 mb-10" data-focus-group="details-top">
-        <button onclick={() => onClose?.()}
+        <button onclick={() => { if (!handleBackKey()) onClose?.(); }}
           class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
           {i18n.t.back}
         </button>
@@ -644,11 +731,30 @@
         </div>
 
         <div class="flex-1 max-w-4xl" data-focus-group="details-hero">
-          {#if detailsLogo && getItemLogoUrl(fullItem)}
-            <img src={getItemLogoUrl(fullItem)} alt={fullItem.Name} class="max-h-28 max-w-full w-auto object-contain object-left mb-4 drop-shadow-lg" />
+          <!-- line-clamp-2: an unbounded title wraps and pushes the description and the action
+               buttons down, and the hero area is capped at 95vh — so they can leave the screen. -->
+          <!-- Off by default on purpose: the poster to the left already carries the title as
+               artwork, so a logo beside it shows the same thing twice. Kept as a positive opt-in
+               ("show the logo") rather than an inverted "show text instead" — an inverted label
+               reads as a double negative when switched off, and flipping the meaning of a key that
+               is already persisted would silently invert it for everyone who had set it. -->
+          {#if detailsLogo}
+            <!-- Reserved slot, only while logos are enabled. A logo's height depends entirely on
+                 its aspect ratio — a wide wordmark is short, a stacked emblem is tall — and a
+                 title without a logo falls back to text at a third height again. Without a floor,
+                 the meta row and the play buttons sat at a different height on every title you
+                 opened. min-h (not a fixed h) keeps the common cases identical while still letting
+                 a rare two-line fallback title have its second line, and costs nothing when the
+                 option is off. items-end pins the baseline, so the gap below is always the same. -->
+            <div class="min-h-28 flex items-end mb-4">
+              {#if getItemLogoUrl(fullItem)}
+                <img src={getItemLogoUrl(fullItem)} alt={fullItem.Name}
+                     class="max-h-28 max-w-full w-auto object-contain object-left-bottom drop-shadow-lg" />
+              {:else}
+                <h1 class="text-6xl font-bold text-white drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
+              {/if}
+            </div>
           {:else}
-            <!-- line-clamp-2: an unbounded title wraps and pushes the description and the action
-                 buttons down, and the hero area is capped at 95vh — so they can leave the screen. -->
             <h1 class="text-6xl font-bold text-white mb-4 drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
           {/if}
 
@@ -704,7 +810,7 @@
 
           <!-- ACTION BUTTONS -->
           <div class="flex items-center gap-4 mb-12">
-            <button onclick={handlePlay} {@attach focusOnMount()}
+            <button onclick={handlePlay} {@attach focusUnlessRestoring}
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-2xl px-12 py-4 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-3 shadow-lg">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
@@ -946,7 +1052,7 @@
           </h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each relatedItems as ep (ep.Id)}
-              <button onclick={() => { fullItem = null; loadFullDetails(ep.Id); }}
+              <button onclick={() => navigateTo(ep.Id)} data-item-id={ep.Id}
                 class="shrink-0 scroll-m-4 group flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
                 <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
                   {#if getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')}
@@ -993,7 +1099,7 @@
                   {/if}
                 </div>
                 <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full">{ex.Name}</span>
-                {#if ex.RunTimeTicks}<span class="text-xs text-gray-500">{getRuntimeMinutes(ex.RunTimeTicks)}</span>{/if}
+                {#if ex.RunTimeTicks}<span class="text-xs text-gray-400">{getRuntimeMinutes(ex.RunTimeTicks)}</span>{/if}
               </button>
             {/each}
           </div>
@@ -1006,7 +1112,7 @@
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.cast}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each castMembers as person (person.Id)}
-              <button onclick={() => onOpenPerson?.(person)} class="shrink-0 w-36 scroll-m-4 group focus:outline-none text-center">
+              <button onclick={() => onOpenPerson?.(person)} data-item-id={person.Id} class="shrink-0 w-36 scroll-m-4 group focus:outline-none text-center">
                 <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto group-focus:scale-105 transition-transform duration-200">
                   {#if personImageUrl(session.serverUrl, person)}
                     <img src={personImageUrl(session.serverUrl, person)} {@attach blurUp(itemBlurHash(person))} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
@@ -1017,7 +1123,7 @@
                   {/if}
                 </div>
                 <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full block">{person.Name}</span>
-                {#if person.Role}<span class="text-xs text-gray-500 truncate w-full block">{person.Role}</span>{/if}
+                {#if person.Role}<span class="text-xs text-gray-400 truncate w-full block">{person.Role}</span>{/if}
               </button>
             {/each}
           </div>
@@ -1030,7 +1136,7 @@
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.similar}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each similarItems as si (si.Id)}
-              <button onclick={() => navigateTo(si.Id)} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
+              <button onclick={() => navigateTo(si.Id, false)} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-transform duration-200">
                   {#if getItemImageUrl(si, 'portrait')}
                     <img src={getItemImageUrl(si, 'portrait')} {@attach blurUp(itemBlurHash(si))} alt={si.Name} class="w-full h-full object-cover" loading="lazy" />
@@ -1072,7 +1178,7 @@
     </button>
 
     <!-- Fullscreen: the video fills the screen -->
-    {#if trailerEmbedUrl.includes('/embed/')}
+    {#if trailerEmbedUrl.startsWith('https://www.youtube-nocookie.com/embed/')}
       <iframe
         src={trailerEmbedUrl}
         class="w-full h-full"
@@ -1114,13 +1220,13 @@
           <!-- File: container / size / total bitrate -->
           <div class="grid grid-cols-3 gap-3">
             {#if src.Container}
-              <div><div class="text-gray-500 text-xs uppercase tracking-wider">Container</div><div class="text-white font-semibold uppercase">{src.Container}</div></div>
+              <div><div class="text-gray-400 text-xs uppercase tracking-wider">Container</div><div class="text-white font-semibold uppercase">{src.Container}</div></div>
             {/if}
             {#if formatBytes(src.Size)}
-              <div><div class="text-gray-500 text-xs uppercase tracking-wider">{i18n.t.miSize}</div><div class="text-white font-semibold">{formatBytes(src.Size)}</div></div>
+              <div><div class="text-gray-400 text-xs uppercase tracking-wider">{i18n.t.miSize}</div><div class="text-white font-semibold">{formatBytes(src.Size)}</div></div>
             {/if}
             {#if formatBitrate(src.Bitrate)}
-              <div><div class="text-gray-500 text-xs uppercase tracking-wider">Bitrate</div><div class="text-white font-semibold">{formatBitrate(src.Bitrate)}</div></div>
+              <div><div class="text-gray-400 text-xs uppercase tracking-wider">Bitrate</div><div class="text-white font-semibold">{formatBitrate(src.Bitrate)}</div></div>
             {/if}
           </div>
 

@@ -1,5 +1,7 @@
 <script>
   import { i18n, setLang, LANGUAGES } from '../i18n.svelte.js';
+  import { startQuickConnect as startQC } from '../quickconnect.js';
+  import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
            AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn, uiFade, dropTrapOnOutro } from '../utils.js';
   import { session } from '../session.svelte.js';
@@ -20,8 +22,10 @@
     publicUsers         = [],      // selectable profiles (public list from the server)
     sharedProfile       = { enabled: false, members: [] },
     sharedTokens        = {},      // own token store for watch together
+    clientAuthHeader    = '',      // auth header without a user reference (Quick Connect Initiate)
     onSharedToggle       = () => {},
-    onSharedSetMember    = async () => 'error',   // (slot, user, pw) → 'ok'|'needPassword'|'error'
+    onSharedSetMember    = async () => 'error',   // (slot, user, pw, presetToken)
+                                                 //   → 'ok'|'needPassword'|'sameUser'|'error'
     onSharedRemoveMember = () => {},
     // Callback props (replace the former events)
     onToggleSave, onSwitchUser, onLogout, onScreensaverChange, onReduceAnimationsChange,
@@ -73,19 +77,23 @@
     remoteActionPref = pref;
     openModal('remoteAction');
   }
-  function setRemoteAction(key) {
-    onPlaybackPrefsChange?.({ ...playbackPrefs, [remoteActionPref]: key });
-    closeModal();
-  }
-
-  function setAudioLang(key) {
-    onPlaybackPrefsChange?.({ ...playbackPrefs, audioLanguage: key });
-    closeModal();
-  }
-  function setSubtitleLang(key) {
-    onPlaybackPrefsChange?.({ ...playbackPrefs, subtitleLanguage: key });
-    closeModal();
-  }
+  // ── One option-picker modal for every "choose one value for a pref" dialog ────────────────
+  // audioLang / subtitleLang / remoteAction shared three near-identical modal bodies that had
+  // already drifted from the app-language picker in padding and focus-ring style — the next tweak
+  // would predictably have landed in some copies and not others. Each entry names its title,
+  // options, current value and where the pick goes; the markup exists once. The app-language
+  // modal stays separate on purpose (flags, immediate setLang semantics).
+  let pickerModals = $derived({
+    audioLang:    { title: i18n.t.audioLanguage,      options: audioLangOptions,
+                    value: playbackPrefs.audioLanguage,
+                    set: (k) => onPlaybackPrefsChange?.({ ...playbackPrefs, audioLanguage: k }) },
+    subtitleLang: { title: i18n.t.subtitleLanguage,   options: subtitleLangOptions,
+                    value: playbackPrefs.subtitleLanguage,
+                    set: (k) => onPlaybackPrefsChange?.({ ...playbackPrefs, subtitleLanguage: k }) },
+    remoteAction: { title: i18n.t.remoteButtonAction, options: remoteActionOptions,
+                    value: playbackPrefs[remoteActionPref],
+                    set: (k) => onPlaybackPrefsChange?.({ ...playbackPrefs, [remoteActionPref]: k }) },
+  });
 
   function togglePlaybackPref(key) {
     onPlaybackPrefsChange?.({ ...playbackPrefs, [key]: !playbackPrefs[key] });
@@ -137,6 +145,48 @@
   let sharedBusy  = $state(false);
   let sharedError = $state('');
   let sharedMembers = $derived([0, 1].map(i => sharedProfile.members?.[i] || null));
+  let sharedManualName = $state('');
+
+  // Age-restricted profile. Derived from Jellyfin's OWN statement about the account rather than an
+  // app-side switch: MaxParentalRating is set exactly when an administrator limited what this
+  // profile may watch, which is the same intent. Nothing new to configure, and it follows the
+  // server if the restriction is lifted.
+  //
+  // This tidies the interface; it is NOT a security boundary. Anyone at the television can pick a
+  // different profile, so it only holds as far as the other profiles are password-protected.
+  const restrictedProfile = $derived(selectedUser?.Policy?.MaxParentalRating != null);
+  let sharedQcCode  = $state(null);
+  let sharedQcQr    = $state(null);
+  let sharedQcSess  = null;
+
+  // Quick Connect for a watch-together member. The strongest option of the three: the partner
+  // confirms on their OWN device, so their password is never typed on the TV nor known to whoever
+  // is setting this up — and it reaches hidden profiles too, since no list is involved.
+  async function startSharedQuickConnect() {
+    sharedQcSess?.cancel();
+    sharedError = ''; sharedQcCode = null; sharedQcQr = null;
+    // Assign the session BEFORE any await: closeModal() cancels via sharedQcSess, so backing out
+    // during the modal's own tick would otherwise leave a poll running with no dialog attached.
+    sharedQcSess = startQC(session.serverUrl, clientAuthHeader, ({ code, qrSvg }) => { sharedQcCode = code; sharedQcQr = qrSvg; });
+    await openModal('sharedQc');
+    try {
+      const { user, token } = await sharedQcSess.promise;
+      const r = await onSharedSetMember(sharedPickerSlot, user, '', token);
+      if (r === 'ok') {
+        closeModal();
+        await tick();
+        document.querySelector(`[data-slot-btn="${sharedPickerSlot}"]`)?.focus();
+      } else {
+        sharedQcCode = null; sharedQcQr = null;
+        sharedError = r === 'sameUser' ? i18n.t.sharedInvalidChoice : i18n.t.errLogin;
+      }
+    } catch (err) {
+      if (err === 'cancelled') return;
+      sharedQcCode = null; sharedQcQr = null;
+      sharedError = err === 'networkError' ? i18n.t.networkError : i18n.t.qcError;
+    }
+  }
+  function cancelSharedQuickConnect() { sharedQcSess?.cancel(); sharedQcSess = null; sharedQcCode = sharedQcQr = null; }
 
   let timeoutOptions = $derived([
     { label: `1 ${i18n.t.minuteShort}`,  value: 60  },
@@ -145,7 +195,7 @@
     { label: `5 ${i18n.t.minuteShort}`,  value: 300 },
   ]);
 
-  onDestroy(() => { if (modalTimeout) clearTimeout(modalTimeout); });
+  onDestroy(() => { if (modalTimeout) clearTimeout(modalTimeout); sharedQcSess?.cancel(); });
 
   const getAuthHeaders = () => authHeaders(session.token);
 
@@ -161,6 +211,7 @@
 
   function closeModal() {
     if (modalTimeout) clearTimeout(modalTimeout);
+    cancelSharedQuickConnect();   // back/cancel leaves the dialog — the poll must not survive it
     activeModal = null;
   }
 
@@ -173,6 +224,18 @@
   async function openSharedPicker(slot) {
     sharedPickerSlot = slot; sharedPickerUser = null; sharedPw = ''; sharedError = '';
     await openModal('sharedPicker');
+  }
+  // Hidden profiles never appear in /Users/Public, so they cannot be picked from the list — the
+  // same reason the sign-in screen offers a manual entry. Name plus password, verified by the
+  // server exactly like any other profile.
+  async function openSharedManual() {
+    sharedManualName = ''; sharedPw = ''; sharedError = '';
+    await openModal('sharedManual');
+  }
+  async function commitSharedManual() {
+    const name = sharedManualName.trim();
+    if (!name) return;
+    await commitSharedUser({ Name: name }, sharedPw);   // no Id yet — the server supplies it
   }
   async function chooseSharedUser(user) {
     sharedError = '';
@@ -195,7 +258,8 @@
       await tick();   // the slot now shows the remove button → focus there (instead of lost to the sidebar)
       document.querySelector(`[data-slot-btn="${slot}"]`)?.focus();
     }
-    else if (r === 'needPassword')  { sharedPickerUser = user; await openModal('sharedPassword'); }
+    else if (r === 'needPassword')  { sharedPickerUser = user; sharedPw = ''; await openModal('sharedPassword'); }
+    else if (r === 'sameUser')      sharedError = i18n.t.sharedInvalidChoice;
     else                            sharedError = i18n.t.errLogin;
   }
   // Remove the member + focus onto the "choose profile" button of the same slot that then appears.
@@ -473,7 +537,7 @@
         : await renderAvatarPng(effectiveIcon, effectiveColor);
       const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Images/Primary`, {
         method: 'POST',
-        headers: { 'Authorization': `MediaBrowser Token="${session.token}"`, 'Content-Type': 'image/png' },
+        headers: { ...authHeaders(session.token), 'Content-Type': 'image/png' },   // one auth scheme, one source
         body: base64,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -543,6 +607,10 @@
   // top instead of inheriting the previous category's scroll depth.
   $effect(() => { activeCategory; if (contentEl) contentEl.scrollTop = 0; });
   // Close the "display elements" sub-item as soon as you leave the appearance tab
+  // Everything that changes the television itself, the account, or exposes diagnostics is dropped
+  // for a restricted profile. What shapes their own viewing — appearance, content, navigation,
+  // remote, playback, subtitles — stays, so the profile still feels like theirs.
+  const RESTRICTED_HIDDEN = ['oled', 'account', 'status'];
   let categories = $derived([
     { id: 'appearance', label: i18n.t.settingsDisplay,    icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
     { id: 'displayElements', label: i18n.t.displayElements, icon: 'M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z' },
@@ -554,7 +622,13 @@
     { id: 'security',   label: i18n.t.profileSecurity,    icon: 'M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z' },
     { id: 'account',    label: i18n.t.settingsAccount,    icon: 'M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.7 5.1a3.375 3.375 0 012.7-1.35h7.13c1.06 0 2.06.5 2.7 1.35l2.59 3.45a4.5 4.5 0 01.9 2.7' },
     { id: 'status',     label: i18n.t.statusSection,      icon: 'M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6' },
-  ]);
+  ].filter(c => !(restrictedProfile && RESTRICTED_HIDDEN.includes(c.id))));
+
+  // A hidden category must not stay selected — landing on a blank pane after a profile switch
+  // would look like a broken settings screen.
+  $effect(() => {
+    if (!categories.some(c => c.id === activeCategory)) activeCategory = categories[0]?.id ?? 'appearance';
+  });
 </script>
 
 <div class="flex h-full">
@@ -563,7 +637,9 @@
        within; when entering from the right, focus lands on the active category (data-hbar-current). -->
   <nav data-hbar class="w-72 shrink-0 bg-gray-900/60 border-r border-gray-800 p-6 pt-16 flex flex-col gap-2 overflow-y-auto hide-scrollbar">
     <h1 class="text-3xl font-bold text-white mb-4 ml-2">{i18n.t.settings}</h1>
-    {#each categories as cat}
+    <!-- Keyed: the list became dynamic with the restricted-profile filter, so index-based reuse
+         could leave a focused button standing for a different category after a profile switch. -->
+    {#each categories as cat (cat.id)}
       <button onclick={() => activeCategory = cat.id}
         data-hbar-current={activeCategory === cat.id ? '' : null}
         class="flex items-center gap-4 px-4 py-4 rounded-xl text-left font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
@@ -576,7 +652,7 @@
     {/each}
     <div class="mt-auto pt-6 text-center">
       <span class="text-gray-600 font-mono text-xs tracking-widest block">OcenFin</span>
-      <span class="text-gray-600 font-mono text-xs tracking-widest">{i18n.t.version} {APP_VERSION}</span>
+      <span class="text-gray-400 font-mono text-xs tracking-widest">{i18n.t.version} {APP_VERSION}</span>
     </div>
   </nav>
 
@@ -694,7 +770,7 @@
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
           <!-- Group: interface (general elements) -->
           <div class="px-6 pt-4 pb-2">
-            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{i18n.t.groupInterface}</h3>
+            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupInterface}</h3>
           </div>
           {#each uiToggles as tg}
             <button onclick={() => toggleDisplay(tg.key)}
@@ -725,7 +801,7 @@
 
           <!-- Group: home (dashboard rows) -->
           <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
-            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{i18n.t.groupHome}</h3>
+            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupHome}</h3>
           </div>
           {#each homeToggles as tg}
             <button onclick={() => toggleDisplay(tg.key)}
@@ -758,7 +834,7 @@
 
           <!-- Group: details (detail page of a movie/series) -->
           <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
-            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest">{i18n.t.groupDetails}</h3>
+            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupDetails}</h3>
           </div>
           {#each detailToggles as tg}
             <button onclick={() => toggleDisplay(tg.key)}
@@ -964,7 +1040,7 @@
                   class="flex-1 text-left p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-all
                          {screensaverSettings.mode === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                   <span class="block font-bold text-lg">{label}</span>
-                  <span class="block text-sm mt-0.5 {screensaverSettings.mode === val ? 'text-blue-100' : 'text-gray-500'}">{desc}</span>
+                  <span class="block text-sm mt-0.5 {screensaverSettings.mode === val ? 'text-blue-100' : 'text-gray-400'}">{desc}</span>
                 </button>
               {/each}
             </div>
@@ -1241,6 +1317,61 @@
           </div>
         {/if}
 
+      </div>
+
+      <!-- Watch together: merge two profiles. Lives under Playback, not under Profile &
+           Security: setting it up needs sign-ins, but what it DOES is filter your library — a
+           viewing feature. It sat with the credentials purely because of its plumbing. -->
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+        <button onclick={onSharedToggle}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.sharedWatching}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.sharedWatchingDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {sharedProfile.enabled ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {sharedProfile.enabled ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        {#if sharedProfile.enabled}
+          <div class="h-px bg-gray-700"></div>
+          <div class="p-6 flex flex-col gap-4">
+            <span class="text-gray-400 text-sm">{i18n.t.sharedWatchingPick}</span>
+            <div class="grid grid-cols-2 gap-4">
+              {#each [0, 1] as slot}
+                {@const m = sharedMembers[slot]}
+                <div class="bg-gray-900/60 border border-gray-700 rounded-xl p-4 flex flex-col items-center justify-center gap-2 min-h-[8rem]">
+                  {#if m}
+                    <span class="text-white font-bold text-lg text-center break-words">{m.name}</span>
+                    {#if sharedTokens[selectedServer?.id]?.[m.id] || savedTokens[selectedServer?.id]?.[m.id]}
+                      <span class="text-green-400 text-xs font-bold">{i18n.t.sharedMemberReady}</span>
+                    {:else}
+                      <span class="text-amber-400 text-xs font-bold">{i18n.t.sharedNeedsLogin}</span>
+                    {/if}
+                    <button data-slot-btn={slot} onclick={() => removeMember(slot)}
+                      class="mt-1 text-red-400 hover:text-red-300 focus:text-red-300 text-sm font-bold
+                             focus:outline-none focus:ring-2 focus:ring-white rounded px-3 py-1.5">
+                      {i18n.t.remove}
+                    </button>
+                  {:else}
+                    <button data-slot-btn={slot} onclick={() => openSharedPicker(slot)}
+                      class="flex flex-col items-center gap-2 text-gray-400 hover:text-white focus:text-white
+                             focus:outline-none focus:ring-4 focus:ring-white rounded-lg px-4 py-3">
+                      <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+                      </svg>
+                      <span class="text-sm font-bold">{i18n.t.selectProfile}</span>
+                    </button>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
       </div>
     </section>
     {/if}
@@ -1532,6 +1663,11 @@
         </div>
       {/if}
 
+      <!-- Credentials, hidden on an age-restricted profile: storing a password for one-touch
+           sign-in, changing it, and above all authorising another device by code are not things a
+           child account should reach. The profile picture above stays — it is the one setting here
+           they actually enjoy, and it affects nobody else. -->
+      {#if !restrictedProfile}
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
         <!-- Save password / quick switch (formerly its own "Profile" category) -->
@@ -1580,59 +1716,7 @@
         </button>
 
       </div>
-
-      <!-- Watch together: merge two profiles -->
-      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
-        <button onclick={onSharedToggle}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.sharedWatching}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.sharedWatchingDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {sharedProfile.enabled ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {sharedProfile.enabled ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
-
-        {#if sharedProfile.enabled}
-          <div class="h-px bg-gray-700"></div>
-          <div class="p-6 flex flex-col gap-4">
-            <span class="text-gray-400 text-sm">{i18n.t.sharedWatchingPick}</span>
-            <div class="grid grid-cols-2 gap-4">
-              {#each [0, 1] as slot}
-                {@const m = sharedMembers[slot]}
-                <div class="bg-gray-900/60 border border-gray-700 rounded-xl p-4 flex flex-col items-center justify-center gap-2 min-h-[8rem]">
-                  {#if m}
-                    <span class="text-white font-bold text-lg text-center break-words">{m.name}</span>
-                    {#if sharedTokens[selectedServer?.id]?.[m.id] || savedTokens[selectedServer?.id]?.[m.id]}
-                      <span class="text-green-400 text-xs font-bold">{i18n.t.sharedMemberReady}</span>
-                    {:else}
-                      <span class="text-amber-400 text-xs font-bold">{i18n.t.sharedNeedsLogin}</span>
-                    {/if}
-                    <button data-slot-btn={slot} onclick={() => removeMember(slot)}
-                      class="mt-1 text-red-400 hover:text-red-300 focus:text-red-300 text-sm font-bold
-                             focus:outline-none focus:ring-2 focus:ring-white rounded px-3 py-1.5">
-                      {i18n.t.remove}
-                    </button>
-                  {:else}
-                    <button data-slot-btn={slot} onclick={() => openSharedPicker(slot)}
-                      class="flex flex-col items-center gap-2 text-gray-400 hover:text-white focus:text-white
-                             focus:outline-none focus:ring-4 focus:ring-white rounded-lg px-4 py-3">
-                      <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-                      </svg>
-                      <span class="text-sm font-bold">{i18n.t.selectProfile}</span>
-                    </button>
-                  {/if}
-                </div>
-              {/each}
-            </div>
-          </div>
-        {/if}
-      </div>
+      {/if}
     </section>
     {/if}
 
@@ -1646,9 +1730,9 @@
       <!-- Server info -->
       {#if selectedServer}
         <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-5">
-          <p class="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">{i18n.t.connectedServer}</p>
+          <p class="text-xs text-gray-400 uppercase tracking-wider font-bold mb-1">{i18n.t.connectedServer}</p>
           <p class="text-xl text-white font-bold">{selectedServer.name}</p>
-          <p class="text-gray-400 mt-0.5 text-sm font-mono">{selectedServer.url}</p>
+          <p class="text-gray-400 mt-0.5 text-sm font-mono">{selectedServer.url}{#if selectedServer.url?.startsWith('http://')}<span title={i18n.t.insecureHttpHint} class="ml-2 inline-block px-1.5 py-0.5 rounded bg-yellow-900/70 text-yellow-300 text-[0.65rem] font-bold align-middle font-sans">HTTP</span>{/if}</p>
         </div>
       {/if}
 
@@ -1680,9 +1764,9 @@
 
         <button onclick={() => onLogout?.()}
           class="flex flex-col items-center justify-center p-7 bg-red-900/40 border border-red-800/50 rounded-2xl
-                 hover:bg-red-600 focus:bg-red-600 focus:scale-105
+                 hover:bg-red-900/70 focus:bg-red-900/70 focus:scale-105
                  focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-xl group">
-          <svg class="w-11 h-11 text-red-500 group-hover:text-white group-focus:text-white mb-3 transition-colors"
+          <svg class="w-11 h-11 text-red-400 group-hover:text-red-200 group-focus:text-red-200 mb-3 transition-colors"
             fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
@@ -1754,36 +1838,36 @@
             <svg class="w-4 h-4 shrink-0 transition-transform {openStatus.tv ? 'rotate-90' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
             {i18n.t.statusTv}
           </span>
-          <span class="font-mono text-xs text-gray-500 truncate">{tvInfo?.available ? `${tvInfo.modelName || ''}${tvInfo.oled === true ? ' · OLED' : ''}` : i18n.t.statusOnlyOnTv}</span>
+          <span class="font-mono text-xs text-gray-400 truncate">{tvInfo?.available ? `${tvInfo.modelName || ''}${tvInfo.oled === true ? ' · OLED' : ''}` : i18n.t.statusOnlyOnTv}</span>
         </button>
         {#if openStatus.tv}
           <div class="px-6 pb-6 flex flex-col gap-4">
             {#if tvInfo?.available}
               <div class="flex justify-between items-baseline gap-4">
-                <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{i18n.t.statusResolution}</span>
+                <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusResolution}</span>
                 <span class="text-white font-mono text-sm">{tvResolution || '—'}</span>
               </div>
               <div class="h-px bg-gray-700/70"></div>
               <div class="flex justify-between items-baseline gap-4">
-                <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">HDR10</span>
+                <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">HDR10</span>
                 <span class="font-mono text-sm font-bold {capClass(tvInfo.hdr10)}">{capText(tvInfo.hdr10)}</span>
               </div>
               <div class="h-px bg-gray-700/70"></div>
               <div class="flex justify-between items-baseline gap-4">
-                <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">Dolby Vision</span>
+                <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">Dolby Vision</span>
                 <span class="font-mono text-sm font-bold {capClass(tvInfo.dolbyVision)}">{capText(tvInfo.dolbyVision)}</span>
               </div>
               <div class="h-px bg-gray-700/70"></div>
               <div class="flex justify-between items-baseline gap-4">
-                <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">Dolby Atmos</span>
+                <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">Dolby Atmos</span>
                 <span class="font-mono text-sm font-bold {capClass(tvInfo.dolbyAtmos)}">{capText(tvInfo.dolbyAtmos)}</span>
               </div>
               {#if tvInfo.dolbyAtmos === false}
-                <p class="text-xs text-gray-500 leading-snug">{i18n.t.statusAtmosHint}</p>
+                <p class="text-xs text-gray-400 leading-snug">{i18n.t.statusAtmosHint}</p>
               {/if}
               <div class="h-px bg-gray-700/70"></div>
             {/if}
-            <span class="text-xs text-gray-500 uppercase tracking-wider font-bold">{i18n.t.statusCodecsBrowser}</span>
+            <span class="text-xs text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusCodecsBrowser}</span>
             <div class="flex flex-wrap gap-x-6 gap-y-2">
               {#each [{ l: 'H.264', k: 'h264' }, { l: 'HEVC', k: 'hevc' }, { l: 'VP9', k: 'vp9' }, { l: 'AV1', k: 'av1' }] as c}
                 <span class="font-mono text-sm font-bold {codecs[c.k] ? 'text-green-400' : 'text-gray-400'}">{c.l}: {codecs[c.k] ? i18n.t.statusYes : i18n.t.statusNo}</span>
@@ -1805,24 +1889,24 @@
         {#if openStatus.runtime}
           <div class="px-6 pb-6 flex flex-col gap-4">
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{i18n.t.statusChromium}</span>
+              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusChromium}</span>
               <span class="text-white font-mono text-sm">{envVersions.chromium || '—'}</span>
             </div>
             <div class="h-px bg-gray-700/70"></div>
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{i18n.t.statusAppVersion}</span>
+              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusAppVersion}</span>
               <span class="text-white font-mono text-sm">{APP_VERSION}</span>
             </div>
             <div class="h-px bg-gray-700/70"></div>
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{i18n.t.statusServerVersion}</span>
+              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusServerVersion}</span>
               <span class="text-white font-mono text-sm">{serverVersion || '—'}</span>
             </div>
             <div class="h-px bg-gray-700/70"></div>
             <div class="flex justify-between items-start gap-4">
               <div class="pr-2">
                 <span class="text-sm text-gray-300 font-bold block">{i18n.t.statusClientGraphicSubs}</span>
-                <span class="text-xs text-gray-500 mt-0.5 block">{i18n.t.statusClientGraphicSubsDesc}</span>
+                <span class="text-xs text-gray-400 mt-0.5 block">{i18n.t.statusClientGraphicSubsDesc}</span>
               </div>
               <span class="font-mono text-sm font-bold shrink-0 mt-0.5 {serverVobSub ? 'text-green-400' : 'text-gray-400'}">
                 {serverVobSub ? i18n.t.statusYes : i18n.t.statusNo}
@@ -1844,17 +1928,17 @@
         {#if openStatus.components}
           <div class="px-6 pb-6 flex flex-col gap-4">
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{i18n.t.statusHls}</span>
+              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusHls}</span>
               <span class="text-white font-mono text-sm">{envVersions.hls || '—'}</span>
             </div>
             <div class="h-px bg-gray-700/70"></div>
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{i18n.t.statusLibbitsub}</span>
+              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusLibbitsub}</span>
               <span class="text-white font-mono text-sm">{envVersions.libbitsub || '—'}</span>
             </div>
             <div class="h-px bg-gray-700/70"></div>
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-500 uppercase tracking-wider font-bold">{i18n.t.statusAssjs}</span>
+              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusAssjs}</span>
               <span class="text-white font-mono text-sm">{envVersions.assjs || '—'}</span>
             </div>
           </div>
@@ -1914,7 +1998,7 @@
             </button>
           </div>
           <button onclick={clearLog}
-            class="px-6 py-3 rounded-xl font-bold bg-gray-700 hover:bg-red-600 focus:bg-red-600 text-white
+            class="px-6 py-3 rounded-xl font-bold bg-red-900/40 hover:bg-red-900/70 focus:bg-red-900/70 text-red-100
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">{i18n.t.clear}</button>
         </div>
       {/if}
@@ -1953,7 +2037,7 @@
     onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeModal(); } }}>
 
     <div data-modal data-focus-trap
-      class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full max-w-xl flex flex-col gap-6 shadow-2xl">
+      class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full {activeModal === 'sharedQc' && sharedQcQr ? 'max-w-3xl' : 'max-w-xl'} flex flex-col gap-6 shadow-2xl">
 
       {#if activeModal === 'lang'}
         <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.language}</h2>
@@ -1968,40 +2052,15 @@
           {/each}
         </div>
 
-      {:else if activeModal === 'audioLang'}
-        <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.audioLanguage}</h2>
+      {:else if pickerModals[activeModal]}
+        {@const picker = pickerModals[activeModal]}
+        <h2 class="text-4xl text-white font-bold mb-2">{picker.title}</h2>
         <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
-          {#each audioLangOptions as opt}
-            <button onclick={() => setAudioLang(opt.key)}
+          {#each picker.options as opt (opt.key)}
+            <button onclick={() => { picker.set(opt.key); closeModal(); }}
               class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
                      focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white
-                     {playbackPrefs.audioLanguage === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
-              {opt.name}
-            </button>
-          {/each}
-        </div>
-
-      {:else if activeModal === 'subtitleLang'}
-        <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.subtitleLanguage}</h2>
-        <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
-          {#each subtitleLangOptions as opt}
-            <button onclick={() => setSubtitleLang(opt.key)}
-              class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
-                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white
-                     {playbackPrefs.subtitleLanguage === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
-              {opt.name}
-            </button>
-          {/each}
-        </div>
-
-      {:else if activeModal === 'remoteAction'}
-        <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.remoteButtonAction}</h2>
-        <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
-          {#each remoteActionOptions as opt (opt.key)}
-            <button onclick={() => setRemoteAction(opt.key)}
-              class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
-                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white
-                     {playbackPrefs[remoteActionPref] === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
+                     {picker.value === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
               {opt.name}
             </button>
           {/each}
@@ -2061,7 +2120,7 @@
 
       {:else if activeModal === 'sharedPicker'}
         <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.selectProfile}</h2>
-        <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
+        <div class="flex flex-col gap-2 max-h-[42vh] overflow-y-auto hide-scrollbar">
           {#each pickableUsers(sharedPickerSlot) as u (u.Id)}
             <button onclick={() => chooseSharedUser(u)}
               class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
@@ -2073,7 +2132,46 @@
             <p class="text-gray-400 text-lg p-4">{i18n.t.noProfiles}</p>
           {/each}
         </div>
+        <!-- Outside the scroll box on purpose: these two are always available, so a long profile
+             list must not push them out of reach. They stay BELOW the list so opening the dialog
+             still lands focus on the profiles, which is what almost everyone came here for. -->
+        <div class="h-px bg-gray-700"></div>
+        <div class="flex flex-col gap-2">
+          <button onclick={startSharedQuickConnect}
+            class="w-full text-left p-5 text-xl font-bold text-gray-300 rounded-xl transition-colors
+                   bg-transparent border border-gray-600 hover:bg-gray-700 focus:bg-gray-700
+                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white">
+            {i18n.t.sharedQuickConnect}
+          </button>
+          <button onclick={openSharedManual}
+            class="w-full text-left p-5 text-xl font-bold text-gray-300 rounded-xl transition-colors
+                   bg-transparent border border-gray-600 hover:bg-gray-700 focus:bg-gray-700
+                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white">
+            {i18n.t.manualLogin}
+          </button>
+        </div>
         {#if sharedError}<p class="text-red-400 font-bold">{sharedError}</p>{/if}
+
+      {:else if activeModal === 'sharedQc'}
+        <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.sharedQuickConnect}</h2>
+        <QuickConnectPanel code={sharedQcCode} qrSvg={sharedQcQr} />
+        {#if sharedError}<p class="text-red-400 font-bold text-lg">{sharedError}</p>{/if}
+
+      {:else if activeModal === 'sharedManual'}
+        <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.manualLogin}</h2>
+        <input type="text" bind:value={sharedManualName} placeholder={i18n.t.username}
+          {@attach tvKeyboard} {@attach focusOnMount()}
+          class="w-full bg-gray-900 text-white text-2xl p-6 rounded-xl border border-gray-600
+                 focus:outline-none focus:ring-4 focus:ring-blue-500" />
+        <input type="password" bind:value={sharedPw} placeholder={i18n.t.password}
+          {@attach tvKeyboard}
+          onkeydown={(e) => e.key === 'Enter' && commitSharedManual()}
+          class="w-full bg-gray-900 text-white text-2xl p-6 rounded-xl border border-gray-600
+                 focus:outline-none focus:ring-4 focus:ring-blue-500" />
+        {#if sharedError}<p class="text-red-400 font-bold text-lg">{sharedError}</p>{/if}
+        <button onclick={commitSharedManual} disabled={sharedBusy || !sharedManualName.trim()}
+          class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-2xl py-6 rounded-xl
+                 focus:outline-none focus:ring-4 focus:ring-white mt-2 disabled:opacity-50">{i18n.t.confirm}</button>
 
       {:else if activeModal === 'sharedPassword'}
         <h2 class="text-4xl text-white font-bold mb-2">{sharedPickerUser?.Name}</h2>
