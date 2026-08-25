@@ -212,8 +212,13 @@
 </script>
 
 <!-- Black background protects OLED; in art mode strongly darkened backdrops in a crossfade. -->
-<!-- Presentational full-screen overlay: it grabs focus and dismisses on ANY input (click/key/pointer);
-     keyboard dismiss is already wired via onkeydown. It's an exit surface, not a control to navigate to. -->
+<!-- Presentational full-screen overlay. It deliberately takes NO focus (tabindex="-1", no focus()
+     call anywhere in this file), and that is what makes waking up seamless: focus stays on whatever
+     was underneath and is still there afterwards. Keys are therefore NOT dismissed by the onkeydown
+     below — without focus inside the overlay nothing targets it — but by resetActivity() on
+     <svelte:window> in App, which every key press reaches. The handlers here cover pointer input and
+     are kept as a local belt-and-braces. Do not "fix" the missing focus() call: it would take focus
+     away from the view underneath and hand it back nowhere. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="fixed inset-0 bg-black z-[700] cursor-none select-none overflow-hidden"
      onclick={dismiss} onkeydown={dismiss} onpointermove={(e) => { if (e.target === e.currentTarget) dismiss(); }} tabindex="-1">
