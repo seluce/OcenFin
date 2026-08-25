@@ -76,6 +76,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   way the fields in the settings do. Entering a password is unchanged — there the keyboard comes
   straight up, which is what you want.
 - **The word "or" on the profile screen was German in every language.** It is translated now.
+- **Opening a library from the home screen lands on its first title.** Picking Films, Series or
+  Playlists under "My media" took you into the library but left nothing focused, so the first press
+  of the remote opened the menu instead of moving through the titles — the same tile chosen from the
+  menu did it right. Both ways in behave the same now, including opening a library you were just in.
 
 ## 2026.08.25
 

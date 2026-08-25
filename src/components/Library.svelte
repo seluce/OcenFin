@@ -13,7 +13,9 @@
     selectedUser,
     library = null,            // { Id, Name } — which library to show (from App)
     reloadKey = 0,             // increment → discard the view cache + reload
-    focusFirstOnLoad = false,  // when opened from the menu: focus the first card (not "Random")
+    focusFirstOnLoad = false,  // opened from the menu OR a dashboard tile: focus the first card
+                               // (not "Random"). Both entry points mean the same thing — the
+                               // dashboard one passed false until 2026-08-25, so it came up blank.
     sharedReady = false,       // App level: shared profile active? (shows the "watch together" toggle)
     partnerPlayedIds = null,   // IDs watched by AT LEAST ONE member — a union, see App.svelte.
                                // Filtering them out leaves what is new to both. (App loads, Library filters.)
@@ -515,7 +517,15 @@
     if (!lib) return;
     const newLib = lib.Id !== currentLibraryId;
     const newKey = rk !== appliedKey;
-    if (!newLib && !newKey) return;
+    if (!newLib && !newKey) {
+      // The SAME library opened again. navigateToLibrary always hands over a fresh object, so this
+      // effect runs while nothing actually has to load — items, scroll offset and letter are still
+      // there. There is still an explicit open to answer though, and returning early left the view
+      // with no focus at all. Starting at the top is the honest answer here: this is an open, not a
+      // Back — those go through restoreView() and keep their spot.
+      if (focusFirstOnLoad) focusFirstCard();
+      return;
+    }
     appliedKey = rk;
     if (newKey && !newLib) viewCache = {};            // data changed → discard the cache
     const ff = focusFirstOnLoad;

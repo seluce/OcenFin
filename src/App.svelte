@@ -2129,7 +2129,7 @@
             showCollections={displaySettings.collections}
             {sharedSuggestions}
             showSharedSuggestions={sharedReady && displaySettings.sharedSuggestions}
-            onOpenLibrary={(lib) => navigateToLibrary(lib, false)}
+            onOpenLibrary={(lib) => navigateToLibrary(lib, true)}
             onLibrariesLoaded={(libs) => navLibraries = libs}
             onOpenDetails={(item) => showItemDetails(item)}
             onOpenCollection={(col) => openCollection(col)}
