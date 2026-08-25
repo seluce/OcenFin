@@ -1419,14 +1419,22 @@
   let currentCollection    = $state(null);          // seed BoxSet/playlist
   let collectionReturnView = $state('dashboard');   // where "Back" leads
   let collectionRef = $state();                     // bind:this → for the back key (handleBackKey)
-  let collectionStack = [];                         // parent chain when a collection is opened from inside one
+  // Parent chain when a collection is opened from inside one. Each entry is a whole LEVEL, not
+  // just its collection: collectionReturnId/El/Nth/Scroll describe the way out of the entire
+  // chain, and a nested open overwrites them — so without carrying them here the last Back aimed
+  // at the nested card instead of the one that opened the chain.
+  let collectionStack = [];
 
   function openCollection(boxSet) {
     // Opened from INSIDE a collection (nested BoxSet/playlist card): push the parent so Back
     // returns there. Overwriting collectionReturnView with 'collection' made Back assign the
     // view it was already on — a no-op that trapped the user in the child collection.
     if (viewState === 'collection' && currentCollection) {
-      collectionStack.push(currentCollection);
+      collectionStack.push({
+        collection: currentCollection,
+        id: collectionReturnId, el: collectionReturnEl,
+        nth: collectionReturnNth, scroll: collectionReturnScroll,
+      });
     } else {
       collectionStack = [];
       collectionReturnView = viewState;
@@ -1439,9 +1447,23 @@
     currentCollection    = boxSet;
     viewState            = 'collection';
   }
+  // One level up in a nested chain. The parent is the SAME mounted component, so it cannot restore
+  // itself on mount the way a returning view does — it takes the card we descended through as a
+  // prop, exactly like a return from Details. focusChild=false is for the case where that card is
+  // gone (the child was deleted): the parent then lands on its first one.
+  function popCollectionLevel(focusChild = true) {
+    const up = collectionStack.pop();
+    if (focusChild) { pendingCardFocusId = collectionReturnId; pendingCardScrollTop = collectionReturnScroll; }
+    collectionReturnId  = up.id;  collectionReturnEl     = up.el;
+    collectionReturnNth = up.nth; collectionReturnScroll = up.scroll;
+    currentCollection   = up.collection;
+    dlog('[collection] level up →', up.collection?.Name, '· card', focusChild ? pendingCardFocusId : '(first)',
+         '· offset', focusChild ? pendingCardScrollTop : 0, '·', collectionStack.length, 'level(s) below');
+  }
+
   function returnFromCollection() {
-    // Nested collection: pop back to the parent, which stays on screen — nothing to restore.
-    if (collectionStack.length) { currentCollection = collectionStack.pop(); return; }
+    // Nested collection: one level up, the view itself stays on screen.
+    if (collectionStack.length) { popCollectionLevel(); return; }
     const id = collectionReturnId, el = collectionReturnEl, nth = collectionReturnNth;
     const sc = collectionReturnScroll;
     collectionReturnId = null; collectionReturnEl = null; collectionReturnNth = 0; collectionReturnScroll = 0;
@@ -1474,7 +1496,7 @@
       apiCache.dashboard = null;
       dashboardReloadKey++;
     }
-    if (collectionStack.length) { currentCollection = collectionStack.pop(); }
+    if (collectionStack.length) { popCollectionLevel(false); }   // its card is gone → first one
     else if (collectionReturnView === 'library' && playlistsLibGone) { currentLibrary = null; viewState = 'dashboard'; }
     else viewState = collectionReturnView;
   }

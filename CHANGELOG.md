@@ -17,6 +17,12 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   focus sitting on Back — so the first press of the remote led straight out of the list you had just
   asked for. It now starts on the first title, the way favourites already did, and falls back to the
   Back button only when there is nothing in the list.
+- **A collection inside a collection steps back one level at a time.** Opening one from within
+  another and pressing Back brought you to the parent with nothing focused, so the next press of the
+  remote opened the menu; pressing Back once more then aimed at the nested collection instead of at
+  the title you had originally opened, and landed somewhere else on the page or at the top of it.
+  Every level now keeps its own place: you return to the collection you went into, at the position
+  you left it, and the last step back takes you to where the chain started.
 
 ## 2026.08.25
 
