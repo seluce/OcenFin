@@ -28,6 +28,7 @@ export default {
     loginText: "Iniciar sesión",
     errLogin: "Contraseña incorrecta o error al iniciar sesión.",
     manualLogin: "Inicio de sesión manual",
+    or: "o",
     username: "Nombre de usuario",
 
     // Navigation

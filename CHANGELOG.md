@@ -65,6 +65,17 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Lists in the settings open on the setting you actually have.** The language, font, theme and
   seek-step choosers started at the top of the list, which for a long list meant scrolling down to
   find what was already selected. They now open on it.
+- **Removing a saved server keeps the remote working.** The ✕ takes its own row with it, and unless
+  it was the first server in the list that left the sign-in screen with nothing focused — the one
+  place in the app with no menu to fall back on. Focus now moves to the next server down, or to "add
+  server" once the list is empty. That ✕ also called itself "Back to Selection"; it says "Remove".
+- **Leaving the password entry returns you to the profile you picked**, instead of to the first one
+  in the row.
+- **Typing a server address by hand no longer opens the on-screen keyboard unasked.** Passing over
+  the field on the way to its OK button was enough to bring the keyboard up; it now opens on OK, the
+  way the fields in the settings do. Entering a password is unchanged — there the keyboard comes
+  straight up, which is what you want.
+- **The word "or" on the profile screen was German in every language.** It is translated now.
 
 ## 2026.08.25
 

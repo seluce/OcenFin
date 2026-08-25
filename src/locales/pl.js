@@ -28,6 +28,7 @@ export default {
     loginText: "Zaloguj się",
     errLogin: "Nieprawidłowe hasło lub logowanie nie powiodło się.",
     manualLogin: "Logowanie ręczne",
+    or: "lub",
     username: "Nazwa użytkownika",
 
     // Navigation

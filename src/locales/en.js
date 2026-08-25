@@ -28,6 +28,7 @@ export default {
     loginText: "Login",
     errLogin: "Invalid password or login failed.",
     manualLogin: "Manual Sign In",
+    or: "or",
     username: "Username",
 
     // Navigation (also used via $t[navItem.id] in Sidebar)
