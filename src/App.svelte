@@ -46,6 +46,42 @@
   // lookup in this file is filtered through this.
   const isShown = (el) => !!el && el.offsetParent !== null;
 
+  const CONTENT_FOCUSABLE =
+    'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+  // Focus the first usable element in the CONTENT area, outside the hero. The view it belongs to
+  // may still be loading, so this retries in the bounded, self-terminating shape used throughout
+  // this file — never an interval. Three callers share it, and they differ only in when to stand
+  // down, which is why `heldByOther` is a parameter: at app start anything already focused wins,
+  // while a sidebar selection has to take focus OUT of the sidebar and may only stop for focus that
+  // has gone somewhere else entirely.
+  function focusContent({ why, heldByOther, maxTries = 12, gap = 100, onGiveUp }) {
+    let cancelled = false, tries = 0;
+    const attempt = () => {
+      if (cancelled) return;
+      const active = document.activeElement;
+      if (heldByOther(active)) {
+        dlog('[focus]', why, '· stood down, already on', (active.textContent || '').trim().slice(0, 24));
+        return;
+      }
+      const main   = document.querySelector('[data-focus-group="main"]');
+      const shown  = main ? [...main.querySelectorAll(CONTENT_FOCUSABLE)].filter(isShown) : [];
+      const target = shown.find(el => !el.closest('[data-hero]')) || shown[0];
+      if (target) { target.focus(); dlog('[focus]', why, '→', (target.textContent || '').trim().slice(0, 24)); return; }
+      if (++tries < maxTries) { setTimeout(attempt, gap); return; }
+      onGiveUp?.();
+    };
+    tick().then(attempt);
+    return () => { cancelled = true; };
+  }
+
+  // Stand-down rule for everything except the app start. A HIDDEN element never counts as holding
+  // focus: Library and Search stay mounted under display:none, and until style is recomputed the
+  // browser still reports the element they had — without isShown() a return to the dashboard would
+  // stand down for a card that cannot be focused at all.
+  const heldOutsideSidebar = (a) =>
+    !!a && a !== document.body && isShown(a) && !a.closest('[data-focus-group="sidebar"]');
+
   // On first entering the app, put focus into the CONTENT — normally the first tile of "My media".
   // A freshly loaded app has no focus at all, and the first D-pad press would otherwise be spent
   // establishing it, landing top-left across hero and first row: with nothing focused, spatialnav
@@ -72,24 +108,15 @@
   // the connection-lost retry button or a restore path.
   $effect(() => {
     if (appPhase !== 'app') return;
-    let cancelled = false, tries = 0;
-    const attempt = () => {
-      if (cancelled) return;
-      const active = document.activeElement;
-      if (active && active !== document.body) return;   // someone got there first — leave it be
-      const main  = document.querySelector('[data-focus-group="main"]');
-      const cands = main ? [...main.querySelectorAll(
-        'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      )] : [];
-      const shown  = cands.filter(isShown);
-      const target = shown.find(el => !el.closest('[data-hero]')) || shown[0];
-      if (target) { target.focus(); dlog('[focus] start →', (target.textContent || '').trim().slice(0, 24)); return; }
-      if (++tries < 30) { setTimeout(attempt, 100); return; }   // ~3 s while the dashboard loads
-      dlog('[focus] start → sidebar (no content to focus)');
-      document.querySelector('[data-focus-group="sidebar"] [data-group-current]')?.focus();
-    };
-    tick().then(attempt);
-    return () => { cancelled = true; };
+    return focusContent({
+      why: 'start',
+      heldByOther: (a) => !!a && a !== document.body,   // unchanged: at start, anyone else wins
+      maxTries: 30, gap: 100,                           // ~3 s while the dashboard loads
+      onGiveUp: () => {
+        dlog('[focus] start → sidebar (no content to focus)');
+        document.querySelector('[data-focus-group="sidebar"] [data-group-current]')?.focus();
+      },
+    });
   });
   let initializing = $state(true);    // splash screen until auto-login/startup is done
   let dashboardReloadKey = $state(0); // incrementing forces a fresh reload of the dashboard
@@ -421,6 +448,7 @@
   let collectionReturnId = null, collectionReturnEl = null, collectionReturnNth = 0, collectionReturnScroll = 0;
   // A person page is reached from the cast list, from search and from favourites — same deal.
   let personReturnId = null, personReturnEl = null, personReturnNth = 0, personReturnScroll = 0;
+  let personReturnDetails = null;   // the title page a person was opened FROM, with its own way out
 
   // ── Watch together ─────────────────────────────────────────────────────────
   // The logged-in (shared) profile references two other profiles. Their tokens
@@ -1329,6 +1357,13 @@
     viewState = 'dashboard';
     apiCache.dashboard = null;   // clear cache (property mutation instead of reassignment → shared reference stays)
     navLibraries = [];
+    // The app branch unmounts with the phase, so no view keeps the old profile's DATA — but these
+    // references survive, and libraryMounted would remount Library on the next login and load the
+    // previous profile's library once for nothing, hidden behind the dashboard.
+    currentLibrary = null; currentCollection = null; currentPerson = null; currentDetailItem = null;
+    libraryMounted = false; searchMounted = false;
+    collectionStack = []; personReturnDetails = null;
+    libraryReturnId = null; libraryReturnEl = null; libraryReturnNth = 0;
     clearCurrentSession();
     // Only if nothing keeps it: with "remember me" on, the token stays in savedTokens for the
     // quick switch and must remain valid. Without it, this was the last reference — and leaving it
@@ -1349,6 +1384,21 @@
   // ============================================================
   // GLOBAL BACK KEY (webOS remote)
   // ============================================================
+
+  // Back from a top-level view to the dashboard. These four used to assign the view and nothing
+  // else, which left the page with NO focus: the dashboard remounts and restores nothing of its own
+  // (CLAUDE.md), while the view being left takes its focus with it — Library and Search are hidden
+  // with display:none, Favourites and Settings unmount. The next key press then opened the sidebar.
+  // A library opened from a tile on the dashboard returns to that tile; the three views that can
+  // only be reached from the menu have no card to return to and take the first content element.
+  function backToDashboard(from) {
+    viewState = 'dashboard';
+    if (from === 'library' && libraryReturnId) {
+      focusCardAgain(libraryReturnId, libraryReturnEl, '(back from library)', libraryReturnNth);
+    } else {
+      focusContent({ why: `back from ${from}`, heldByOther: heldOutsideSidebar });
+    }
+  }
 
   function handleGlobalBack(e) {
     if (!isBackKey(e)) return;   // Escape / Backspace (except in inputs) / remote 461
@@ -1371,10 +1421,10 @@
     else if (viewState === 'details')  { if (!detailsRef?.handleBackKey()) returnFromDetails(); e.preventDefault(); }
     else if (viewState === 'person')   { returnFromPerson();           e.preventDefault(); }
     else if (viewState === 'collection') { if (!collectionRef?.handleBackKey()) returnFromCollection(); e.preventDefault(); }
-    else if (viewState === 'library')  { viewState = 'dashboard';      e.preventDefault(); }
-    else if (viewState === 'settings') { viewState = 'dashboard';      e.preventDefault(); }
-    else if (viewState === 'search')   { viewState = 'dashboard';      e.preventDefault(); }
-    else if (viewState === 'favorites') { viewState = 'dashboard';      e.preventDefault(); }
+    else if (viewState === 'library')  { backToDashboard('library');   e.preventDefault(); }
+    else if (viewState === 'settings') { backToDashboard('settings');  e.preventDefault(); }
+    else if (viewState === 'search')   { backToDashboard('search');    e.preventDefault(); }
+    else if (viewState === 'favorites') { backToDashboard('favorites'); e.preventDefault(); }
     else if (viewState === 'dashboard') { showExitConfirm = true;      e.preventDefault(); }
   }
 
@@ -1518,6 +1568,15 @@
   // Only sets the return view + seed person; Person.svelte loads person details + filmography itself.
   function openPerson(person) {
     personReturnView   = viewState;
+    // Coming from a title page, remember WHICH title and its own way out. Opening another title
+    // from the person's filmography overwrites currentDetailItem AND detailsOrigin — the same
+    // single-variable trap the collection stack has (§22). Without this, Back came back to that
+    // other title and then bounced between it and the person page forever, with no way out but the
+    // sidebar, because detailsOrigin still said 'person'.
+    personReturnDetails = viewState === 'details'
+      ? { item: currentDetailItem, origin: detailsOrigin,
+          id: detailsReturnId, el: detailsReturnEl, nth: detailsReturnNth, scroll: detailsReturnScroll }
+      : null;
     personReturnId     = document.activeElement?.getAttribute?.('data-item-id') ?? null;
     personReturnEl     = document.activeElement;
     personReturnNth    = cardOrdinal(personReturnEl, personReturnId);
@@ -1531,6 +1590,15 @@
   function returnFromPerson() {
     const id = personReturnId, el = personReturnEl, nth = personReturnNth, sc = personReturnScroll;
     personReturnId = null; personReturnEl = null; personReturnNth = 0; personReturnScroll = 0;
+    // Restore the title page as it was, BEFORE switching to it — Details mounts from
+    // currentDetailItem, and detailsOrigin is what its own Back will read next.
+    if (personReturnView === 'details' && personReturnDetails) {
+      const d = personReturnDetails;
+      currentDetailItem = d.item;      detailsOrigin       = d.origin;
+      detailsReturnId   = d.id;        detailsReturnEl     = d.el;
+      detailsReturnNth  = d.nth;       detailsReturnScroll = d.scroll;
+    }
+    personReturnDetails = null;
     viewState = personReturnView;
     if (personReturnView === 'search') searchRef?.restoreView();
     else if (personReturnView === 'library') libraryRef?.restoreView();
@@ -1545,14 +1613,14 @@
   // After a selection in the sidebar, move focus into the content. Leaving
   // the sidebar collapses it automatically again (its focusout handler).
   // So focus lands right where things continue instead of in the open bar.
-  async function focusMain() {
-    await tick();
-    const main = document.querySelector('[data-focus-group="main"]');
-    if (!main) return;
-    const first = main.querySelector(
-      'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
-    );
-    if (first) first.focus();
+  // It used to be a single querySelector one tick later, with no isShown() filter — the one focus
+  // lookup in this file that had neither. Both broke: Library and Search sit HIDDEN inside the same
+  // main, so a view without a button of its own reached for one of theirs and the call silently did
+  // nothing; and Settings is lazy-loaded, so one tick in there is only the await spinner, which has
+  // no button at all. Choosing Settings from the menu therefore never got focus, not even on the
+  // second open, because import() always resolves asynchronously.
+  function focusMain() {
+    focusContent({ why: 'sidebar \u2192 content', heldByOther: heldOutsideSidebar });
   }
 
   // Reloads the user object (e.g. after a profile-picture upload) → the avatar updates everywhere.
@@ -1563,8 +1631,17 @@
     } catch { /* ignore */ }
   }
 
+  // Where Back out of the library leads: opened from a tile on the dashboard, that tile is the
+  // place to return to. From the menu there is none — the sidebar entry that was focused is NOT a
+  // usable target (focusCardAgain would happily focus it again and leave the bar open), so only a
+  // real card is remembered and everything else falls through to the content's first element.
+  let libraryReturnId = null, libraryReturnEl = null, libraryReturnNth = 0;
   function navigateToLibrary(lib, focusFirstCard = false) {
     if (!lib) return;
+    const from = document.activeElement;
+    libraryReturnId  = from?.getAttribute?.('data-item-id') ?? null;
+    libraryReturnEl  = libraryReturnId ? from : null;
+    libraryReturnNth = cardOrdinal(libraryReturnEl, libraryReturnId);
     libraryMounted = true;                  // from now on Library stays mounted (scroll/items survive Details)
     libraryFocusFirst = focusFirstCard;     // Library focuses the first card itself after loading
     currentLibrary = { Id: lib.Id, Name: lib.Name };
@@ -1625,7 +1702,10 @@
     let tries = 0;
     const attempt = () => {
       const active = document.activeElement;
-      if (active && active !== document.body) {
+      // isShown as well: a view hidden with display:none can still be reported as the active element
+      // until style is recomputed, and standing down for a card that cannot be focused would leave
+      // the page with no focus at all.
+      if (active && active !== document.body && isShown(active)) {
         // Stood down — something else restored focus first. Logged with the reason, because that is
         // how we tell a needed call from a redundant one: every view but the dashboard owns this.
         dlog('[focus] card restore', why, '· stood down, already on',
@@ -1750,16 +1830,17 @@
     }
     // The dashboard is the ONLY origin that establishes no focus of its own when it comes back, so
     // it is the only one handed the card here. Every other view already owns this (see CLAUDE.md):
-    // Library restores scroll AND focus in restoreView() above, Favourites focuses its first card
-    // after each load, Search focuses its input on mount, Collection and Person focus their Back
-    // button. Calling this for them would either be inert or fight their own logic.
+    // Library restores scroll AND focus in restoreView() above, Search focuses its input on mount,
+    // and Favourites, Collection and Person each focus at the end of their own load. Calling this
+    // for them would either be inert or fight their own logic.
     // Unlike those, the dashboard remounts from scratch, so focusing the card also brings its
     // scroll position back — the browser scrolls a focused element into view.
     if (detailsOrigin === 'search') searchRef?.restoreView();
     else if (detailsOrigin === 'dashboard') focusCardAgain(backId, backEl, '(back from details → dashboard)', backNth);
-    // Favourites and Collection focus themselves at the end of their load — hand them the target
-    // instead of calling into them, so there is one decision rather than two racing ones.
-    else if (detailsOrigin === 'favorites' || detailsOrigin === 'collection') {
+    // Favourites, Collection and Person focus themselves at the end of their load — hand them the
+    // target instead of calling into them, so there is one decision rather than two racing ones.
+    else if (detailsOrigin === 'favorites' || detailsOrigin === 'collection'
+             || detailsOrigin === 'person') {
       pendingCardFocusId = backId; pendingCardScrollTop = backScroll;
     }
   }
@@ -2094,6 +2175,7 @@
 
         {:else if viewState === 'person'}
           <Person person={currentPerson} {selectedUser}
+            focusItemId={pendingCardFocusId} focusScrollTop={pendingCardScrollTop}
             onBack={returnFromPerson}
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu} />
         {:else if viewState === 'favorites'}

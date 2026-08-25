@@ -724,7 +724,10 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.myMedia}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each libraries as library (library.Id)}
-            <button onclick={() => onOpenLibrary?.(library)}
+            <!-- data-item-id: Back out of a library returns to the tile it was opened from. This row
+                 comes out of the first response round, so it satisfies the rule that only rows which
+                 arrive quickly carry the attribute. -->
+            <button onclick={() => onOpenLibrary?.(library)} data-item-id={library.Id}
               class="shrink-0 scroll-mt-24 scroll-mx-4 group flex flex-col items-center focus:outline-none">
               <div class="w-64 h-36 bg-gray-800 rounded-xl flex items-center justify-center
                           border-4 border-transparent group-focus:border-white group-focus:scale-105 group-hover:border-gray-400

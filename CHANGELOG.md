@@ -37,6 +37,22 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   favourites only — taking the favourite off inside the title and going back correctly dropped it
   from the list, but left focus nowhere at all, so the next press opened the menu. Focus now lands
   on the title that moved up into the gap, at the place on the page you left.
+- **Opening a title from a cast member's page no longer strands you.** From a title you could reach
+  a cast member, and from there another title — but Back then returned to the second title instead
+  of the first, and from that point on it only ever alternated between that title and the cast
+  member. The page you started from could not be reached again, and Back never left at all; the menu
+  was the only way out. Every step back now returns where it came from.
+- **Going back to the home screen from a library, search, favourites or the settings puts you back
+  on the page.** All four returned to a home screen with nothing focused, so the next press of the
+  remote opened the menu instead of moving within the page. A library now returns you to the tile
+  you opened it from, and the other three to the first row of the page.
+- **Choosing the settings from the menu now moves you into them.** Focus stayed on the menu entry,
+  because the settings load on demand and were not on screen yet at the moment focus was handed
+  over — so the bar stayed open over the page until you pressed again.
+- **A cast member's page remembers where you were.** Opening one of their titles and coming back put
+  you on the Back button with the page scrolled to the top; with a hundred titles listed that meant
+  finding your place again every time. It now returns to the title you opened, at the position you
+  left, and opening a person fresh starts on their first title.
 
 ## 2026.08.25
 

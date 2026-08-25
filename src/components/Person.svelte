@@ -2,8 +2,16 @@
   import { i18n } from '../i18n.svelte.js';
   import { itemProgress, itemBadge, itemBlurHash, blurUp, longPress, authHeaders, focusOnMount, getItemImageUrl } from '../utils.js';
   import { session } from '../session.svelte.js';
+  import { tick } from 'svelte';
 
-  let { person, selectedUser, onBack, onOpenDetails, onContextMenu } = $props();
+  // focusItemId: the title to land on after the parent brought us back from a detail page. Passed
+  // in rather than resolved here, because this view unmounts — the memory lives in App.svelte.
+  // While one is pending the Back button does NOT grab focus on mount, or it would win the race
+  // against the card, which only exists once the filmography has loaded.
+  let { person, selectedUser, focusItemId = null, focusScrollTop = 0,
+        onBack, onOpenDetails, onContextMenu } = $props();
+  let backBtn;   // bind:this → the landing when a person has no titles at all
+  let scrollEl;  // own scroll container — unmounts with the view, so App remembers the offset
 
   let fav       = $state(false);
   let items     = $state([]);
@@ -68,6 +76,16 @@
       items = [...main, ...eps];
     } catch { /* ignore */ }
     finally { if (myId === loadedId) isLoading = false; }
+    if (myId !== loadedId) return;
+    await tick();
+    // Same landing as favourites and collections: the title we came back from, failing that the
+    // first one, and only for a person with no titles the Back button — which holds focus while the
+    // skeletons are up, since nothing else there can. The remembered offset applies only on a
+    // return; on a fresh open it belongs to some earlier view and would jump this one.
+    const card = (focusItemId && scrollEl?.querySelector(`[data-item-id="${focusItemId}"]`))
+              || scrollEl?.querySelector('[data-item-id]');
+    if (scrollEl && focusItemId) scrollEl.scrollTop = focusScrollTop;
+    (card || backBtn)?.focus();
   }
 
   // Set/remove the person as a favorite (optimistic; roll back on error)
@@ -87,9 +105,9 @@
   });
 </script>
 
-<div class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
+<div bind:this={scrollEl} class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
   <div class="flex items-center gap-6 mb-8">
-    <button onclick={onBack} {@attach focusOnMount()}
+    <button onclick={onBack} bind:this={backBtn} {@attach focusOnMount(!focusItemId)}
       class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
       {i18n.t.back}
     </button>
