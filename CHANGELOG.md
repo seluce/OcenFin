@@ -33,6 +33,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   card you opened — the exact one, even when the same title is showing in several rows at once, for
   instance in Continue watching and on the watchlist. If you navigate on in the meantime, your own
   focus is kept.
+- **Back inside a title's page steps back one level.** Opening a season from a series, an episode
+  from a season, or another title from "more like this" and pressing Back left the page altogether
+  and dropped you on the home screen or in the library. It now returns to the page you came from,
+  and only leaves once there is nothing left to step back to — with the remote's Back key and the
+  on-screen button alike.
 - **Search keeps its results while you look at one of them.** Opening a title or a person from the
   search results and coming back used to leave an empty field: the query, the results and how far
   you had scrolled were all thrown away, and finding the next result meant searching again. It now

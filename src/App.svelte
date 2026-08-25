@@ -382,6 +382,7 @@
   // ============================================================
   let viewState          = $state('dashboard');
   let currentDetailItem  = $state(null);
+  let detailsRef         = $state();      // bind:this → ask its own navigation chain before leaving
   let navLibraries               = $state([]);    // real libraries for the menu (reported by the dashboard)
   let navReordering              = $state(false);  // true while a sidebar entry is "lifted"
 
@@ -1367,7 +1368,7 @@
     // Navigate within the app; preventDefault stops webOS from closing the app.
     // At the dashboard (top level) show a confirmation instead of closing the app directly.
     if      (viewState === 'player')   { viewState = 'details';        e.preventDefault(); }
-    else if (viewState === 'details')  { returnFromDetails();          e.preventDefault(); }
+    else if (viewState === 'details')  { if (!detailsRef?.handleBackKey()) returnFromDetails(); e.preventDefault(); }
     else if (viewState === 'person')   { viewState = personReturnView; e.preventDefault(); }
     else if (viewState === 'collection') { if (!collectionRef?.handleBackKey()) returnFromCollection(); e.preventDefault(); }
     else if (viewState === 'library')  { viewState = 'dashboard';      e.preventDefault(); }
@@ -1738,13 +1739,6 @@
     }
   }
 
-  async function loadItemById(itemId) {
-    try {
-      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${itemId}`, { headers: getAuthHeaders() });
-      if (res.ok) { currentDetailItem = await res.json(); viewState = 'details'; }
-    } catch { }
-  }
-
 </script>
 
 <svelte:window
@@ -2060,14 +2054,13 @@
           />
           {/await}
         {:else if viewState === 'details' && currentDetailItem}
-          <Details
+          <Details bind:this={detailsRef}
             item={currentDetailItem}
             {selectedUser} {playbackPrefs} {use24h} {serverVobSub}
             spoilerProtection={displaySettings.spoilerProtection}
             detailsBackdrop={displaySettings.detailsBackdrop}
             detailsLogo={displaySettings.detailsLogo}
             onClose={returnFromDetails}
-            onOpenItemById={(id) => loadItemById(id)}
             onOpenPerson={(person) => openPerson(person)}
             onLibChanged={refreshLibraries}
             onPlayVideo={startPlayback}

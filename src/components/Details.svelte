@@ -18,7 +18,7 @@
     spoilerProtection = true,   // slightly obscure thumbnails of unwatched episodes
     detailsBackdrop = true,     // show the hero backdrop on the detail page (own toggle, decoupled from reduceAnimations)
     detailsLogo = false,        // title as a logo graphic instead of text (falls back to text if no logo exists)
-    onClose, onLibChanged, onOpenItemById, onOpenPerson, onPlayVideo,   // callback props (instead of events)
+    onClose, onLibChanged, onOpenPerson, onPlayVideo,   // callback props (instead of events)
   } = $props();
 
   let fullItem     = $state(null);
@@ -333,7 +333,9 @@
 
   // Reactive: reloads as soon as the 'item' prop changes. untrack() so the effect reacts ONLY to
   // item — not to stores/user that loadFullDetails reads synchronously internally.
-  $effect(() => { const id = item?.Id; if (id) untrack(() => loadFullDetails(id)); });
+  // A change of `item` means a FRESH entry from App, never internal navigation — so the chain
+  // starts over and Back leads back out rather than sideways into the previous visit.
+  $effect(() => { const id = item?.Id; if (id) untrack(() => { navStack = []; loadFullDetails(id); }); });
 
   // Theme music (opt-in): resolve per item and per scope. Movie ↔ scope 'movies', the whole
   // series family (Series/Season/Episode) ↔ scope 'series'; anything else never plays. The module
@@ -511,12 +513,36 @@
     }
   }
 
-  // FIX: only dispatch — the reactive $: if(item) in this file takes over the loading.
-  // No direct loadFullDetails() here anymore, otherwise a duplicate API call.
+  // Navigating INSIDE this page — a season from a series, an episode from a season, the series or
+  // season from the breadcrumb, another title from "more like this". All of it stays here rather
+  // than going through App: `item` is the ENTRY point and App's return logic depends on it staying
+  // that way (which card to focus again, whether the opened title still matches the library's
+  // filter). What is currently shown is `fullItem`, and that is what this chain tracks.
+  //
+  // Ids, not objects: coming back reloads through the same path, so related titles, extras and the
+  // rest are rebuilt as well instead of a restored item sitting next to stale lists.
+  let navStack = [];
+  const NAV_STACK_MAX = 30;   // the app runs for days; series ↔ season ping-pong must not grow forever
+
   function navigateTo(id) {
+    if (fullItem?.Id) {
+      navStack.push(fullItem.Id);
+      if (navStack.length > NAV_STACK_MAX) navStack.shift();
+    }
     isLoading = true;
     fullItem  = null;   // show the spinner immediately
-    onOpenItemById?.(id);
+    loadFullDetails(id);
+  }
+
+  // Back: one level up inside the page first. Returns false once the chain is empty, which is the
+  // parent's signal to leave Details altogether — same contract as Collection.handleBackKey().
+  export function handleBackKey() {
+    const prev = navStack.pop();
+    if (prev === undefined) return false;
+    isLoading = true;
+    fullItem  = null;
+    loadFullDetails(prev);
+    return true;
   }
 
 
@@ -594,7 +620,7 @@
 
           <!-- BREADCRUMB + BACK -->
       <div class="flex items-center gap-6 mb-10" data-focus-group="details-top">
-        <button onclick={() => onClose?.()}
+        <button onclick={() => { if (!handleBackKey()) onClose?.(); }}
           class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
           {i18n.t.back}
         </button>
@@ -946,7 +972,7 @@
           </h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each relatedItems as ep (ep.Id)}
-              <button onclick={() => { fullItem = null; loadFullDetails(ep.Id); }}
+              <button onclick={() => navigateTo(ep.Id)}
                 class="shrink-0 scroll-m-4 group flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
                 <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
                   {#if getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')}
