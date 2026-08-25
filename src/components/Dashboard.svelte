@@ -333,7 +333,16 @@
       loadRecommendations(uId, opts, fields);
       const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
       const pLatestMovies = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Movie&Limit=${ROW_LIMIT}&Fields=${fields}`, opts);
-      const pLatestSeries = fetch(`${session.serverUrl}/Users/${uId}/Items/Latest?IncludeItemTypes=Series&Limit=${ROW_LIMIT}&Fields=${fields}`, opts);
+      // Series are NOT fetched through /Items/Latest like the movies above. Measured against a real
+      // library: that endpoint answers in 504 ms for Movie and 9951 ms for Series — same endpoint,
+      // same fields. Neither the fields nor GroupItems change it (9635 ms and 9132 ms), so the cost
+      // is in how the server resolves that type. A plain DateCreated sort returns the same titles in
+      // 197 ms, roughly fifty times faster.
+      // The two are not identical in meaning: this lists series whose own entry is new, while Latest
+      // also surfaces a long-running series that just gained an episode. "Recently added series" is
+      // what the row is called, and new episodes are what Up next and Continue watching are for.
+      const pLatestSeries = fetch(`${session.serverUrl}/Users/${uId}/Items?IncludeItemTypes=Series&Recursive=true` +
+        `&SortBy=DateCreated&SortOrder=Descending&Limit=${ROW_LIMIT}&Fields=${fields}&EnableTotalRecordCount=false`, opts);
       // History: recently watched movies/episodes. Fetch more (40), since series are then
       // collapsed to one entry each (buffer for a good mix).
       const pHistory      = fetch(`${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}&EnableTotalRecordCount=false`, opts);

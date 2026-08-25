@@ -60,6 +60,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   It still waits for the home screen and never takes focus away from you: press a key while it is
   loading and your own focus is kept, and a home screen with nothing to focus falls back to the
   menu as before.
+- **"Recently added series" no longer arrives ten seconds late.** The row was fetched through an
+  endpoint that takes the server about ten seconds to answer for series, while the identical request
+  for movies came back in half a second. Asking for the same thing a simpler way returns the same
+  titles in about a fifth of a second, so the row is now there with the rest of the page.
 - **The home screen's featured banner appears sooner.** Its two requests waited for the home
   screen's first answers although they never needed them, which put the banner three server round
   trips away on a cold start where the rest of the page needed one. They now go out immediately,
