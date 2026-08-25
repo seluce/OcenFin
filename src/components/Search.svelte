@@ -10,7 +10,7 @@
   // person page comes back to the same query, the same results and the same per-person cache
   // instead of an empty field. Hiding is display:none, which drops focus and the scroll offset —
   // hence the same save/restore pair the library uses.
-  let scrollEl;
+  let scrollEl = $state();
   let savedScroll = 0;
   let lastFocusedId = null;
   function leaveTo(fn, item) {

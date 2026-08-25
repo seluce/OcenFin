@@ -535,7 +535,7 @@
   // scrolled — so coming back lands exactly there instead of at the top, as everywhere else in
   // the app.
   let navStack = [];
-  let scrollEl;
+  let scrollEl = $state();
   // While a spot is being restored the play button must NOT grab focus on mount, or it would win
   // the race against the card, which only exists once its row has loaded.
   //
@@ -550,6 +550,12 @@
   // forward jump to false, a step back or a hand-off from App to true — so it is always correct at
   // that moment and nothing has to touch it in between.
   let restorePending = false;
+  // Passed to {@attach} as the function ITSELF, never as focusOnMount(!restorePending): a call in
+  // the template would read the flag there, which both makes Svelte demand $state for it and brings
+  // back the bug that costs — as $state the attachment is rebuilt when the flag flips, and building
+  // an attachment RUNS it, so the play button stole focus right after the card had it. Read here,
+  // the flag is evaluated once, at mount.
+  const focusUnlessRestoring = (node) => { if (!restorePending) node.focus(); };
   const NAV_STACK_MAX = 30;   // the app runs for days; series ↔ season ping-pong must not grow forever
 
   // rememberSpot=false for the suggestions row: /Items/{id}/Similar has to be scored by the server
@@ -804,7 +810,7 @@
 
           <!-- ACTION BUTTONS -->
           <div class="flex items-center gap-4 mb-12">
-            <button onclick={handlePlay} {@attach focusOnMount(!restorePending)}
+            <button onclick={handlePlay} {@attach focusUnlessRestoring}
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-2xl px-12 py-4 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-3 shadow-lg">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
