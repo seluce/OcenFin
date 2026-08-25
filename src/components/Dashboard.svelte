@@ -343,6 +343,10 @@
       // Latest also surfaces a long-running one that just gained an episode. "Recently added" is
       // what the rows are called, and new episodes are what Up next and Continue watching cover.
       // For a movie the two coincide anyway — it has no episodes to gain.
+      //
+      // Deliberately NO played filter. "Recently added" is a statement about the library, not about
+      // what is left to watch — hiding what you have seen would misreport what actually arrived.
+      // Rows about what to watch next exist separately: Continue watching and Up next.
       const latestQuery = (type) =>
         `${session.serverUrl}/Users/${uId}/Items?IncludeItemTypes=${type}&Recursive=true` +
         `&SortBy=DateCreated&SortOrder=Descending&Limit=${ROW_LIMIT}&Fields=${fields}&EnableTotalRecordCount=false`;
