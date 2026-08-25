@@ -53,6 +53,12 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   you on the Back button with the page scrolled to the top; with a hundred titles listed that meant
   finding your place again every time. It now returns to the title you opened, at the position you
   left, and opening a person fresh starts on their first title.
+- **The remote keeps working after a playback error.** If a title failed to start and you chose "try
+  again", playback resumed but OK and the arrow keys did nothing — the button you had just pressed
+  disappeared with the message and took the focus with it, leaving the remote with no target inside
+  the player. Only Back still responded, which meant leaving the title to get the remote back.
+- **After watching, a title page puts you back on its play button.** Having reached the title
+  through a cast member's page, it came back focused on that actor instead.
 
 ## 2026.08.25
 

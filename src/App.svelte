@@ -1802,6 +1802,10 @@
     // could trigger the prompt far too early. Auto-advance never comes through here (it goes via
     // handleNextEpisode), so the sleep protection stays intact.
     autoPlayStreak = 0;
+    // A new trip, exactly as in showItemDetails(): a card still pending from an earlier return —
+    // the cast member a person page came back to, say — would otherwise be restored when Details
+    // remounts after playback, holding its play button back and landing on that actor instead.
+    pendingCardFocusId = null;
     if (p.item) currentDetailItem = p.item;
     activeAudioIndex    = p.audioIndex    ?? -1;
     activeSubtitleIndex = p.subtitleIndex ?? -1;

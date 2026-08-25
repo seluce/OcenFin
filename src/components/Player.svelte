@@ -1985,7 +1985,13 @@
 
   <!-- ERROR — instead of an endless spinner: a clear message + actions -->
   {#if playbackError}
-    <div data-focus-trap class="absolute inset-0 flex items-center justify-center z-[80] bg-black/80">
+    <!-- onoutrostart={releaseOverlay}: this overlay OWNS the focus while it is up (focusOnMount on
+         Retry), and playbackError is cleared from four places, not just the button — so the hand-back
+         belongs on the block, not in retryPlayback(). Without it the focused button was simply
+         removed, focus fell to <body>, and since handleKeyDown sits on the container OK and the
+         arrows went dead with the video happily playing again. releaseOverlay drops the trap too. -->
+    <div data-focus-trap transition:uiFade onoutrostart={releaseOverlay}
+      class="absolute inset-0 flex items-center justify-center z-[80] bg-black/80">
       <div class="flex flex-col items-center gap-5 max-w-md text-center px-8">
         <svg class="w-16 h-16 text-red-500" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m0 3.75h.008M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
