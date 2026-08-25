@@ -1512,7 +1512,10 @@
     viewState = personReturnView;
     if (personReturnView === 'search') searchRef?.restoreView();
     else if (personReturnView === 'library') libraryRef?.restoreView();
-    else if (personReturnView === 'favorites' || personReturnView === 'collection') {
+    // Details focuses its play button on mount, so it takes the target as a prop like the other
+    // self-focusing views rather than being focused into from here.
+    else if (personReturnView === 'favorites' || personReturnView === 'collection'
+             || personReturnView === 'details') {
       pendingCardFocusId = id; pendingCardScrollTop = sc;
     } else focusCardAgain(id, el, '(back from person)', nth);
   }
@@ -2055,6 +2058,7 @@
           {/await}
         {:else if viewState === 'details' && currentDetailItem}
           <Details bind:this={detailsRef}
+            focusItemId={pendingCardFocusId} focusScrollTop={pendingCardScrollTop}
             item={currentDetailItem}
             {selectedUser} {playbackPrefs} {use24h} {serverVobSub}
             spoilerProtection={displaySettings.spoilerProtection}

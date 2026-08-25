@@ -37,7 +37,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   from a season, or another title from "more like this" and pressing Back left the page altogether
   and dropped you on the home screen or in the library. It now returns to the page you came from,
   and only leaves once there is nothing left to step back to — with the remote's Back key and the
-  on-screen button alike.
+  on-screen button alike, landing on the season, episode or cast member you had selected, and at the
+  place on the page you left rather than back at the top. Coming back from a suggested title starts
+  at the top of the page, since that row is fetched late and would otherwise pull you down to it
+  after the fact.
 - **Search keeps its results while you look at one of them.** Opening a title or a person from the
   search results and coming back used to leave an empty field: the query, the results and how far
   you had scrolled were all thrown away, and finding the next result meant searching again. It now

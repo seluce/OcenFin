@@ -18,6 +18,7 @@
     spoilerProtection = true,   // slightly obscure thumbnails of unwatched episodes
     detailsBackdrop = true,     // show the hero backdrop on the detail page (own toggle, decoupled from reduceAnimations)
     detailsLogo = false,        // title as a logo graphic instead of text (falls back to text if no logo exists)
+    focusItemId = null, focusScrollTop = 0,   // where to land when App brings us back (person page)
     onClose, onLibChanged, onOpenPerson, onPlayVideo,   // callback props (instead of events)
   } = $props();
 
@@ -335,7 +336,16 @@
   // item — not to stores/user that loadFullDetails reads synchronously internally.
   // A change of `item` means a FRESH entry from App, never internal navigation — so the chain
   // starts over and Back leads back out rather than sideways into the previous visit.
-  $effect(() => { const id = item?.Id; if (id) untrack(() => { navStack = []; loadFullDetails(id); }); });
+  $effect(() => {
+    const id = item?.Id;
+    if (!id) return;
+    untrack(() => {
+      navStack = [];
+      restorePending = !!focusItemId;   // set BEFORE the load, so the play button holds back
+      loadFullDetails(id);
+      restoreSpot({ focusId: focusItemId, scrollTop: focusScrollTop });
+    });
+  });
 
   // Theme music (opt-in): resolve per item and per scope. Movie ↔ scope 'movies', the whole
   // series family (Series/Season/Episode) ↔ scope 'series'; anything else never plays. The module
@@ -521,12 +531,41 @@
   //
   // Ids, not objects: coming back reloads through the same path, so related titles, extras and the
   // rest are rebuilt as well instead of a restored item sitting next to stale lists.
+  // Each step also carries where you were standing on that page — the card and how far it was
+  // scrolled — so coming back lands exactly there instead of at the top, as everywhere else in
+  // the app.
   let navStack = [];
+  let scrollEl;
+  // While a spot is being restored the play button must NOT grab focus on mount, or it would win
+  // the race against the card, which only exists once its row has loaded.
+  //
+  // Deliberately NOT $state, and deliberately never cleared while a restore runs. `{@attach}` is a
+  // reactive expression: making this a rune meant Svelte tore the attachment down and built it
+  // again the moment the flag flipped back — and building it CALLS it, so the play button grabbed
+  // focus right after the card had been given it. Measured with a probe: mount ran with
+  // enabled=false (the brake worked), then flipping the flag ran it again with enabled=true and
+  // moved focus. It was never the brake that failed, it was releasing it.
+  //
+  // As a plain variable it is read once, when the button mounts. Every ENTRY point sets it — a
+  // forward jump to false, a step back or a hand-off from App to true — so it is always correct at
+  // that moment and nothing has to touch it in between.
+  let restorePending = false;
   const NAV_STACK_MAX = 30;   // the app runs for days; series ↔ season ping-pong must not grow forever
 
-  function navigateTo(id) {
+  // rememberSpot=false for the suggestions row: /Items/{id}/Similar has to be scored by the server
+  // and lands well after the rest of the page, measured still absent after 24 tries on the device.
+  // Waiting that long means either no focus at all meanwhile, or focus visibly jumping from the top
+  // of the page down to the row once it finally arrives. Landing at the top is the better answer
+  // there, and an honest one: the row you came from was not on screen yet anyway. The step is still
+  // pushed, so Back keeps stepping up the chain — only the spot is not restored.
+  function navigateTo(id, rememberSpot = true) {
+    restorePending = false;   // going forward: the play button is the right landing spot again
     if (fullItem?.Id) {
-      navStack.push(fullItem.Id);
+      navStack.push({
+        id: fullItem.Id,
+        focusId: rememberSpot ? (document.activeElement?.getAttribute?.('data-item-id') ?? null) : null,
+        scrollTop: rememberSpot ? (scrollEl?.scrollTop || 0) : 0,
+      });
       if (navStack.length > NAV_STACK_MAX) navStack.shift();
     }
     isLoading = true;
@@ -539,10 +578,45 @@
   export function handleBackKey() {
     const prev = navStack.pop();
     if (prev === undefined) return false;
+    restorePending = !!prev.focusId;
     isLoading = true;
     fullItem  = null;
-    loadFullDetails(prev);
+    loadFullDetails(prev.id);
+    restoreSpot(prev);
     return true;
+  }
+
+  // The row holding that card is fetched separately and arrives after the title itself, so this
+  // waits for it — bounded attempts, no interval, in the shape App uses for the same job. Scroll
+  // first, then focus: focusing alone would only drag the card barely into view and leave the page
+  // somewhere else. Stands down as soon as anything else holds focus, so it cannot fight a user
+  // who navigated on, and gives up quietly if that card is gone.
+  async function restoreSpot({ focusId, scrollTop }) {
+    if (!focusId) return;
+    const myToken = detailToken;
+    let tries = 0, lastTop = null, settled = 0;
+
+    // Applying the offset once is not enough: the page arrives in stages, so with rows still
+    // missing below it gets clamped (900 became 602 in a measurement) and with a row arriving above
+    // the card slides down. So it re-applies until the card's position and the offset hold still.
+    // Only rows that are there quickly are restored at all — see navigateTo's rememberSpot.
+    const attempt = () => {
+      if (myToken !== detailToken) return;             // a newer navigation took over
+      const card = scrollEl?.querySelector(`[data-item-id="${focusId}"]`);
+      const active = document.activeElement;
+      if (active && active !== document.body && active !== card) return;   // focus moved on
+      if (card) {
+        scrollEl.scrollTop = scrollTop;                // the view first, then the focus
+        card.focus();
+        const pos = card.offsetTop;
+        settled = (pos === lastTop && scrollEl.scrollTop === scrollTop) ? settled + 1 : 0;
+        lastTop = pos;
+        if (settled >= 3) return;                      // nothing moved any more — done
+      }
+      if (++tries < 24) setTimeout(attempt, 50);       // ~1.2 s, ample for those rows
+    };
+    await tick();
+    attempt();
   }
 
 
@@ -601,7 +675,7 @@
     <!-- scroll-padding-top: spatial navigation scrolls with block:'nearest', which parks an
          element flush against the top edge — the back button would sit at the very screen
          edge with its ring-4 focus ring clipped. Same value as in Library/Settings. -->
-    <div class="flex-1 overflow-y-auto hide-scrollbar [scroll-padding-top:4rem]">
+    <div bind:this={scrollEl} class="flex-1 overflow-y-auto hide-scrollbar [scroll-padding-top:4rem]">
 
       <!-- ════ CINEMATIC HERO BANNER — the backdrop scrolls along, fading into the app gray at bottom/left ════ -->
       <div class="relative">
@@ -730,7 +804,7 @@
 
           <!-- ACTION BUTTONS -->
           <div class="flex items-center gap-4 mb-12">
-            <button onclick={handlePlay} {@attach focusOnMount()}
+            <button onclick={handlePlay} {@attach focusOnMount(!restorePending)}
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-2xl px-12 py-4 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-3 shadow-lg">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
@@ -972,7 +1046,7 @@
           </h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each relatedItems as ep (ep.Id)}
-              <button onclick={() => navigateTo(ep.Id)}
+              <button onclick={() => navigateTo(ep.Id)} data-item-id={ep.Id}
                 class="shrink-0 scroll-m-4 group flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
                 <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
                   {#if getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')}
@@ -1032,7 +1106,7 @@
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.cast}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each castMembers as person (person.Id)}
-              <button onclick={() => onOpenPerson?.(person)} class="shrink-0 w-36 scroll-m-4 group focus:outline-none text-center">
+              <button onclick={() => onOpenPerson?.(person)} data-item-id={person.Id} class="shrink-0 w-36 scroll-m-4 group focus:outline-none text-center">
                 <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto group-focus:scale-105 transition-transform duration-200">
                   {#if personImageUrl(session.serverUrl, person)}
                     <img src={personImageUrl(session.serverUrl, person)} {@attach blurUp(itemBlurHash(person))} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
@@ -1056,7 +1130,7 @@
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.similar}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each similarItems as si (si.Id)}
-              <button onclick={() => navigateTo(si.Id)} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
+              <button onclick={() => navigateTo(si.Id, false)} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-transform duration-200">
                   {#if getItemImageUrl(si, 'portrait')}
                     <img src={getItemImageUrl(si, 'portrait')} {@attach blurUp(itemBlurHash(si))} alt={si.Name} class="w-full h-full object-cover" loading="lazy" />
