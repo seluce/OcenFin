@@ -76,6 +76,15 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   way the fields in the settings do. Entering a password is unchanged — there the keyboard comes
   straight up, which is what you want.
 - **The word "or" on the profile screen was German in every language.** It is translated now.
+- **Theme music follows the title you are actually looking at.** Jumping from a series to another
+  title through "more like this" kept the first one's theme playing under the new page. It now
+  changes with the page — the new title's own theme, or silence when it has none, which is also what
+  a lookup that fails now falls back to. Stepping through a series to a season or an episode still
+  keeps the theme running without restarting it, as before.
+- **Marking a title watched or a favourite applies to the title you are on.** After reaching it
+  through "more like this", the tick or the heart was additionally written onto the title you had
+  originally opened — so the wrong card showed as watched in the library, or the wrong film appeared
+  in favourites. The server always got the right one; only the card behind you was wrong.
 - **Opening a library from the home screen lands on its first title.** Picking Films, Series or
   Playlists under "My media" took you into the library but left nothing focused, so the first press
   of the remote opened the menu instead of moving through the titles — the same tile chosen from the

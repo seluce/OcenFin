@@ -69,7 +69,12 @@ export async function playThemeFor(item, userId, volumePercent) {
       `${session.serverUrl}/Items/${item.Id}/ThemeMedia?userId=${userId}&inheritFromParent=true`,
       { headers: authHeaders(session.token) }
     );
-    if (!res.ok || mySeq !== fetchSeq) return;
+    // Two different failures that must NOT be treated alike. Superseded means a newer call already
+    // owns the audio — touching it here would cut that one off. A bad answer for THIS title means we
+    // do not know whether it has a theme, and the rule is that no title may ever be heard under
+    // another one, so that resolves to silence like an empty result does.
+    if (mySeq !== fetchSeq) return;
+    if (!res.ok) { stopTheme(); return; }
     const data  = await res.json();
     if (mySeq !== fetchSeq) return;                    // superseded while parsing
     const songs = data?.ThemeSongsResult?.Items || [];
@@ -105,7 +110,12 @@ export async function playThemeFor(item, userId, volumePercent) {
         .catch(() => { if (mySeq === fetchSeq) currentOwnerId = null; });
     }
     dlog('[OcenFin] theme music start, owner', ownerId);
-  } catch { /* network errors stay silent — see module header */ }
+  } catch {
+    // Same rule as a bad response: unreachable server, aborted request or unparseable body all mean
+    // we cannot say this title has a theme, so nothing of the previous one may be left running.
+    // Guarded, or a late failure would silence the theme a newer call has meanwhile started.
+    if (mySeq === fetchSeq) stopTheme();
+  }
 }
 
 /** Fade out and fully release. Safe to call at any time, including mid-fetch. */
