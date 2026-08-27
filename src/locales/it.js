@@ -28,6 +28,7 @@ export default {
     loginText: "Accedi",
     errLogin: "Password non valida o accesso non riuscito.",
     manualLogin: "Accesso manuale",
+    or: "o",
     username: "Nome utente",
 
     // Navigation

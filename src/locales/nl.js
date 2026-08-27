@@ -28,6 +28,7 @@ export default {
     loginText: "Inloggen",
     errLogin: "Ongeldig wachtwoord of inloggen mislukt.",
     manualLogin: "Handmatig inloggen",
+    or: "of",
     username: "Gebruikersnaam",
 
     // Navigation

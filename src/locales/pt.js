@@ -28,6 +28,7 @@ export default {
     loginText: "Iniciar sessão",
     errLogin: "Palavra-passe inválida ou falha ao iniciar sessão.",
     manualLogin: "Início de sessão manual",
+    or: "ou",
     username: "Nome de utilizador",
 
     // Navigation

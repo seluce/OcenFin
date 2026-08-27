@@ -28,6 +28,7 @@ export default {
     loginText: "Anmelden",
     errLogin: "Falsches Passwort oder Anmeldung fehlgeschlagen.",
     manualLogin: "Manuell anmelden",
+    or: "oder",
     username: "Benutzername",
 
     // Navigation (also used via $t[navItem.id] in Sidebar)

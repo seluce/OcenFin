@@ -16,6 +16,11 @@
   } = $props();
   let backBtn;   // bind:this → fallback focus when the remembered card is gone
   let scrollEl;  // own scroll container — unmounts with the view, so App remembers the offset
+  // $state, unlike backBtn/scrollEl above: both of these sit inside a conditional block, so the
+  // binding is written twice — the element on mount and null on destroy — and the compiler requires
+  // a rune for that (verified against the compiler; being read at all makes no difference).
+  let editList = $state();  // the row list in edit mode, where reordering and removing move focus
+  let editBtn  = $state();  // Edit/Done, the landing when the last entry is removed
 
   let items     = $state([]);
   let isLoading = $state(false);
@@ -91,15 +96,18 @@
       if (loaded) items = loaded;
     } catch { /* ignore */ }
     finally { if (myId === loadedId) isLoading = false; }
-    if (myId !== loadedId || !focusItemId) return;
+    if (myId !== loadedId) return;
     await tick();
-    // Land on the card we came back from; failing that the first one, and if the collection turns
-    // out empty the Back button — which was left unfocused on mount precisely for this case.
-    // Scoped to our own container: Search and Library stay mounted while hidden, so a document-wide
-    // query would also match their cards, which cannot take focus.
-    const back = scrollEl?.querySelector(`[data-item-id="${focusItemId}"]`)
+    // Land on the card we came back from; failing that the first one, and only if the list is empty
+    // the Back button. Opened FRESH there is no card to return to, but the first one is still the
+    // right place to stand — the Back button holds focus while the skeletons are up (nothing else
+    // there can) and hands it on here, the same landing favourites gives. The remembered offset is
+    // applied only on a return: on a fresh open it belongs to some earlier view and would scroll
+    // this one to a stale position. Scoped to our own container: Search and Library stay mounted
+    // while hidden, so a document-wide query would also match their cards, which cannot take focus.
+    const back = (focusItemId && scrollEl?.querySelector(`[data-item-id="${focusItemId}"]`))
               || scrollEl?.querySelector('[data-item-id]');
-    if (scrollEl) scrollEl.scrollTop = focusScrollTop;   // the view first, then the focus
+    if (scrollEl && focusItemId) scrollEl.scrollTop = focusScrollTop;   // the view first, then the focus
     (back || backBtn)?.focus();
   }
 
@@ -112,6 +120,16 @@
     const [moved] = arr.splice(fromIndex, 1);
     arr.splice(toIndex, 0, moved);
     items = arr;
+    // The each is keyed, so the row's DOM node MOVES and focus travels with it. At either end
+    // though, the arrow just pressed turns disabled — and disabling a focused element drops focus
+    // to <body> (measured in Chromium), which sends the next key press to the sidebar. Only in that
+    // case, hand it to the opposite arrow of the same row, which is always enabled there.
+    tick().then(() => {
+      const held = document.activeElement;
+      if (held && held !== document.body) return;
+      const arrow = toIndex === 0 ? '[data-move-down]' : '[data-move-up]';
+      editList?.querySelectorAll(arrow)[toIndex]?.focus();
+    });
     try {
       const res = await fetch(`${session.serverUrl}/Playlists/${collection.Id}/Items/${item.PlaylistItemId}/Move/${toIndex}`,
         { method: 'POST', headers: getAuthHeaders() });
@@ -121,8 +139,17 @@
 
   async function removePlaylistItem(item) {
     if (!item?.PlaylistItemId) return;
+    const gap = items.findIndex(i => i.PlaylistItemId === item.PlaylistItemId);
     items = items.filter(i => i.PlaylistItemId !== item.PlaylistItemId);
     onChildCountChanged?.(collection.Id, items.length);   // carry the overview tile (ChildCount) along
+    // The pressed button dies with its row (measured: activeElement falls to <body>), and clearing
+    // out several entries one after another is the normal way to use this list — so land on the row
+    // that moved up into the gap, the last one if the last was removed, and on Edit once the list
+    // is empty. Without this the second press of the remote already opens the sidebar.
+    tick().then(() => {
+      const rows = editList?.querySelectorAll('[data-remove]') || [];
+      (rows[Math.min(gap, rows.length - 1)] || editBtn)?.focus();
+    });
     try {
       const res = await fetch(`${session.serverUrl}/Playlists/${collection.Id}/Items?EntryIds=${item.PlaylistItemId}`,
         { method: 'DELETE', headers: getAuthHeaders() });
@@ -218,7 +245,8 @@
       </button>
     {/if}
     {#if collection?.Type === 'Playlist'}
-      <button onclick={() => { playlistEditMode = !playlistEditMode; confirmDeletePlaylist = false; renamingPlaylist = false; }}
+      <button bind:this={editBtn}
+        onclick={() => { playlistEditMode = !playlistEditMode; confirmDeletePlaylist = false; renamingPlaylist = false; }}
         class="shrink-0 px-6 py-3 rounded-xl font-bold focus:outline-none focus:ring-4 focus:ring-white transition-colors
                {playlistEditMode ? 'bg-blue-600 text-white' : 'bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white'}">
         {playlistEditMode ? i18n.t.done : i18n.t.edit}
@@ -233,7 +261,7 @@
       {/each}
     </div>
   {:else if playlistEditMode}
-    <div class="flex flex-col gap-2 pr-4 max-w-4xl">
+    <div bind:this={editList} class="flex flex-col gap-2 pr-4 max-w-4xl">
       {#if items.length > 0}
         {#each items as item, i (item.PlaylistItemId)}
           <div class="flex items-center gap-4 bg-gray-800/60 rounded-xl p-3">
@@ -249,15 +277,15 @@
                 {#if item.ProductionYear}<div class="text-sm text-gray-400">{item.ProductionYear}</div>{/if}
               {/if}
             </div>
-            <button onclick={() => movePlaylistItem(i, i - 1)} disabled={i === 0} title={i18n.t.moveUp} aria-label={i18n.t.moveUp}
+            <button onclick={() => movePlaylistItem(i, i - 1)} disabled={i === 0} data-move-up title={i18n.t.moveUp} aria-label={i18n.t.moveUp}
               class="p-3 rounded-lg text-gray-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white disabled:opacity-30 disabled:cursor-not-allowed">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
             </button>
-            <button onclick={() => movePlaylistItem(i, i + 1)} disabled={i === items.length - 1} title={i18n.t.moveDown} aria-label={i18n.t.moveDown}
+            <button onclick={() => movePlaylistItem(i, i + 1)} disabled={i === items.length - 1} data-move-down title={i18n.t.moveDown} aria-label={i18n.t.moveDown}
               class="p-3 rounded-lg text-gray-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white disabled:opacity-30 disabled:cursor-not-allowed">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
             </button>
-            <button onclick={() => removePlaylistItem(item)} title={i18n.t.remove} aria-label={i18n.t.remove}
+            <button onclick={() => removePlaylistItem(item)} data-remove title={i18n.t.remove} aria-label={i18n.t.remove}
               class="p-3 rounded-lg text-red-400 hover:bg-red-900/40 focus:bg-red-900/40 focus:outline-none focus:ring-2 focus:ring-red-500">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-7 0v12a1 1 0 001 1h6a1 1 0 001-1V7"/></svg>
             </button>

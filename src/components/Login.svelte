@@ -12,12 +12,12 @@
   // (startup / quick switch / shared profile) and finishLogin.
   // This component reports results via narrow callbacks.
   // ============================================================
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { startQuickConnect as startQC } from '../quickconnect.js';
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { i18n } from '../i18n.svelte.js';
   import { session } from '../session.svelte.js';
-  import { focusOnMount, dlog } from '../utils.js';
+  import { focusOnMount, tvKeyboard, dlog } from '../utils.js';
 
   let {
     phase = $bindable('servers'), // 'servers' | 'users' — App controls the entry point (startup/profile switch/logout)
@@ -64,12 +64,43 @@
   // QC polling never outlives the view (login success or switch unmounts the component)
   onDestroy(() => qcSession?.cancel());
 
+  // There is no sidebar in this phase to catch a lost focus, so both places where an element
+  // disappears under the focus hand it on explicitly.
+  // $state because all three sit inside conditional blocks: the binding is written twice, the
+  // element on mount and null on destroy, and the compiler requires a rune for that (§23).
+  let serverListEl = $state();   // the saved-server rows, for the refocus after removing one
+  let addServerBtn = $state();   // where focus lands once the last saved server is gone
+  let usersGridEl  = $state();   // the profile tiles, for the return from the password form
+
+  // Removing a server takes the button that was pressed down with its row (measured: activeElement
+  // falls to <body>). Only for the FIRST row did that repair itself, and by accident: the index in
+  // {@attach focusOnMount(i === 0)} is a reactive expression, so the row moving up to 0 REBUILDS the
+  // attachment — and building one runs it (§19). Any other row left focus nowhere.
+  function removeServer(id) {
+    const gap = savedServers.findIndex(sv => sv.id === id);
+    onRemoveServer?.(id);
+    tick().then(() => {
+      const rows = serverListEl?.querySelectorAll('[data-remove-server]') || [];
+      (rows[Math.min(gap, rows.length - 1)] || addServerBtn)?.focus();
+    });
+  }
+
+  // Leaving the password form re-mounts the profile grid, whose first tile focuses itself — so you
+  // came back on profile 1 no matter which one you had chosen. pendingUser still knows which, and
+  // this runs after the mount attachments (tick resolves after the flush), so it wins.
+  function closePasswordForm() {
+    const back = pendingUser?.Id;
+    showPasswordForm = false;
+    pendingUser = null;
+    tick().then(() => usersGridEl?.querySelector(`[data-user-id="${back}"]`)?.focus());
+  }
+
   /** Back key, called by App.handleGlobalBack (pattern like Collection.handleBackKey):
    *  true = consumed here (sub-dialog closed), false = App goes to the server selection. */
   export function handleBackKey() {
     if (showPasswordForm || showManualLogin || qcCode) {
-      showPasswordForm = false;
-      showManualLogin  = false;
+      if (showPasswordForm) closePasswordForm();   // back onto the profile it belonged to
+      showManualLogin = false;
       if (qcCode) cancelQuickConnect();
       return true;
     }
@@ -377,7 +408,7 @@
 
       <!-- Saved servers -->
       {#if savedServers.length > 0}
-        <div class="flex flex-col gap-3">
+        <div bind:this={serverListEl} class="flex flex-col gap-3">
           <p class="text-sm text-gray-400 uppercase tracking-wider font-bold ml-1">{i18n.t.savedServers}</p>
           {#each savedServers as server, i (server.id)}
             <div class="flex items-center gap-3">
@@ -402,9 +433,10 @@
               </button>
               <!-- Remove server -->
               <button
-                onclick={() => onRemoveServer?.(server.id)}
+                onclick={() => removeServer(server.id)}
+                data-remove-server={server.id}
                 class="p-3 text-gray-600 hover:text-red-400 focus:text-red-400 focus:outline-none focus:ring-2 focus:ring-red-500 rounded-lg transition-colors"
-                title={i18n.t.backToServers}
+                title={i18n.t.remove}
               >
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
@@ -453,6 +485,7 @@
 
       <!-- Add new server (toggle panel) -->
       <button
+        bind:this={addServerBtn}
         onclick={() => { showAddServer = !showAddServer; if (showAddServer) discoverJellyfinServers(); }}
         class="w-full flex items-center justify-center gap-3 py-4 rounded-xl border-2 transition-all
                focus:outline-none focus:ring-4 focus:ring-blue-300 font-bold text-lg
@@ -516,9 +549,14 @@
 
           <!-- Manuelle URL -->
           <div class="flex gap-3">
+            <!-- tvKeyboard here and nowhere else in this view: on the way to the OK button you pass
+                 THROUGH this field, and a bare input opens the on-screen keyboard the moment focus
+                 touches it. The password fields keep the direct behaviour — you land on those to
+                 type, so the keyboard coming straight up is the point. -->
             <input
               type="text"
               bind:value={newServerUrl}
+              {@attach tvKeyboard}
               onkeydown={(e) => e.key === 'Enter' && addAndConnectServer(newServerUrl)}
               placeholder={i18n.t.serverAddressPlaceholder}
               class="flex-1 bg-gray-900 text-white text-lg p-4 rounded-xl border border-gray-600
@@ -591,7 +629,7 @@
             <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
             {i18n.t.quickConnect}
           </button>
-          <button onclick={() => { showPasswordForm = false; pendingUser = null; }}
+          <button onclick={closePasswordForm}
             class="w-full bg-gray-700/50 hover:bg-gray-600 text-gray-300 hover:text-white font-bold text-lg py-3.5 rounded-xl
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">
             {i18n.t.back}
@@ -639,9 +677,10 @@
 
         <!-- Profiles -->
         {#if users.length > 0}
-          <div class="flex flex-wrap justify-center gap-10">
+          <div bind:this={usersGridEl} class="flex flex-wrap justify-center gap-10">
             {#each users as user, i (user.Id)}
-              <button onclick={() => handleUserClick(user)} {@attach focusOnMount(i === 0)} class="flex flex-col items-center group focus:outline-none">
+              <button onclick={() => handleUserClick(user)} data-user-id={user.Id}
+                {@attach focusOnMount(i === 0)} class="flex flex-col items-center group focus:outline-none">
                 <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 shadow-xl transition-transform duration-200">
                   {#if user.PrimaryImageTag}
                     <img src="{session.serverUrl}/Users/{user.Id}/Images/Primary?tag={user.PrimaryImageTag}&fillWidth=300&fillHeight=300&quality=90&format=webp" alt={user.Name} class="w-full h-full object-cover"/>
@@ -660,7 +699,7 @@
         <!-- Divider -->
         <div class="flex items-center gap-4 w-full max-w-xl mt-4">
           <div class="flex-1 h-px bg-gray-800"></div>
-          <span class="text-gray-600 text-sm">oder</span>
+          <span class="text-gray-600 text-sm">{i18n.t.or}</span>
           <div class="flex-1 h-px bg-gray-800"></div>
         </div>
 

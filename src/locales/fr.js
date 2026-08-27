@@ -28,6 +28,7 @@ export default {
     loginText: "Connexion",
     errLogin: "Mot de passe invalide ou échec de la connexion.",
     manualLogin: "Connexion manuelle",
+    or: "ou",
     username: "Nom d'utilisateur",
 
     // Navigation

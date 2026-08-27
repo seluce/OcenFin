@@ -13,7 +13,9 @@
     selectedUser,
     library = null,            // { Id, Name } — which library to show (from App)
     reloadKey = 0,             // increment → discard the view cache + reload
-    focusFirstOnLoad = false,  // when opened from the menu: focus the first card (not "Random")
+    focusFirstOnLoad = false,  // opened from the menu OR a dashboard tile: focus the first card
+                               // (not "Random"). Both entry points mean the same thing — the
+                               // dashboard one passed false until 2026-08-25, so it came up blank.
     sharedReady = false,       // App level: shared profile active? (shows the "watch together" toggle)
     partnerPlayedIds = null,   // IDs watched by AT LEAST ONE member — a union, see App.svelte.
                                // Filtering them out leaves what is new to both. (App loads, Library filters.)
@@ -448,9 +450,16 @@
   // ── Open details: remember scroll/focus, then to App ───────
   let savedScroll  = 0;
   let lastFocusedId = null;
+  let lastFocusedIdx = -1;
   function openDetails(item) {
     savedScroll   = libraryScrollContainer?.scrollTop || 0;
     lastFocusedId = item.Id;
+    // The POSITION in the rendered grid as well, because the card may not be there on the way back:
+    // App removes an item that no longer matches an active status filter (favourite taken off in
+    // Details), and it does so while restoreView() is already suspended on its tick — so the card
+    // is reliably gone by the time the id is looked up. Position is what survives that.
+    lastFocusedIdx = [...(libraryGrid?.querySelectorAll('[data-item-id]') || [])]
+      .findIndex(el => el.getAttribute('data-item-id') === item.Id);
     onOpenDetails?.(item);
   }
 
@@ -459,7 +468,16 @@
     await tick();
     if (libraryScrollContainer) libraryScrollContainer.scrollTop = savedScroll;
     if (lastFocusedId && libraryGrid) {
-      const btn = libraryGrid.querySelector(`[data-item-id="${lastFocusedId}"]`);
+      const cards = libraryGrid.querySelectorAll('[data-item-id]');
+      let btn = libraryGrid.querySelector(`[data-item-id="${lastFocusedId}"]`);
+      // Gone: the card that moved up into its place, so focus stays where the offset just put the
+      // view — falling back to the FIRST card would tear you out of position 200. Clamped, for an
+      // item removed from the end. Landing nowhere is the one option that is not available: the
+      // next key press would open the sidebar.
+      if (!btn && lastFocusedIdx >= 0 && cards.length) {
+        btn = cards[Math.min(lastFocusedIdx, cards.length - 1)];
+        dlog('[focus] library restore · card gone, took position', lastFocusedIdx, 'of', cards.length);
+      }
       if (btn) btn.focus();
     }
   }
@@ -499,7 +517,15 @@
     if (!lib) return;
     const newLib = lib.Id !== currentLibraryId;
     const newKey = rk !== appliedKey;
-    if (!newLib && !newKey) return;
+    if (!newLib && !newKey) {
+      // The SAME library opened again. navigateToLibrary always hands over a fresh object, so this
+      // effect runs while nothing actually has to load — items, scroll offset and letter are still
+      // there. There is still an explicit open to answer though, and returning early left the view
+      // with no focus at all. Starting at the top is the honest answer here: this is an open, not a
+      // Back — those go through restoreView() and keep their spot.
+      if (focusFirstOnLoad) focusFirstCard();
+      return;
+    }
     appliedKey = rk;
     if (newKey && !newLib) viewCache = {};            // data changed → discard the cache
     const ff = focusFirstOnLoad;

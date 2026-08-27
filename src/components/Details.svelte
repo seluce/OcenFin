@@ -353,15 +353,27 @@
   // theme — identity is the ThemeSongsResult.OwnerId, i.e. the series. Everything async and every
   // failure is silent inside the module. Leaving the view (dashboard OR starting playback — both
   // unmount Details, the Player replaces the view) fades out via onDestroy below.
+  //
+  // Keyed on fullItem, NOT on item: `item` is the ENTRY point and deliberately stays put while the
+  // page navigates on (§19), so a jump through "more like this" never reached this effect and the
+  // previous title's theme kept playing under a different film. `fullItem` is what is on screen.
+  //
+  // While it is null the effect does NOT stop anything: navigateTo()/handleBackKey() blank it for
+  // the spinner, and stopping there would chop the theme on every step INSIDE a series, which the
+  // OwnerId identity above exists to avoid. The new title's own call settles it a moment later —
+  // same owner keeps playing, a different owner swaps, and no theme at all resolves to silence
+  // inside playThemeFor().
   $effect(() => {
-    const id    = item?.Id;
-    const type  = item?.Type;
+    const shown = fullItem;
     const on    = !!playbackPrefs.themeMusic;
     const scope = playbackPrefs.themeMusicScope || 'both';
     const vol   = playbackPrefs.themeMusicVolume ?? 40;
-    const fits  = (type === 'Movie' && scope !== 'series')
-               || ((type === 'Series' || type === 'Season' || type === 'Episode') && scope !== 'movies');
-    if (on && id && fits) untrack(() => playThemeFor(item, selectedUser.Id, vol));
+    if (!on) { stopTheme(); return; }
+    if (!shown?.Id) return;                     // still loading — leave what is playing alone
+    const type = shown.Type;
+    const fits = (type === 'Movie' && scope !== 'series')
+              || ((type === 'Series' || type === 'Season' || type === 'Episode') && scope !== 'movies');
+    if (fits) untrack(() => playThemeFor(shown, selectedUser.Id, vol));
     else stopTheme();
   });
   onDestroy(stopTheme);
@@ -489,37 +501,47 @@
     onPlayVideo?.({ item: pool[Math.floor(Math.random() * pool.length)], audioIndex: -1, subtitleIndex: -1 });
   }
 
+  // Both toggles act on what is ON SCREEN and additionally write the change into the ENTRY object,
+  // because that is the very object the origin list renders — which is what makes the card behind us
+  // update without a reload. That second write is only correct while the page still shows the title
+  // we came in on: after a jump through "more like this" the entry is a different film, and marking
+  // THIS one watched used to put the tick on ITS card in the library. Both are captured once, so a
+  // rollback cannot land on a title the user navigated to in the meantime.
   async function togglePlayed() {
     // Toggle optimistically and locally — no reload of the whole detail page
-    const willBePlayed = !fullItem.UserData?.Played;
-    fullItem.UserData = { ...fullItem.UserData, Played: willBePlayed };
-    if (item) item.UserData = { ...item.UserData, Played: willBePlayed };   // carry the original list item along → the origin list updates
+    const shown = fullItem;
+    const carry = !!item && item.Id === shown.Id;
+    const willBePlayed = !shown.UserData?.Played;
+    shown.UserData = { ...shown.UserData, Played: willBePlayed };
+    if (carry) item.UserData = { ...item.UserData, Played: willBePlayed };
     try {
-      await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/PlayedItems/${fullItem.Id}`, {
+      await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/PlayedItems/${shown.Id}`, {
         method: willBePlayed ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
     } catch (e) {
       // Roll back on error
       console.warn('[OcenFin] played-status toggle failed, rolled back:', e);
-      fullItem.UserData = { ...fullItem.UserData, Played: !willBePlayed };
-      if (item) item.UserData = { ...item.UserData, Played: !willBePlayed };
+      shown.UserData = { ...shown.UserData, Played: !willBePlayed };
+      if (carry) item.UserData = { ...item.UserData, Played: !willBePlayed };
     }
   }
 
   async function toggleFavorite() {
-    const willBeFav = !fullItem.UserData?.IsFavorite;
-    fullItem.UserData = { ...fullItem.UserData, IsFavorite: willBeFav };
-    if (item) item.UserData = { ...item.UserData, IsFavorite: willBeFav };   // carry the original list item along → the favorites view removes/adds reactively
+    const shown = fullItem;
+    const carry = !!item && item.Id === shown.Id;   // see togglePlayed above
+    const willBeFav = !shown.UserData?.IsFavorite;
+    shown.UserData = { ...shown.UserData, IsFavorite: willBeFav };
+    if (carry) item.UserData = { ...item.UserData, IsFavorite: willBeFav };
     try {
-      await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${fullItem.Id}`, {
+      await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${shown.Id}`, {
         method: willBeFav ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
     } catch (e) {
       console.warn('[OcenFin] favorite toggle failed, rolled back:', e);
-      fullItem.UserData = { ...fullItem.UserData, IsFavorite: !willBeFav };
-      if (item) item.UserData = { ...item.UserData, IsFavorite: !willBeFav };
+      shown.UserData = { ...shown.UserData, IsFavorite: !willBeFav };
+      if (carry) item.UserData = { ...item.UserData, IsFavorite: !willBeFav };
     }
   }
 

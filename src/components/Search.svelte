@@ -33,7 +33,7 @@
   export function reset() {
     clearTimeout(searchTimeout);
     query = ''; results = []; people = []; isLoading = false;
-    savedScroll = 0; lastFocusedId = null;
+    savedScroll = 0; lastFocusedId = null; focusResults = false;
     searchToken++;                 // any response still in flight is discarded
     tick().then(() => searchInput?.focus());
   }
@@ -71,12 +71,20 @@
   function clearHistory() {
     searchHistory = [];
     localStorage.removeItem(`search_history_${selectedUser.Id}`);
+    // The button that was just pressed sits INSIDE the block this empties, so it dies with it and
+    // the view is left without focus. The field is where a cleared history leaves you anyway.
+    tick().then(() => searchInput?.focus());
   }
 
+  // Picking a term hides the history block (it is gated on a query shorter than two characters),
+  // so the focused pill is gone the moment the query is set — and the results that replace it are
+  // not there yet. The search hands focus on when it lands; see performSearch.
+  let focusResults = false;
   function useHistory(term) {
     query = term;
     clearTimeout(searchTimeout);
     isLoading = true;
+    focusResults = true;
     performSearch();
   }
 
@@ -95,6 +103,7 @@
 
   function onSearchInput() {
     clearTimeout(searchTimeout);
+    focusResults = false;          // typing: focus stays in the field, whatever came before
     if (query.trim().length < 2) { searchToken++; results = []; people = []; isLoading = false; return; }
     isLoading = true;
     searchTimeout = setTimeout(performSearch, 600);
@@ -147,6 +156,13 @@
     // Only reset isLoading if we're still the current search — otherwise an
     // old response would clear the spinner of the already-running new search prematurely.
     finally     { if (myToken === searchToken) isLoading = false; }
+    // Started from the history: nothing on screen holds focus, so the results take it over. The
+    // field is the fallback for a term that finds nothing — there is no third place to stand.
+    if (focusResults && myToken === searchToken) {
+      focusResults = false;
+      await tick();
+      (scrollEl?.querySelector('[data-item-id]') || searchInput)?.focus();
+    }
   }
 
 

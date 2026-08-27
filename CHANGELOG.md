@@ -3,6 +3,93 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## 2026.08.27
+
+### Fixed
+
+- **Back from a cast member's page now returns you to where you were with the remote's Back key
+  too.** The on-screen button already did: back into the search results, the library or the list you
+  came from, on the entry you had opened. The remote's own key took a shortcut past all of that and
+  only changed the view, so the search came back with nothing focused and the next press opened the
+  menu instead of moving within the results. Both do the same thing now.
+- **A collection or watchlist opens on its first title instead of on the Back button.** Returning to
+  one from a title already put you back on the entry you had opened, but opening one fresh left
+  focus sitting on Back — so the first press of the remote led straight out of the list you had just
+  asked for. It now starts on the first title, the way favourites already did, and falls back to the
+  Back button only when there is nothing in the list.
+- **A collection inside a collection steps back one level at a time.** Opening one from within
+  another and pressing Back brought you to the parent with nothing focused, so the next press of the
+  remote opened the menu; pressing Back once more then aimed at the nested collection instead of at
+  the title you had originally opened, and landed somewhere else on the page or at the top of it.
+  Every level now keeps its own place: you return to the collection you went into, at the position
+  you left it, and the last step back takes you to where the chain started.
+- **Picking a term from the search history no longer leaves the remote stranded.** The list of past
+  searches disappears the moment a term is chosen — together with the button you had just pressed,
+  so nothing on screen held focus and the next press of the remote opened the menu instead of moving
+  into the results that had meanwhile arrived. Focus now moves on to the first result, or back to
+  the search field when the term finds nothing. Emptying the history does the same.
+- **Editing a playlist keeps the remote working.** Removing an entry took the button you pressed
+  down with its row, and moving an entry all the way to the top or bottom greyed out the very arrow
+  you were on — both left the page without focus, so the next press jumped to the menu. Removing now
+  lands on the entry that moved up into the gap, so a series of deletions works from the same spot,
+  and an entry that reaches the end hands focus to the opposite arrow.
+- **Leaving a title returns you into a filtered library properly.** With a filter active — say
+  favourites only — taking the favourite off inside the title and going back correctly dropped it
+  from the list, but left focus nowhere at all, so the next press opened the menu. Focus now lands
+  on the title that moved up into the gap, at the place on the page you left.
+- **Opening a title from a cast member's page no longer strands you.** From a title you could reach
+  a cast member, and from there another title — but Back then returned to the second title instead
+  of the first, and from that point on it only ever alternated between that title and the cast
+  member. The page you started from could not be reached again, and Back never left at all; the menu
+  was the only way out. Every step back now returns where it came from.
+- **Going back to the home screen from a library, search, favourites or the settings puts you back
+  on the page.** All four returned to a home screen with nothing focused, so the next press of the
+  remote opened the menu instead of moving within the page. A library now returns you to the tile
+  you opened it from, and the other three to the first row of the page.
+- **Choosing the settings from the menu now moves you into them.** Focus stayed on the menu entry,
+  because the settings load on demand and were not on screen yet at the moment focus was handed
+  over — so the bar stayed open over the page until you pressed again.
+- **A cast member's page remembers where you were.** Opening one of their titles and coming back put
+  you on the Back button with the page scrolled to the top; with a hundred titles listed that meant
+  finding your place again every time. It now returns to the title you opened, at the position you
+  left, and opening a person fresh starts on their first title.
+- **The remote keeps working after a playback error.** If a title failed to start and you chose "try
+  again", playback resumed but OK and the arrow keys did nothing — the button you had just pressed
+  disappeared with the message and took the focus with it, leaving the remote with no target inside
+  the player. Only Back still responded, which meant leaving the title to get the remote back.
+- **After watching, a title page puts you back on its play button.** Having reached the title
+  through a cast member's page, it came back focused on that actor instead.
+- **Choosing a symbol for a menu entry no longer strands the remote.** Picking one — or leaving the
+  chooser with Back — left the settings with nothing focused, so the next press opened the menu
+  instead of continuing where you were. Focus returns to the entry you were editing.
+- **Lists in the settings open on the setting you actually have.** The language, font, theme and
+  seek-step choosers started at the top of the list, which for a long list meant scrolling down to
+  find what was already selected. They now open on it.
+- **Removing a saved server keeps the remote working.** The ✕ takes its own row with it, and unless
+  it was the first server in the list that left the sign-in screen with nothing focused — the one
+  place in the app with no menu to fall back on. Focus now moves to the next server down, or to "add
+  server" once the list is empty. That ✕ also called itself "Back to Selection"; it says "Remove".
+- **Leaving the password entry returns you to the profile you picked**, instead of to the first one
+  in the row.
+- **Typing a server address by hand no longer opens the on-screen keyboard unasked.** Passing over
+  the field on the way to its OK button was enough to bring the keyboard up; it now opens on OK, the
+  way the fields in the settings do. Entering a password is unchanged — there the keyboard comes
+  straight up, which is what you want.
+- **The word "or" on the profile screen was German in every language.** It is translated now.
+- **Theme music follows the title you are actually looking at.** Jumping from a series to another
+  title through "more like this" kept the first one's theme playing under the new page. It now
+  changes with the page — the new title's own theme, or silence when it has none, which is also what
+  a lookup that fails now falls back to. Stepping through a series to a season or an episode still
+  keeps the theme running without restarting it, as before.
+- **Marking a title watched or a favourite applies to the title you are on.** After reaching it
+  through "more like this", the tick or the heart was additionally written onto the title you had
+  originally opened — so the wrong card showed as watched in the library, or the wrong film appeared
+  in favourites. The server always got the right one; only the card behind you was wrong.
+- **Opening a library from the home screen lands on its first title.** Picking Films, Series or
+  Playlists under "My media" took you into the library but left nothing focused, so the first press
+  of the remote opened the menu instead of moving through the titles — the same tile chosen from the
+  menu did it right. Both ways in behave the same now, including opening a library you were just in.
+
 ## 2026.08.25
 
 ### Added
