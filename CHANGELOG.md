@@ -90,6 +90,17 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   of the remote opened the menu instead of moving through the titles — the same tile chosen from the
   menu did it right. Both ways in behave the same now, including opening a library you were just in.
 
+### Internal
+
+- Svelte 5.56.10 → 5.57.0. Nothing in the app had to change: the two new compiler checks in that
+  release (shorthand handlers on `<svelte:window>`, `export let x = $derived(...)`) do not apply
+  here, and the build still ends at 0 warnings. Its four new features all land in areas this app
+  deliberately avoids or does not use — native `<select>`, the context API, `SvelteMap`, SSR — so
+  there was nothing to adopt. What it does bring is smaller generated code (3 079 bytes less
+  JavaScript, measured over the whole bundle), component instances held in `$state` no longer being
+  wrapped in a state proxy, which is the pattern behind every `bind:this` ref in App, and fixes to
+  nested transitions and outro handling, which every focus-trapped modal here relies on.
+
 ## 2026.08.25
 
 ### Added
