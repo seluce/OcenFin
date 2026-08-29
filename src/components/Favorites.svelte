@@ -1,7 +1,8 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, itemBadge, getItemSubtitle, personImageUrl, itemBlurHash, blurUp, longPress, authHeaders, dlog, getItemImageUrl } from '../utils.js';
+  import { itemProgress, getItemSubtitle, personImageUrl, itemBlurHash, blurUp, longPress, authHeaders, dlog, getItemImageUrl } from '../utils.js';
   import { session } from '../session.svelte.js';
+  import PosterCard from './PosterCard.svelte';
   import { tick } from 'svelte';
 
   // focusItemId: the card to land on after the parent brought us back (from Details, say). Passed in
@@ -82,6 +83,16 @@
 </script>
 
 <div bind:this={scrollEl} class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
+
+  <!-- Label under the poster; the card itself is shared (PosterCard). -->
+  {#snippet cardCaption(item)}
+    <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Type === 'Season' ? (item.SeriesName || item.Name) : item.Name}</span>
+    {#if item.Type === 'Season'}
+      <span class="text-xs text-gray-400 block truncate w-full">{item.Name}</span>
+    {:else if item.ProductionYear}
+      <span class="text-xs text-gray-400 block truncate w-full">{item.ProductionYear}</span>
+    {/if}
+  {/snippet}
   <div class="flex items-center gap-4 mb-10">
     <svg class="w-10 h-10 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0z"/></svg>
     <h1 class="text-4xl font-bold text-white">{i18n.t.favorites}</h1>
@@ -107,32 +118,7 @@
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{group.label}</h2>
           <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-12">
             {#each group.items as item (item.Id)}
-              {@const badge = itemBadge(item)}
-              <button onclick={() => onOpenDetails(item)} data-item-id={item.Id}
-                {@attach longPress()} onlongpress={() => onContextMenu(item)}
-                class="group focus:outline-none text-left scroll-my-4">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
-                  {#if badge}
-                    <div class="absolute top-2 left-2 z-10 min-w-[1.6rem] h-[1.6rem] px-1.5 rounded-full flex items-center justify-center bg-blue-600/90 text-white text-xs font-bold shadow-md pointer-events-none">
-                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-                    </div>
-                  {/if}
-                  {#if getItemImageUrl(item)}
-                    <img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
-                  {/if}
-                  {#if itemProgress(item) > 0}
-                    <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                      <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                    </div>
-                  {/if}
-                </div>
-                <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Type === 'Season' ? (item.SeriesName || item.Name) : item.Name}</span>
-                {#if item.Type === 'Season'}
-                  <span class="text-xs text-gray-400 block truncate w-full">{item.Name}</span>
-                {:else if item.ProductionYear}
-                  <span class="text-xs text-gray-400 block truncate w-full">{item.ProductionYear}</span>
-                {/if}
-              </button>
+              <PosterCard {item} {onOpenDetails} {onContextMenu} caption={cardCaption} />
             {/each}
           </div>
         {/if}

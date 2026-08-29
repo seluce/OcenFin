@@ -798,18 +798,25 @@
           <div class="px-6 pt-4 pb-2">
             <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupInterface}</h3>
           </div>
-          {#each uiToggles as tg}
-            <button onclick={() => toggleDisplay(tg.key)}
-              class="flex items-center justify-between w-full px-6 py-4 hover:bg-gray-700 focus:bg-gray-700
-                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-              <span class="text-lg text-gray-200">{tg.label}</span>
-              <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
-                          {displaySettings[tg.key] ? 'bg-blue-500' : 'bg-gray-600'}">
-                <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
-                            {displaySettings[tg.key] ? 'translate-x-7' : ''}"></div>
-              </div>
-            </button>
-          {/each}
+          <!-- One row per display toggle. Three groups render the identical control, so it lives here
+               once instead of three times — the switch, its colours and the focus ring stay in step
+               by construction. -->
+          {#snippet toggleRows(list)}
+            {#each list as tg}
+              <button onclick={() => toggleDisplay(tg.key)}
+                class="flex items-center justify-between w-full px-6 py-4 hover:bg-gray-700 focus:bg-gray-700
+                       focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+                <span class="text-lg text-gray-200">{tg.label}</span>
+                <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
+                            {displaySettings[tg.key] ? 'bg-blue-500' : 'bg-gray-600'}">
+                  <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
+                              {displaySettings[tg.key] ? 'translate-x-7' : ''}"></div>
+                </div>
+              </button>
+            {/each}
+          {/snippet}
+
+          {@render toggleRows(uiToggles)}
 
           <!-- Time format (applies to both clocks) -->
           <div class="px-6 py-4">
@@ -829,18 +836,7 @@
           <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
             <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupHome}</h3>
           </div>
-          {#each homeToggles as tg}
-            <button onclick={() => toggleDisplay(tg.key)}
-              class="flex items-center justify-between w-full px-6 py-4 hover:bg-gray-700 focus:bg-gray-700
-                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-              <span class="text-lg text-gray-200">{tg.label}</span>
-              <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
-                          {displaySettings[tg.key] ? 'bg-blue-500' : 'bg-gray-600'}">
-                <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
-                            {displaySettings[tg.key] ? 'translate-x-7' : ''}"></div>
-              </div>
-            </button>
-          {/each}
+          {@render toggleRows(homeToggles)}
 
           <!-- Number of recommendation rows — only relevant when recommendations are active -->
           {#if displaySettings.recommendations}
@@ -862,18 +858,7 @@
           <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
             <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupDetails}</h3>
           </div>
-          {#each detailToggles as tg}
-            <button onclick={() => toggleDisplay(tg.key)}
-              class="flex items-center justify-between w-full px-6 py-4 hover:bg-gray-700 focus:bg-gray-700
-                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-              <span class="text-lg text-gray-200">{tg.label}</span>
-              <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
-                          {displaySettings[tg.key] ? 'bg-blue-500' : 'bg-gray-600'}">
-                <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
-                            {displaySettings[tg.key] ? 'translate-x-7' : ''}"></div>
-              </div>
-            </button>
-          {/each}
+          {@render toggleRows(detailToggles)}
       </div>
     </section>
     {/if}

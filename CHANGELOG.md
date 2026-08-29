@@ -12,6 +12,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Internal
 
+- The poster card of collections, favourites and a cast member's filmography was written out three
+  times, byte for byte; it is one component now, with each view keeping its own caption. The three
+  toggle rows in the settings likewise became one. No visible change — 2.5 kB less JavaScript, and
+  the rule that every card carries the id the focus restore needs is now structural.
 - Svelte 5.56.10 → 5.57.0. Nothing in the app had to change and there was nothing new to adopt; the
   build still ends at 0 warnings. It brings slightly smaller generated code and fixes to nested
   transitions and outro handling, which the focus-trapped dialogs here rely on.
