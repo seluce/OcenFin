@@ -10,8 +10,15 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **The very first start puts you on "add server".** With nothing saved yet the sign-in screen came
   up with nothing focused — and that screen has no menu to fall back on.
 
+### Fixed
+
+- **The watchlist no longer reports an error into the log when the server answers oddly.** A reverse
+  proxy replying with an error page under a success code made one background refresh fail loudly
+  instead of quietly; it is optional either way and re-syncs on the next load.
+
 ### Internal
 
+- The page now declares the language it is actually showing, instead of always English.
 - The poster card of collections, favourites and a cast member's filmography was written out three
   times, byte for byte; it is one component now, with each view keeping its own caption. The three
   toggle rows in the settings likewise became one. No visible change — 2.5 kB less JavaScript, and
