@@ -3,15 +3,12 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
-## [Unreleased]
+## 2026.08.31
 
 ### Fixed
 
 - **The very first start puts you on "add server".** With nothing saved yet the sign-in screen came
   up with nothing focused — and that screen has no menu to fall back on.
-
-### Fixed
-
 - **The watchlist no longer reports an error into the log when the server answers oddly.** A reverse
   proxy replying with an error page under a success code made one background refresh fail loudly
   instead of quietly; it is optional either way and re-syncs on the next load.
