@@ -484,8 +484,15 @@
       <div data-focus-group="addserver" data-enter-first class="flex flex-col gap-6">
 
       <!-- Add new server (toggle panel) -->
+      <!-- focusOnMount when the list is empty: on a first ever start there are no saved servers, so
+           the list's own focusOnMount(i === 0) never runs and this is the only thing on screen worth
+           standing on — without it the first press of the remote went nowhere. The expression is
+           reactive, but both directions are harmless here: emptying the list rebuilds it ENABLED and
+           focuses this button, which is exactly where removeServer() sends focus anyway, and adding
+           a server connects and leaves this phase altogether. -->
       <button
         bind:this={addServerBtn}
+        {@attach focusOnMount(savedServers.length === 0)}
         onclick={() => { showAddServer = !showAddServer; if (showAddServer) discoverJellyfinServers(); }}
         class="w-full flex items-center justify-center gap-3 py-4 rounded-xl border-2 transition-all
                focus:outline-none focus:ring-4 focus:ring-blue-300 font-bold text-lg

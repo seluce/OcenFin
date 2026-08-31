@@ -73,7 +73,12 @@ export function handlePlaylistDeleted(playlistId) {
 // Re-sync with the server: refreshes Played states and drops entries that were
 // removed elsewhere (e.g. edited in the playlist view). Called on dashboard load.
 export function refreshWatchlist() {
-  if (currentUserId && watchlist.playlistId) refreshEntries(currentUserId);
+  // Fire and forget, so it needs its own catch: every OTHER caller of refreshEntries() sits inside
+  // a try, and a rejection here would be unhandled. It can happen without the server being down —
+  // a reverse proxy answering with an HTML error page under status 200 makes res.json() throw, and
+  // this app is explicitly used behind such proxies. Failing silently is right, the watchlist is
+  // optional: the UI then simply shows nothing as bookmarked until the next sync.
+  if (currentUserId && watchlist.playlistId) refreshEntries(currentUserId).catch(() => {});
 }
 
 // Called by App when a playlist's members changed in the UI (remove in the playlist
@@ -150,6 +155,6 @@ export async function toggleWatchlist(item) {
     // Network error → drop an unconfirmed placeholder first: while no playlist exists yet,
     // refreshEntries early-returns and could never clean it up. Then re-sync with the server.
     if (watchlist.entries[item.Id] === 'pending') delete watchlist.entries[item.Id];
-    refreshEntries(userId);
+    refreshEntries(userId).catch(() => {});   // fire and forget inside a catch — see refreshWatchlist
   }
 }

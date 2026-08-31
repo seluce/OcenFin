@@ -1,7 +1,7 @@
 {
   "name": "OcenFin",
   "private": true,
-  "version": "2026.8.27",
+  "version": "2026.8.31",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,7 +11,7 @@
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tailwindcss/vite": "^4.3.3",
-    "svelte": "^5.56.10",
+    "svelte": "^5.57.0",
     "tailwindcss": "^4.3.3",
     "vite": "^8.2.2"
   },

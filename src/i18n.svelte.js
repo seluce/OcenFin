@@ -67,6 +67,16 @@ export function detectUiLang() {
 // --- Reactive state (runes) ---
 let lang = $state(detectUiLang());
 
+// Keep the DOCUMENT's language declaration in step with the interface. Nothing in the app reads it,
+// but the browser does — text handling (hyphenation, quotes, font fallback) follows what the
+// document declares, and index.html's static <html lang="en"> would otherwise stay put while the
+// interface is German or Polish. Set once at startup and on every change; this module is loaded
+// from a deferred module script, so documentElement exists by the time it runs.
+function syncDocumentLang() {
+  try { document.documentElement.lang = lang; } catch { /* no DOM (never on the TV) */ }
+}
+syncDocumentLang();
+
 // Reactive access for components: i18n.t.key (translation) and i18n.lang (current code).
 // Both getters read `lang` ($state) → reads in templates/$effects are automatically reactive.
 export const i18n = {
@@ -76,5 +86,5 @@ export const i18n = {
 
 // Change language (validated against existing translations; persistence happens in the caller).
 export function setLang(code) {
-  if (translations[code]) lang = code;
+  if (translations[code]) { lang = code; syncDocumentLang(); }
 }
