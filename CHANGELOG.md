@@ -3,6 +3,22 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## [Unreleased]
+
+### Fixed
+
+- **The player controls hide again after you return from the home screen.** Minimising OcenFin mid-film
+  and coming back could leave the control bar on screen for good — it only disappeared once you
+  pressed some button. It needed a narrow coincidence, which is why it happened so rarely: the bar
+  had to be showing when you left, so that the timer meant to hide it ran out while playback was
+  paused in the background, where it does nothing by design.
+
+### Internal
+
+- Waking from the screensaver now writes one diagnostic line behind the debug switch: how long it
+  ran, what was playing and what held focus. Chasing a rare report that the first press after a long
+  screensaver does not always resume playback.
+
 ## 2026.08.31
 
 ### Fixed

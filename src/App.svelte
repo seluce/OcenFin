@@ -375,7 +375,7 @@
   function scheduleScreensaver() {
     if (screensaverTimer) { clearTimeout(screensaverTimer); screensaverTimer = null; }
     if (!screensaverSettings.enabled || appPhase !== 'app' || playerPlaying) { showScreensaver = false; return; }
-    screensaverTimer = setTimeout(() => { showScreensaver = true; }, screensaverSettings.timeout * 1000);
+    screensaverTimer = setTimeout(() => { showScreensaver = true; screensaverShownAt = Date.now(); }, screensaverSettings.timeout * 1000);
   }
 
   // Re-schedule reactively as soon as on/off, app phase or playback status change — so the
@@ -383,8 +383,24 @@
   $effect(() => { scheduleScreensaver(); });
 
   // Every input = activity: screensaver away, timer reset.
+  let screensaverShownAt = 0;
   function resetActivity() {
-    if (showScreensaver) showScreensaver = false;
+    if (showScreensaver) {
+      // Diagnostics for a rare report: after a LONG screensaver over a paused player, the next OK
+      // sometimes does not resume playback. Two candidates, and this line tells them apart. Either
+      // focus is parked on a HUD button that is not play/pause — then OK correctly does that
+      // button's job, and the fix would be to land on play/pause when waking — or focus is on
+      // <body>, in which case nothing reaches the Player's key handler at all (it sits on the
+      // container, not on window) and the cause is outside this code, most likely webOS suspending
+      // the app on its own inactivity timer. The duration is logged because the report says the
+      // longer the screensaver ran, the more likely it is.
+      const a = document.activeElement;
+      dlog('[screensaver] dismissed after', Math.round((Date.now() - screensaverShownAt) / 1000), 's',
+           '· view', viewState, '· playing', playerPlaying, '· focus',
+           !a || a === document.body ? '<BODY — nothing focused>'
+             : (a.getAttribute?.('aria-label') || a.textContent || a.tagName || '').trim().slice(0, 30));
+      showScreensaver = false;
+    }
     scheduleScreensaver();
   }
 

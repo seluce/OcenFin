@@ -1611,6 +1611,17 @@
     }, 3500);
   }
 
+  // The timeout above fires ONCE and deliberately does nothing while paused — paused shows the
+  // controls. So a pause CONSUMES it, and nothing re-arms it when playback comes back: the HUD then
+  // stays up for good until some key press happens to re-arm it by hand. Normally invisible, because
+  // you resume with a key press anyway. It shows when playback is paused and resumed WITHOUT one —
+  // minimising the app to the home screen and returning is exactly that case, which is why it looked
+  // random and rare. Re-arm whenever playback is running with the controls up.
+  //
+  // Cannot loop: showControls is already true here, so writing it again is not a change, and the
+  // timeout's own showControls = false makes this condition false rather than re-entering.
+  $effect(() => { if (isPlaying && showControls) resetControlsTimeout(); });
+
   function togglePlay() {
     if (isPlaying) { _groupWantsPaused = inSyncGroup; videoElement.pause(); }
     else           { _groupWantsPaused = false; _userPlayIntent = Date.now(); videoElement.play(); }
