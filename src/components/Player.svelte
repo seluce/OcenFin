@@ -969,9 +969,19 @@
   // Starts near the end; "auto-skip credits" takes precedence (immediate jump).
   let chapters          = $state([]);
   let nextCountdown     = $state(null);   // remaining seconds (integer, for the text), null = inactive
-  let countdownProgress = $state(0);      // 1 → 0, drives the bar
+  // The bar is ONE compositor animation, not a value stepped per tick. Driving a width from a 100 ms
+  // interval put it on the main thread twice over: width is a layout property, and the interval
+  // competes with video decoding exactly when the player is busiest — buffering the next episode.
+  // Starved ticks were what made it move in visible steps. transform:scaleX is composited on this
+  // device (proven the hard way in CODE-HEALTH §17, where a transform-driven edge ran AHEAD of a
+  // clip-path on the main thread), so the animation keeps its frames even while the main thread is
+  // blocked. These three drive it; countdownRun re-issues it, see restartBar().
+  let countdownRun     = $state(0);
+  let barFrom          = $state(1);                 // scaleX this run starts at
+  let barSeconds       = $state(20);                // how long this run lasts (wall clock)
   let countdownTimer    = null;
   let countdownEndTime  = 0;   // countdown target in VIDEO seconds (not wall clock — must pause with the video)
+  let lastRemaining     = 0;   // previous tick's remaining, to tell normal decay from a seek
   let countdownDismissed = false; // per episode: don't restart after a cancel
   let outroDismissed = $state(false); // manual outro prompt for THIS episode dismissed → stay put
   const COUNTDOWN_FROM  = 20;
@@ -1030,21 +1040,37 @@
     const left = duration > 0 ? Math.max(0, duration - currentTime) : COUNTDOWN_FROM;
     const span = Math.max(1, Math.min(COUNTDOWN_FROM, Math.floor(left)));
     nextCountdown = span;             // immediately visible → the card appears
-    countdownProgress = 1;
+    lastRemaining = span;
+    restartBar(span, span);
     // Count in VIDEO time, not wall clock: pausing has to hold the countdown, and seeking has to
     // shorten it. Note the span can be shorter than the remaining video — with real credits data the
     // countdown deliberately expires before the picture ends, which is what skips the credits.
     countdownEndTime = (videoElement?.currentTime ?? currentTime) + span;
-    // setInterval (reliable in this project) every 100 ms → text per second, bar smooth.
+    // 250 ms is enough now: the text only changes once a second, and the bar is no longer stepped
+    // here at all. Four wakeups a second instead of ten, in the busiest moment the player has.
     countdownTimer = setInterval(() => {
       const cur = videoElement?.currentTime ?? 0;
       let remaining = countdownEndTime - cur;
       // Seeking backwards but staying inside the end region: re-anchor instead of counting up.
       if (remaining > span) { countdownEndTime = cur + span; remaining = span; }
       if (remaining <= 0) { stopCountdown(); goToNextEpisode(); return; }
-      countdownProgress = Math.min(1, remaining / span);
+      // A JUMP rather than normal decay means video time and wall clock have parted company — a
+      // seek, in either direction. Normal ticking needs NO restart: the compositor is already
+      // drawing exactly this ramp, and re-issuing it every tick would bring the stutter back.
+      if (Math.abs(remaining - lastRemaining) > 1) restartBar(remaining, span);
+      lastRemaining = remaining;
       nextCountdown = Math.ceil(remaining);
-    }, 100);
+    }, 250);
+  }
+
+  // (Re)issue the bar animation: start at the fraction that is actually left and run out over the
+  // seconds that are actually left. Both the first start and every correction go through here, so
+  // there is one rule rather than two. Pausing and buffering are NOT corrections — they stop video
+  // time, and animation-play-state stops the bar with it, keeping the two in step for free.
+  function restartBar(remaining, span) {
+    barFrom    = Math.max(0, Math.min(1, remaining / span));
+    barSeconds = Math.max(0.1, remaining);
+    countdownRun++;                  // {#key} → a fresh element, the only reliable way to restart
   }
   function stopCountdown() {
     if (countdownTimer) clearInterval(countdownTimer);
@@ -2414,8 +2440,14 @@
             {#if nextEpisodeMeta}<span class="text-base text-gray-400">{nextEpisodeMeta}</span>{/if}
           </div>
         </div>
+        <!-- {#key}: changing an animation's properties on a live element does not reliably restart
+             it, replacing the element does. Only a seek gets here, never a normal tick. -->
         <div class="h-1.5 bg-gray-700 rounded-full overflow-hidden">
-          <div class="h-full bg-blue-500" style="width: {countdownProgress * 100}%; transition: width 0.12s linear;"></div>
+          {#key countdownRun}
+            <div class="h-full bg-blue-500 countdown-bar"
+              style="--from:{barFrom}; --dur:{barSeconds}s;
+                     animation-play-state:{isPlaying && !isBuffering ? 'running' : 'paused'};"></div>
+          {/key}
         </div>
         <div class="flex gap-3">
           <button onclick={() => goToNextEpisode(true)} {@attach focusOnMount()}
@@ -2498,6 +2530,19 @@
   onClose={async () => { pickerMode = null; if (wasPlayingBeforePicker) videoElement?.play().catch(() => {}); wasPlayingBeforePicker = false; await tick(); if (controlOpener && document.contains(controlOpener)) controlOpener.focus(); else playerContainer?.focus(); controlOpener = null; }} />
 
 <style>
+  /* Auto-play countdown bar. Kept in the stylesheet rather than inline because Svelte scopes the
+     @keyframes name together with the class — an inline `animation:` would reference a name that
+     no longer exists. scaleX from a CSS variable, so one keyframe serves every restart.
+     transform-origin:left → it empties towards the right. */
+  .countdown-bar {
+    transform-origin: left;
+    animation: countdown-shrink var(--dur, 20s) linear forwards;
+  }
+  @keyframes countdown-shrink {
+    from { transform: scaleX(var(--from, 1)); }
+    to   { transform: scaleX(0); }
+  }
+
   /* Seek bar — watched part blue, rest light (consistent across all browsers),
      white handle, subtle focus aura instead of a strong ring (modern player style). */
   :global(.seekbar) { -webkit-appearance: none; appearance: none; }

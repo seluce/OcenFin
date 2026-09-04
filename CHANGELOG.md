@@ -3,6 +3,16 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## [Unreleased]
+
+### Changed
+
+- **The countdown to the next episode runs smoothly.** Its bar moved in visible steps, because it was
+  redrawn from a timer that competes with the video for the same thread — right at the end of an
+  episode, where the player is busiest. The bar is now handed to the graphics side and drawn there in
+  one go, so it keeps running evenly even while the picture is being decoded. It still pauses with
+  the video, holds while buffering, and follows along when you skip forwards or back.
+
 ## 2026.09.04
 
 ### Fixed
