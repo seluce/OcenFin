@@ -13,6 +13,12 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   one go, so it keeps running evenly even while the picture is being decoded. It still pauses with
   the video, holds while buffering, and follows along when you skip forwards or back.
 
+### Internal
+
+- hls.js 1.7.1 → 1.7.2. A patch release; one of its nine fixes matters here — a seek landing in a gap
+  at the very end of a stream could collapse the reported duration, which is exactly what the
+  end-of-episode logic reads. The rest is for features this app does not use.
+
 ## 2026.09.04
 
 ### Fixed
