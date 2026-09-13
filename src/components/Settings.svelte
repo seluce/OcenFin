@@ -1674,11 +1674,13 @@
         </div>
       {/if}
 
-      <!-- Credentials, hidden on an age-restricted profile: storing a password for one-touch
-           sign-in, changing it, and above all authorising another device by code are not things a
-           child account should reach. The profile picture above stays — it is the one setting here
-           they actually enjoy, and it affects nobody else. -->
-      {#if !restrictedProfile}
+      <!-- Credentials. On an age-restricted profile only "save password" stays: it stores THIS
+           profile's own token for the one-touch switch in the profile picker, which is a real
+           convenience at the television and weakens nothing — it opens the restricted profile, not
+           a parent's. Whoever protects a parent account does that from the parent profile.
+           Changing the password and above all authorising another device by code stay hidden;
+           those are not things a child account should reach. The profile picture above stays too —
+           it is the one setting here they actually enjoy, and it affects nobody else. -->
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
         <!-- Save password / quick switch (formerly its own "Profile" category) -->
@@ -1696,6 +1698,7 @@
           </div>
         </button>
 
+        {#if !restrictedProfile}
         <div class="h-px bg-gray-700"></div>
 
         <!-- Change password -->
@@ -1725,9 +1728,9 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
           </svg>
         </button>
+        {/if}
 
       </div>
-      {/if}
     </section>
     {/if}
 

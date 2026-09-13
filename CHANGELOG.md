@@ -12,14 +12,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   episode, where the player is busiest. The bar is now handed to the graphics side and drawn there in
   one go, so it keeps running evenly even while the picture is being decoded. It still pauses with
   the video, holds while buffering, and follows along when you skip forwards or back.
-
-### Internal
-
-- hls.js 1.7.1 → 1.7.2. A patch release; one of its nine fixes matters here — a seek landing in a gap
-  at the very end of a stream could collapse the reported duration, which is exactly what the
-  end-of-episode logic reads. The rest is for features this app does not use.
-
-## 2026.09.04
+- **A profile with an age restriction can save its password again.** The settings of such a profile
+  hid all sign-in options, including the one that lets it be picked without typing the password on
+  the remote. That one is back, because it only concerns that profile itself. Changing the password
+  and authorising another device by code stay hidden.
 
 ### Fixed
 
@@ -31,6 +27,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Internal
 
+- hls.js 1.7.1 → 1.7.2. A patch release; one of its nine fixes matters here — a seek landing in a gap
+  at the very end of a stream could collapse the reported duration, which is exactly what the
+  end-of-episode logic reads. The rest is for features this app does not use.
 - Waking from the screensaver now writes one diagnostic line behind the debug switch: how long it
   ran, what was playing and what held focus. Chasing a rare report that the first press after a long
   screensaver does not always resume playback.
