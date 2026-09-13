@@ -27,9 +27,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Internal
 
-- hls.js 1.7.1 → 1.7.2. A patch release; one of its nine fixes matters here — a seek landing in a gap
-  at the very end of a stream could collapse the reported duration, which is exactly what the
-  end-of-episode logic reads. The rest is for features this app does not use.
+- hls.js 1.7.1 → 1.7.3 (1.7.2 never shipped in a release). One fix across the two matters here: a
+  seek landing in a gap at the very end of a stream could collapse the reported duration, which is
+  exactly what the end-of-episode logic reads. The rest is for features this app does not use — the
+  audio and subtitle track fixes in 1.7.3 included, since tracks are chosen by the server and
+  subtitles are drawn by the app itself.
 - Waking from the screensaver now writes one diagnostic line behind the debug switch: how long it
   ran, what was playing and what held focus. Chasing a rare report that the first press after a long
   screensaver does not always resume playback.
