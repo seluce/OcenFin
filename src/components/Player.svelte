@@ -2537,6 +2537,14 @@
   .countdown-bar {
     transform-origin: left;
     animation: countdown-shrink var(--dur, 20s) linear forwards;
+    /* Exempt from "Reduce animations". That setting forces animation-duration: 0ms !important on
+       every element (App.svelte), and with `forwards` a zero-length run jumps straight to its END —
+       scaleX(0) — so on a TV with the setting on the bar sat grey while the text counted down. Found
+       on the B4, reproduced in desktop Chromium, so not a Chromium 120 issue. This is not decoration
+       but the remaining time, and it runs on the compositor, i.e. the cheap kind the setting exists
+       to spare. !important plus this rule's higher specificity (class + scope hash, 0-2-0, against
+       the global rule's 0-1-0) is what lets it win. */
+    animation-duration: var(--dur, 20s) !important;
   }
   @keyframes countdown-shrink {
     from { transform: scaleX(var(--from, 1)); }

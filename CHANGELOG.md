@@ -11,7 +11,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   redrawn from a timer that competes with the video for the same thread — right at the end of an
   episode, where the player is busiest. The bar is now handed to the graphics side and drawn there in
   one go, so it keeps running evenly even while the picture is being decoded. It still pauses with
-  the video, holds while buffering, and follows along when you skip forwards or back.
+  the video, holds while buffering, follows along when you skip forwards or back, and keeps running
+  with "Reduce animations" switched on, since it shows time rather than decoration.
 - **A profile with an age restriction can save its password again.** The settings of such a profile
   hid all sign-in options, including the one that lets it be picked without typing the password on
   the remote. That one is back, because it only concerns that profile itself. Changing the password
