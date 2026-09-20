@@ -20,6 +20,12 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Fixed
 
+- **Episodes count as watched again, and keep their place.** When one episode ran into the next, the
+  app told the server you had stopped at the very beginning of the one you had just finished — so it
+  stayed marked unwatched in the episode list. The same went for leaving a title early: its position
+  was cleared instead of saved, and it dropped out of "Continue watching". Both only affected titles
+  the server was converting on the fly, which is why it looked as though it depended on how you
+  started playback.
 - **The player controls hide again after you return from the home screen.** Minimising OcenFin mid-film
   and coming back could leave the control bar on screen for good — it only disappeared once you
   pressed some button. It needed a narrow coincidence, which is why it happened so rarely: the bar

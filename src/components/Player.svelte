@@ -174,6 +174,7 @@
     playbackError = false;
     isBuffering = true;
     resumeApplied = false;          // on retry, jump back to the position if needed
+    sourceLive = false;             // load() empties the element too — see positionTicks()
     if (videoElement) { videoElement.load(); videoElement.play(); }
     armBufferWatchdog();
   }
@@ -346,6 +347,25 @@
   // Playback
   let progressTimer;
   let startTicks    = untrack(() => item.UserData?.PlaybackPositionTicks || 0);
+
+  // The media element is NOT a reliable source of the position once its source has been detached.
+  // hls.destroy() runs `media.removeAttribute('src')` followed by `media.load()` (verified in the
+  // installed library), and the load algorithm resets currentTime to 0 — measured in Chromium:
+  // 3.5 s before, 0 after. Every report taken from the element after that carries position 0, and
+  // the Stopped report in onDestroy is exactly such a case: the server reads "stopped at the very
+  // beginning", clears the progress and the episode stays UNWATCHED. That is what happened when an
+  // episode auto-advanced to the next one — for transcoded titles only, since Direct Play has no
+  // hls instance to destroy, which is why it looked as if it depended on how playback was started.
+  //
+  // So: remember the last position seen while a source was attached, and let positionTicks() decide
+  // which of the two to trust. sourceLive is false from just before every teardown until the next
+  // source has announced its metadata.
+  let lastPosition = 0;        // seconds
+  let sourceLive   = false;
+  function positionTicks() {
+    const live = sourceLive ? (videoElement?.currentTime ?? lastPosition) : lastPosition;
+    return Math.round(live * 10000000);
+  }
   let resumeApplied = false;   // execute the resume jump only once
   let playSessionId = crypto.randomUUID();  // replaced by PlaybackInfo
   let playMethod    = $state('DirectPlay');         // DirectPlay | DirectStream | Transcode
@@ -450,6 +470,7 @@
   let setupToken = 0;
   async function setupPlayback(audioIndex, subtitleIndex, forceTranscode = false) {
     const mySetup = ++setupToken;
+    sourceLive = false;   // the destroy below empties the element — see positionTicks()
     if (hls) { try { hls.destroy(); } catch {} hls = null; }
     if (!forceTranscode) triedTranscodeFallback = false;   // fresh attempt → allow the fallback again
     try {
@@ -1254,6 +1275,7 @@
     if (infoInterval)    clearInterval(infoInterval);
     clearSpinner();
     clearBufferWatchdog();
+    sourceLive = false;   // the destroy below empties the element — see positionTicks()
     if (hls) { try { hls.destroy(); } catch {} hls = null; }
     disposeGraphic();
     disposeAss();
@@ -1390,7 +1412,7 @@
         headers: getAuthHeaders(),
         body: JSON.stringify({
           ItemId: item.Id,
-          PositionTicks: Math.round(videoElement.currentTime * 10000000),
+          PositionTicks: positionTicks(),
           IsPaused: false, PlayMethod: playMethod,
           PlaySessionId: playSessionId
         })
@@ -1398,8 +1420,10 @@
     } catch { }
   }
 
+  // Gated on the SESSION, not on the element: by the time this runs in onDestroy the element has
+  // been emptied, and bailing out on it would mean never telling the server where we stopped.
   async function reportPlaybackStopped(keepalive = false) {
-    if (!videoElement) return;
+    if (!playSessionId) return;
     try {
       await fetch(`${session.serverUrl}/Sessions/Playing/Stopped`, {
         method: "POST",
@@ -1407,7 +1431,7 @@
         keepalive,
         body: JSON.stringify({
           ItemId: item.Id,
-          PositionTicks: Math.round(videoElement.currentTime * 10000000),
+          PositionTicks: positionTicks(),
           PlaySessionId: playSessionId
         })
       });
@@ -1418,7 +1442,7 @@
   // teardown and keeps the auth header. For visibilitychange→hidden and playback errors,
   // so the position is never lost (without ending the session — hence Progress, not Stopped).
   function flushProgress() {
-    if (!videoElement || !playSessionId) return;
+    if (!playSessionId) return;
     try {
       fetch(`${session.serverUrl}/Sessions/Playing/Progress`, {
         method: "POST",
@@ -1426,7 +1450,7 @@
         keepalive: true,
         body: JSON.stringify({
           ItemId: item.Id,
-          PositionTicks: Math.round(videoElement.currentTime * 10000000),
+          PositionTicks: positionTicks(),
           IsPaused: !isPlaying, PlayMethod: playMethod,
           PlaySessionId: playSessionId
         })
@@ -1997,9 +2021,14 @@
     onloadstart={() => vlog('loadstart')}
     onsuspend={() => vlog('suspend')}
     onerror={onVideoError}
-    ontimeupdate={() => { if (!isSeeking) currentTime = videoElement?.currentTime ?? 0; onProgressTick(); }}
+    ontimeupdate={() => {
+      if (!isSeeking) currentTime = videoElement?.currentTime ?? 0;
+      if (sourceLive && videoElement) lastPosition = videoElement.currentTime;   // survives the teardown
+      onProgressTick();
+    }}
     onloadedmetadata={() => {
       vlog('loadedmetadata', { dur: Math.round(videoElement?.duration || 0), w: videoElement?.videoWidth, h: videoElement?.videoHeight });
+      sourceLive = true;        // from here the element's own currentTime is the truth again
       seekToResume();
     }}
     onended={onVideoEnded}
