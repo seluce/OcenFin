@@ -362,7 +362,32 @@
   // source has announced its metadata.
   let lastPosition = 0;        // seconds
   let sourceLive   = false;
+
+  // Moving on FROM the outro means the episode is finished — even though the player deliberately
+  // leaves before the picture ends: the countdown switches about 20 s after the credits start, and
+  // "skip credits" jumps there outright. The server derives "watched" from the stopped position and
+  // wants 90 % of the runtime by default, which a short episode with a long outro misses, so it
+  // would stay unwatched although it was watched through. The final report of this instance
+  // therefore carries the END of the runtime.
+  //
+  // Deliberately NOT an extra "mark played" call: that would race the Stopped report, and a Stopped
+  // report arriving afterwards with a lower position leaves the episode watched AND carrying a
+  // resume position. One report, and the server's own rule does the rest.
+  //
+  // Only ever set from the outro. The channel rocker, the colour key, the admin command and the
+  // HUD's next-episode button jump from anywhere in the title and must never mark anything.
+  let finishedAtOutro = false;
+  function runtimeSeconds() {
+    const d = videoElement?.duration;
+    if (Number.isFinite(d) && d > 0) return d;
+    const ticks = item?.RunTimeTicks || 0;          // the element may already be emptied
+    return ticks > 0 ? ticks / 10000000 : 0;
+  }
   function positionTicks() {
+    if (finishedAtOutro) {
+      const runtime = runtimeSeconds();
+      if (runtime > 0) return Math.round(runtime * 10000000);
+    }
     const live = sourceLive ? (videoElement?.currentTime ?? lastPosition) : lastPosition;
     return Math.round(live * 10000000);
   }
@@ -1217,7 +1242,13 @@
   function resumeFromStillWatching() {
     showStillWatching = false;
     // The user is awake → advance to the next episode; reset the counter in App.
-    if (nextEpisode) { handingOff = true; onNext?.({ episode: nextEpisode, resetStreak: true }); }
+    // The prompt only ever appears at the outro, and the video is paused there, so this episode is
+    // finished for the same reason as in goToNextEpisode.
+    if (nextEpisode) {
+      if (outroPromptActive) finishedAtOutro = true;
+      handingOff = true;
+      onNext?.({ episode: nextEpisode, resetStreak: true });
+    }
   }
 
   // If no one reacts to "still watching?", the user has most likely
@@ -1589,6 +1620,7 @@
       return;
     }
     // resetStreak: awake → counter in App to 0; otherwise increment.
+    if (outroPromptActive) finishedAtOutro = true;   // came from the outro → this one is watched
     handingOff = true;
     onNext?.({ episode: nextEpisode, resetStreak: awake });
   }

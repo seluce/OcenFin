@@ -25,7 +25,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   stayed marked unwatched in the episode list. The same went for leaving a title early: its position
   was cleared instead of saved, and it dropped out of "Continue watching". Both only affected titles
   the server was converting on the fly, which is why it looked as though it depended on how you
-  started playback.
+  started playback. An episode you watched through to its credits also counts as watched now, even
+  when the app moves on to the next one before the picture has quite ended — short episodes with
+  long credits used to fall just short of the mark. Skipping ahead with the channel keys still
+  doesn't mark anything, since that is not finishing it.
 - **The player controls hide again after you return from the home screen.** Minimising OcenFin mid-film
   and coming back could leave the control bar on screen for good — it only disappeared once you
   pressed some button. It needed a narrow coincidence, which is why it happened so rarely: the bar
