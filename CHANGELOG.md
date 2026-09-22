@@ -3,6 +3,51 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## 2026.09.22
+
+### Changed
+
+- **The countdown to the next episode runs smoothly.** Its bar moved in visible steps, because it was
+  redrawn from a timer that competes with the video for the same thread — right at the end of an
+  episode, where the player is busiest. The bar is now handed to the graphics side and drawn there in
+  one go, so it keeps running evenly even while the picture is being decoded. It still pauses with
+  the video, holds while buffering, follows along when you skip forwards or back, and keeps running
+  with "Reduce animations" switched on, since it shows time rather than decoration.
+- **A profile with an age restriction can save its password again.** The settings of such a profile
+  hid all sign-in options, including the one that lets it be picked without typing the password on
+  the remote. That one is back, because it only concerns that profile itself. Changing the password
+  and authorising another device by code stay hidden.
+
+### Fixed
+
+- **Episodes count as watched again, and keep their place.** When one episode ran into the next, the
+  app told the server you had stopped at the very beginning of the one you had just finished — so it
+  stayed marked unwatched in the episode list. The same went for leaving a title early: its position
+  was cleared instead of saved, and it dropped out of "Continue watching". Both only affected titles
+  the server was converting on the fly, which is why it looked as though it depended on how you
+  started playback. An episode you watched through to its credits also counts as watched now, even
+  when the app moves on to the next one before the picture has quite ended — short episodes with
+  long credits used to fall just short of the mark. Skipping ahead with the channel keys still
+  doesn't mark anything, since that is not finishing it.
+- **The player controls hide again after you return from the home screen.** Minimising OcenFin mid-film
+  and coming back could leave the control bar on screen for good — it only disappeared once you
+  pressed some button. It needed a narrow coincidence, which is why it happened so rarely: the bar
+  had to be showing when you left, so that the timer meant to hide it ran out while playback was
+  paused in the background, where it does nothing by design.
+
+### Internal
+
+- hls.js 1.7.1 → 1.7.3 (1.7.2 never shipped in a release). One fix across the two matters here: a
+  seek landing in a gap at the very end of a stream could collapse the reported duration, which is
+  exactly what the end-of-episode logic reads. The rest is for features this app does not use — the
+  audio and subtitle track fixes in 1.7.3 included, since tracks are chosen by the server and
+  subtitles are drawn by the app itself.
+- Svelte 5.57.0 → 5.57.1 and Vite 8.2.2 → 8.3.0, both patch-level build tooling; the build still
+  ends at 0 warnings.
+- Waking from the screensaver now writes one diagnostic line behind the debug switch: how long it
+  ran, what was playing and what held focus. Chasing a rare report that the first press after a long
+  screensaver does not always resume playback.
+
 ## 2026.08.31
 
 ### Fixed
