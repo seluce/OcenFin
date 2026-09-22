@@ -3,7 +3,7 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
-## [Unreleased]
+## 2026.09.22
 
 ### Changed
 
@@ -42,6 +42,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   exactly what the end-of-episode logic reads. The rest is for features this app does not use — the
   audio and subtitle track fixes in 1.7.3 included, since tracks are chosen by the server and
   subtitles are drawn by the app itself.
+- Svelte 5.57.0 → 5.57.1 and Vite 8.2.2 → 8.3.0, both patch-level build tooling; the build still
+  ends at 0 warnings.
 - Waking from the screensaver now writes one diagnostic line behind the debug switch: how long it
   ran, what was playing and what held focus. Chasing a rare report that the first press after a long
   screensaver does not always resume playback.
