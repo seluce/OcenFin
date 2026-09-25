@@ -419,6 +419,15 @@
   let mediaStreams   = $state([]);
   let _trackMemApplied = false;   // guard: apply remembered per-series track language only once per mount
   let currentMediaSource = null;   // currently running source – for the instant switch of text subtitles
+  // The track list of the version that PLAYS. The item-level MediaStreams are the primary version's
+  // (the server fills them from the source whose id is the item's own), and so is MediaSources[0] —
+  // so with a second version chosen in Details, the menu, the default track, the "explicit audio"
+  // transcode decision, the subtitle codec and the per-series memory all read the other file, whose
+  // stream indexes mean something else. null when no version was chosen or it is not in the list;
+  // callers then fall back to the item's own list, which for a single version is the same one.
+  function chosenVersionStreams(sources) {
+    return (mediaSourceId && sources?.find(s => s.Id === mediaSourceId)?.MediaStreams) || null;
+  }
   let audioStreams = $derived(mediaStreams.filter(s => s.Type === 'Audio'));
   let subtitleStreams = $derived(mediaStreams.filter(s => s.Type === 'Subtitle'));
 
@@ -510,7 +519,12 @@
       // "next episode" the episode object (from the lightweight episode list) carries NO MediaStreams →
       // load them once, otherwise the default-audio detection fails and it falsely
       // transcodes (while a direct start from the details plays fine).
-      let titleStreams = (item?.MediaStreams?.length ? item.MediaStreams : mediaStreams) || [];
+      let titleStreams = chosenVersionStreams(item?.MediaSources)
+                      || (item?.MediaStreams?.length ? item.MediaStreams : mediaStreams) || [];
+      if (mediaSourceId && item?.MediaSources?.length > 1) {
+        dlog('[tracks] version', mediaSourceId, chosenVersionStreams(item.MediaSources) ? '(its own list)' : '(NOT found → item list)',
+             '· audio', titleStreams.filter(s => s.Type === 'Audio').map(s => `${s.Index}:${s.Language || '?'}${s.IsDefault ? '*' : ''}`).join(' '));
+      }
       if (!titleStreams.length && item?.Id) {
         try {
           const r = await fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}&Fields=MediaStreams`, { headers: getAuthHeaders() });
@@ -1337,7 +1351,8 @@
         chapters = data.Chapters || [];
         // Track list only for the selection UI (audio/subtitle). The actual
         // delivery (track vs. burned in) is decided by PlaybackInfo in setupPlayback.
-        if (data.MediaSources?.[0]?.MediaStreams) mediaStreams = data.MediaSources[0].MediaStreams;
+        const streams = chosenVersionStreams(data.MediaSources) || data.MediaSources?.[0]?.MediaStreams;
+        if (streams) mediaStreams = streams;
         parseTrickplay(data);
       }
     } catch (e) { console.error('fetchMediaSources:', e); }
