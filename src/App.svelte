@@ -432,6 +432,10 @@
   let activeAudioIndex    = $state(-1);
   let activeSubtitleIndex = $state(-1);
   let activeMediaSourceId = $state(null);   // chosen version (FullHD/4K), from Details
+  // true: nobody chose tracks for this title, so the Player picks them by the same rule Details
+  // preselects with (trackmemory.js). Only Details' own play button chooses (see carryOrPickTracks
+  // for the next episode).
+  let activePickTracks    = $state(false);
   let autoPlayStreak = $state(0);           // "still watching?": episodes auto-played in a row without interaction
 
   // Remember position: where was Details opened from (scroll/focus now live in Library.svelte)
@@ -624,6 +628,7 @@
         activeAudioIndex    = -1;
         activeSubtitleIndex = -1;
         activeMediaSourceId = null;
+        activePickTracks    = true;
         viewState = 'player';
         dlog('[SyncPlay] auto-load →', currentDetailItem?.Name);
       }
@@ -1459,11 +1464,23 @@
   // No separate API call needed anymore — just set currentDetailItem.
   // The Player sends { episode, resetStreak }. resetStreak=true → the user was awake (manual/interaction),
   // counter to 0; otherwise increment (for the "still watching?" sleep protection).
+  // Next/previous title. An episode of the SAME series goes on the way the first one started: tracks
+  // chosen in Details are handed on as before (activeAudioIndex is the START choice — the Player's
+  // own switches reach the next episode through the per-series memory), and a picked start picks
+  // again by the rule. Anything else — the next film of a play-all queue — is picked afresh: its
+  // stream indexes mean something else entirely, so carrying "track 2" over would pick at random.
+  function carryOrPickTracks(nextItem) {
+    const sameSeries = !!nextItem?.SeriesId && nextItem.SeriesId === currentDetailItem?.SeriesId;
+    if (sameSeries) return;
+    activePickTracks = true; activeAudioIndex = -1; activeSubtitleIndex = -1;
+  }
+
   function handleNextEpisode(detail) {
     const episodeItem = detail?.episode ?? detail;   // robustness: also accepts a bare episode object
     if (!episodeItem) return;
     autoPlayStreak = detail?.resetStreak ? 0 : autoPlayStreak + 1;
     activeMediaSourceId = null;   // new episode → its own default version, not the previous one's
+    carryOrPickTracks(episodeItem);
     currentDetailItem = episodeItem;
     syncQueueIndex(episodeItem);
     // viewState stays 'player' — {#key currentDetailItem.Id} in the template forces a remount
@@ -1473,6 +1490,7 @@
     if (!episodeItem) return;
     autoPlayStreak = 0;   // going back is a deliberate action → reset the counter
     activeMediaSourceId = null;
+    carryOrPickTracks(episodeItem);
     currentDetailItem = episodeItem;
     syncQueueIndex(episodeItem);
   }
@@ -1860,6 +1878,7 @@
     activeAudioIndex    = p.audioIndex    ?? -1;
     activeSubtitleIndex = p.subtitleIndex ?? -1;
     activeMediaSourceId = p.mediaSourceId ?? null;
+    activePickTracks    = !p.tracksChosen;   // only Details' play button hands over chosen tracks
     viewState = 'player';
   }
 
@@ -2303,6 +2322,7 @@
           selectedAudioIndex={activeAudioIndex}
           selectedSubtitleIndex={activeSubtitleIndex}
           mediaSourceId={activeMediaSourceId}
+          pickTracks={activePickTracks}
           {autoPlayStreak}
           syncPlayOpen={showSyncPlay}
           inSyncGroup={!!syncMyGroup}

@@ -1,7 +1,7 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro, getItemImageUrl } from '../utils.js';
-  import { rememberTrack, matchRememberedAudioIndex, matchRememberedSubtitleIndex } from '../trackmemory.js';
+  import { rememberTrack, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks } from '../trackmemory.js';
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady, syncNow } from '../syncplay.js';
@@ -18,6 +18,7 @@
     selectedAudioIndex = $bindable(),
     selectedSubtitleIndex = $bindable(),
     mediaSourceId = null,   // chosen version (FullHD/4K); null = server default
+    pickTracks = false,     // App: nobody chose tracks for this title → pick them by the shared rule
     selectedUser,
     playbackPrefs = { autoSkipIntro: false, autoSkipCredits: false },
     use24h = true,   // time format (from the setting) for the clock in the Player
@@ -428,6 +429,19 @@
   function chosenVersionStreams(sources) {
     return (mediaSourceId && sources?.find(s => s.Id === mediaSourceId)?.MediaStreams) || null;
   }
+  // The media source a picked start chooses from: the chosen version, else the item's own (the one
+  // it plays when none is named), else the first. List items carry no MediaSources → fetched once.
+  async function sourceForPick() {
+    let sources = item?.MediaSources;
+    if (!sources?.length && item?.Id) {
+      try {
+        const r = await fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}&Fields=MediaSources`, { headers: getAuthHeaders() });
+        if (r.ok) sources = (await r.json()).MediaSources;
+      } catch {}
+    }
+    if (!sources?.length) return null;
+    return (mediaSourceId && sources.find(s => s.Id === mediaSourceId)) || sources.find(s => s.Id === item.Id) || sources[0];
+  }
   let audioStreams = $derived(mediaStreams.filter(s => s.Type === 'Audio'));
   let subtitleStreams = $derived(mediaStreams.filter(s => s.Type === 'Subtitle'));
 
@@ -525,6 +539,24 @@
         dlog('[tracks] version', mediaSourceId, chosenVersionStreams(item.MediaSources) ? '(its own list)' : '(NOT found → item list)',
              '· audio', titleStreams.filter(s => s.Type === 'Audio').map(s => `${s.Index}:${s.Language || '?'}${s.IsDefault ? '*' : ''}`).join(' '));
       }
+      // Started without a choice (a series' play button, play-all, shuffle, SyncPlay): pick the tracks
+      // by the rule Details preselects with, once per mount. It needs the item's media source — that
+      // carries the server's per-user defaults, which is where the Jellyfin profile's language lands.
+      // The per-series memory is part of the rule, so the block further down stands down.
+      let picked = false;
+      if (pickTracks && !_trackMemApplied) {
+        const src = await sourceForPick();
+        if (mySetup !== setupToken) return;   // a newer setup started while we fetched
+        if (src) {
+          const t = pickDefaultTracks(src, { seriesId: item?.SeriesId, prefs: playbackPrefs, serverVobSub });
+          audioIndex    = t.audio;    selectedAudioIndex    = t.audio;
+          subtitleIndex = t.subtitle; selectedSubtitleIndex = t.subtitle;
+          if (src.MediaStreams?.length) titleStreams = src.MediaStreams;
+          picked = true;
+          dlog('[tracks] picked', { audio: t.audio, subtitle: t.subtitle, audioPref: playbackPrefs.audioLanguage,
+               subtitlePref: playbackPrefs.subtitleLanguage, serverDefault: src.DefaultAudioStreamIndex });
+        }
+      }
       if (!titleStreams.length && item?.Id) {
         try {
           const r = await fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}&Fields=MediaStreams`, { headers: getAuthHeaders() });
@@ -536,7 +568,7 @@
       // keeps _trackMemApplied set, so it never overrides the user's own choice.
       if (!_trackMemApplied) {
         _trackMemApplied = true;
-        if (item?.SeriesId && titleStreams.length) {
+        if (!picked && item?.SeriesId && titleStreams.length) {
           if (playbackPrefs.rememberAudioTrack) {
             const a = matchRememberedAudioIndex(titleStreams, item.SeriesId);
             if (a != null) { audioIndex = a; selectedAudioIndex = a; }

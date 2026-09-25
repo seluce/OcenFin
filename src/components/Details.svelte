@@ -1,8 +1,8 @@
 <script>
-  import { i18n, LANGUAGES } from '../i18n.svelte.js';
+  import { i18n } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
   import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
-  import { matchRememberedAudioIndex, matchRememberedSubtitleIndex } from '../trackmemory.js';
+  import { pickDefaultTracks } from '../trackmemory.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
   import { buildPlayQueue } from '../playback.js';
   import { session } from '../session.svelte.js';
@@ -97,43 +97,12 @@
     return [res, codec].filter(Boolean).join(' ') || src?.Name || i18n.t.source;
   }
 
-  // Choose default audio/subtitle for a source. The per-series remembered track (when the option is
-  // on) takes precedence over the global language preference / server default — mirroring the player,
-  // so returning to Details reflects the track chosen during playback. Matched by language (audio) and
-  // by language + forced/SDH flags (subtitle), exactly like the player.
+  // Choose default audio/subtitle for a source — the shared rule in trackmemory.js, which the Player
+  // applies to every start that does not come through this page (series play button, play-all, …).
   function applySourceDefaults(src) {
-    const streams = src?.MediaStreams || [];
-    const seriesId = fullItem?.SeriesId;
-    let audioSet = false, subSet = false;
-
-    if (seriesId && playbackPrefs.rememberAudioTrack) {
-      const a = matchRememberedAudioIndex(streams, seriesId);
-      if (a != null) { selectedAudioIndex = a; audioSet = true; }
-    }
-    if (seriesId && playbackPrefs.rememberSubtitleTrack) {
-      const st = matchRememberedSubtitleIndex(streams, seriesId);
-      if (st != null) { selectedSubtitleIndex = st; subSet = true; }
-    }
-
-    if (!audioSet) {
-      selectedAudioIndex = -1;
-      const audioPref = matchLanguageStream(streams, 'Audio', playbackPrefs.audioLanguage);
-      if (audioPref != null)                        selectedAudioIndex = audioPref;
-      else if (src?.DefaultAudioStreamIndex != null) selectedAudioIndex = src.DefaultAudioStreamIndex;
-    }
-
-    if (!subSet) {
-      if (playbackPrefs.subtitleLanguage === 'off') {
-        selectedSubtitleIndex = -1;
-      } else {
-        const subPref = matchLanguageStream(streams, 'Subtitle', playbackPrefs.subtitleLanguage);
-        if (subPref != null)                              selectedSubtitleIndex = subPref;
-        else if (playbackPrefs.subtitleLanguage === 'default')
-          selectedSubtitleIndex = pickForcedSubtitle(streams, selectedAudioIndex, src?.DefaultSubtitleStreamIndex);
-        else if (src?.DefaultSubtitleStreamIndex != null) selectedSubtitleIndex = src.DefaultSubtitleStreamIndex;
-        else selectedSubtitleIndex = -1;
-      }
-    }
+    const t = pickDefaultTracks(src, { seriesId: fullItem?.SeriesId, prefs: playbackPrefs, serverVobSub });
+    selectedAudioIndex    = t.audio;
+    selectedSubtitleIndex = t.subtitle;
   }
 
   // On resolution/version change: reset the tracks to the source's default values
@@ -281,46 +250,6 @@
 
   // Cast: actors (max. 20) from the People data
   let castMembers = $derived((fullItem?.People || []).filter(p => p.Type === 'Actor').slice(0, 20));
-
-  // Finds the index of the first stream (audio/subtitle) whose language matches the preference.
-  // Returns null if no preference is set ('default') or there's no match.
-  function matchLanguageStream(streams, type, prefKey) {
-    if (!prefKey || prefKey === 'default') return null;
-    const lang = LANGUAGES.find(l => l.key === prefKey);
-    if (!lang) return null;
-    const match = streams.find(s =>
-      s.Type === type && s.Language && lang.codes.includes(s.Language.toLowerCase())
-    );
-    return match ? match.Index : null;
-  }
-
-  // In default mode, show a forced ("Forced") subtitle in the language of the
-  // chosen audio track. Auto-selectable are: TEXT (VTT) always; PGS, when
-  // client-side rendering is on (libbitsub → Direct Play); VobSub/DVD likewise, AS SOON AS the
-  // server delivers them as .mks (Jellyfin 12.0+) → then also Direct Play. On older
-  // servers only the opt-out option applies for DVD (then deliberately with transcode/burn-in).
-  const GRAPHIC_SUB_CODECS = ['pgssub', 'pgs', 'dvdsub', 'dvbsub', 'vobsub', 'sub'];
-  function isGraphicSub(s) { return GRAPHIC_SUB_CODECS.includes((s?.Codec || '').toLowerCase()); }
-  function subtitleAutoEligible(s) {
-    if (!isGraphicSub(s)) return true;                                  // text → always
-    if (playbackPrefs.pgsRendering === false) return false;            // graphic rendering globally off
-    const codec = (s?.Codec || '').toLowerCase();
-    if (['pgssub', 'pgs'].includes(codec)) return true;               // PGS → client-side (Direct Play)
-    if (serverVobSub) return true;                                    // VobSub/DVD via .mks → client-side (Direct Play)
-    return !!playbackPrefs.forcedGraphicSubs;                          // old server: only via the option (burned in)
-  }
-  function pickForcedSubtitle(streams, audioIndex, serverDefault) {
-    const audioLang = streams.find(s => s.Type === 'Audio' && s.Index === audioIndex)?.Language?.toLowerCase();
-    const subs = streams.filter(s => s.Type === 'Subtitle');
-    const pick = subs.find(s => s.IsForced && subtitleAutoEligible(s) && audioLang && s.Language?.toLowerCase() === audioLang)
-              ?? subs.find(s => s.IsForced && subtitleAutoEligible(s));
-    if (pick) return pick.Index;
-    if (serverDefault != null) {
-      const def = subs.find(s => s.Index === serverDefault);
-      if (def && subtitleAutoEligible(def)) return serverDefault;
-    }
-    return -1;
-  }
 
   function closeTrailer() {
     trailerEmbedUrl = null;
@@ -505,14 +434,14 @@
         }
       } catch (e) { console.error(e); }
     } else {
-      onPlayVideo?.({ item: fullItem, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId });
+      onPlayVideo?.({ item: fullItem, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId, tracksChosen: true });
     }
   }
 
   // "From the beginning": same item, but resume position at 0 → the Player starts at zero.
   function playFromBeginning() {
     const fresh = { ...fullItem, UserData: { ...(fullItem.UserData || {}), PlaybackPositionTicks: 0 } };
-    onPlayVideo?.({ item: fresh, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId });
+    onPlayVideo?.({ item: fresh, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId, tracksChosen: true });
   }
 
   // Random episode — for long series "just play something". Series → from ALL episodes (recursively across all

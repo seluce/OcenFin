@@ -19,6 +19,15 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   English subtitles, for example. A series counts as soon as one of its episodes has the language.
   Needs Jellyfin 12; on older servers these sections do not appear.
 
+### Changed
+
+- **Your audio and subtitle language apply to every start.** They only took effect when a title was
+  started from its details page. A series' play button, play all, shuffle, extras and a start from
+  another device played the file's own default track and no subtitles. They now choose tracks the
+  same way the details page does, including a language set in your Jellyfin profile such as the
+  original language. The episodes of a series still carry on with the tracks the first one started
+  with.
+
 ### Fixed
 
 - **Quick Connect works again.** On Jellyfin 12, signing in with a code, and adding a watch-together
