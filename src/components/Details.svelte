@@ -275,6 +275,7 @@
       // that led there, so we land on THAT title rather than the entry point. A function, called
       // once — a plain prop would still be lying around for the next, unrelated mount.
       const resume = takeResume?.();
+      dlog('[details] mount', id, resume ? `→ shows ${resume.id}, ${resume.stack.length} step(s) back` : '(fresh)');
       navStack = resume ? [...resume.stack] : [];
       restorePending = !!focusItemId;   // set BEFORE the load, so the play button holds back
       loadFullDetails(resume?.id ?? id);

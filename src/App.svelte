@@ -1924,7 +1924,7 @@
     playReturnDetails = viewState === 'details'
       ? { item: currentDetailItem, origin: detailsOrigin,
           id: detailsReturnId, el: detailsReturnEl, nth: detailsReturnNth, scroll: detailsReturnScroll,
-          resume: detailsRef?.snapshot?.() ?? null }
+          resume: detailsRef?.snapshot?.() ?? null, started: p.item ?? null }
       : null;
     if (p.item) currentDetailItem = p.item;
     activeAudioIndex    = p.audioIndex    ?? -1;
@@ -1938,6 +1938,9 @@
   // all. What played can be another title: a series page starts its next episode, episodes advance
   // on their own, an extra is a title of its own. That one is shown, with the starting page one
   // Back-step behind it — before, Back from there skipped the starting page and its chain entirely.
+  // Except when an EPISODE page simply played on through its series (6 → 7 → Back): the last episode
+  // replaces the first one rather than stacking on it — Back from 7 goes where 6 would have gone,
+  // not back to 6 (Ferris, 2026-09-25). A series page stays a step: that is where you started.
   // Safe to reassign currentDetailItem here although the Player's own teardown still reads `item`
   // for its Stopped report: inside a teardown Svelte returns a signal's value from BEFORE this flush
   // (old_values in runtime.js) — the same thing the next-episode handoff has always relied on.
@@ -1945,13 +1948,18 @@
   function returnFromPlayer() {
     const d = playReturnDetails;
     playReturnDetails = null;
+    const played = currentDetailItem;
     if (d?.resume) {
-      const played = currentDetailItem;
       restoreDetailsFrom(d);
       if (played?.Id && played.Id !== d.resume.id) {
-        detailsResume = { id: played.Id, stack: [...d.resume.stack, { id: d.resume.id, focusId: null, scrollTop: 0 }] };
+        const playedOn = d.started?.Id === d.resume.id && d.started?.Type === 'Episode'
+                      && !!played.SeriesId && played.SeriesId === d.started.SeriesId;
+        detailsResume = { id: played.Id, stack: playedOn ? [...d.resume.stack]
+                          : [...d.resume.stack, { id: d.resume.id, focusId: null, scrollTop: 0 }] };
       }
     }
+    dlog('[player] → details', { played: played?.Id, startedOn: d?.resume?.id ?? '(no page)',
+         shows: detailsResume?.id ?? currentDetailItem?.Id, backSteps: detailsResume?.stack?.length ?? 0 });
     viewState = 'details';
     resumeStale = true;
   }

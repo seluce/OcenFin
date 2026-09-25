@@ -46,8 +46,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   good, leaving the menu as the only way out. Back now retraces every step. The same goes for a
   collection opened again from one of its own films.
 - **After playback, Back retraces your steps.** Stopping a title you had reached through another
-  details page lost the way back to that one. And after a series' play button or an extra, Back
-  skipped the page you had started from; it now leads there first.
+  details page lost the way back to that one, and after a series' play button or an extra, Back
+  skipped the page you had started from. Watching on from an episode's page, you now come back to
+  the last episode you watched.
 - **Back from a cast member's page returns to the title you came from.** If you had moved on to
   another title on the details page first, Back used to land on the first one, and the steps in
   between were gone.
