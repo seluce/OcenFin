@@ -213,6 +213,13 @@
     // Any of the chosen languages; a series counts when one of its episodes has it (server side).
     if (selectedAudioLangs.length)    q += `&AudioLanguages=${selectedAudioLangs.map(encodeURIComponent).join(',')}`;
     if (selectedSubtitleLangs.length) q += `&SubtitleLanguages=${selectedSubtitleLangs.map(encodeURIComponent).join(',')}`;
+    // Only the server's DATABASE query knows these two filters, and it runs for recursive requests.
+    // A plain library listing is not recursive: the server then filters the folder's children in
+    // memory (UserViewBuilder.Filter), which handles genres, ratings and played state but not
+    // languages — so the parameter was silently ignored and nothing filtered (tested by Ferris on
+    // 12.1). With a language chosen, ask recursively for films and series; without one the listing
+    // stays exactly as it was. Here rather than at the call sites, so the A–Z count agrees.
+    if (selectedAudioLangs.length || selectedSubtitleLangs.length) q += '&Recursive=true&IncludeItemTypes=Movie,Series';
     return q;
   }
 
