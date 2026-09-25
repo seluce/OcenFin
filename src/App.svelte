@@ -629,6 +629,7 @@
         activeSubtitleIndex = -1;
         activeMediaSourceId = null;
         activePickTracks    = true;
+        playReturnDetails   = null;   // started from outside, not from a title page
         viewState = 'player';
         dlog('[SyncPlay] auto-load →', currentDetailItem?.Name);
       }
@@ -1385,7 +1386,7 @@
     currentLibrary = null; currentCollection = null; currentPerson = null; currentDetailItem = null;
     libraryMounted = false; searchMounted = false;
     collectionStack = []; personReturnDetails = null; collectionReturnDetails = null; detailsResume = null;
-    collectionTrips = []; personTrips = [];
+    collectionTrips = []; personTrips = []; playReturnDetails = null;
     libraryReturnId = null; libraryReturnEl = null; libraryReturnNth = 0;
     clearCurrentSession();
     // Only if nothing keeps it: with "remember me" on, the token stays in savedTokens for the
@@ -1440,7 +1441,7 @@
     if (contextItem)    { contextItem = null;     e.preventDefault(); return; }
     // Navigate within the app; preventDefault stops webOS from closing the app.
     // At the dashboard (top level) show a confirmation instead of closing the app directly.
-    if      (viewState === 'player')   { viewState = 'details';        e.preventDefault(); }
+    if      (viewState === 'player')   { returnFromPlayer();           e.preventDefault(); }
     else if (viewState === 'details')  { if (!detailsRef?.handleBackKey()) returnFromDetails(); e.preventDefault(); }
     else if (viewState === 'person')   { returnFromPerson();           e.preventDefault(); }
     else if (viewState === 'collection') { if (!collectionRef?.handleBackKey()) returnFromCollection(); e.preventDefault(); }
@@ -1918,12 +1919,41 @@
     // the cast member a person page came back to, say — would otherwise be restored when Details
     // remounts after playback, holding its play button back and landing on that actor instead.
     pendingCardFocusId = null;
+    // Started from a title page: keep that page whole for the way back, as openCollection and
+    // openPerson do — the player unmounts it, and with it the chain A → Similar B → Play.
+    playReturnDetails = viewState === 'details'
+      ? { item: currentDetailItem, origin: detailsOrigin,
+          id: detailsReturnId, el: detailsReturnEl, nth: detailsReturnNth, scroll: detailsReturnScroll,
+          resume: detailsRef?.snapshot?.() ?? null }
+      : null;
     if (p.item) currentDetailItem = p.item;
     activeAudioIndex    = p.audioIndex    ?? -1;
     activeSubtitleIndex = p.subtitleIndex ?? -1;
     activeMediaSourceId = p.mediaSourceId ?? null;
     activePickTracks    = !p.tracksChosen;   // only Details' play button hands over chosen tracks
     viewState = 'player';
+  }
+
+  // Out of the player — always onto a title page. Back onto the one playback started from, chain and
+  // all. What played can be another title: a series page starts its next episode, episodes advance
+  // on their own, an extra is a title of its own. That one is shown, with the starting page one
+  // Back-step behind it — before, Back from there skipped the starting page and its chain entirely.
+  // Safe to reassign currentDetailItem here although the Player's own teardown still reads `item`
+  // for its Stopped report: inside a teardown Svelte returns a signal's value from BEFORE this flush
+  // (old_values in runtime.js) — the same thing the next-episode handoff has always relied on.
+  let playReturnDetails = null;
+  function returnFromPlayer() {
+    const d = playReturnDetails;
+    playReturnDetails = null;
+    if (d?.resume) {
+      const played = currentDetailItem;
+      restoreDetailsFrom(d);
+      if (played?.Id && played.Id !== d.resume.id) {
+        detailsResume = { id: played.Id, stack: [...d.resume.stack, { id: d.resume.id, focusId: null, scrollTop: 0 }] };
+      }
+    }
+    viewState = 'details';
+    resumeStale = true;
   }
 
   async function returnFromDetails() {
@@ -2376,7 +2406,7 @@
           queueActive={!!playQueue}
           {queueNext}
           {queuePrev}
-          onExit={() => { viewState = 'details'; resumeStale = true; }}
+          onExit={returnFromPlayer}
           onPlayState={(p) => playerPlaying = p}
           onLibChanged={refreshLibraries}
           onNext={(payload) => handleNextEpisode(payload)}
