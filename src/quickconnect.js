@@ -42,7 +42,8 @@ export function startQuickConnect(serverUrl, clientAuthHeader, onCode) {
     (async () => {
       let data;
       try {
-        const res = await fetch(`${serverUrl}/QuickConnect/Initiate`, { headers: { 'Authorization': clientAuthHeader } });
+        // POST since 10.9; Jellyfin 12.0 removed the old GET form, which now fails outright.
+        const res = await fetch(`${serverUrl}/QuickConnect/Initiate`, { method: 'POST', headers: { 'Authorization': clientAuthHeader } });
         if (!res.ok) return finish(reject, 'qcError');
         data = await res.json();
       } catch { return finish(reject, 'networkError'); }

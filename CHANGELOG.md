@@ -3,6 +3,15 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## [Unreleased]
+
+### Fixed
+
+- **Quick Connect works again.** On Jellyfin 12, signing in with a code, and adding a watch-together
+  profile the same way, failed straight away: the server no longer accepts the old way of asking for
+  a code. Approving another device with a code under Settings failed on every server version, because
+  the code was sent where the server does not look for it.
+
 ## 2026.09.22
 
 ### Changed

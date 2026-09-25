@@ -301,10 +301,11 @@
   async function authorizeQuickConnect() {
     qcMessage = '';
     try {
-      const res = await fetch(`${session.serverUrl}/QuickConnect/Authorize`, {
+      // The server reads the code from the QUERY string only (10.10 and 12.x alike) — sent in the
+      // body, as before, it was never seen and every attempt failed.
+      const res = await fetch(`${session.serverUrl}/QuickConnect/Authorize?Code=${encodeURIComponent(qcCode.trim())}`, {
         method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ Code: qcCode })
+        headers: getAuthHeaders()
       });
       qcMessage = res.ok ? i18n.t.qcSuccess : i18n.t.qcError;
       if (res.ok) { qcCode = ''; modalTimeout = setTimeout(closeModal, 2000); }
