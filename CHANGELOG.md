@@ -10,6 +10,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Rewind and fast-forward from another device.** When the TV is controlled from Jellyfin on a
   phone or in the browser, those two buttons now work as well. They jump by the same step as the
   player's own buttons.
+- **"Included in" on the details page.** A film or series that belongs to a collection now shows it
+  in its own row, and the collection opens with one click. Back leads to the same page, even if
+  you had moved on to another title from there. Needs Jellyfin 12; on older servers the row does
+  not appear.
 
 ### Fixed
 

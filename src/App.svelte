@@ -1379,7 +1379,7 @@
     // previous profile's library once for nothing, hidden behind the dashboard.
     currentLibrary = null; currentCollection = null; currentPerson = null; currentDetailItem = null;
     libraryMounted = false; searchMounted = false;
-    collectionStack = []; personReturnDetails = null;
+    collectionStack = []; personReturnDetails = null; collectionReturnDetails = null; detailsResume = null;
     libraryReturnId = null; libraryReturnEl = null; libraryReturnNth = 0;
     clearCurrentSession();
     // Only if nothing keeps it: with "remember me" on, the token stays in savedTokens for the
@@ -1491,6 +1491,21 @@
   // chain, and a nested open overwrites them — so without carrying them here the last Back aimed
   // at the nested card instead of the one that opened the chain.
   let collectionStack = [];
+  // Opened from a title page ("Included in"): that page, kept whole for the way back — the entry,
+  // its own way out, and what was on screen with the chain behind it (Details.snapshot()). Opening
+  // a title from inside the collection overwrites currentDetailItem and detailsOrigin, the same
+  // trap personReturnDetails guards against (§22).
+  let collectionReturnDetails = null;
+  // Given to the next Details mount exactly once through takeResume, then gone — as a plain prop it
+  // would still be lying around for the next, unrelated visit to a title.
+  let detailsResume = null;
+  const takeDetailsResume = () => { const r = detailsResume; detailsResume = null; return r; };
+  function restoreDetailsFrom(d) {
+    currentDetailItem = d.item;   detailsOrigin       = d.origin;
+    detailsReturnId   = d.id;     detailsReturnEl     = d.el;
+    detailsReturnNth  = d.nth;    detailsReturnScroll = d.scroll;
+    detailsResume     = d.resume;
+  }
 
   function openCollection(boxSet) {
     // Opened from INSIDE a collection (nested BoxSet/playlist card): push the parent so Back
@@ -1505,6 +1520,11 @@
     } else {
       collectionStack = [];
       collectionReturnView = viewState;
+      collectionReturnDetails = viewState === 'details'
+        ? { item: currentDetailItem, origin: detailsOrigin,
+            id: detailsReturnId, el: detailsReturnEl, nth: detailsReturnNth, scroll: detailsReturnScroll,
+            resume: detailsRef?.snapshot?.() ?? null }
+        : null;
     }
     collectionReturnId  = boxSet?.Id ?? null;
     collectionReturnEl  = document.activeElement;
@@ -1534,12 +1554,16 @@
     const id = collectionReturnId, el = collectionReturnEl, nth = collectionReturnNth;
     const sc = collectionReturnScroll;
     collectionReturnId = null; collectionReturnEl = null; collectionReturnNth = 0; collectionReturnScroll = 0;
+    // The title page as it was, BEFORE switching to it — Details mounts from currentDetailItem.
+    if (collectionReturnView === 'details' && collectionReturnDetails) restoreDetailsFrom(collectionReturnDetails);
+    collectionReturnDetails = null;
     viewState = collectionReturnView;
-    // Same split as returnFromDetails: Library restores itself, the two self-focusing views take
-    // the id, and the dashboard is focused directly.
+    // Same split as returnFromDetails: Library restores itself, the self-focusing views (Details
+    // among them, back onto the "Included in" card) take the id, and the dashboard is focused directly.
     if (collectionReturnView === 'search') searchRef?.restoreView();
     else if (collectionReturnView === 'library') libraryRef?.restoreView();
-    else if (collectionReturnView === 'favorites' || collectionReturnView === 'collection') {
+    else if (collectionReturnView === 'favorites' || collectionReturnView === 'collection'
+             || collectionReturnView === 'details') {
       pendingCardFocusId = id; pendingCardScrollTop = sc;
     }
     else focusCardAgain(id, el, '(back from collection)', nth);
@@ -1565,7 +1589,15 @@
     }
     if (collectionStack.length) { popCollectionLevel(false); }   // its card is gone → first one
     else if (collectionReturnView === 'library' && playlistsLibGone) { currentLibrary = null; viewState = 'dashboard'; }
-    else viewState = collectionReturnView;
+    else {
+      // Back onto the title page it was opened from — but its card is gone, so onto the page itself.
+      if (collectionReturnView === 'details' && collectionReturnDetails) {
+        restoreDetailsFrom(collectionReturnDetails);
+        pendingCardFocusId = null; pendingCardScrollTop = 0;
+      }
+      collectionReturnDetails = null;
+      viewState = collectionReturnView;
+    }
   }
 
   // After creating a playlist/collection a new library view may appear server-side
@@ -1672,6 +1704,7 @@
     // itself so focus can return to it rather than to nothing.
     detailsOrigin   = viewState;
     pendingCardFocusId = null;   // a new trip — the previous view's card is no longer the target
+    detailsResume = null;        // and a fresh page, not one handed back
     detailsReturnId  = item?.Id ?? null;
     detailsReturnEl  = document.activeElement;
     detailsReturnNth = cardOrdinal(detailsReturnEl, detailsReturnId);
@@ -2188,8 +2221,10 @@
             spoilerProtection={displaySettings.spoilerProtection}
             detailsBackdrop={displaySettings.detailsBackdrop}
             detailsLogo={displaySettings.detailsLogo}
+            takeResume={takeDetailsResume}
             onClose={returnFromDetails}
             onOpenPerson={(person) => openPerson(person)}
+            onOpenCollection={(col) => openCollection(col)}
             onLibChanged={refreshLibraries}
             onPlayVideo={startPlayback}
           />

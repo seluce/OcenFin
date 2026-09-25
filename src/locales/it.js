@@ -133,6 +133,7 @@ export default {
     moreFromSeason: "Altro da",
     trailer: "Trailer",
     similar: "Simili",
+    includedIn: "Incluso in",
     extras: "Contenuti extra",
     seasons: "Stagioni",
     audio: "Audio",

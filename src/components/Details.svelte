@@ -1,7 +1,7 @@
 <script>
   import { i18n, LANGUAGES } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
-  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
+  import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
   import { matchRememberedAudioIndex, matchRememberedSubtitleIndex } from '../trackmemory.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
   import { buildPlayQueue } from '../playback.js';
@@ -19,12 +19,14 @@
     detailsBackdrop = true,     // show the hero backdrop on the detail page (own toggle, decoupled from reduceAnimations)
     detailsLogo = false,        // title as a logo graphic instead of text (falls back to text if no logo exists)
     focusItemId = null, focusScrollTop = 0,   // where to land when App brings us back (person page)
-    onClose, onLibChanged, onOpenPerson, onPlayVideo,   // callback props (instead of events)
+    takeResume = null,          // App: hands back, ONCE, what was on screen when we were left for a collection
+    onClose, onLibChanged, onOpenPerson, onOpenCollection, onPlayVideo,   // callback props (instead of events)
   } = $props();
 
   let fullItem     = $state(null);
   let relatedItems = $state([]);
   let similarItems = $state([]);
+  let collections  = $state([]);   // collections (BoxSets) that contain the title — Jellyfin 12+
   let extras       = $state([]);   // special features (making-ofs, deleted scenes, …)
   let isLoading    = $state(true);
 
@@ -340,9 +342,13 @@
     const id = item?.Id;
     if (!id) return;
     untrack(() => {
-      navStack = [];
+      // Back from a collection opened on this page: App returns what was on screen and the chain
+      // that led there, so we land on THAT title rather than the entry point. A function, called
+      // once — a plain prop would still be lying around for the next, unrelated mount.
+      const resume = takeResume?.();
+      navStack = resume ? [...resume.stack] : [];
       restorePending = !!focusItemId;   // set BEFORE the load, so the play button holds back
-      loadFullDetails(id);
+      loadFullDetails(resume?.id ?? id);
       restoreSpot({ focusId: focusItemId, scrollTop: focusScrollTop });
     });
   });
@@ -384,6 +390,7 @@
     fullItem     = null;
     relatedItems = [];
     similarItems = [];
+    collections  = [];
     extras = [];
     selectedAudioIndex    = -1;
     selectedSubtitleIndex = -1;
@@ -412,6 +419,7 @@
           ? (fullItem.SeriesId || itemId)
           : itemId;
         loadSimilarItems(similarId, myToken);
+        loadCollections(itemId, myToken);
         loadExtras(itemId, myToken);
         if (fullItem.Type === 'Episode' && fullItem.SeasonId) {
           loadRelatedItems(fullItem.SeasonId, myToken);
@@ -434,6 +442,24 @@
       );
       if (res.ok) { const d = await res.json(); if (myToken !== detailToken) return; extras = Array.isArray(d) ? d : (d.Items || []); }
     } catch { /* extras are optional */ }
+  }
+
+  // Collections that contain this very title — new in Jellyfin 12. Older servers answer 404 and the
+  // row simply stays away. Its cards carry data-item-id, so the way back from a collection can land
+  // on them; that relies on the row being quick, which the timing line is there to confirm.
+  async function loadCollections(itemId, myToken) {
+    const t0 = performance.now();
+    try {
+      const res = await fetch(
+        `${session.serverUrl}/Items/${itemId}/Collections?UserId=${selectedUser.Id}&Fields=PrimaryImageAspectRatio`,
+        { headers: getAuthHeaders() }
+      );
+      if (!res.ok) return;
+      const d = await res.json();
+      if (myToken !== detailToken) return;
+      collections = d.Items || [];
+      dlog('[details] collections', collections.length, 'in', Math.round(performance.now() - t0), 'ms');
+    } catch { /* optional row */ }
   }
 
   async function loadSimilarItems(itemId, myToken) {
@@ -599,6 +625,12 @@
     isLoading = true;
     fullItem  = null;   // show the spinner immediately
     loadFullDetails(id);
+  }
+
+  // For App, before it leaves for a view that unmounts us: the title on screen and the chain behind
+  // it, since both live only in this component. Handed back through takeResume.
+  export function snapshot() {
+    return fullItem?.Id ? { id: fullItem.Id, stack: navStack.map(s => ({ ...s })) } : null;
   }
 
   // Back: one level up inside the page first. Returns false once the chain is empty, which is the
@@ -1146,6 +1178,25 @@
                 </div>
                 <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full block">{person.Name}</span>
                 {#if person.Role}<span class="text-xs text-gray-400 truncate w-full block">{person.Role}</span>{/if}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
+      <!-- INCLUDED IN — the collections holding this title; a card opens the collection view -->
+      {#if collections.length > 0}
+        <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-collections">
+          <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.includedIn}</h2>
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
+            {#each collections as col (col.Id)}
+              <button onclick={() => onOpenCollection?.(col)} data-item-id={col.Id} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-transform duration-200">
+                  {#if getItemImageUrl(col, 'portrait')}
+                    <img src={getItemImageUrl(col, 'portrait')} {@attach blurUp(itemBlurHash(col))} alt={col.Name} class="w-full h-full object-cover" loading="lazy" />
+                  {/if}
+                </div>
+                <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full">{col.Name}</span>
               </button>
             {/each}
           </div>
