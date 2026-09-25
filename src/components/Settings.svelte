@@ -285,7 +285,7 @@
   async function changePassword() {
     pwMessage = '';
     try {
-      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Password`, {
+      const res = await fetch(`${session.serverUrl}/Users/Password?UserId=${selectedUser.Id}`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ Id: selectedUser.Id, CurrentPw: currentPw, NewPw: newPw })
@@ -523,7 +523,7 @@
   async function loadRecentTitles() {
     recentLoading = true;
     try {
-      const base = `${session.serverUrl}/Users/${selectedUser.Id}/Items?Recursive=true&IncludeItemTypes=Movie,Episode`
+      const base = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&Recursive=true&IncludeItemTypes=Movie,Episode`
         + `&Fields=SeriesId,SeriesPrimaryImageTag,UserData&EnableImageTypes=Primary&ImageTypeLimit=1`
         + `&SortBy=DatePlayed&SortOrder=Descending&EnableTotalRecordCount=false&Limit=72`;
       const [played, resume] = await Promise.all([
@@ -562,7 +562,7 @@
       const base64 = (avatarTab === 'recent' && avatarPoster)
         ? await renderImageAvatarPng(avatarPoster.imageUrl)
         : await renderAvatarPng(effectiveIcon, effectiveColor);
-      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Images/Primary`, {
+      const res = await fetch(`${session.serverUrl}/UserImage?UserId=${selectedUser.Id}`, {
         method: 'POST',
         headers: { ...authHeaders(session.token), 'Content-Type': 'image/png' },   // one auth scheme, one source
         body: base64,
@@ -1567,7 +1567,7 @@
             {#if hasEditedAvatar && avatarTab === 'recent' && avatarPoster}
               <img src={avatarPoster.imageUrl} alt={avatarPoster.name} class="w-full h-full object-cover" />
             {:else if !hasEditedAvatar && selectedUser?.PrimaryImageTag}
-              <img src="{session.serverUrl}/Users/{selectedUser.Id}/Images/Primary?tag={selectedUser.PrimaryImageTag}&fillWidth=160&fillHeight=160&quality=90&format=webp" alt={i18n.t.profilePicture} class="w-full h-full object-cover" />
+              <img src="{session.serverUrl}/UserImage?UserId={selectedUser.Id}&tag={selectedUser.PrimaryImageTag}&fillWidth=160&fillHeight=160&quality=90&format=webp" alt={i18n.t.profilePicture} class="w-full h-full object-cover" />
             {:else}
               <svg class="w-11 h-11 text-white" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[effectiveIcon]}/></svg>
             {/if}

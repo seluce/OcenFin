@@ -35,7 +35,7 @@
     const type = m === 'collection' ? 'BoxSet' : 'Playlist';
     try {
       const res = await fetch(
-        `${session.serverUrl}/Users/${selectedUser.Id}/Items?Recursive=true&IncludeItemTypes=${type}&SortBy=SortName&SortOrder=Ascending&EnableTotalRecordCount=false`,
+        `${session.serverUrl}/Items?UserId=${selectedUser.Id}&Recursive=true&IncludeItemTypes=${type}&SortBy=SortName&SortOrder=Ascending&EnableTotalRecordCount=false`,
         { headers: getAuthHeaders() }
       );
       // The watchlist has its own dedicated button — offering it here as a target again
@@ -47,7 +47,7 @@
     await Promise.all(items.map(async (target) => {
       try {
         const url = m === 'collection'
-          ? `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${target.Id}&Fields=&Limit=300&EnableTotalRecordCount=false`
+          ? `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${target.Id}&Fields=&Limit=300&EnableTotalRecordCount=false`
           : `${session.serverUrl}/Playlists/${target.Id}/Items?UserId=${selectedUser.Id}&Limit=300&EnableTotalRecordCount=false`;
         const r = await fetch(url, { headers: getAuthHeaders() });
         if (r.ok) {

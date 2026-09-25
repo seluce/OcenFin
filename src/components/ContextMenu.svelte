@@ -46,7 +46,7 @@
     played = next;                         // toggle optimistically
     if (next) hasResume = false;           // marked as watched → no more resume
     if (item.UserData) item.UserData.Played = next;
-    await call(next ? 'POST' : 'DELETE', `/Users/${userId}/PlayedItems/${item.Id}`);
+    await call(next ? 'POST' : 'DELETE', `/UserPlayedItems/${item.Id}?UserId=${userId}`);
     onChanged?.();                   // reload only AFTER the server write (otherwise a race: reload reads stale data)
   }
   async function toggleFavorite() {
@@ -54,14 +54,14 @@
     const next = !favorite;
     favorite = next;
     if (item.UserData) item.UserData.IsFavorite = next;
-    await call(next ? 'POST' : 'DELETE', `/Users/${userId}/FavoriteItems/${item.Id}`);
+    await call(next ? 'POST' : 'DELETE', `/UserFavoriteItems/${item.Id}?UserId=${userId}`);
     onChanged?.();
   }
   async function resetProgress() {
     if (!armed) return;
     hasResume = false; played = false;     // out of "Continue Watching"
     if (item.UserData) { item.UserData.Played = false; item.UserData.PlaybackPositionTicks = 0; }
-    await call('DELETE', `/Users/${userId}/PlayedItems/${item.Id}`);
+    await call('DELETE', `/UserPlayedItems/${item.Id}?UserId=${userId}`);
     onChanged?.();
   }
   function openDetails() { if (!armed) return; onOpenDetails?.(item); onClose?.(); }

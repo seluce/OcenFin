@@ -210,7 +210,7 @@
       const uId  = selectedUser.Id;
       const opts = { headers: getAuthHeaders() };
       const [rRes, rNext] = await Promise.all([
-        fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
+        fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
         fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
       ]);
       continueWatching = (await rRes.json()).Items || [];
@@ -227,7 +227,7 @@
     try {
       // Fetch recently played movies/series as the hook
       const res = await fetch(
-        `${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
+        `${session.serverUrl}/Items?UserId=${uId}&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
         `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=4&Fields=${fields}&EnableTotalRecordCount=false`, opts
       );
       if (!res.ok) { console.warn('recommendations: HTTP', res.status); return; }
@@ -257,7 +257,7 @@
     try {
       // 1) Taste signal: recently watched movies/series WITH genres (a separate fetch, since FIELDS carries none).
       const seedRes = await fetch(
-        `${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
+        `${session.serverUrl}/Items?UserId=${uId}&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
         `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=25&Fields=Genres&EnableTotalRecordCount=false`, opts
       );
       if (!seedRes.ok) { console.warn('taste seeds: HTTP', seedRes.status); return; }
@@ -277,7 +277,7 @@
       //    Genres= is pipe-separated (OR combination).
       const genreParam = topGenres.map(encodeURIComponent).join('|');
       const poolRes = await fetch(
-        `${session.serverUrl}/Users/${uId}/Items?IncludeItemTypes=Movie,Series&Recursive=true` +
+        `${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=Movie,Series&Recursive=true` +
         `&Filters=IsUnplayed&Genres=${genreParam}&SortBy=CommunityRating&SortOrder=Descending` +
         `&Limit=40&Fields=${FIELDS}&EnableImageTypes=Backdrop,Primary,Logo&EnableTotalRecordCount=false`, opts
       );
@@ -322,8 +322,8 @@
       // construction (taste seeds, then the genre pool), so every round trip it queues behind is
       // one more skeleton second before the banner appears. Until the chain decides, buildHero stays blocked (heroForYouPending) — same trade as
       // before: a bit more skeleton time for the better hero, reserved space prevents shift-up.
-      const pViews        = fetch(`${session.serverUrl}/Users/${uId}/Views`, opts);
-      const pResume       = fetch(`${session.serverUrl}/Users/${uId}/Items/Resume?Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
+      const pViews        = fetch(`${session.serverUrl}/UserViews?UserId=${uId}`, opts);
+      const pResume       = fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
       heroForYouPending = true;
       const pHeroForYou = loadHeroForYou(uId, opts)
         .then(pool => { heroForYouPending = false; if (!heroBuilt && !applyHeroPool(pool)) buildHero(); })
@@ -348,15 +348,15 @@
       // what is left to watch — hiding what you have seen would misreport what actually arrived.
       // Rows about what to watch next exist separately: Continue watching and Up next.
       const latestQuery = (type) =>
-        `${session.serverUrl}/Users/${uId}/Items?IncludeItemTypes=${type}&Recursive=true` +
+        `${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=${type}&Recursive=true` +
         `&SortBy=DateCreated&SortOrder=Descending&Limit=${ROW_LIMIT}&Fields=${fields}&EnableTotalRecordCount=false`;
       const pLatestMovies = fetch(latestQuery('Movie'), opts);
       const pLatestSeries = fetch(latestQuery('Series'), opts);
       // History: recently watched movies/episodes. Fetch more (40), since series are then
       // collapsed to one entry each (buffer for a good mix).
-      const pHistory      = fetch(`${session.serverUrl}/Users/${uId}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}&EnableTotalRecordCount=false`, opts);
+      const pHistory      = fetch(`${session.serverUrl}/Items?UserId=${uId}&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}&EnableTotalRecordCount=false`, opts);
       // Collections (BoxSets)
-      const pCollections  = fetch(`${session.serverUrl}/Users/${uId}/Items?IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=50&EnableTotalRecordCount=false`, opts);
+      const pCollections  = fetch(`${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=50&EnableTotalRecordCount=false`, opts);
 
       // Priority: Views + Resume → release the UI immediately
       const [resViews, resResume] = await Promise.all([pViews, pResume]);
@@ -384,7 +384,7 @@
         const seriesIds = items.filter(i => i.Type === 'Series').map(i => i.Id);
         if (seriesIds.length) {
           try {
-            const r2 = await fetch(`${session.serverUrl}/Users/${uId}/Items?Ids=${seriesIds.join(',')}&Fields=ProductionYear,Status,EndDate&EnableTotalRecordCount=false`, opts);
+            const r2 = await fetch(`${session.serverUrl}/Items?UserId=${uId}&Ids=${seriesIds.join(',')}&Fields=ProductionYear,Status,EndDate&EnableTotalRecordCount=false`, opts);
             // Enrichment only — on an error response keep the items we already have rather than
             // letting res.json() throw and lose the whole row.
             const info = r2.ok ? new Map(((await r2.json()).Items || []).map(s => [s.Id, s])) : new Map();

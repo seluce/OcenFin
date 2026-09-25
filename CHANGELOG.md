@@ -12,6 +12,12 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   a code. Approving another device with a code under Settings failed on every server version, because
   the code was sent where the server does not look for it.
 
+### Internal
+
+- Requests use Jellyfin's current addresses instead of the older per-profile ones. Jellyfin 12
+  still answers the old ones but no longer documents them and may drop them in a later version. The
+  new ones exist since 10.9, so nothing changes on older servers.
+
 ## 2026.09.22
 
 ### Changed

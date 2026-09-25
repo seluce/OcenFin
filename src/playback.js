@@ -297,7 +297,7 @@ export async function buildPlayQueue(items, { serverUrl, userId, headers }) {
   const queue = [];
   for (const it of items || []) {
     if (it.Type === 'Series' || it.Type === 'Season') {
-      const url = `${serverUrl}/Users/${userId}/Items?ParentId=${it.Id}`
+      const url = `${serverUrl}/Items?UserId=${userId}&ParentId=${it.Id}`
         + `&IncludeItemTypes=Episode${it.Type === 'Series' ? '&Recursive=true' : ''}`
         + `&SortBy=ParentIndexNumber,IndexNumber&EnableTotalRecordCount=false`;
       try {

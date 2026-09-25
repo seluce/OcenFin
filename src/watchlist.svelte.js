@@ -28,7 +28,7 @@ export async function initWatchlist(userId) {
   watchlist.items = [];
   try {
     const res = await fetch(
-      `${session.serverUrl}/Users/${userId}/Items?IncludeItemTypes=Playlist&Recursive=true&EnableTotalRecordCount=false`,
+      `${session.serverUrl}/Items?UserId=${userId}&IncludeItemTypes=Playlist&Recursive=true&EnableTotalRecordCount=false`,
       { headers: headers() }
     );
     if (!res.ok) return;
@@ -98,9 +98,9 @@ export function inWatchlist(itemId) {
 async function representativeEpisode(item, userId) {
   const urls = item.Type === 'Series'
     ? [`${session.serverUrl}/Shows/NextUp?SeriesId=${item.Id}&UserId=${userId}&Limit=1&EnableTotalRecordCount=false`,
-       `${session.serverUrl}/Users/${userId}/Items?ParentId=${item.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=ParentIndexNumber,IndexNumber&EnableTotalRecordCount=false`]
-    : [`${session.serverUrl}/Users/${userId}/Items?ParentId=${item.Id}&IncludeItemTypes=Episode&Filters=IsNotPlayed&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`,
-       `${session.serverUrl}/Users/${userId}/Items?ParentId=${item.Id}&IncludeItemTypes=Episode&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`];
+       `${session.serverUrl}/Items?UserId=${userId}&ParentId=${item.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=ParentIndexNumber,IndexNumber&EnableTotalRecordCount=false`]
+    : [`${session.serverUrl}/Items?UserId=${userId}&ParentId=${item.Id}&IncludeItemTypes=Episode&Filters=IsNotPlayed&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`,
+       `${session.serverUrl}/Items?UserId=${userId}&ParentId=${item.Id}&IncludeItemTypes=Episode&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`];
   for (const url of urls) {
     try {
       const res = await fetch(url, { headers: headers() });

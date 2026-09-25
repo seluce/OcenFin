@@ -89,7 +89,7 @@
     // collections/BoxSets via ParentId.
     const url = collection.Type === 'Playlist'
       ? `${session.serverUrl}/Playlists/${collection.Id}/Items?UserId=${selectedUser.Id}&Fields=PrimaryImageAspectRatio&Limit=300&EnableTotalRecordCount=false`
-      : `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${collection.Id}&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=100&EnableTotalRecordCount=false`;
+      : `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${collection.Id}&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=100&EnableTotalRecordCount=false`;
     try {
       const res = await fetch(url, { headers: getAuthHeaders() });
       const loaded = res.ok ? ((await res.json()).Items || []) : null;

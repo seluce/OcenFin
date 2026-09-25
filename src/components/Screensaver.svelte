@@ -55,7 +55,7 @@
   const logoUrl = (id, tag) => `${session.serverUrl}/Items/${id}/Images/Logo?tag=${tag}&maxHeight=240&quality=90&format=webp&ApiKey=${session.token}`;
 
   async function fetchBackdrops(filter) {
-    const url = `${session.serverUrl}/Users/${userId}/Items?Recursive=true&IncludeItemTypes=Movie,Series`
+    const url = `${session.serverUrl}/Items?UserId=${userId}&Recursive=true&IncludeItemTypes=Movie,Series`
               + `${filter}&SortBy=Random&Limit=80&Fields=BackdropImageTags&ImageTypeLimit=1`
               + `&EnableImageTypes=Backdrop,Logo&EnableTotalRecordCount=false`;
     const res = await fetch(url, { headers: authHeaders(session.token) });

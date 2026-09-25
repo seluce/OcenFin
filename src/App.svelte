@@ -618,7 +618,7 @@
     if (_syncOpeningId === norm(itemId)) return;                                          // currently opening
     _syncOpeningId = norm(itemId);
     try {
-      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${itemId}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/Items/${itemId}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
       if (res.ok) {
         currentDetailItem   = await res.json();
         activeAudioIndex    = -1;
@@ -1192,7 +1192,7 @@
       const t0 = Date.now();
       try {
         const res = await fetch(
-          `${session.serverUrl}/Users/${m.id}/Items?ParentId=${libraryId}&Recursive=true` +
+          `${session.serverUrl}/Items?UserId=${m.id}&ParentId=${libraryId}&Recursive=true` +
           `&IncludeItemTypes=Movie,Series&Fields=UserData&EnableImages=false` +
           `&Limit=100000&EnableTotalRecordCount=false`,
           { headers: authHeaders(token) }
@@ -1239,7 +1239,7 @@
       const t0 = Date.now();
       try {
         const res = await fetch(
-          `${session.serverUrl}/Users/${m.id}/Items?Recursive=true&IncludeItemTypes=Movie,Series` +
+          `${session.serverUrl}/Items?UserId=${m.id}&Recursive=true&IncludeItemTypes=Movie,Series` +
           `&Fields=Genres,CommunityRating,UserData&EnableImageTypes=Primary&Limit=100000&EnableTotalRecordCount=false`,
           { headers: authHeaders(token) }
         );
@@ -1571,7 +1571,7 @@
   // (e.g. "Playlists") – update the sidebar/menu immediately instead of only on restart.
   async function refreshLibraries() {
     try {
-      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Views`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/UserViews?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
       if (res.ok) navLibraries = (await res.json()).Items || [];
     } catch { }
   }

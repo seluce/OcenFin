@@ -48,7 +48,7 @@
       // Instead the dedicated /Persons endpoint with the IsFavorite filter (UserId for the context).
       const [contentRes, personRes] = await Promise.all([
         fetch(
-          `${session.serverUrl}/Users/${selectedUser.Id}/Items?Filters=IsFavorite&Recursive=true` +
+          `${session.serverUrl}/Items?UserId=${selectedUser.Id}&Filters=IsFavorite&Recursive=true` +
           `&IncludeItemTypes=Movie,Series,BoxSet,Season,Episode&SortBy=SortName&SortOrder=Ascending` +
           `&Fields=PrimaryImageAspectRatio,ProductionYear,UserData,SeriesName,ParentIndexNumber,IndexNumber,SeriesId&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`,
           { headers: getAuthHeaders() }

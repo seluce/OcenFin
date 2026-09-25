@@ -222,7 +222,7 @@
       // No own public link (e.g. season/episode without an ID) → fall back to the series link.
       if (!target && fullItem.SeriesId) {
         try {
-          const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${fullItem.SeriesId}?Fields=ProviderIds`, { headers: getAuthHeaders() });
+          const res = await fetch(`${session.serverUrl}/Items/${fullItem.SeriesId}?UserId=${selectedUser.Id}&Fields=ProviderIds`, { headers: getAuthHeaders() });
           if (res.ok) target = buildShareUrl(await res.json());
         } catch { /* series unreachable → title fallback below */ }
       }
@@ -391,7 +391,7 @@
 
     try {
       const res = await fetch(
-        `${session.serverUrl}/Users/${selectedUser.Id}/Items/${itemId}?Fields=MediaSources,Overview,Path,ProviderIds,People,RemoteTrailers`,
+        `${session.serverUrl}/Items/${itemId}?UserId=${selectedUser.Id}&Fields=MediaSources,Overview,Path,ProviderIds,People,RemoteTrailers`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
@@ -449,7 +449,7 @@
   async function loadRelatedItems(parentId, myToken) {
     try {
       const res = await fetch(
-        `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${parentId}&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName&EnableTotalRecordCount=false`,
+        `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${parentId}&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName&EnableTotalRecordCount=false`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) { const d = await res.json(); if (myToken !== detailToken) return; relatedItems = d.Items || []; }
@@ -460,7 +460,7 @@
     if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
       const url = fullItem.Type === 'Series'
         ? `${session.serverUrl}/Shows/NextUp?SeriesId=${fullItem.Id}&UserId=${selectedUser.Id}&Limit=1&EnableTotalRecordCount=false`
-        : `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Filters=IsNotPlayed&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`;
+        : `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Filters=IsNotPlayed&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`;
       try {
         const res  = await fetch(url, { headers: getAuthHeaders() });
         if (!res.ok) { console.warn('play next-up: HTTP', res.status); return; }
@@ -470,7 +470,7 @@
         } else {
           // Fallback: first episode
           const fb = await fetch(
-            `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`,
+            `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`,
             { headers: getAuthHeaders() }
           );
           if (!fb.ok) { console.warn('play first episode: HTTP', fb.status); return; }
@@ -515,7 +515,7 @@
     shown.UserData = { ...shown.UserData, Played: willBePlayed };
     if (carry) item.UserData = { ...item.UserData, Played: willBePlayed };
     try {
-      await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/PlayedItems/${shown.Id}`, {
+      await fetch(`${session.serverUrl}/UserPlayedItems/${shown.Id}?UserId=${selectedUser.Id}`, {
         method: willBePlayed ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
@@ -534,7 +534,7 @@
     shown.UserData = { ...shown.UserData, IsFavorite: willBeFav };
     if (carry) item.UserData = { ...item.UserData, IsFavorite: willBeFav };
     try {
-      await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${shown.Id}`, {
+      await fetch(`${session.serverUrl}/UserFavoriteItems/${shown.Id}?UserId=${selectedUser.Id}`, {
         method: willBeFav ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });

@@ -224,7 +224,7 @@
       const next = String.fromCharCode(letter.charCodeAt(0) + 1);
       q = `&NameStartsWithOrGreater=${encodeURIComponent(next)}`;
     }
-    const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${libraryId}&Limit=1&StartIndex=0${q}${getFilterQuery()}`;
+    const url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${libraryId}&Limit=1&StartIndex=0${q}${getFilterQuery()}`;
     try {
       const res = await fetch(url, authOpts());
       if (res.ok) return (await res.json()).TotalRecordCount || 0;
@@ -277,7 +277,7 @@
     if (myToken !== loadToken) return;   // a newer request arrived during the count query
     firstLoadedIndex = startIndex;
 
-    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${lib.Id}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
+    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${lib.Id}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
     url += getFilterQuery();
 
     try {
@@ -323,7 +323,7 @@
     isFetchingMore = true;
     const myToken = loadToken;   // belongs to the CURRENT list — don't append anymore after a reload
     const start = firstLoadedIndex + currentItems.length;
-    let url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}&EnableTotalRecordCount=false`;
+    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}&EnableTotalRecordCount=false`;
     url += getFilterQuery();
     try {
       const res = await fetch(url, authOpts());
@@ -359,7 +359,7 @@
     const myToken = loadToken;   // belongs to the CURRENT list — don't prepend anymore after a reload
     const newStart = Math.max(0, firstLoadedIndex - libraryItemLimit);
     const count    = firstLoadedIndex - newStart;
-    const url = `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}&EnableTotalRecordCount=false`;
+    const url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}&EnableTotalRecordCount=false`;
     try {
       const res = await fetch(url, authOpts());
       if (res.ok && myToken === loadToken) {
@@ -381,7 +381,7 @@
     if (!currentLibraryId) return;
     try {
       const res = await fetch(
-        `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${currentLibraryId}` +
+        `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}` +
         `&SortBy=Random&Limit=1&Recursive=true&IncludeItemTypes=Movie,Series&Fields=Overview&EnableTotalRecordCount=false`,
         authOpts()
       );

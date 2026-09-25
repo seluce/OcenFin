@@ -506,7 +506,7 @@
       let titleStreams = (item?.MediaStreams?.length ? item.MediaStreams : mediaStreams) || [];
       if (!titleStreams.length && item?.Id) {
         try {
-          const r = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaStreams`, { headers: getAuthHeaders() });
+          const r = await fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}&Fields=MediaStreams`, { headers: getAuthHeaders() });
           if (r.ok) { const full = await r.json(); if (full?.MediaStreams?.length) titleStreams = full.MediaStreams; }
         } catch {}
       }
@@ -1322,7 +1322,7 @@
   async function fetchMediaSources() {
     try {
       const res = await fetch(
-        `${session.serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaSources,Chapters,Trickplay`,
+        `${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}&Fields=MediaSources,Chapters,Trickplay`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
@@ -1640,7 +1640,7 @@
     isFavorite = !isFavorite;
     resetControlsTimeout();
     try {
-      await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${item.Id}`, {
+      await fetch(`${session.serverUrl}/UserFavoriteItems/${item.Id}?UserId=${selectedUser.Id}`, {
         method: isFavorite ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
