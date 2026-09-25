@@ -28,6 +28,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **The preview pictures while seeking match the version you are watching.** For a title in several
   versions they always came from the first one, so with a different cut they drifted away from the
   scene.
+- **Back from a cast member's page returns to the title you came from.** If you had moved on to
+  another title on the details page first, Back used to land on the first one, and the steps in
+  between were gone.
 
 ### Internal
 

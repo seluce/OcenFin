@@ -1500,6 +1500,8 @@
   // would still be lying around for the next, unrelated visit to a title.
   let detailsResume = null;
   const takeDetailsResume = () => { const r = detailsResume; detailsResume = null; return r; };
+  // The way back onto a title page, shared by the collection and the person page: both keep it in
+  // the same shape.
   function restoreDetailsFrom(d) {
     currentDetailItem = d.item;   detailsOrigin       = d.origin;
     detailsReturnId   = d.id;     detailsReturnEl     = d.el;
@@ -1622,9 +1624,12 @@
     // single-variable trap the collection stack has (§22). Without this, Back came back to that
     // other title and then bounced between it and the person page forever, with no way out but the
     // sidebar, because detailsOrigin still said 'person'.
+    // `resume` is the page as it stood: the entry alone brought back the title the chain STARTED
+    // at, so A → Similar → B → actor → Back landed on A with the chain gone (§37).
     personReturnDetails = viewState === 'details'
       ? { item: currentDetailItem, origin: detailsOrigin,
-          id: detailsReturnId, el: detailsReturnEl, nth: detailsReturnNth, scroll: detailsReturnScroll }
+          id: detailsReturnId, el: detailsReturnEl, nth: detailsReturnNth, scroll: detailsReturnScroll,
+          resume: detailsRef?.snapshot?.() ?? null }
       : null;
     personReturnId     = document.activeElement?.getAttribute?.('data-item-id') ?? null;
     personReturnEl     = document.activeElement;
@@ -1641,12 +1646,7 @@
     personReturnId = null; personReturnEl = null; personReturnNth = 0; personReturnScroll = 0;
     // Restore the title page as it was, BEFORE switching to it — Details mounts from
     // currentDetailItem, and detailsOrigin is what its own Back will read next.
-    if (personReturnView === 'details' && personReturnDetails) {
-      const d = personReturnDetails;
-      currentDetailItem = d.item;      detailsOrigin       = d.origin;
-      detailsReturnId   = d.id;        detailsReturnEl     = d.el;
-      detailsReturnNth  = d.nth;       detailsReturnScroll = d.scroll;
-    }
+    if (personReturnView === 'details' && personReturnDetails) restoreDetailsFrom(personReturnDetails);
     personReturnDetails = null;
     viewState = personReturnView;
     if (personReturnView === 'search') searchRef?.restoreView();
