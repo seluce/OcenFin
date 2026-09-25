@@ -704,7 +704,8 @@
       syncCommand = { ...msg.Data, _seq: ++syncCmdSeq };
       dlog('[SyncPlay] command received', syncCommand.Command, syncCommand.PositionTicks);
     } else if (msg.MessageType === 'Playstate') {
-      // Admin remote control (dashboard): Pause/Unpause/Stop/Seek/PlayPause/NextTrack → to the Player.
+      // Admin remote control (dashboard): Pause/Unpause/Stop/Seek/Rewind/FastForward/PlayPause/
+      // Next-/PreviousTrack → to the Player.
       const cmd = msg.Data?.Command;
       if (cmd) { remoteCommand = { command: cmd, seekTicks: msg.Data?.SeekPositionTicks ?? null, _seq: ++remoteCmdSeq }; }
     } else if (msg.MessageType === 'GeneralCommand') {

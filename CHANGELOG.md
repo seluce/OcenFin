@@ -5,6 +5,12 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ## [Unreleased]
 
+### Added
+
+- **Rewind and fast-forward from another device.** When the TV is controlled from Jellyfin on a
+  phone or in the browser, those two buttons now work as well. They jump by the same step as the
+  player's own buttons.
+
 ### Fixed
 
 - **Quick Connect works again.** On Jellyfin 12, signing in with a code, and adding a watch-together

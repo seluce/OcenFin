@@ -331,6 +331,10 @@
       const t = Math.max(0, (c.seekTicks || 0) / 10000000);
       videoElement.currentTime = t; currentTime = t;
     }
+    // Same path as the HUD's own jump buttons: the profile's step, the preview, presses in quick
+    // succession adding up to one jump.
+    else if (cmd === 'rewind')      skip(-seekStep);
+    else if (cmd === 'fastforward') skip(seekStep);
     else if (cmd === 'nexttrack') { if (nextEpisode) goToNextEpisode(true); }
     else if (cmd === 'previoustrack') { goToPrevEpisode(); }
     // Volume/mute (GeneralCommand)
