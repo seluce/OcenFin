@@ -92,8 +92,18 @@
   let selectedGenres  = $state([]);
   let selectedFsk     = $state([]);
   const fskOptions    = ['0','6','12','16','18'];
+  // Track languages (Jellyfin 12+, via /Items/Filters2): raw { Name, Value } lists from the server,
+  // grouped for display below. The selection holds CODES, not labels, so it survives a change of the
+  // interface language and "Deutsch" can stand for both "ger" and "deu".
+  let audioLangsRaw         = $state([]);
+  let subtitleLangsRaw      = $state([]);
+  let selectedAudioLangs    = $state([]);
+  let selectedSubtitleLangs = $state([]);
+  let audioLangGroups    = $derived(groupLanguages(audioLangsRaw));
+  let subtitleLangGroups = $derived(groupLanguages(subtitleLangsRaw));
   let hasFilters = $derived(activeFilters.isFavorite || activeFilters.isPlayed || activeFilters.isNotPlayed
-                  || selectedGenres.length > 0 || selectedFsk.length > 0);
+                  || selectedGenres.length > 0 || selectedFsk.length > 0
+                  || selectedAudioLangs.length > 0 || selectedSubtitleLangs.length > 0);
 
   // ── Sorting ─────────────────────────────────────────────────
   let showSortMenu = $state(false);
@@ -131,7 +141,8 @@
 
   function currentlyHasFilters() {
     return activeFilters.isFavorite || activeFilters.isPlayed || activeFilters.isNotPlayed
-           || selectedGenres.length > 0 || selectedFsk.length > 0;
+           || selectedGenres.length > 0 || selectedFsk.length > 0
+           || selectedAudioLangs.length > 0 || selectedSubtitleLangs.length > 0;
   }
   function currentlyDefaultSort() {
     return currentSort.by === 'SortName' && currentSort.order === 'Ascending';
@@ -150,6 +161,43 @@
     } catch { }
   }
 
+  // Which audio and subtitle languages the library's titles carry. The server only fills these for
+  // Movie/Series/Episode types, and adds the episodes itself when Series is asked for, so one request
+  // covers film, series and mixed libraries. Older servers answer without the fields → no sections.
+  async function loadLanguages(libraryId) {
+    audioLangsRaw = []; subtitleLangsRaw = [];
+    const t0 = performance.now();
+    try {
+      const res = await fetch(`${session.serverUrl}/Items/Filters2?UserId=${selectedUser.Id}&ParentId=${libraryId}&IncludeItemTypes=Movie,Series&Recursive=true`, authOpts());
+      if (!res.ok) return;
+      const d = await res.json();
+      if (currentLibraryId !== libraryId) return;   // switched library meanwhile
+      audioLangsRaw    = d.AudioLanguages    || [];
+      subtitleLangsRaw = d.SubtitleLanguages || [];
+      dlog('[Library] languages', audioLangsRaw.length, 'audio ·', subtitleLangsRaw.length, 'subtitle in', Math.round(performance.now() - t0), 'ms');
+    } catch { }
+  }
+
+  // The server names languages in English ("German (ger)") and lists every code the files carry, so
+  // "ger" and "deu" arrive as two entries. Named in the interface language instead and grouped by that
+  // name — one chip per language. "und" (a track without a language tag) is left out: "has an untagged
+  // track" is no filter anyone reaches for. A code the browser cannot name keeps the server's label.
+  function groupLanguages(list) {
+    let names = null;
+    try { names = new Intl.DisplayNames([i18n.lang], { type: 'language' }); } catch { }
+    const groups = new Map();
+    for (const l of list) {
+      const code = l?.Value;
+      if (!code || code === 'und') continue;
+      let label = null;
+      try { const n = names?.of(code); if (n && n.toLowerCase() !== code.toLowerCase()) label = n; } catch { }
+      label = label ? label.charAt(0).toLocaleUpperCase(i18n.lang) + label.slice(1) : (l.Name || code);
+      const g = groups.get(label);
+      if (g) g.codes.push(code); else groups.set(label, { label, codes: [code] });
+    }
+    return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label, i18n.lang));
+  }
+
   function getFilterQuery() {
     let q = '';
     const f = [];
@@ -162,6 +210,9 @@
       const ratings = selectedFsk.map(v => `FSK ${v}`).join('|');
       q += `&OfficialRatings=${encodeURIComponent(ratings)}`;
     }
+    // Any of the chosen languages; a series counts when one of its episodes has it (server side).
+    if (selectedAudioLangs.length)    q += `&AudioLanguages=${selectedAudioLangs.map(encodeURIComponent).join(',')}`;
+    if (selectedSubtitleLangs.length) q += `&SubtitleLanguages=${selectedSubtitleLangs.map(encodeURIComponent).join(',')}`;
     return q;
   }
 
@@ -186,12 +237,19 @@
       ? selectedFsk.filter(v => v !== age) : [...selectedFsk, age];
     if (!showFilterMenu) reloadCurrent();
   }
+  const langSelected = (sel, group) => group.codes.some(c => sel.includes(c));
+  function toggleLanguage(kind, group) {
+    const sel  = kind === 'audio' ? selectedAudioLangs : selectedSubtitleLangs;
+    const next = langSelected(sel, group) ? sel.filter(c => !group.codes.includes(c)) : [...sel, ...group.codes];
+    if (kind === 'audio') selectedAudioLangs = next; else selectedSubtitleLangs = next;
+    if (!showFilterMenu) reloadCurrent();
+  }
 
   // Filter menu: changes are collected and applied ONCE on close — instead of
   // a full reload per chip tap (tapping 3 genres = 3 fetches, all but the
   // last discarded). Snapshot on open; reload only on an actual change.
   let filterMenuSnapshot = '';
-  const filterStateKey = () => JSON.stringify([activeFilters, selectedGenres, selectedFsk]);
+  const filterStateKey = () => JSON.stringify([activeFilters, selectedGenres, selectedFsk, selectedAudioLangs, selectedSubtitleLangs]);
   function openFilterMenu(e) {
     sortFilterFocus.capture(e.currentTarget);
     filterMenuSnapshot = filterStateKey();
@@ -244,11 +302,13 @@
       activeFilters   = { isFavorite: false, isPlayed: false, isNotPlayed: false };
       selectedGenres  = [];
       selectedFsk     = [];
+      selectedAudioLangs = []; selectedSubtitleLangs = [];
       currentSort     = librarySorts[lib.Id] ? { ...librarySorts[lib.Id] } : { by: 'SortName', order: 'Ascending' };
       previewBackdrop = '';
       clearTimeout(previewTimer);
       clearTimeout(clearTimer);
       loadGenres(lib.Id);
+      loadLanguages(lib.Id);
     }
     currentLibraryName = lib.Name;
     currentLibraryId   = lib.Id;
@@ -710,8 +770,7 @@
       <div class="flex flex-col items-center justify-center py-24 text-center">
         <svg class="w-16 h-16 text-gray-700 mb-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z"/></svg>
         <p class="text-xl text-gray-400 font-bold">
-          {selectedGenres.length || selectedFsk.length || activeFilters.isFavorite || activeFilters.isPlayed || activeFilters.isNotPlayed
-            ? i18n.t.libraryEmptyFiltered : i18n.t.libraryEmpty}
+          {hasFilters ? i18n.t.libraryEmptyFiltered : i18n.t.libraryEmpty}
         </p>
       </div>
     {/if}
@@ -830,6 +889,23 @@
             {/each}
           </div>
         </div>
+
+        {#each [['audio', i18n.t.audio, audioLangGroups, selectedAudioLangs], ['subtitle', i18n.t.subtitles, subtitleLangGroups, selectedSubtitleLangs]] as [kind, title, groups, sel] (kind)}
+          {#if groups.length > 0}
+            <div class="flex flex-col gap-3">
+              <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{title}</h3>
+              <div class="flex flex-wrap gap-3">
+                {#each groups as group (group.label)}
+                  <button onclick={() => toggleLanguage(kind, group)}
+                    class="px-5 py-2 rounded-full font-bold text-lg border-2 transition-all focus:outline-none focus:ring-4 focus:ring-white
+                           {langSelected(sel, group) ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-white'}">
+                    {group.label}
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        {/each}
 
         {#if availableGenres.length > 0}
           <div class="flex flex-col gap-3 pb-2">

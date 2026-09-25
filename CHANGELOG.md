@@ -14,6 +14,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   in its own row, and the collection opens with one click. Back leads to the same page, even if
   you had moved on to another title from there. Needs Jellyfin 12; on older servers the row does
   not appear.
+- **Filter a library by audio and subtitle language.** The filter menu lists the languages your
+  titles actually have, named in the app's language, so you can show only what has German audio or
+  English subtitles, for example. A series counts as soon as one of its episodes has the language.
+  Needs Jellyfin 12; on older servers these sections do not appear.
 
 ### Fixed
 
