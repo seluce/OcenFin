@@ -17,6 +17,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   profile the same way, failed straight away: the server no longer accepts the old way of asking for
   a code. Approving another device with a code under Settings failed on every server version, because
   the code was sent where the server does not look for it.
+- **The preview pictures while seeking match the version you are watching.** For a title in several
+  versions they always came from the first one, so with a different cut they drifted away from the
+  scene.
 
 ### Internal
 

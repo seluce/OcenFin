@@ -460,8 +460,11 @@
     trickplayInfo = null; trickplayMsId = null;
     const tp = data?.Trickplay;
     if (!tp) return;
-    // mediaSourceId key: prefers the running source, otherwise the first entry.
-    const srcId = data.MediaSources?.[0]?.Id;
+    // Keyed by media source: take the version that is playing — the one chosen in Details, or with
+    // none chosen the server's first, which is what it plays then. Reading MediaSources[0] alone
+    // scrubbed a second version (another cut, 4K) with the first one's thumbnails. A version
+    // without its own trickplay still falls back to whatever entry exists.
+    const srcId = mediaSourceId || data.MediaSources?.[0]?.Id;
     const msId  = (srcId && tp[srcId]) ? srcId : Object.keys(tp)[0];
     const byWidth = msId && tp[msId];
     if (!byWidth) return;
