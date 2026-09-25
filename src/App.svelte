@@ -1385,6 +1385,7 @@
     currentLibrary = null; currentCollection = null; currentPerson = null; currentDetailItem = null;
     libraryMounted = false; searchMounted = false;
     collectionStack = []; personReturnDetails = null; collectionReturnDetails = null; detailsResume = null;
+    collectionTrips = []; personTrips = [];
     libraryReturnId = null; libraryReturnEl = null; libraryReturnNth = 0;
     clearCurrentSession();
     // Only if nothing keeps it: with "remember me" on, the token stays in savedTokens for the
@@ -1514,6 +1515,32 @@
   // a title from inside the collection overwrites currentDetailItem and detailsOrigin, the same
   // trap personReturnDetails guards against (§22).
   let collectionReturnDetails = null;
+  // Collection and person pages each have ONE set of return slots. Entering the same kind again
+  // inside one chain overwrote them: A → collection C → film X → "Included in" C, then Back ran
+  // X ↔ C forever (the same for A → actor P → film X → P from the cast), with the menu as the only
+  // way out. Reproduced by replaying App's own functions in a harness (CODE-HEALTH §37). So opening
+  // either kind from a sub-view saves the slots it overwrites, and the final Back puts them back.
+  // A chain that starts from a top-level view is new: what the stacks still hold was left through
+  // the menu and will never be returned to. Bounded, because the app runs for days.
+  let collectionTrips = [], personTrips = [];
+  const TRIPS_MAX = 20;
+  const isSubView = (v) => v === 'details' || v === 'collection' || v === 'person';
+  function beginChainIfRoot() { if (!isSubView(viewState)) { collectionTrips = []; personTrips = []; } }
+  function pushTrip(stack, slots) { stack.push(slots); if (stack.length > TRIPS_MAX) stack.shift(); }
+  function restoreCollectionTrip() {
+    const t = collectionTrips.pop();
+    if (!t) return;
+    currentCollection   = t.collection; collectionReturnView   = t.view;  collectionReturnDetails = t.details;
+    collectionReturnId  = t.id;         collectionReturnEl     = t.el;    collectionReturnNth     = t.nth;
+    collectionReturnScroll = t.scroll;  collectionStack        = t.stack;
+  }
+  function restorePersonTrip() {
+    const t = personTrips.pop();
+    if (!t) return;
+    currentPerson    = t.person; personReturnView = t.view; personReturnDetails = t.details;
+    personReturnId   = t.id;     personReturnEl   = t.el;   personReturnNth     = t.nth;
+    personReturnScroll = t.scroll;
+  }
   // Given to the next Details mount exactly once through takeResume, then gone — as a plain prop it
   // would still be lying around for the next, unrelated visit to a title.
   let detailsResume = null;
@@ -1538,6 +1565,12 @@
         nth: collectionReturnNth, scroll: collectionReturnScroll,
       });
     } else {
+      beginChainIfRoot();
+      if (isSubView(viewState)) {
+        pushTrip(collectionTrips, { collection: currentCollection, view: collectionReturnView, details: collectionReturnDetails,
+          id: collectionReturnId, el: collectionReturnEl, nth: collectionReturnNth, scroll: collectionReturnScroll,
+          stack: collectionStack });
+      }
       collectionStack = [];
       collectionReturnView = viewState;
       collectionReturnDetails = viewState === 'details'
@@ -1587,6 +1620,9 @@
       pendingCardFocusId = id; pendingCardScrollTop = sc;
     }
     else focusCardAgain(id, el, '(back from collection)', nth);
+    // This trip is over: the one it was opened inside of takes the slots back (after the routing
+    // above, which still needed this trip's values).
+    restoreCollectionTrip();
   }
 
   // Cross effects from the collection view onto the library grid / sidebar:
@@ -1617,6 +1653,7 @@
       }
       collectionReturnDetails = null;
       viewState = collectionReturnView;
+      restoreCollectionTrip();
     }
   }
 
@@ -1636,6 +1673,11 @@
   // Opens a person's filmography (from search, the cast in Details, or favorites).
   // Only sets the return view + seed person; Person.svelte loads person details + filmography itself.
   function openPerson(person) {
+    beginChainIfRoot();
+    if (isSubView(viewState)) {   // e.g. A → actor P → film X → P again: keep P's first way back
+      pushTrip(personTrips, { person: currentPerson, view: personReturnView, details: personReturnDetails,
+        id: personReturnId, el: personReturnEl, nth: personReturnNth, scroll: personReturnScroll });
+    }
     personReturnView   = viewState;
     // Coming from a title page, remember WHICH title and its own way out. Opening another title
     // from the person's filmography overwrites currentDetailItem AND detailsOrigin — the same
@@ -1675,6 +1717,7 @@
              || personReturnView === 'details') {
       pendingCardFocusId = id; pendingCardScrollTop = sc;
     } else focusCardAgain(id, el, '(back from person)', nth);
+    restorePersonTrip();   // this trip is over — see collectionTrips
   }
 
   // After a selection in the sidebar, move focus into the content. Leaving
@@ -1718,6 +1761,7 @@
   function showItemDetails(item) {
     // Containers (collection/playlist) show their contents instead of a detail page
     if (item?.Type === 'BoxSet' || item?.Type === 'Playlist') { openCollection(item); return; }
+    beginChainIfRoot();
     // Remember the origin so "Back" leads there again (not always the dashboard), and the card
     // itself so focus can return to it rather than to nothing.
     detailsOrigin   = viewState;

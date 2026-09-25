@@ -41,6 +41,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   several versions with different tracks, the player went by the first version's tracks even while
   another one was playing. A chosen track could then come out as a different one, or the server
   converted the film without need.
+- **Back no longer bounces between two pages.** Opening a cast member from a film you had reached
+  through that same person, then pressing Back, switched between the film and the person page for
+  good, leaving the menu as the only way out. Back now retraces every step. The same goes for a
+  collection opened again from one of its own films.
 - **Back from a cast member's page returns to the title you came from.** If you had moved on to
   another title on the details page first, Back used to land on the first one, and the steps in
   between were gone.
