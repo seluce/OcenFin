@@ -219,7 +219,10 @@
     // languages — so the parameter was silently ignored and nothing filtered (tested by Ferris on
     // 12.1). With a language chosen, ask recursively for films and series; without one the listing
     // stays exactly as it was. Here rather than at the call sites, so the A–Z count agrees.
-    if (selectedAudioLangs.length || selectedSubtitleLangs.length) q += '&Recursive=true&IncludeItemTypes=Movie,Series';
+    // CollapseBoxSetItems=false: the server switches "group films into collections" off for most
+    // filters, but not for these two (Folder.AllowBoxSetCollapsing, 12.1) — with that setting on,
+    // a recursive query would answer with collections instead of the films that have the language.
+    if (selectedAudioLangs.length || selectedSubtitleLangs.length) q += '&Recursive=true&IncludeItemTypes=Movie,Series&CollapseBoxSetItems=false';
     return q;
   }
 

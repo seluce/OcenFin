@@ -420,17 +420,20 @@
   let mediaStreams   = $state([]);
   let _trackMemApplied = false;   // guard: apply remembered per-series track language only once per mount
   let currentMediaSource = null;   // currently running source – for the instant switch of text subtitles
-  // The track list of the version that PLAYS. The item-level MediaStreams are the primary version's
-  // (the server fills them from the source whose id is the item's own), and so is MediaSources[0] —
-  // so with a second version chosen in Details, the menu, the default track, the "explicit audio"
-  // transcode decision, the subtitle codec and the per-series memory all read the other file, whose
-  // stream indexes mean something else. null when no version was chosen or it is not in the list;
-  // callers then fall back to the item's own list, which for a single version is the same one.
+  // The track list of the version that PLAYS. The item-level MediaStreams are the item's own
+  // version's (the server fills them from the source whose id is the item's own; 12.x also sorts
+  // that one first in MediaSources) — so with a second version chosen in Details, the menu, the
+  // default track, the "explicit audio" transcode decision, the subtitle codec and the per-series
+  // memory all read the other file, whose stream indexes mean something else. null when no version
+  // was chosen or it is not in the list; callers then fall back to the item's own list, which for a
+  // single version is the same one.
   function chosenVersionStreams(sources) {
     return (mediaSourceId && sources?.find(s => s.Id === mediaSourceId)?.MediaStreams) || null;
   }
-  // The media source a picked start chooses from: the chosen version, else the item's own (the one
-  // it plays when none is named), else the first. List items carry no MediaSources → fetched once.
+  // The media source a picked start chooses from: the chosen version, else the FIRST — exactly what
+  // getPlaybackInfo() then plays, and what Details preselects. Not "the item's own": 12.x sorts that
+  // one first anyway, but 10.x sorts by resolution only, and there the tracks would have come from a
+  // different file than the one playing. List items carry no MediaSources → fetched once.
   async function sourceForPick() {
     let sources = item?.MediaSources;
     if (!sources?.length && item?.Id) {
@@ -440,7 +443,7 @@
       } catch {}
     }
     if (!sources?.length) return null;
-    return (mediaSourceId && sources.find(s => s.Id === mediaSourceId)) || sources.find(s => s.Id === item.Id) || sources[0];
+    return (mediaSourceId && sources.find(s => s.Id === mediaSourceId)) || sources[0];
   }
   let audioStreams = $derived(mediaStreams.filter(s => s.Type === 'Audio'));
   let subtitleStreams = $derived(mediaStreams.filter(s => s.Type === 'Subtitle'));
