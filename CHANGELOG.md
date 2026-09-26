@@ -49,6 +49,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   details page lost the way back to that one, and after a series' play button or an extra, Back
   skipped the page you had started from. Watching on from an episode's page, you now come back to
   the last episode you watched.
+- **People in your favourites are listed alphabetically.** The server ignores the sort order the app
+  asked for there, so they came in no particular order.
 - **Back from a cast member's page returns to the title you came from.** If you had moved on to
   another title on the details page first, Back used to land on the first one, and the steps in
   between were gone.
@@ -58,6 +60,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - Requests use Jellyfin's current addresses instead of the older per-profile ones. Jellyfin 12
   still answers the old ones but no longer documents them and may drop them in a later version. The
   new ones exist since 10.9, so nothing changes on older servers.
+- New playlists, the watchlist included, are created the way Jellyfin 12 documents (still private),
+  and parameters the server ignores are no longer sent.
 
 ## 2026.09.22
 

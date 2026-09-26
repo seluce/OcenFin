@@ -40,7 +40,7 @@
 
   function getAvatarUrl(user) {
     if (user?.PrimaryImageTag)
-      return `${session.serverUrl}/UserImage?UserId=${user.Id}&tag=${user.PrimaryImageTag}&fillWidth=120&fillHeight=120&quality=90&format=webp`;
+      return `${session.serverUrl}/UserImage?UserId=${user.Id}&tag=${user.PrimaryImageTag}&format=webp`;
     return null;
   }
 

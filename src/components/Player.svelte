@@ -438,7 +438,7 @@
     let sources = item?.MediaSources;
     if (!sources?.length && item?.Id) {
       try {
-        const r = await fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}&Fields=MediaSources`, { headers: getAuthHeaders() });
+        const r = await fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
         if (r.ok) sources = (await r.json()).MediaSources;
       } catch {}
     }
@@ -562,7 +562,7 @@
       }
       if (!titleStreams.length && item?.Id) {
         try {
-          const r = await fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}&Fields=MediaStreams`, { headers: getAuthHeaders() });
+          const r = await fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
           if (r.ok) { const full = await r.json(); if (full?.MediaStreams?.length) titleStreams = full.MediaStreams; }
         } catch {}
       }
@@ -1378,7 +1378,7 @@
   async function fetchMediaSources() {
     try {
       const res = await fetch(
-        `${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}&Fields=MediaSources,Chapters,Trickplay`,
+        `${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {

@@ -67,7 +67,7 @@ export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false
         // of failing / silent HEVC playback. AAC is universally MSE-compatible.
         Container: 'ts', Type: 'Video', VideoCodec: 'h264', AudioCodec: 'aac',
         Protocol: 'hls', Context: 'Streaming',
-        MaxAudioChannels: '2', MinSegments: '1', BreakOnNonKeyFrames: true,
+        MaxAudioChannels: '2', MinSegments: '1',
       },
       { Container: 'aac', Type: 'Audio', AudioCodec: 'aac', Protocol: 'http', Context: 'Streaming', MaxAudioChannels: '2' },
     ],

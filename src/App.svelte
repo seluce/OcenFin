@@ -1884,7 +1884,7 @@
     if (!item?.Id) return;
     detailsOrigin = viewState;
     try {
-      const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300&EnableTotalRecordCount=false`, { headers: getAuthHeaders() });
+      const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300`, { headers: getAuthHeaders() });
       if (!res.ok) { console.warn('play playlist: HTTP', res.status); return; }
       const data  = await res.json();
       const queue = await buildPlayQueue(data.Items || [], { serverUrl: session.serverUrl, userId: activeUserId, headers: getAuthHeaders() });

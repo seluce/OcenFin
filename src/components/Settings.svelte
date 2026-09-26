@@ -288,7 +288,7 @@
       const res = await fetch(`${session.serverUrl}/Users/Password?UserId=${selectedUser.Id}`, {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ Id: selectedUser.Id, CurrentPw: currentPw, NewPw: newPw })
+        body: JSON.stringify({ CurrentPw: currentPw, NewPw: newPw })
       });
       pwMessage = res.ok ? i18n.t.pwChangedSuccess : i18n.t.pwChangedError;
       if (res.ok) {
@@ -1567,7 +1567,7 @@
             {#if hasEditedAvatar && avatarTab === 'recent' && avatarPoster}
               <img src={avatarPoster.imageUrl} alt={avatarPoster.name} class="w-full h-full object-cover" />
             {:else if !hasEditedAvatar && selectedUser?.PrimaryImageTag}
-              <img src="{session.serverUrl}/UserImage?UserId={selectedUser.Id}&tag={selectedUser.PrimaryImageTag}&fillWidth=160&fillHeight=160&quality=90&format=webp" alt={i18n.t.profilePicture} class="w-full h-full object-cover" />
+              <img src="{session.serverUrl}/UserImage?UserId={selectedUser.Id}&tag={selectedUser.PrimaryImageTag}&format=webp" alt={i18n.t.profilePicture} class="w-full h-full object-cover" />
             {:else}
               <svg class="w-11 h-11 text-white" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[effectiveIcon]}/></svg>
             {/if}

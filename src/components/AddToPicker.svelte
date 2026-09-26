@@ -48,7 +48,7 @@
       try {
         const url = m === 'collection'
           ? `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${target.Id}&Fields=&Limit=300&EnableTotalRecordCount=false`
-          : `${session.serverUrl}/Playlists/${target.Id}/Items?UserId=${selectedUser.Id}&Limit=300&EnableTotalRecordCount=false`;
+          : `${session.serverUrl}/Playlists/${target.Id}/Items?UserId=${selectedUser.Id}&Limit=300`;
         const r = await fetch(url, { headers: getAuthHeaders() });
         if (r.ok) {
           const kids = (await r.json()).Items || [];
@@ -92,11 +92,14 @@
     const name = newName.trim();
     if (!name || !item || busy) return;
     busy = true;
-    const url = mode === 'collection'
-      ? `${session.serverUrl}/Collections?Name=${encodeURIComponent(name)}&Ids=${item.Id}`
-      : `${session.serverUrl}/Playlists?Name=${encodeURIComponent(name)}&Ids=${item.Id}&UserId=${selectedUser.Id}`;
+    // Collections still take the query form; playlists a body (12.x marks their query form obsolete),
+    // private as before — the body's IsPublic defaults to TRUE.
+    const req = mode === 'collection'
+      ? [`${session.serverUrl}/Collections?Name=${encodeURIComponent(name)}&Ids=${item.Id}`, { method: 'POST', headers: getAuthHeaders() }]
+      : [`${session.serverUrl}/Playlists`, { method: 'POST', headers: getAuthHeaders(),
+          body: JSON.stringify({ Name: name, Ids: [item.Id], UserId: selectedUser.Id, IsPublic: false }) }];
     try {
-      const res = await fetch(url, { method: 'POST', headers: getAuthHeaders() });
+      const res = await fetch(...req);
       if (res.ok) {
         msg = `${i18n.t.created}: ${name}`; msgError = false;
         const created = await res.json().catch(() => null);

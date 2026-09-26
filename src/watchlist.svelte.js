@@ -46,7 +46,7 @@ export async function initWatchlist(userId) {
 async function refreshEntries(userId) {
   if (!watchlist.playlistId) return;
   const res = await fetch(
-    `${session.serverUrl}/Playlists/${watchlist.playlistId}/Items?UserId=${userId}&Limit=500&EnableTotalRecordCount=false`,
+    `${session.serverUrl}/Playlists/${watchlist.playlistId}/Items?UserId=${userId}&Limit=500`,
     { headers: headers() }
   );
   if (!res.ok) return;
@@ -138,9 +138,12 @@ export async function toggleWatchlist(item) {
           { method: 'POST', headers: headers() });
       } else {
         // First ever add: creating the playlist and adding the item is one call.
-        const res = await fetch(
-          `${session.serverUrl}/Playlists?Name=${encodeURIComponent(WATCHLIST_NAME)}&Ids=${target.Id}&UserId=${userId}`,
-          { method: 'POST', headers: headers() });
+        // Body, not the query form 12.x marks obsolete. IsPublic stated on purpose: the body's default
+        // is TRUE, while the query form made a private playlist — the watchlist must stay private.
+        const res = await fetch(`${session.serverUrl}/Playlists`, {
+          method: 'POST', headers: headers(),
+          body: JSON.stringify({ Name: WATCHLIST_NAME, Ids: [target.Id], UserId: userId, IsPublic: false }),
+        });
         if (res.ok) watchlist.playlistId = (await res.json()).Id;
         // Creation failed (403/500): drop the placeholder. refreshEntries can't clean it up
         // (it early-returns while playlistId is null), the icon would show a saved state that

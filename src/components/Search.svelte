@@ -116,7 +116,7 @@
       const [itemsRes, peopleRes] = await Promise.all([
         fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&searchTerm=${encodeURIComponent(query)}&Recursive=true&IncludeItemTypes=Movie,Series,Episode&Limit=24&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName&EnableTotalRecordCount=false`,
           { headers: getAuthHeaders() }),
-        fetch(`${session.serverUrl}/Persons?searchTerm=${encodeURIComponent(query)}&Limit=10&userId=${selectedUser.Id}&EnableTotalRecordCount=false`,
+        fetch(`${session.serverUrl}/Persons?searchTerm=${encodeURIComponent(query)}&Limit=10&userId=${selectedUser.Id}`,
           { headers: getAuthHeaders() })
       ]);
       if (myToken !== searchToken) return;   // a new search meanwhile → discard this response

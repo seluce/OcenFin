@@ -193,7 +193,7 @@
       // No own public link (e.g. season/episode without an ID) → fall back to the series link.
       if (!target && fullItem.SeriesId) {
         try {
-          const res = await fetch(`${session.serverUrl}/Items/${fullItem.SeriesId}?UserId=${selectedUser.Id}&Fields=ProviderIds`, { headers: getAuthHeaders() });
+          const res = await fetch(`${session.serverUrl}/Items/${fullItem.SeriesId}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
           if (res.ok) target = buildShareUrl(await res.json());
         } catch { /* series unreachable → title fallback below */ }
       }
@@ -328,7 +328,7 @@
 
     try {
       const res = await fetch(
-        `${session.serverUrl}/Items/${itemId}?UserId=${selectedUser.Id}&Fields=MediaSources,Overview,Path,ProviderIds,People,RemoteTrailers`,
+        `${session.serverUrl}/Items/${itemId}?UserId=${selectedUser.Id}`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
