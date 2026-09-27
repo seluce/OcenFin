@@ -317,17 +317,15 @@
   // SIGN-IN
   // ============================================================
 
-  /** Profile clicked — quick sign-in via a saved token if available */
+  /** Profile clicked — quick sign-in via a saved token if available, otherwise the password form.
+   *  Jellyfin 12 no longer says which profiles have a password (UserDto.HasPassword is obsolete and
+   *  always true), so a profile without one confirms the form empty — never tried unasked, since a
+   *  failed attempt counts toward the lockout. */
   async function handleUserClick(user) {
     loginError      = '';
     password        = '';
     pendingUser     = user;
     showManualLogin = false;
-
-    if (!user.HasPassword) {
-      await authenticateUser(user.Name, '');
-      return;
-    }
 
     const storedToken = getStoredToken?.(server?.id, user.Id);
     if (storedToken) {

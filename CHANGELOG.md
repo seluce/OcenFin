@@ -49,6 +49,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   details page lost the way back to that one, and after a series' play button or an extra, Back
   skipped the page you had started from. Watching on from an episode's page, you now come back to
   the last episode you watched.
+- **A profile without a password can be added to watch together.** On Jellyfin 12 the password
+  prompt came back every time it was confirmed empty, so such a profile could only be added by code
+  or with its password saved.
 - **People in your favourites are listed alphabetically.** The server ignores the sort order the app
   asked for there, so they came in no particular order.
 - **Back from a cast member's page returns to the title you came from.** If you had moved on to

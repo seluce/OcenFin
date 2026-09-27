@@ -171,7 +171,7 @@
     await openModal('sharedQc');
     try {
       const { user, token } = await sharedQcSess.promise;
-      const r = await onSharedSetMember(sharedPickerSlot, user, '', token);
+      const r = await onSharedSetMember(sharedPickerSlot, user, null, token);
       if (r === 'ok') {
         closeModal();
         await tick();
@@ -247,12 +247,14 @@
     sharedError = '';
     const sid = selectedServer?.id;
     const hasToken = !!(sharedTokens[sid]?.[user.Id] || savedTokens[sid]?.[user.Id]);
-    if (user.HasPassword && !hasToken) {        // password needed → entry step
+    // No saved sign-in → ask. 12.x no longer says which profiles have a password (HasPassword is
+    // obsolete, always true); a profile without one is added by confirming the dialog empty.
+    if (!hasToken) {
       sharedPickerUser = user; sharedPw = '';
       await openModal('sharedPassword');
       return;
     }
-    await commitSharedUser(user, '');           // otherwise immediately (existing token / no password)
+    await commitSharedUser(user, null);         // saved sign-in → no password asked (null = not asked)
   }
   async function commitSharedUser(user, pw) {
     sharedBusy = true;

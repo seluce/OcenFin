@@ -1069,7 +1069,7 @@
   // Returns: 'ok' | 'needPassword' | 'error'
   // presetToken: already authenticated elsewhere (Quick Connect), so no credentials are needed —
   // the token IS the proof. Everything after the acquisition is shared with the password path.
-  async function setSharedMember(slot, user, pw = '', presetToken = null) {
+  async function setSharedMember(slot, user, pw = null, presetToken = null) {
     if (!user || !selectedServer) return 'error';
     const sid = selectedServer.id;
     // With Quick Connect the account is only known AFTER confirmation — whoever approves the code
@@ -1082,19 +1082,20 @@
     let token = presetToken || (user.Id ? (sharedTokens[sid]?.[user.Id] || savedTokens[sid]?.[user.Id]) : null);
     if (token && !(await validateToken(token))) token = null;   // expired → re-authenticate
     if (!token) {
-      // HasPassword from /Users/Public is only a hint for WHICH dialog to show first — never the
-      // thing that decides access. The gate is AuthenticateByName below: a profile with a password
-      // cannot be added without it, because the SERVER refuses. Treat a rejected attempt as "needs
-      // a password" rather than a generic error, so the prompt still appears when that hint is
-      // missing or wrong (older servers, a proxy trimming the DTO, a hidden profile typed by hand).
-      if (user.HasPassword && !pw) return 'needPassword';
+      // pw null = nobody has been asked yet → ask first. An empty password is NEVER tried unasked:
+      // every failed attempt counts toward the lockout, and that DISABLES the account (policy
+      // default 3). What the user confirms is tried as is, empty included — that is how a profile
+      // without a password gets added. This used to read UserDto.HasPassword, which 12.x marks
+      // obsolete and always sends as true: the dialog's empty submit then came back 'needPassword'
+      // every time, and a passwordless profile could not be added at all.
+      if (pw == null) return 'needPassword';
       try {
         const res = await fetch(`${session.serverUrl}/Users/AuthenticateByName`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': authHeaderFor(user.Name) },
-          body:    JSON.stringify({ Username: user.Name, Pw: pw || '' })
+          body:    JSON.stringify({ Username: user.Name, Pw: pw })
         });
-        if (res.status === 401) return pw ? 'error' : 'needPassword';
+        if (res.status === 401) return 'error';   // the confirmed password was refused
         if (!res.ok) return 'error';
         const data = await res.json();
         token = data.AccessToken;
