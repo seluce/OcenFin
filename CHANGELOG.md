@@ -3,6 +3,76 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## 2026.09.27
+
+**This release needs Jellyfin Server 12.0 or newer.** On an older server, stay on 2026.09.22.
+
+### Added
+
+- **Rewind and fast-forward from another device.** When the TV is controlled from Jellyfin on a
+  phone or in the browser, those two buttons now work as well. They jump by the same step as the
+  player's own buttons.
+- **"Included in" on the details page.** A film or series that belongs to a collection now shows it
+  in its own row, and the collection opens with one click. Back leads to the same page, even if
+  you had moved on to another title from there.
+- **Filter a library by audio and subtitle language.** The filter menu lists the languages your
+  titles actually have, named in the app's language, so you can show only what has German audio or
+  English subtitles, for example. A series counts as soon as one of its episodes has the language.
+
+### Changed
+
+- **Back from a suggestion returns to it.** Opening a title under "More like this" and pressing Back
+  used to land at the top of the page, because that row loaded too late on older servers. With
+  Jellyfin 12 it is there in time, so Back returns to the card you picked, as everywhere else.
+- **The setting "Auto-pick forced DVD subtitles" is gone.** It only ever applied to servers that
+  could not hand DVD subtitles to the app; Jellyfin 12 always can, so the app picks them like any
+  other subtitle. The status page no longer lists that server capability either.
+- **Your audio and subtitle language apply to every start.** They only took effect when a title was
+  started from its details page. A series' play button, play all, shuffle, extras and a start from
+  another device played the file's own default track and no subtitles. They now choose tracks the
+  same way the details page does, including a language set in your Jellyfin profile such as the
+  original language. The episodes of a series still carry on with the tracks the first one started
+  with.
+
+### Fixed
+
+- **Quick Connect works again.** On Jellyfin 12, signing in with a code, and adding a watch-together
+  profile the same way, failed straight away: the server no longer accepts the old way of asking for
+  a code. Approving another device with a code under Settings failed on every server version, because
+  the code was sent where the server does not look for it.
+- **The preview pictures while seeking match the version you are watching.** For a title in several
+  versions they always came from the first one, so with a different cut they drifted away from the
+  scene.
+- **The player's audio and subtitle choices follow the version you are watching.** For a title in
+  several versions with different tracks, the player went by the first version's tracks even while
+  another one was playing. A chosen track could then come out as a different one, or the server
+  converted the film without need.
+- **Back no longer bounces between two pages.** Opening a cast member from a film you had reached
+  through that same person, then pressing Back, switched between the film and the person page for
+  good, leaving the menu as the only way out. Back now retraces every step. The same goes for a
+  collection opened again from one of its own films.
+- **After playback, Back retraces your steps.** Stopping a title you had reached through another
+  details page lost the way back to that one, and after a series' play button or an extra, Back
+  skipped the page you had started from. Watching on from an episode's page, you now come back to
+  the last episode you watched.
+- **A profile without a password can be added to watch together.** On Jellyfin 12 the password
+  prompt came back every time it was confirmed empty, so such a profile could only be added by code
+  or with its password saved.
+- **People in your favourites are listed alphabetically.** The server ignores the sort order the app
+  asked for there, so they came in no particular order.
+- **Back from a cast member's page returns to the title you came from.** If you had moved on to
+  another title on the details page first, Back used to land on the first one, and the steps in
+  between were gone.
+
+### Internal
+
+- Requests use Jellyfin's current addresses instead of the older per-profile ones, which Jellyfin 12
+  no longer documents and may drop in a later version.
+- New playlists, the watchlist included, are created the way Jellyfin 12 documents (still private),
+  and parameters the server ignores are no longer sent.
+- Code kept only for servers before 12 is gone: the version check for DVD subtitles and the
+  request to an old intro plugin interface that Jellyfin 12 no longer has.
+
 ## 2026.09.22
 
 ### Changed

@@ -114,9 +114,9 @@
     try {
       // Search titles + people in parallel
       const [itemsRes, peopleRes] = await Promise.all([
-        fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items?searchTerm=${encodeURIComponent(query)}&Recursive=true&IncludeItemTypes=Movie,Series,Episode&Limit=24&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName&EnableTotalRecordCount=false`,
+        fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&searchTerm=${encodeURIComponent(query)}&Recursive=true&IncludeItemTypes=Movie,Series,Episode&Limit=24&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName&EnableTotalRecordCount=false`,
           { headers: getAuthHeaders() }),
-        fetch(`${session.serverUrl}/Persons?searchTerm=${encodeURIComponent(query)}&Limit=10&userId=${selectedUser.Id}&EnableTotalRecordCount=false`,
+        fetch(`${session.serverUrl}/Persons?searchTerm=${encodeURIComponent(query)}&Limit=10&userId=${selectedUser.Id}`,
           { headers: getAuthHeaders() })
       ]);
       if (myToken !== searchToken) return;   // a new search meanwhile → discard this response
@@ -139,7 +139,7 @@
           if (personHasTitles.has(p.Id)) return personHasTitles.get(p.Id) ? p : null;
           try {
             const c = await fetch(
-              `${session.serverUrl}/Users/${selectedUser.Id}/Items?PersonIds=${p.Id}&Recursive=true&IncludeItemTypes=Movie,Series&Limit=0`,
+              `${session.serverUrl}/Items?UserId=${selectedUser.Id}&PersonIds=${p.Id}&Recursive=true&IncludeItemTypes=Movie,Series&Limit=0`,
               { headers: getAuthHeaders() }
             );
             const has = c.ok ? ((await c.json()).TotalRecordCount || 0) > 0 : false;

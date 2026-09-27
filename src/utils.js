@@ -430,22 +430,8 @@ export function renderAvatarPng(iconKey, bgColor, size = 256) {
   });
 }
 
-// Returns true if the Jellyfin server version delivers VobSub/DVD subtitles externally as .mks
-// (server PR #16552, merged for the 12.0 / 10.12 line). On older servers false → DVD subs
-// must be burned in. Robust parsing: supports major 12 OR 10.12+.
-export function serverSupportsVobSub(version) {
-  if (!version || typeof version !== 'string') return false;
-  const m = version.match(/(\d+)\.(\d+)/);
-  if (!m) return false;
-  const major = parseInt(m[1], 10), minor = parseInt(m[2], 10);
-  if (major > 12) return true;
-  if (major === 12) return true;            // "Jellyfin 12.0"
-  if (major === 10 && minor >= 12) return true;  // 10.12.x
-  return false;
-}
-
 // Standard authentication header for Jellyfin API calls (token + JSON content type).
-// CONVENTION for list queries (/Items, /Persons, /Genres, NextUp, Resume …):
+// CONVENTION for list queries (/Items, /Genres, NextUp, Resume …; not /Persons, see CLAUDE.md):
 // always append &EnableTotalRecordCount=false — otherwise the server runs a COUNT
 // query over the library per request. Exceptions (that really need the counter): the library
 // main query + letterStartIndex (pagination/A-Z) and the person-count check of the search

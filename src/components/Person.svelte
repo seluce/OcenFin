@@ -57,13 +57,13 @@
     items     = [];
     isLoading = true;
     // Fetch the person item separately → correct favorite status (from search/cast, UserData is often missing)
-    fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${person.Id}`, { headers: getAuthHeaders() })
+    fetch(`${session.serverUrl}/Items/${person.Id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() })
       .then(r => r.ok ? r.json() : null)
       .then(p => { if (p && myId === loadedId) fav = !!p.UserData?.IsFavorite; })
       .catch(() => {});
     // Two parallel fetches: main filmography (movies/series) and episodes (for guest roles),
     // so a long-running series' episodes can never crowd movies/series out of a single limit.
-    const base = `${session.serverUrl}/Users/${selectedUser.Id}/Items?PersonIds=${person.Id}` +
+    const base = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&PersonIds=${person.Id}` +
       `&Recursive=true&SortBy=PremiereDate&SortOrder=Descending` +
       `&Fields=PrimaryImageAspectRatio,SeriesName&EnableTotalRecordCount=false`;
     try {
@@ -94,7 +94,7 @@
     const next = !fav;
     fav = next;
     try {
-      await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${person.Id}`,
+      await fetch(`${session.serverUrl}/UserFavoriteItems/${person.Id}?UserId=${selectedUser.Id}`,
         { method: next ? 'POST' : 'DELETE', headers: getAuthHeaders() });
     } catch (e) { console.warn('[OcenFin] person favorite failed, rolled back:', e); fav = !next; }
   }

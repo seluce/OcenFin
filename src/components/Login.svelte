@@ -317,17 +317,15 @@
   // SIGN-IN
   // ============================================================
 
-  /** Profile clicked — quick sign-in via a saved token if available */
+  /** Profile clicked — quick sign-in via a saved token if available, otherwise the password form.
+   *  Jellyfin 12 no longer says which profiles have a password (UserDto.HasPassword is obsolete and
+   *  always true), so a profile without one confirms the form empty — never tried unasked, since a
+   *  failed attempt counts toward the lockout. */
   async function handleUserClick(user) {
     loginError      = '';
     password        = '';
     pendingUser     = user;
     showManualLogin = false;
-
-    if (!user.HasPassword) {
-      await authenticateUser(user.Name, '');
-      return;
-    }
 
     const storedToken = getStoredToken?.(server?.id, user.Id);
     if (storedToken) {
@@ -690,7 +688,7 @@
                 {@attach focusOnMount(i === 0)} class="flex flex-col items-center group focus:outline-none">
                 <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 shadow-xl transition-transform duration-200">
                   {#if user.PrimaryImageTag}
-                    <img src="{session.serverUrl}/Users/{user.Id}/Images/Primary?tag={user.PrimaryImageTag}&fillWidth=300&fillHeight=300&quality=90&format=webp" alt={user.Name} class="w-full h-full object-cover"/>
+                    <img src="{session.serverUrl}/UserImage?UserId={user.Id}&tag={user.PrimaryImageTag}&format=webp" alt={user.Name} class="w-full h-full object-cover"/>
                   {:else}
                     <div class="w-full h-full bg-gray-700 flex items-center justify-center">
                       <span class="text-6xl font-bold">{user.Name.charAt(0)}</span>

@@ -1,7 +1,7 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro, getItemImageUrl } from '../utils.js';
-  import { rememberTrack, matchRememberedAudioIndex, matchRememberedSubtitleIndex } from '../trackmemory.js';
+  import { rememberTrack, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks } from '../trackmemory.js';
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady, syncNow } from '../syncplay.js';
@@ -18,6 +18,7 @@
     selectedAudioIndex = $bindable(),
     selectedSubtitleIndex = $bindable(),
     mediaSourceId = null,   // chosen version (FullHD/4K); null = server default
+    pickTracks = false,     // App: nobody chose tracks for this title → pick them by the shared rule
     selectedUser,
     playbackPrefs = { autoSkipIntro: false, autoSkipCredits: false },
     use24h = true,   // time format (from the setting) for the clock in the Player
@@ -33,7 +34,6 @@
     queueNext = null,     // next queue element (null = end of queue → normal end of playback)
     queuePrev = null,     // previous queue element
     remoteCommand = null, // admin remote control (dashboard) (from App)
-    serverVobSub = false, // does the server deliver VobSub/DVD externally (.mks, Jellyfin 12.0+)?
     onExit, onPrev, onNext, onSyncplay, onLibChanged,   // callback props (instead of events)
     onPlayState,          // reports the playback status to App (for the screensaver: paused → allowed)
   } = $props();
@@ -331,6 +331,10 @@
       const t = Math.max(0, (c.seekTicks || 0) / 10000000);
       videoElement.currentTime = t; currentTime = t;
     }
+    // Same path as the HUD's own jump buttons: the profile's step, the preview, presses in quick
+    // succession adding up to one jump.
+    else if (cmd === 'rewind')      skip(-seekStep);
+    else if (cmd === 'fastforward') skip(seekStep);
     else if (cmd === 'nexttrack') { if (nextEpisode) goToNextEpisode(true); }
     else if (cmd === 'previoustrack') { goToPrevEpisode(); }
     // Volume/mute (GeneralCommand)
@@ -415,6 +419,31 @@
   let mediaStreams   = $state([]);
   let _trackMemApplied = false;   // guard: apply remembered per-series track language only once per mount
   let currentMediaSource = null;   // currently running source – for the instant switch of text subtitles
+  // The track list of the version that PLAYS. The item-level MediaStreams are the item's own
+  // version's (the server fills them from the source whose id is the item's own; 12.x also sorts
+  // that one first in MediaSources) — so with a second version chosen in Details, the menu, the
+  // default track, the "explicit audio" transcode decision, the subtitle codec and the per-series
+  // memory all read the other file, whose stream indexes mean something else. null when no version
+  // was chosen or it is not in the list; callers then fall back to the item's own list, which for a
+  // single version is the same one.
+  function chosenVersionStreams(sources) {
+    return (mediaSourceId && sources?.find(s => s.Id === mediaSourceId)?.MediaStreams) || null;
+  }
+  // The media source a picked start chooses from: the chosen version, else the FIRST — exactly what
+  // getPlaybackInfo() then plays, and what Details preselects. Not "the item's own": 12.x sorts that
+  // one first anyway, but 10.x sorts by resolution only, and there the tracks would have come from a
+  // different file than the one playing. List items carry no MediaSources → fetched once.
+  async function sourceForPick() {
+    let sources = item?.MediaSources;
+    if (!sources?.length && item?.Id) {
+      try {
+        const r = await fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
+        if (r.ok) sources = (await r.json()).MediaSources;
+      } catch {}
+    }
+    if (!sources?.length) return null;
+    return (mediaSourceId && sources.find(s => s.Id === mediaSourceId)) || sources[0];
+  }
   let audioStreams = $derived(mediaStreams.filter(s => s.Type === 'Audio'));
   let subtitleStreams = $derived(mediaStreams.filter(s => s.Type === 'Subtitle'));
 
@@ -456,8 +485,11 @@
     trickplayInfo = null; trickplayMsId = null;
     const tp = data?.Trickplay;
     if (!tp) return;
-    // mediaSourceId key: prefers the running source, otherwise the first entry.
-    const srcId = data.MediaSources?.[0]?.Id;
+    // Keyed by media source: take the version that is playing — the one chosen in Details, or with
+    // none chosen the server's first, which is what it plays then. Reading MediaSources[0] alone
+    // scrubbed a second version (another cut, 4K) with the first one's thumbnails. A version
+    // without its own trickplay still falls back to whatever entry exists.
+    const srcId = mediaSourceId || data.MediaSources?.[0]?.Id;
     const msId  = (srcId && tp[srcId]) ? srcId : Object.keys(tp)[0];
     const byWidth = msId && tp[msId];
     if (!byWidth) return;
@@ -503,10 +535,33 @@
       // "next episode" the episode object (from the lightweight episode list) carries NO MediaStreams →
       // load them once, otherwise the default-audio detection fails and it falsely
       // transcodes (while a direct start from the details plays fine).
-      let titleStreams = (item?.MediaStreams?.length ? item.MediaStreams : mediaStreams) || [];
+      let titleStreams = chosenVersionStreams(item?.MediaSources)
+                      || (item?.MediaStreams?.length ? item.MediaStreams : mediaStreams) || [];
+      if (mediaSourceId && item?.MediaSources?.length > 1) {
+        dlog('[tracks] version', mediaSourceId, chosenVersionStreams(item.MediaSources) ? '(its own list)' : '(NOT found → item list)',
+             '· audio', titleStreams.filter(s => s.Type === 'Audio').map(s => `${s.Index}:${s.Language || '?'}${s.IsDefault ? '*' : ''}`).join(' '));
+      }
+      // Started without a choice (a series' play button, play-all, shuffle, SyncPlay): pick the tracks
+      // by the rule Details preselects with, once per mount. It needs the item's media source — that
+      // carries the server's per-user defaults, which is where the Jellyfin profile's language lands.
+      // The per-series memory is part of the rule, so the block further down stands down.
+      let picked = false;
+      if (pickTracks && !_trackMemApplied) {
+        const src = await sourceForPick();
+        if (mySetup !== setupToken) return;   // a newer setup started while we fetched
+        if (src) {
+          const t = pickDefaultTracks(src, { seriesId: item?.SeriesId, prefs: playbackPrefs });
+          audioIndex    = t.audio;    selectedAudioIndex    = t.audio;
+          subtitleIndex = t.subtitle; selectedSubtitleIndex = t.subtitle;
+          if (src.MediaStreams?.length) titleStreams = src.MediaStreams;
+          picked = true;
+          dlog('[tracks] picked', { audio: t.audio, subtitle: t.subtitle, audioPref: playbackPrefs.audioLanguage,
+               subtitlePref: playbackPrefs.subtitleLanguage, serverDefault: src.DefaultAudioStreamIndex });
+        }
+      }
       if (!titleStreams.length && item?.Id) {
         try {
-          const r = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaStreams`, { headers: getAuthHeaders() });
+          const r = await fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
           if (r.ok) { const full = await r.json(); if (full?.MediaStreams?.length) titleStreams = full.MediaStreams; }
         } catch {}
       }
@@ -515,7 +570,7 @@
       // keeps _trackMemApplied set, so it never overrides the user's own choice.
       if (!_trackMemApplied) {
         _trackMemApplied = true;
-        if (item?.SeriesId && titleStreams.length) {
+        if (!picked && item?.SeriesId && titleStreams.length) {
           if (playbackPrefs.rememberAudioTrack) {
             const a = matchRememberedAudioIndex(titleStreams, item.SeriesId);
             if (a != null) { audioIndex = a; selectedAudioIndex = a; }
@@ -543,9 +598,9 @@
       const isPgsSub    = ['pgssub', 'pgs'].includes(subCodec);
       const isVobSub    = ['dvdsub', 'vobsub', 'sub'].includes(subCodec);          // DVD/VobSub → .mks from 12.0
       const isGraphicSub = isPgsSub || isVobSub || ['dvbsub'].includes(subCodec);
-      // libbitsub renders client-side (when enabled): PGS always, VobSub only once the server
-      // delivers .mks (Jellyfin 12.0+). Otherwise the graphic subtitle has to be burned in.
-      const graphicClientRender = clientGraphicRender && (isPgsSub || (isVobSub && serverVobSub));
+      // libbitsub renders PGS and VobSub client-side (when enabled); anything else graphic, or with
+      // client rendering off, has to be burned in.
+      const graphicClientRender = clientGraphicRender && (isPgsSub || isVobSub);
       const subWillBurn = subtitleIndex !== -1 && (playbackPrefs.burnSubtitles || (isGraphicSub && !graphicClientRender));
 
       const enableDirectPlay = !explicitAudio && !subWillBurn && !forceTranscode;
@@ -563,7 +618,7 @@
         maxBitrate: requestBitrate, startTicks: 0,   // resume happens client-side (seekToResume)
         enableDirectPlay, enableDirectStream, allowAudioStreamCopy,
         burnSubtitles: playbackPrefs.burnSubtitles,
-        clientGraphicSubs: clientGraphicRender, serverVobSub,
+        clientGraphicSubs: clientGraphicRender,
         mediaSourceId,
       });
       if (mySetup !== setupToken) return;   // superseded while PlaybackInfo was in flight
@@ -717,7 +772,7 @@
     const isPgs = ['pgssub', 'pgs'].includes(codec);
     const isVob = ['dvdsub', 'vobsub', 'sub'].includes(codec);
     const isAss = ['ass', 'ssa'].includes(codec);
-    if (stream && clientGraphicRender && (isPgs || (isVob && serverVobSub))) {
+    if (stream && clientGraphicRender && (isPgs || isVob)) {
       clearAss();
       subtitleCues = [];                    // no VTT overlay alongside
       applyGraphicSubtitle(stream, ms);     // soft switch without a gap (see below)
@@ -1074,7 +1129,7 @@
       serverUrl: session.serverUrl, userId: selectedUser.Id, token: session.token, itemId: nextEpisode.Id,
       audioStreamIndex: selectedAudioIndex, subtitleStreamIndex: selectedSubtitleIndex,
       maxBitrate, burnSubtitles: playbackPrefs.burnSubtitles, mediaSourceId: null,
-      clientGraphicSubs: clientGraphicRender, serverVobSub,
+      clientGraphicSubs: clientGraphicRender,
     });
   }
 
@@ -1322,7 +1377,7 @@
   async function fetchMediaSources() {
     try {
       const res = await fetch(
-        `${session.serverUrl}/Users/${selectedUser.Id}/Items/${item.Id}?Fields=MediaSources,Chapters,Trickplay`,
+        `${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
@@ -1330,7 +1385,8 @@
         chapters = data.Chapters || [];
         // Track list only for the selection UI (audio/subtitle). The actual
         // delivery (track vs. burned in) is decided by PlaybackInfo in setupPlayback.
-        if (data.MediaSources?.[0]?.MediaStreams) mediaStreams = data.MediaSources[0].MediaStreams;
+        const streams = chosenVersionStreams(data.MediaSources) || data.MediaSources?.[0]?.MediaStreams;
+        if (streams) mediaStreams = streams;
         parseTrickplay(data);
       }
     } catch (e) { console.error('fetchMediaSources:', e); }
@@ -1338,7 +1394,7 @@
 
   async function fetchIntroTimestamps() {
     if (item.Type !== 'Episode') return;
-    // 1) Modern Media Segments API (Intro Skipper from Jellyfin 10.9 delivers via this).
+    // 1) Media Segments API (the Intro Skipper plugin and the server's own detection deliver via this).
     //    Query without a type filter and filter ourselves — more robust against server/version differences.
     try {
       const res = await fetch(`${session.serverUrl}/MediaSegments/${item.Id}`, { headers: getAuthHeaders() });
@@ -1354,21 +1410,10 @@
         dlog('[OcenFin] media segments HTTP', res.status);   // e.g. 404 = endpoint missing, 401 = auth
       }
     } catch (e) { dlog('[OcenFin] media segments error:', e?.message); }
-    // 2) Older ConfusedPolarBear plugin API. Some versions deliver the intro flat
-    //    ({ Valid, IntroStart, … }), others as { Introduction, Credits } → handle both shapes.
-    try {
-      const res = await fetch(`${session.serverUrl}/Episode/${item.Id}/IntroTimestamps/v1`, { headers: getAuthHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        dlog('[OcenFin] IntroTimestamps/v1:', JSON.stringify(data));
-        introData = (data.Introduction || data.Credits) ? data : { Introduction: data, Credits: { Valid: false } };
-        return;
-      } else {
-        dlog('[OcenFin] IntroTimestamps/v1 HTTP', res.status);
-      }
-    } catch (e) { dlog('[OcenFin] IntroTimestamps/v1 error:', e?.message); }
-    // 3) No plugin hit → chapter fallback (kicks in reactively once chapters are loaded)
-    dlog('[OcenFin] no media segments / plugin data → chapter fallback');
+    // 2) No segments → chapter fallback (kicks in reactively once chapters are loaded). The old
+    //    ConfusedPolarBear plugin endpoint (/Episode/{id}/IntroTimestamps/v1) is no longer asked: not
+    //    part of Jellyfin 12's API, and the Intro Skipper plugin delivers through media segments.
+    dlog('[OcenFin] no media segments → chapter fallback');
     segmentsChecked = true;
   }
 
@@ -1543,7 +1588,7 @@
         if (deliveredEncoded(idx)) return false;                                    // burned in → reload
         const codec = (s.Codec || '').toLowerCase();
         if (['pgssub', 'pgs'].includes(codec)) return clientGraphicRender;          // PGS: client-side → soft, otherwise burned in
-        if (['dvdsub', 'vobsub', 'sub'].includes(codec)) return clientGraphicRender && serverVobSub;  // VobSub: soft from Jellyfin 12.0
+        if (['dvdsub', 'vobsub', 'sub'].includes(codec)) return clientGraphicRender;                // VobSub: likewise (.mks)
         if (graphicCodecs.includes(codec)) return false;                            // other graphic → not as VTT
         // Text target: with burn-in enabled the profile marks every text subtitle Encode, so
         // switching TO one always needs the reload — the delivery check above only knows about
@@ -1640,7 +1685,7 @@
     isFavorite = !isFavorite;
     resetControlsTimeout();
     try {
-      await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${item.Id}`, {
+      await fetch(`${session.serverUrl}/UserFavoriteItems/${item.Id}?UserId=${selectedUser.Id}`, {
         method: isFavorite ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });

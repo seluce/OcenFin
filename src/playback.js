@@ -17,20 +17,17 @@ import { dlog, authHeaders } from './utils.js';
 //    plays but there's no sound). The server then does a light audio-only transcode.
 //  • Transcode target: HLS (TS/H.264/AAC) — universally playable via hls.js.
 //  • Subtitles: text tracks delivered externally (VTT overlay; ASS via assjs), PGS/VobSub
-//    rendered client-side via libbitsub where possible — burned in only when the prefs or
-//    server capabilities force it (see textSub/pgsSub/vobSub below).
-export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false, clientGraphicSubs = false, serverVobSub = false) {
+//    rendered client-side via libbitsub where possible — burned in only when the prefs force it
+//    (see textSub/graphicSub below).
+export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false, clientGraphicSubs = false) {
   // Text subtitles (SubRip/ASS): with burnSubtitles=true burn into the picture (with styling, but
   // transcode + hard switch), otherwise deliver externally as VTT → our own overlay renderer
   // (no styling, but Direct Play + soft switch).
   const textSub = burnSubtitles ? 'Encode' : 'External';
   // Graphic subtitles are rendered client-side via libbitsub (when enabled) → deliver as
-  // External → no transcode, Direct Play stays. Otherwise burn in.
-  //   • PGS (Blu-ray): Jellyfin has always delivered it externally as .sup → works everywhere.
-  //   • VobSub (DVD/dvdsub): Jellyfin only delivers it as an .mks container from 12.0 on (PR #16552).
-  //     On older servers NOT possible externally (404) → keep burning there (serverVobSub=false).
-  const pgsSub = clientGraphicSubs ? 'External' : 'Encode';
-  const vobSub = (clientGraphicSubs && serverVobSub) ? 'External' : 'Encode';
+  // External → no transcode, Direct Play stays. Otherwise burn in. PGS comes as .sup, VobSub/DVD as
+  // an .mks container (Jellyfin 12, PR #16552).
+  const graphicSub = clientGraphicSubs ? 'External' : 'Encode';
 
   // Is the app running on the real TV (webOS)? There the media pipeline also decodes DTS, Dolby
   // TrueHD/Atmos and MP2 (European DVB/TS content) → allow them in Direct Play so the server
@@ -67,7 +64,7 @@ export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false
         // of failing / silent HEVC playback. AAC is universally MSE-compatible.
         Container: 'ts', Type: 'Video', VideoCodec: 'h264', AudioCodec: 'aac',
         Protocol: 'hls', Context: 'Streaming',
-        MaxAudioChannels: '2', MinSegments: '1', BreakOnNonKeyFrames: true,
+        MaxAudioChannels: '2', MinSegments: '1',
       },
       { Container: 'aac', Type: 'Audio', AudioCodec: 'aac', Protocol: 'http', Context: 'Streaming', MaxAudioChannels: '2' },
     ],
@@ -92,10 +89,10 @@ export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false
       { Format: 'mov_text', Method: textSub },
       { Format: 'ass',      Method: textSub },   // styled: External → overlay without styling, Encode → burned in with styling
       { Format: 'ssa',      Method: textSub },
-      { Format: 'pgssub',   Method: pgsSub     }, // Blu-ray graphic subtitles → libbitsub renders client-side (External) or burn in
-      { Format: 'dvdsub',   Method: vobSub     }, // DVD/VobSub → External (.mks) from Jellyfin 12.0, otherwise burn in
-      { Format: 'vobsub',   Method: vobSub     },
-      { Format: 'pgs',      Method: pgsSub     },
+      { Format: 'pgssub',   Method: graphicSub }, // Blu-ray graphic subtitles → libbitsub renders client-side (External) or burn in
+      { Format: 'dvdsub',   Method: graphicSub }, // DVD/VobSub → the same, delivered as .mks
+      { Format: 'vobsub',   Method: graphicSub },
+      { Format: 'pgs',      Method: graphicSub },
     ],
   };
 }
@@ -108,7 +105,7 @@ export async function getPlaybackInfo({
   audioStreamIndex = null, subtitleStreamIndex = null,
   maxBitrate = 120000000, startTicks = 0,
   enableDirectPlay = true, enableDirectStream = true, allowAudioStreamCopy = true,
-  burnSubtitles = false, mediaSourceId = null, clientGraphicSubs = false, serverVobSub = false,
+  burnSubtitles = false, mediaSourceId = null, clientGraphicSubs = false,
 }) {
   // IMPORTANT: Jellyfin reads AudioStreamIndex/SubtitleStreamIndex and the Enable* flags
   // from the QUERY STRING (only the DeviceProfile belongs in the body). Previously they were
@@ -131,7 +128,7 @@ export async function getPlaybackInfo({
   // Body: DeviceProfile (required) + the same fields for safety (some versions read them here).
   const body = {
     UserId: userId,
-    DeviceProfile: buildDeviceProfile(maxBitrate, burnSubtitles, clientGraphicSubs, serverVobSub),
+    DeviceProfile: buildDeviceProfile(maxBitrate, burnSubtitles, clientGraphicSubs),
     MaxStreamingBitrate: maxBitrate,
     StartTimeTicks: startTicks,
     EnableDirectPlay: enableDirectPlay,
@@ -197,7 +194,7 @@ function _pfKey(p) {
   // track, burn-in, capped bitrate). Defaults mirror getPlaybackInfo's signature, since the
   // prefetch call site omits the flags.
   return [p.itemId, p.audioStreamIndex ?? -1, p.subtitleStreamIndex ?? -1, !!p.burnSubtitles,
-          p.mediaSourceId || '', !!p.clientGraphicSubs, !!p.serverVobSub,
+          p.mediaSourceId || '', !!p.clientGraphicSubs,
           p.enableDirectPlay ?? true, p.enableDirectStream ?? true, p.allowAudioStreamCopy ?? true,
           p.maxBitrate ?? 120000000].join('|');
 }
@@ -276,13 +273,13 @@ export function assSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, token
 
 // Returns the raw graphic-subtitle URL for libbitsub. ALWAYS prefers the DeliveryUrl computed by
 // the server (correct format: PGS=.sup, VobSub=.mks from Jellyfin 12.0). Falls back only for PGS to
-// the default .sup endpoint — VobSub WITHOUT a DeliveryUrl isn't retrievable (old server).
+// the default .sup endpoint — VobSub WITHOUT a DeliveryUrl isn't retrievable (Jellyfin 12 always sends one).
 export function graphicSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, token }) {
   if (!stream) return null;
   if (stream.DeliveryUrl) {
     const u = stream.DeliveryUrl;
     if (/^https?:/i.test(u)) return u;
-    return `${serverUrl}${u}${(u.includes('api_key') || u.includes('ApiKey')) ? '' : (u.includes('?') ? '&' : '?') + 'ApiKey=' + token}`;
+    return `${serverUrl}${u}${u.includes('ApiKey') ? '' : (u.includes('?') ? '&' : '?') + 'ApiKey=' + token}`;
   }
   const codec = (stream.Codec || '').toLowerCase();
   if (codec === 'pgssub' || codec === 'pgs')
@@ -297,7 +294,7 @@ export async function buildPlayQueue(items, { serverUrl, userId, headers }) {
   const queue = [];
   for (const it of items || []) {
     if (it.Type === 'Series' || it.Type === 'Season') {
-      const url = `${serverUrl}/Users/${userId}/Items?ParentId=${it.Id}`
+      const url = `${serverUrl}/Items?UserId=${userId}&ParentId=${it.Id}`
         + `&IncludeItemTypes=Episode${it.Type === 'Series' ? '&Recursive=true' : ''}`
         + `&SortBy=ParentIndexNumber,IndexNumber&EnableTotalRecordCount=false`;
       try {

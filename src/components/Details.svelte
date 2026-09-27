@@ -1,8 +1,8 @@
 <script>
-  import { i18n, LANGUAGES } from '../i18n.svelte.js';
+  import { i18n } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
-  import { isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
-  import { matchRememberedAudioIndex, matchRememberedSubtitleIndex } from '../trackmemory.js';
+  import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
+  import { pickDefaultTracks } from '../trackmemory.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
   import { buildPlayQueue } from '../playback.js';
   import { session } from '../session.svelte.js';
@@ -14,17 +14,18 @@
     selectedUser,
     playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default' },
     use24h = true,              // time format for the "ends at" chip (follows the setting)
-    serverVobSub = false,       // does the server deliver VobSub/DVD externally (.mks, Jellyfin 12.0+)?
     spoilerProtection = true,   // slightly obscure thumbnails of unwatched episodes
     detailsBackdrop = true,     // show the hero backdrop on the detail page (own toggle, decoupled from reduceAnimations)
     detailsLogo = false,        // title as a logo graphic instead of text (falls back to text if no logo exists)
     focusItemId = null, focusScrollTop = 0,   // where to land when App brings us back (person page)
-    onClose, onLibChanged, onOpenPerson, onPlayVideo,   // callback props (instead of events)
+    takeResume = null,          // App: hands back, ONCE, what was on screen when we were left for a collection
+    onClose, onLibChanged, onOpenPerson, onOpenCollection, onPlayVideo,   // callback props (instead of events)
   } = $props();
 
   let fullItem     = $state(null);
   let relatedItems = $state([]);
   let similarItems = $state([]);
+  let collections  = $state([]);   // collections (BoxSets) that contain the title — Jellyfin 12+
   let extras       = $state([]);   // special features (making-ofs, deleted scenes, …)
   let isLoading    = $state(true);
 
@@ -95,43 +96,12 @@
     return [res, codec].filter(Boolean).join(' ') || src?.Name || i18n.t.source;
   }
 
-  // Choose default audio/subtitle for a source. The per-series remembered track (when the option is
-  // on) takes precedence over the global language preference / server default — mirroring the player,
-  // so returning to Details reflects the track chosen during playback. Matched by language (audio) and
-  // by language + forced/SDH flags (subtitle), exactly like the player.
+  // Choose default audio/subtitle for a source — the shared rule in trackmemory.js, which the Player
+  // applies to every start that does not come through this page (series play button, play-all, …).
   function applySourceDefaults(src) {
-    const streams = src?.MediaStreams || [];
-    const seriesId = fullItem?.SeriesId;
-    let audioSet = false, subSet = false;
-
-    if (seriesId && playbackPrefs.rememberAudioTrack) {
-      const a = matchRememberedAudioIndex(streams, seriesId);
-      if (a != null) { selectedAudioIndex = a; audioSet = true; }
-    }
-    if (seriesId && playbackPrefs.rememberSubtitleTrack) {
-      const st = matchRememberedSubtitleIndex(streams, seriesId);
-      if (st != null) { selectedSubtitleIndex = st; subSet = true; }
-    }
-
-    if (!audioSet) {
-      selectedAudioIndex = -1;
-      const audioPref = matchLanguageStream(streams, 'Audio', playbackPrefs.audioLanguage);
-      if (audioPref != null)                        selectedAudioIndex = audioPref;
-      else if (src?.DefaultAudioStreamIndex != null) selectedAudioIndex = src.DefaultAudioStreamIndex;
-    }
-
-    if (!subSet) {
-      if (playbackPrefs.subtitleLanguage === 'off') {
-        selectedSubtitleIndex = -1;
-      } else {
-        const subPref = matchLanguageStream(streams, 'Subtitle', playbackPrefs.subtitleLanguage);
-        if (subPref != null)                              selectedSubtitleIndex = subPref;
-        else if (playbackPrefs.subtitleLanguage === 'default')
-          selectedSubtitleIndex = pickForcedSubtitle(streams, selectedAudioIndex, src?.DefaultSubtitleStreamIndex);
-        else if (src?.DefaultSubtitleStreamIndex != null) selectedSubtitleIndex = src.DefaultSubtitleStreamIndex;
-        else selectedSubtitleIndex = -1;
-      }
-    }
+    const t = pickDefaultTracks(src, { seriesId: fullItem?.SeriesId, prefs: playbackPrefs });
+    selectedAudioIndex    = t.audio;
+    selectedSubtitleIndex = t.subtitle;
   }
 
   // On resolution/version change: reset the tracks to the source's default values
@@ -222,7 +192,7 @@
       // No own public link (e.g. season/episode without an ID) → fall back to the series link.
       if (!target && fullItem.SeriesId) {
         try {
-          const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${fullItem.SeriesId}?Fields=ProviderIds`, { headers: getAuthHeaders() });
+          const res = await fetch(`${session.serverUrl}/Items/${fullItem.SeriesId}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
           if (res.ok) target = buildShareUrl(await res.json());
         } catch { /* series unreachable → title fallback below */ }
       }
@@ -280,46 +250,6 @@
   // Cast: actors (max. 20) from the People data
   let castMembers = $derived((fullItem?.People || []).filter(p => p.Type === 'Actor').slice(0, 20));
 
-  // Finds the index of the first stream (audio/subtitle) whose language matches the preference.
-  // Returns null if no preference is set ('default') or there's no match.
-  function matchLanguageStream(streams, type, prefKey) {
-    if (!prefKey || prefKey === 'default') return null;
-    const lang = LANGUAGES.find(l => l.key === prefKey);
-    if (!lang) return null;
-    const match = streams.find(s =>
-      s.Type === type && s.Language && lang.codes.includes(s.Language.toLowerCase())
-    );
-    return match ? match.Index : null;
-  }
-
-  // In default mode, show a forced ("Forced") subtitle in the language of the
-  // chosen audio track. Auto-selectable are: TEXT (VTT) always; PGS, when
-  // client-side rendering is on (libbitsub → Direct Play); VobSub/DVD likewise, AS SOON AS the
-  // server delivers them as .mks (Jellyfin 12.0+) → then also Direct Play. On older
-  // servers only the opt-out option applies for DVD (then deliberately with transcode/burn-in).
-  const GRAPHIC_SUB_CODECS = ['pgssub', 'pgs', 'dvdsub', 'dvbsub', 'vobsub', 'sub'];
-  function isGraphicSub(s) { return GRAPHIC_SUB_CODECS.includes((s?.Codec || '').toLowerCase()); }
-  function subtitleAutoEligible(s) {
-    if (!isGraphicSub(s)) return true;                                  // text → always
-    if (playbackPrefs.pgsRendering === false) return false;            // graphic rendering globally off
-    const codec = (s?.Codec || '').toLowerCase();
-    if (['pgssub', 'pgs'].includes(codec)) return true;               // PGS → client-side (Direct Play)
-    if (serverVobSub) return true;                                    // VobSub/DVD via .mks → client-side (Direct Play)
-    return !!playbackPrefs.forcedGraphicSubs;                          // old server: only via the option (burned in)
-  }
-  function pickForcedSubtitle(streams, audioIndex, serverDefault) {
-    const audioLang = streams.find(s => s.Type === 'Audio' && s.Index === audioIndex)?.Language?.toLowerCase();
-    const subs = streams.filter(s => s.Type === 'Subtitle');
-    const pick = subs.find(s => s.IsForced && subtitleAutoEligible(s) && audioLang && s.Language?.toLowerCase() === audioLang)
-              ?? subs.find(s => s.IsForced && subtitleAutoEligible(s));
-    if (pick) return pick.Index;
-    if (serverDefault != null) {
-      const def = subs.find(s => s.Index === serverDefault);
-      if (def && subtitleAutoEligible(def)) return serverDefault;
-    }
-    return -1;
-  }
-
   function closeTrailer() {
     trailerEmbedUrl = null;
   }
@@ -340,9 +270,14 @@
     const id = item?.Id;
     if (!id) return;
     untrack(() => {
-      navStack = [];
+      // Back from a collection opened on this page: App returns what was on screen and the chain
+      // that led there, so we land on THAT title rather than the entry point. A function, called
+      // once — a plain prop would still be lying around for the next, unrelated mount.
+      const resume = takeResume?.();
+      dlog('[details] mount', id, resume ? `→ shows ${resume.id}, ${resume.stack.length} step(s) back` : '(fresh)');
+      navStack = resume ? [...resume.stack] : [];
       restorePending = !!focusItemId;   // set BEFORE the load, so the play button holds back
-      loadFullDetails(id);
+      loadFullDetails(resume?.id ?? id);
       restoreSpot({ focusId: focusItemId, scrollTop: focusScrollTop });
     });
   });
@@ -378,12 +313,15 @@
   });
   onDestroy(stopTheme);
 
+  let loadStartedAt = 0;   // for the similar-row timing below
   async function loadFullDetails(itemId) {
     const myToken = ++detailToken;
+    loadStartedAt = performance.now();
     isLoading    = true;
     fullItem     = null;
     relatedItems = [];
     similarItems = [];
+    collections  = [];
     extras = [];
     selectedAudioIndex    = -1;
     selectedSubtitleIndex = -1;
@@ -391,7 +329,7 @@
 
     try {
       const res = await fetch(
-        `${session.serverUrl}/Users/${selectedUser.Id}/Items/${itemId}?Fields=MediaSources,Overview,Path,ProviderIds,People,RemoteTrailers`,
+        `${session.serverUrl}/Items/${itemId}?UserId=${selectedUser.Id}`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
@@ -412,6 +350,7 @@
           ? (fullItem.SeriesId || itemId)
           : itemId;
         loadSimilarItems(similarId, myToken);
+        loadCollections(itemId, myToken);
         loadExtras(itemId, myToken);
         if (fullItem.Type === 'Episode' && fullItem.SeasonId) {
           loadRelatedItems(fullItem.SeasonId, myToken);
@@ -436,20 +375,48 @@
     } catch { /* extras are optional */ }
   }
 
+  // Collections that contain this very title — new in Jellyfin 12. Older servers answer 404 and the
+  // row simply stays away. Its cards carry data-item-id, so the way back from a collection can land
+  // on them; that relies on the row being quick, which the timing line is there to confirm.
+  async function loadCollections(itemId, myToken) {
+    const t0 = performance.now();
+    try {
+      const res = await fetch(
+        `${session.serverUrl}/Items/${itemId}/Collections?UserId=${selectedUser.Id}&Fields=PrimaryImageAspectRatio`,
+        { headers: getAuthHeaders() }
+      );
+      if (!res.ok) return;
+      const d = await res.json();
+      if (myToken !== detailToken) return;
+      collections = d.Items || [];
+      dlog('[details] collections', collections.length, 'in', Math.round(performance.now() - t0), 'ms');
+    } catch { /* optional row */ }
+  }
+
   async function loadSimilarItems(itemId, myToken) {
+    const t0 = performance.now();
     try {
       const res = await fetch(
         `${session.serverUrl}/Items/${itemId}/Similar?Limit=10&Fields=PrimaryImageAspectRatio`,
         { headers: getAuthHeaders() }
       );
-      if (res.ok) { const d = await res.json(); if (myToken !== detailToken) return; similarItems = d.Items || []; }
+      if (res.ok) {
+        const d = await res.json();
+        if (myToken !== detailToken) return;
+        similarItems = d.Items || [];
+        // The way back onto a suggestion card relies on this row arriving inside restoreSpot's
+        // ~1.2 s (CODE-HEALTH §40) — this line tells whether a server still manages that.
+        const now = performance.now();
+        dlog('[details] similar', similarItems.length, 'items · request', Math.round(now - t0), 'ms · on screen',
+             Math.round(now - loadStartedAt), 'ms after the page started (restore waits ~1200 ms)');
+      }
     } catch (e) { console.error(e); }
   }
 
   async function loadRelatedItems(parentId, myToken) {
     try {
       const res = await fetch(
-        `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${parentId}&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName&EnableTotalRecordCount=false`,
+        `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${parentId}&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName&EnableTotalRecordCount=false`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) { const d = await res.json(); if (myToken !== detailToken) return; relatedItems = d.Items || []; }
@@ -460,7 +427,7 @@
     if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
       const url = fullItem.Type === 'Series'
         ? `${session.serverUrl}/Shows/NextUp?SeriesId=${fullItem.Id}&UserId=${selectedUser.Id}&Limit=1&EnableTotalRecordCount=false`
-        : `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Filters=IsNotPlayed&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`;
+        : `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Filters=IsNotPlayed&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`;
       try {
         const res  = await fetch(url, { headers: getAuthHeaders() });
         if (!res.ok) { console.warn('play next-up: HTTP', res.status); return; }
@@ -470,7 +437,7 @@
         } else {
           // Fallback: first episode
           const fb = await fetch(
-            `${session.serverUrl}/Users/${selectedUser.Id}/Items?ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`,
+            `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`,
             { headers: getAuthHeaders() }
           );
           if (!fb.ok) { console.warn('play first episode: HTTP', fb.status); return; }
@@ -479,14 +446,14 @@
         }
       } catch (e) { console.error(e); }
     } else {
-      onPlayVideo?.({ item: fullItem, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId });
+      onPlayVideo?.({ item: fullItem, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId, tracksChosen: true });
     }
   }
 
   // "From the beginning": same item, but resume position at 0 → the Player starts at zero.
   function playFromBeginning() {
     const fresh = { ...fullItem, UserData: { ...(fullItem.UserData || {}), PlaybackPositionTicks: 0 } };
-    onPlayVideo?.({ item: fresh, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId });
+    onPlayVideo?.({ item: fresh, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId, tracksChosen: true });
   }
 
   // Random episode — for long series "just play something". Series → from ALL episodes (recursively across all
@@ -515,7 +482,7 @@
     shown.UserData = { ...shown.UserData, Played: willBePlayed };
     if (carry) item.UserData = { ...item.UserData, Played: willBePlayed };
     try {
-      await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/PlayedItems/${shown.Id}`, {
+      await fetch(`${session.serverUrl}/UserPlayedItems/${shown.Id}?UserId=${selectedUser.Id}`, {
         method: willBePlayed ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
@@ -534,7 +501,7 @@
     shown.UserData = { ...shown.UserData, IsFavorite: willBeFav };
     if (carry) item.UserData = { ...item.UserData, IsFavorite: willBeFav };
     try {
-      await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/FavoriteItems/${shown.Id}`, {
+      await fetch(`${session.serverUrl}/UserFavoriteItems/${shown.Id}?UserId=${selectedUser.Id}`, {
         method: willBeFav ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
@@ -580,25 +547,29 @@
   const focusUnlessRestoring = (node) => { if (!restorePending) node.focus(); };
   const NAV_STACK_MAX = 30;   // the app runs for days; series ↔ season ping-pong must not grow forever
 
-  // rememberSpot=false for the suggestions row: /Items/{id}/Similar has to be scored by the server
-  // and lands well after the rest of the page, measured still absent after 24 tries on the device.
-  // Waiting that long means either no focus at all meanwhile, or focus visibly jumping from the top
-  // of the page down to the row once it finally arrives. Landing at the top is the better answer
-  // there, and an honest one: the row you came from was not on screen yet anyway. The step is still
-  // pushed, so Back keeps stepping up the chain — only the spot is not restored.
-  function navigateTo(id, rememberSpot = true) {
+  // Every step remembers the card it left from and the scroll offset, the suggestions row included.
+  // That row used to be the one exception (§19/§28): /Items/{id}/Similar came too late for
+  // restoreSpot on Jellyfin 10.x. On 12.1 it was measured on the B4 at 215–296 ms after the page
+  // started (CODE-HEALTH §40), well inside the window, so it is restored like every other row.
+  function navigateTo(id) {
     restorePending = false;   // going forward: the play button is the right landing spot again
     if (fullItem?.Id) {
       navStack.push({
         id: fullItem.Id,
-        focusId: rememberSpot ? (document.activeElement?.getAttribute?.('data-item-id') ?? null) : null,
-        scrollTop: rememberSpot ? (scrollEl?.scrollTop || 0) : 0,
+        focusId: document.activeElement?.getAttribute?.('data-item-id') ?? null,
+        scrollTop: scrollEl?.scrollTop || 0,
       });
       if (navStack.length > NAV_STACK_MAX) navStack.shift();
     }
     isLoading = true;
     fullItem  = null;   // show the spinner immediately
     loadFullDetails(id);
+  }
+
+  // For App, before it leaves for a view that unmounts us: the title on screen and the chain behind
+  // it, since both live only in this component. Handed back through takeResume.
+  export function snapshot() {
+    return fullItem?.Id ? { id: fullItem.Id, stack: navStack.map(s => ({ ...s })) } : null;
   }
 
   // Back: one level up inside the page first. Returns false once the chain is empty, which is the
@@ -627,7 +598,6 @@
     // Applying the offset once is not enough: the page arrives in stages, so with rows still
     // missing below it gets clamped (900 became 602 in a measurement) and with a row arriving above
     // the card slides down. So it re-applies until the card's position and the offset hold still.
-    // Only rows that are there quickly are restored at all — see navigateTo's rememberSpot.
     const attempt = () => {
       if (myToken !== detailToken) return;             // a newer navigation took over
       const card = scrollEl?.querySelector(`[data-item-id="${focusId}"]`);
@@ -641,7 +611,13 @@
         lastTop = pos;
         if (settled >= 3) return;                      // nothing moved any more — done
       }
-      if (++tries < 24) setTimeout(attempt, 50);       // ~1.2 s, ample for those rows
+      if (++tries < 24) { setTimeout(attempt, 50); return; }   // ~1.2 s, ample for those rows
+      // Gave up without the card: its row never came (a server under load) or the card is gone.
+      // The play button held back its own focus for this restore, so without this nothing would be
+      // focused and the next key press would open the sidebar. Land where a fresh page lands.
+      if (!card && (!document.activeElement || document.activeElement === document.body)) {
+        scrollEl?.querySelector('[data-primary-action]')?.focus();
+      }
     };
     await tick();
     attempt();
@@ -832,7 +808,7 @@
 
           <!-- ACTION BUTTONS -->
           <div class="flex items-center gap-4 mb-12">
-            <button onclick={handlePlay} {@attach focusUnlessRestoring}
+            <button onclick={handlePlay} {@attach focusUnlessRestoring} data-primary-action
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-2xl px-12 py-4 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-3 shadow-lg">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
@@ -1152,13 +1128,32 @@
         </div>
       {/if}
 
+      <!-- INCLUDED IN — the collections holding this title; a card opens the collection view -->
+      {#if collections.length > 0}
+        <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-collections">
+          <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.includedIn}</h2>
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
+            {#each collections as col (col.Id)}
+              <button onclick={() => onOpenCollection?.(col)} data-item-id={col.Id} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-transform duration-200">
+                  {#if getItemImageUrl(col, 'portrait')}
+                    <img src={getItemImageUrl(col, 'portrait')} {@attach blurUp(itemBlurHash(col))} alt={col.Name} class="w-full h-full object-cover" loading="lazy" />
+                  {/if}
+                </div>
+                <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full">{col.Name}</span>
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
       <!-- SIMILAR -->
       {#if similarItems.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-similar">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.similar}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each similarItems as si (si.Id)}
-              <button onclick={() => navigateTo(si.Id, false)} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
+              <button onclick={() => navigateTo(si.Id)} data-item-id={si.Id} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-transform duration-200">
                   {#if getItemImageUrl(si, 'portrait')}
                     <img src={getItemImageUrl(si, 'portrait')} {@attach blurUp(itemBlurHash(si))} alt={si.Name} class="w-full h-full object-cover" loading="lazy" />

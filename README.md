@@ -30,6 +30,7 @@ You can install OcenFin via an `.ipk` file. **No root is required.**
 
 First, download the `.ipk` file for your TV from the Releases page:
 * **Modern:** This version is exclusively tested and fully functional on **webOS 25 or newer**. Older webOS versions are not supported.
+* **Server:** OcenFin needs **Jellyfin Server 12.0 or newer**. If your server is older than 12.0, use **OcenFin 2026.09.22** from the Releases page — the last release that supports Jellyfin 10.10 and 10.11 — until you update the server.
 
 1. **Prepare the TV:** Install the official "Developer Mode" app from the LG Content Store on your TV and enable it.
 2. **Sideload from PC:** To install the app from your computer to the TV, I highly recommend using **[dev-manager-desktop](https://github.com/webosbrew/dev-manager-desktop)**. It provides a very easy-to-use graphical interface.

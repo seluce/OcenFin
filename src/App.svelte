@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, serverSupportsVobSub, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
   import { buildPlayQueue } from './playback.js';
   import { session } from './session.svelte.js';
   import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
@@ -155,7 +155,6 @@
   let users            = $state([]);
   let selectedUser     = $state(null);
   let isLoggedIn       = $state(false);
-  let serverVobSub     = $state(false);   // does the server deliver VobSub/DVD externally as .mks? (Jellyfin 12.0+)
   let serverVersion    = $state('');      // Jellyfin server version (for the status page)
   let savedTokens      = $state({});  // { serverId: { userId: token } } — quick switch (only via the profile switch)
   let sharedTokens     = $state({});  // { serverId: { userId: token } } — watch together, SEPARATE from quick switch
@@ -229,7 +228,7 @@
   // fired once already (theme music). Functions, not shared literals: navOrder/navHidden/navIcons
   // must be fresh references on every call.
   const defaultDisplaySettings = () => ({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
-  const defaultPlaybackPrefs   = () => ({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
+  const defaultPlaybackPrefs   = () => ({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
   let displaySettings = $state(defaultDisplaySettings());
 
   // Default audio/subtitle language
@@ -432,6 +431,10 @@
   let activeAudioIndex    = $state(-1);
   let activeSubtitleIndex = $state(-1);
   let activeMediaSourceId = $state(null);   // chosen version (FullHD/4K), from Details
+  // true: nobody chose tracks for this title, so the Player picks them by the same rule Details
+  // preselects with (trackmemory.js). Only Details' own play button chooses (see carryOrPickTracks
+  // for the next episode).
+  let activePickTracks    = $state(false);
   let autoPlayStreak = $state(0);           // "still watching?": episodes auto-played in a row without interaction
 
   // Remember position: where was Details opened from (scroll/focus now live in Library.svelte)
@@ -618,12 +621,14 @@
     if (_syncOpeningId === norm(itemId)) return;                                          // currently opening
     _syncOpeningId = norm(itemId);
     try {
-      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Items/${itemId}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/Items/${itemId}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
       if (res.ok) {
         currentDetailItem   = await res.json();
         activeAudioIndex    = -1;
         activeSubtitleIndex = -1;
         activeMediaSourceId = null;
+        activePickTracks    = true;
+        playReturnDetails   = null;   // started from outside, not from a title page
         viewState = 'player';
         dlog('[SyncPlay] auto-load →', currentDetailItem?.Name);
       }
@@ -704,7 +709,8 @@
       syncCommand = { ...msg.Data, _seq: ++syncCmdSeq };
       dlog('[SyncPlay] command received', syncCommand.Command, syncCommand.PositionTicks);
     } else if (msg.MessageType === 'Playstate') {
-      // Admin remote control (dashboard): Pause/Unpause/Stop/Seek/PlayPause/NextTrack → to the Player.
+      // Admin remote control (dashboard): Pause/Unpause/Stop/Seek/Rewind/FastForward/PlayPause/
+      // Next-/PreviousTrack → to the Player.
       const cmd = msg.Data?.Command;
       if (cmd) { remoteCommand = { command: cmd, seekTicks: msg.Data?.SeekPositionTicks ?? null, _seq: ++remoteCmdSeq }; }
     } else if (msg.MessageType === 'GeneralCommand') {
@@ -1062,7 +1068,7 @@
   // Returns: 'ok' | 'needPassword' | 'error'
   // presetToken: already authenticated elsewhere (Quick Connect), so no credentials are needed —
   // the token IS the proof. Everything after the acquisition is shared with the password path.
-  async function setSharedMember(slot, user, pw = '', presetToken = null) {
+  async function setSharedMember(slot, user, pw = null, presetToken = null) {
     if (!user || !selectedServer) return 'error';
     const sid = selectedServer.id;
     // With Quick Connect the account is only known AFTER confirmation — whoever approves the code
@@ -1075,19 +1081,20 @@
     let token = presetToken || (user.Id ? (sharedTokens[sid]?.[user.Id] || savedTokens[sid]?.[user.Id]) : null);
     if (token && !(await validateToken(token))) token = null;   // expired → re-authenticate
     if (!token) {
-      // HasPassword from /Users/Public is only a hint for WHICH dialog to show first — never the
-      // thing that decides access. The gate is AuthenticateByName below: a profile with a password
-      // cannot be added without it, because the SERVER refuses. Treat a rejected attempt as "needs
-      // a password" rather than a generic error, so the prompt still appears when that hint is
-      // missing or wrong (older servers, a proxy trimming the DTO, a hidden profile typed by hand).
-      if (user.HasPassword && !pw) return 'needPassword';
+      // pw null = nobody has been asked yet → ask first. An empty password is NEVER tried unasked:
+      // every failed attempt counts toward the lockout, and that DISABLES the account (policy
+      // default 3). What the user confirms is tried as is, empty included — that is how a profile
+      // without a password gets added. This used to read UserDto.HasPassword, which 12.x marks
+      // obsolete and always sends as true: the dialog's empty submit then came back 'needPassword'
+      // every time, and a passwordless profile could not be added at all.
+      if (pw == null) return 'needPassword';
       try {
         const res = await fetch(`${session.serverUrl}/Users/AuthenticateByName`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': authHeaderFor(user.Name) },
-          body:    JSON.stringify({ Username: user.Name, Pw: pw || '' })
+          body:    JSON.stringify({ Username: user.Name, Pw: pw })
         });
-        if (res.status === 401) return pw ? 'error' : 'needPassword';
+        if (res.status === 401) return 'error';   // the confirmed password was refused
         if (!res.ok) return 'error';
         const data = await res.json();
         token = data.AccessToken;
@@ -1192,7 +1199,7 @@
       const t0 = Date.now();
       try {
         const res = await fetch(
-          `${session.serverUrl}/Users/${m.id}/Items?ParentId=${libraryId}&Recursive=true` +
+          `${session.serverUrl}/Items?UserId=${m.id}&ParentId=${libraryId}&Recursive=true` +
           `&IncludeItemTypes=Movie,Series&Fields=UserData&EnableImages=false` +
           `&Limit=100000&EnableTotalRecordCount=false`,
           { headers: authHeaders(token) }
@@ -1239,7 +1246,7 @@
       const t0 = Date.now();
       try {
         const res = await fetch(
-          `${session.serverUrl}/Users/${m.id}/Items?Recursive=true&IncludeItemTypes=Movie,Series` +
+          `${session.serverUrl}/Items?UserId=${m.id}&Recursive=true&IncludeItemTypes=Movie,Series` +
           `&Fields=Genres,CommunityRating,UserData&EnableImageTypes=Primary&Limit=100000&EnableTotalRecordCount=false`,
           { headers: authHeaders(token) }
         );
@@ -1330,20 +1337,15 @@
     }
   }
 
-  // Check the server version once → decides whether DVD/VobSub is renderable client-side (libbitsub via
-  // .mks) or still has to be burned in. Faulty/old → false (safe burning).
+  // The server version, for the status page and the log. OcenFin targets Jellyfin 12+, so nothing
+  // is switched on it any more (the VobSub gate that used to hang off it is gone, CODE-HEALTH §38).
   async function detectServerCapabilities() {
-    serverVobSub = false;
     serverVersion = '';
     try {
       const res = await fetch(`${session.serverUrl}/System/Info/Public`);
-      if (res.ok) {
-        const info = await res.json();
-        serverVersion = info?.Version || '';
-        serverVobSub = serverSupportsVobSub(info?.Version);
-      }
+      if (res.ok) serverVersion = (await res.json())?.Version || '';
     } catch {}
-    dlog('[OcenFin] server capabilities:', { version: serverVersion || '(unknown)', vobSub: serverVobSub });
+    dlog('[OcenFin] server version:', serverVersion || '(unknown)');
   }
 
   function toggleCurrentUserSave() {
@@ -1378,7 +1380,8 @@
     // previous profile's library once for nothing, hidden behind the dashboard.
     currentLibrary = null; currentCollection = null; currentPerson = null; currentDetailItem = null;
     libraryMounted = false; searchMounted = false;
-    collectionStack = []; personReturnDetails = null;
+    collectionStack = []; personReturnDetails = null; collectionReturnDetails = null; detailsResume = null;
+    collectionTrips = []; personTrips = []; playReturnDetails = null;
     libraryReturnId = null; libraryReturnEl = null; libraryReturnNth = 0;
     clearCurrentSession();
     // Only if nothing keeps it: with "remember me" on, the token stays in savedTokens for the
@@ -1433,7 +1436,7 @@
     if (contextItem)    { contextItem = null;     e.preventDefault(); return; }
     // Navigate within the app; preventDefault stops webOS from closing the app.
     // At the dashboard (top level) show a confirmation instead of closing the app directly.
-    if      (viewState === 'player')   { viewState = 'details';        e.preventDefault(); }
+    if      (viewState === 'player')   { returnFromPlayer();           e.preventDefault(); }
     else if (viewState === 'details')  { if (!detailsRef?.handleBackKey()) returnFromDetails(); e.preventDefault(); }
     else if (viewState === 'person')   { returnFromPerson();           e.preventDefault(); }
     else if (viewState === 'collection') { if (!collectionRef?.handleBackKey()) returnFromCollection(); e.preventDefault(); }
@@ -1458,11 +1461,23 @@
   // No separate API call needed anymore — just set currentDetailItem.
   // The Player sends { episode, resetStreak }. resetStreak=true → the user was awake (manual/interaction),
   // counter to 0; otherwise increment (for the "still watching?" sleep protection).
+  // Next/previous title. An episode of the SAME series goes on the way the first one started: tracks
+  // chosen in Details are handed on as before (activeAudioIndex is the START choice — the Player's
+  // own switches reach the next episode through the per-series memory), and a picked start picks
+  // again by the rule. Anything else — the next film of a play-all queue — is picked afresh: its
+  // stream indexes mean something else entirely, so carrying "track 2" over would pick at random.
+  function carryOrPickTracks(nextItem) {
+    const sameSeries = !!nextItem?.SeriesId && nextItem.SeriesId === currentDetailItem?.SeriesId;
+    if (sameSeries) return;
+    activePickTracks = true; activeAudioIndex = -1; activeSubtitleIndex = -1;
+  }
+
   function handleNextEpisode(detail) {
     const episodeItem = detail?.episode ?? detail;   // robustness: also accepts a bare episode object
     if (!episodeItem) return;
     autoPlayStreak = detail?.resetStreak ? 0 : autoPlayStreak + 1;
     activeMediaSourceId = null;   // new episode → its own default version, not the previous one's
+    carryOrPickTracks(episodeItem);
     currentDetailItem = episodeItem;
     syncQueueIndex(episodeItem);
     // viewState stays 'player' — {#key currentDetailItem.Id} in the template forces a remount
@@ -1472,6 +1487,7 @@
     if (!episodeItem) return;
     autoPlayStreak = 0;   // going back is a deliberate action → reset the counter
     activeMediaSourceId = null;
+    carryOrPickTracks(episodeItem);
     currentDetailItem = episodeItem;
     syncQueueIndex(episodeItem);
   }
@@ -1490,6 +1506,49 @@
   // chain, and a nested open overwrites them — so without carrying them here the last Back aimed
   // at the nested card instead of the one that opened the chain.
   let collectionStack = [];
+  // Opened from a title page ("Included in"): that page, kept whole for the way back — the entry,
+  // its own way out, and what was on screen with the chain behind it (Details.snapshot()). Opening
+  // a title from inside the collection overwrites currentDetailItem and detailsOrigin, the same
+  // trap personReturnDetails guards against (§22).
+  let collectionReturnDetails = null;
+  // Collection and person pages each have ONE set of return slots. Entering the same kind again
+  // inside one chain overwrote them: A → collection C → film X → "Included in" C, then Back ran
+  // X ↔ C forever (the same for A → actor P → film X → P from the cast), with the menu as the only
+  // way out. Reproduced by replaying App's own functions in a harness (CODE-HEALTH §37). So opening
+  // either kind from a sub-view saves the slots it overwrites, and the final Back puts them back.
+  // A chain that starts from a top-level view is new: what the stacks still hold was left through
+  // the menu and will never be returned to. Bounded, because the app runs for days.
+  let collectionTrips = [], personTrips = [];
+  const TRIPS_MAX = 20;
+  const isSubView = (v) => v === 'details' || v === 'collection' || v === 'person';
+  function beginChainIfRoot() { if (!isSubView(viewState)) { collectionTrips = []; personTrips = []; } }
+  function pushTrip(stack, slots) { stack.push(slots); if (stack.length > TRIPS_MAX) stack.shift(); }
+  function restoreCollectionTrip() {
+    const t = collectionTrips.pop();
+    if (!t) return;
+    currentCollection   = t.collection; collectionReturnView   = t.view;  collectionReturnDetails = t.details;
+    collectionReturnId  = t.id;         collectionReturnEl     = t.el;    collectionReturnNth     = t.nth;
+    collectionReturnScroll = t.scroll;  collectionStack        = t.stack;
+  }
+  function restorePersonTrip() {
+    const t = personTrips.pop();
+    if (!t) return;
+    currentPerson    = t.person; personReturnView = t.view; personReturnDetails = t.details;
+    personReturnId   = t.id;     personReturnEl   = t.el;   personReturnNth     = t.nth;
+    personReturnScroll = t.scroll;
+  }
+  // Given to the next Details mount exactly once through takeResume, then gone — as a plain prop it
+  // would still be lying around for the next, unrelated visit to a title.
+  let detailsResume = null;
+  const takeDetailsResume = () => { const r = detailsResume; detailsResume = null; return r; };
+  // The way back onto a title page, shared by the collection and the person page: both keep it in
+  // the same shape.
+  function restoreDetailsFrom(d) {
+    currentDetailItem = d.item;   detailsOrigin       = d.origin;
+    detailsReturnId   = d.id;     detailsReturnEl     = d.el;
+    detailsReturnNth  = d.nth;    detailsReturnScroll = d.scroll;
+    detailsResume     = d.resume;
+  }
 
   function openCollection(boxSet) {
     // Opened from INSIDE a collection (nested BoxSet/playlist card): push the parent so Back
@@ -1502,8 +1561,19 @@
         nth: collectionReturnNth, scroll: collectionReturnScroll,
       });
     } else {
+      beginChainIfRoot();
+      if (isSubView(viewState)) {
+        pushTrip(collectionTrips, { collection: currentCollection, view: collectionReturnView, details: collectionReturnDetails,
+          id: collectionReturnId, el: collectionReturnEl, nth: collectionReturnNth, scroll: collectionReturnScroll,
+          stack: collectionStack });
+      }
       collectionStack = [];
       collectionReturnView = viewState;
+      collectionReturnDetails = viewState === 'details'
+        ? { item: currentDetailItem, origin: detailsOrigin,
+            id: detailsReturnId, el: detailsReturnEl, nth: detailsReturnNth, scroll: detailsReturnScroll,
+            resume: detailsRef?.snapshot?.() ?? null }
+        : null;
     }
     collectionReturnId  = boxSet?.Id ?? null;
     collectionReturnEl  = document.activeElement;
@@ -1533,15 +1603,22 @@
     const id = collectionReturnId, el = collectionReturnEl, nth = collectionReturnNth;
     const sc = collectionReturnScroll;
     collectionReturnId = null; collectionReturnEl = null; collectionReturnNth = 0; collectionReturnScroll = 0;
+    // The title page as it was, BEFORE switching to it — Details mounts from currentDetailItem.
+    if (collectionReturnView === 'details' && collectionReturnDetails) restoreDetailsFrom(collectionReturnDetails);
+    collectionReturnDetails = null;
     viewState = collectionReturnView;
-    // Same split as returnFromDetails: Library restores itself, the two self-focusing views take
-    // the id, and the dashboard is focused directly.
+    // Same split as returnFromDetails: Library restores itself, the self-focusing views (Details
+    // among them, back onto the "Included in" card) take the id, and the dashboard is focused directly.
     if (collectionReturnView === 'search') searchRef?.restoreView();
     else if (collectionReturnView === 'library') libraryRef?.restoreView();
-    else if (collectionReturnView === 'favorites' || collectionReturnView === 'collection') {
+    else if (collectionReturnView === 'favorites' || collectionReturnView === 'collection'
+             || collectionReturnView === 'details') {
       pendingCardFocusId = id; pendingCardScrollTop = sc;
     }
     else focusCardAgain(id, el, '(back from collection)', nth);
+    // This trip is over: the one it was opened inside of takes the slots back (after the routing
+    // above, which still needed this trip's values).
+    restoreCollectionTrip();
   }
 
   // Cross effects from the collection view onto the library grid / sidebar:
@@ -1564,14 +1641,23 @@
     }
     if (collectionStack.length) { popCollectionLevel(false); }   // its card is gone → first one
     else if (collectionReturnView === 'library' && playlistsLibGone) { currentLibrary = null; viewState = 'dashboard'; }
-    else viewState = collectionReturnView;
+    else {
+      // Back onto the title page it was opened from — but its card is gone, so onto the page itself.
+      if (collectionReturnView === 'details' && collectionReturnDetails) {
+        restoreDetailsFrom(collectionReturnDetails);
+        pendingCardFocusId = null; pendingCardScrollTop = 0;
+      }
+      collectionReturnDetails = null;
+      viewState = collectionReturnView;
+      restoreCollectionTrip();
+    }
   }
 
   // After creating a playlist/collection a new library view may appear server-side
   // (e.g. "Playlists") – update the sidebar/menu immediately instead of only on restart.
   async function refreshLibraries() {
     try {
-      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Views`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/UserViews?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
       if (res.ok) navLibraries = (await res.json()).Items || [];
     } catch { }
   }
@@ -1583,15 +1669,23 @@
   // Opens a person's filmography (from search, the cast in Details, or favorites).
   // Only sets the return view + seed person; Person.svelte loads person details + filmography itself.
   function openPerson(person) {
+    beginChainIfRoot();
+    if (isSubView(viewState)) {   // e.g. A → actor P → film X → P again: keep P's first way back
+      pushTrip(personTrips, { person: currentPerson, view: personReturnView, details: personReturnDetails,
+        id: personReturnId, el: personReturnEl, nth: personReturnNth, scroll: personReturnScroll });
+    }
     personReturnView   = viewState;
     // Coming from a title page, remember WHICH title and its own way out. Opening another title
     // from the person's filmography overwrites currentDetailItem AND detailsOrigin — the same
     // single-variable trap the collection stack has (§22). Without this, Back came back to that
     // other title and then bounced between it and the person page forever, with no way out but the
     // sidebar, because detailsOrigin still said 'person'.
+    // `resume` is the page as it stood: the entry alone brought back the title the chain STARTED
+    // at, so A → Similar → B → actor → Back landed on A with the chain gone (§37).
     personReturnDetails = viewState === 'details'
       ? { item: currentDetailItem, origin: detailsOrigin,
-          id: detailsReturnId, el: detailsReturnEl, nth: detailsReturnNth, scroll: detailsReturnScroll }
+          id: detailsReturnId, el: detailsReturnEl, nth: detailsReturnNth, scroll: detailsReturnScroll,
+          resume: detailsRef?.snapshot?.() ?? null }
       : null;
     personReturnId     = document.activeElement?.getAttribute?.('data-item-id') ?? null;
     personReturnEl     = document.activeElement;
@@ -1608,12 +1702,7 @@
     personReturnId = null; personReturnEl = null; personReturnNth = 0; personReturnScroll = 0;
     // Restore the title page as it was, BEFORE switching to it — Details mounts from
     // currentDetailItem, and detailsOrigin is what its own Back will read next.
-    if (personReturnView === 'details' && personReturnDetails) {
-      const d = personReturnDetails;
-      currentDetailItem = d.item;      detailsOrigin       = d.origin;
-      detailsReturnId   = d.id;        detailsReturnEl     = d.el;
-      detailsReturnNth  = d.nth;       detailsReturnScroll = d.scroll;
-    }
+    if (personReturnView === 'details' && personReturnDetails) restoreDetailsFrom(personReturnDetails);
     personReturnDetails = null;
     viewState = personReturnView;
     if (personReturnView === 'search') searchRef?.restoreView();
@@ -1624,6 +1713,7 @@
              || personReturnView === 'details') {
       pendingCardFocusId = id; pendingCardScrollTop = sc;
     } else focusCardAgain(id, el, '(back from person)', nth);
+    restorePersonTrip();   // this trip is over — see collectionTrips
   }
 
   // After a selection in the sidebar, move focus into the content. Leaving
@@ -1667,10 +1757,12 @@
   function showItemDetails(item) {
     // Containers (collection/playlist) show their contents instead of a detail page
     if (item?.Type === 'BoxSet' || item?.Type === 'Playlist') { openCollection(item); return; }
+    beginChainIfRoot();
     // Remember the origin so "Back" leads there again (not always the dashboard), and the card
     // itself so focus can return to it rather than to nothing.
     detailsOrigin   = viewState;
     pendingCardFocusId = null;   // a new trip — the previous view's card is no longer the target
+    detailsResume = null;        // and a fresh page, not one handed back
     detailsReturnId  = item?.Id ?? null;
     detailsReturnEl  = document.activeElement;
     detailsReturnNth = cardOrdinal(detailsReturnEl, detailsReturnId);
@@ -1787,7 +1879,7 @@
     if (!item?.Id) return;
     detailsOrigin = viewState;
     try {
-      const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300&EnableTotalRecordCount=false`, { headers: getAuthHeaders() });
+      const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300`, { headers: getAuthHeaders() });
       if (!res.ok) { console.warn('play playlist: HTTP', res.status); return; }
       const data  = await res.json();
       const queue = await buildPlayQueue(data.Items || [], { serverUrl: session.serverUrl, userId: activeUserId, headers: getAuthHeaders() });
@@ -1822,11 +1914,49 @@
     // the cast member a person page came back to, say — would otherwise be restored when Details
     // remounts after playback, holding its play button back and landing on that actor instead.
     pendingCardFocusId = null;
+    // Started from a title page: keep that page whole for the way back, as openCollection and
+    // openPerson do — the player unmounts it, and with it the chain A → Similar B → Play.
+    playReturnDetails = viewState === 'details'
+      ? { item: currentDetailItem, origin: detailsOrigin,
+          id: detailsReturnId, el: detailsReturnEl, nth: detailsReturnNth, scroll: detailsReturnScroll,
+          resume: detailsRef?.snapshot?.() ?? null, started: p.item ?? null }
+      : null;
     if (p.item) currentDetailItem = p.item;
     activeAudioIndex    = p.audioIndex    ?? -1;
     activeSubtitleIndex = p.subtitleIndex ?? -1;
     activeMediaSourceId = p.mediaSourceId ?? null;
+    activePickTracks    = !p.tracksChosen;   // only Details' play button hands over chosen tracks
     viewState = 'player';
+  }
+
+  // Out of the player — always onto a title page. Back onto the one playback started from, chain and
+  // all. What played can be another title: a series page starts its next episode, episodes advance
+  // on their own, an extra is a title of its own. That one is shown, with the starting page one
+  // Back-step behind it — before, Back from there skipped the starting page and its chain entirely.
+  // Except when an EPISODE page simply played on through its series (6 → 7 → Back): the last episode
+  // replaces the first one rather than stacking on it — Back from 7 goes where 6 would have gone,
+  // not back to 6 (Ferris, 2026-09-25). A series page stays a step: that is where you started.
+  // Safe to reassign currentDetailItem here although the Player's own teardown still reads `item`
+  // for its Stopped report: inside a teardown Svelte returns a signal's value from BEFORE this flush
+  // (old_values in runtime.js) — the same thing the next-episode handoff has always relied on.
+  let playReturnDetails = null;
+  function returnFromPlayer() {
+    const d = playReturnDetails;
+    playReturnDetails = null;
+    const played = currentDetailItem;
+    if (d?.resume) {
+      restoreDetailsFrom(d);
+      if (played?.Id && played.Id !== d.resume.id) {
+        const playedOn = d.started?.Id === d.resume.id && d.started?.Type === 'Episode'
+                      && !!played.SeriesId && played.SeriesId === d.started.SeriesId;
+        detailsResume = { id: played.Id, stack: playedOn ? [...d.resume.stack]
+                          : [...d.resume.stack, { id: d.resume.id, focusId: null, scrollTop: 0 }] };
+      }
+    }
+    dlog('[player] → details', { played: played?.Id, startedOn: d?.resume?.id ?? '(no page)',
+         shows: detailsResume?.id ?? currentDetailItem?.Id, backSteps: detailsResume?.stack?.length ?? 0 });
+    viewState = 'details';
+    resumeStale = true;
   }
 
   async function returnFromDetails() {
@@ -2160,7 +2290,7 @@
           <Settings
             {selectedUser} {selectedServer} {savedTokens}
             {screensaverSettings} {reduceAnimations} {displaySettings} {playbackPrefs}
-            {serverVersion} {serverVobSub}
+            {serverVersion}
             libraries={navLibraries}
             publicUsers={users} {sharedProfile} {sharedTokens}
             clientAuthHeader={CLIENT_AUTH_HEADER}
@@ -2183,12 +2313,14 @@
           <Details bind:this={detailsRef}
             focusItemId={pendingCardFocusId} focusScrollTop={pendingCardScrollTop}
             item={currentDetailItem}
-            {selectedUser} {playbackPrefs} {use24h} {serverVobSub}
+            {selectedUser} {playbackPrefs} {use24h}
             spoilerProtection={displaySettings.spoilerProtection}
             detailsBackdrop={displaySettings.detailsBackdrop}
             detailsLogo={displaySettings.detailsLogo}
+            takeResume={takeDetailsResume}
             onClose={returnFromDetails}
             onOpenPerson={(person) => openPerson(person)}
+            onOpenCollection={(col) => openCollection(col)}
             onLibChanged={refreshLibraries}
             onPlayVideo={startPlayback}
           />
@@ -2260,13 +2392,14 @@
         {#await lazyPlayer() then Player}
         <Player
           item={currentDetailItem}
-          {selectedUser} {playbackPrefs} {use24h} {serverVobSub}
+          {selectedUser} {playbackPrefs} {use24h}
           showClock={displaySettings.clock}
           showChapters={displaySettings.showChapters}
           seekStep={displaySettings.seekStep}
           selectedAudioIndex={activeAudioIndex}
           selectedSubtitleIndex={activeSubtitleIndex}
           mediaSourceId={activeMediaSourceId}
+          pickTracks={activePickTracks}
           {autoPlayStreak}
           syncPlayOpen={showSyncPlay}
           inSyncGroup={!!syncMyGroup}
@@ -2276,7 +2409,7 @@
           queueActive={!!playQueue}
           {queueNext}
           {queuePrev}
-          onExit={() => { viewState = 'details'; resumeStale = true; }}
+          onExit={returnFromPlayer}
           onPlayState={(p) => playerPlaying = p}
           onLibChanged={refreshLibraries}
           onNext={(payload) => handleNextEpisode(payload)}

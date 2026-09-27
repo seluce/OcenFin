@@ -48,18 +48,21 @@
       // Instead the dedicated /Persons endpoint with the IsFavorite filter (UserId for the context).
       const [contentRes, personRes] = await Promise.all([
         fetch(
-          `${session.serverUrl}/Users/${selectedUser.Id}/Items?Filters=IsFavorite&Recursive=true` +
+          `${session.serverUrl}/Items?UserId=${selectedUser.Id}&Filters=IsFavorite&Recursive=true` +
           `&IncludeItemTypes=Movie,Series,BoxSet,Season,Episode&SortBy=SortName&SortOrder=Ascending` +
           `&Fields=PrimaryImageAspectRatio,ProductionYear,UserData,SeriesName,ParentIndexNumber,IndexNumber,SeriesId&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`,
           { headers: getAuthHeaders() }
         ),
         fetch(
-          `${session.serverUrl}/Persons?UserId=${selectedUser.Id}&IsFavorite=true&SortBy=SortName&SortOrder=Ascending&Fields=PrimaryImageAspectRatio&EnableTotalRecordCount=false`,
+          `${session.serverUrl}/Persons?UserId=${selectedUser.Id}&IsFavorite=true&Fields=PrimaryImageAspectRatio`,
           { headers: getAuthHeaders() }
         ),
       ]);
       const content = contentRes.ok ? ((await contentRes.json()).Items || []) : [];
+      // /Persons has no sort parameters (12.1) — the SortBy this used to send was silently ignored, so
+      // the people came in server order. Sorted here, like the titles above them.
       const persons = personRes.ok  ? ((await personRes.json()).Items  || []).map(p => ({ ...p, Type: 'Person' })) : [];
+      persons.sort((a, b) => (a.SortName || a.Name || '').localeCompare(b.SortName || b.Name || ''));
       dlog('[OcenFin] favorites:', content.length, 'titles,', persons.length, 'persons');
       favoriteItems = [...content, ...persons];
     } catch (e) { dlog('[OcenFin] favorites error:', e?.message); }

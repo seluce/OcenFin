@@ -17,7 +17,6 @@
     displaySettings     = { clock: true, hero: true, episodeCount: true },
     playbackPrefs       = { audioLanguage: 'default', subtitleLanguage: 'default', subtitleSize: 'normal' },
     serverVersion       = '',      // Jellyfin server version (status page)
-    serverVobSub        = false,   // does the server deliver graphic subtitles client-side?
     libraries           = [],      // real libraries (for the navigation editor)
     publicUsers         = [],      // selectable profiles (public list from the server)
     sharedProfile       = { enabled: false, members: [] },
@@ -171,7 +170,7 @@
     await openModal('sharedQc');
     try {
       const { user, token } = await sharedQcSess.promise;
-      const r = await onSharedSetMember(sharedPickerSlot, user, '', token);
+      const r = await onSharedSetMember(sharedPickerSlot, user, null, token);
       if (r === 'ok') {
         closeModal();
         await tick();
@@ -247,12 +246,14 @@
     sharedError = '';
     const sid = selectedServer?.id;
     const hasToken = !!(sharedTokens[sid]?.[user.Id] || savedTokens[sid]?.[user.Id]);
-    if (user.HasPassword && !hasToken) {        // password needed → entry step
+    // No saved sign-in → ask. 12.x no longer says which profiles have a password (HasPassword is
+    // obsolete, always true); a profile without one is added by confirming the dialog empty.
+    if (!hasToken) {
       sharedPickerUser = user; sharedPw = '';
       await openModal('sharedPassword');
       return;
     }
-    await commitSharedUser(user, '');           // otherwise immediately (existing token / no password)
+    await commitSharedUser(user, null);         // saved sign-in → no password asked (null = not asked)
   }
   async function commitSharedUser(user, pw) {
     sharedBusy = true;
@@ -285,10 +286,10 @@
   async function changePassword() {
     pwMessage = '';
     try {
-      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Password`, {
+      const res = await fetch(`${session.serverUrl}/Users/Password?UserId=${selectedUser.Id}`, {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ Id: selectedUser.Id, CurrentPw: currentPw, NewPw: newPw })
+        body: JSON.stringify({ CurrentPw: currentPw, NewPw: newPw })
       });
       pwMessage = res.ok ? i18n.t.pwChangedSuccess : i18n.t.pwChangedError;
       if (res.ok) {
@@ -301,10 +302,11 @@
   async function authorizeQuickConnect() {
     qcMessage = '';
     try {
-      const res = await fetch(`${session.serverUrl}/QuickConnect/Authorize`, {
+      // The server reads the code from the QUERY string only (10.10 and 12.x alike) — sent in the
+      // body, as before, it was never seen and every attempt failed.
+      const res = await fetch(`${session.serverUrl}/QuickConnect/Authorize?Code=${encodeURIComponent(qcCode.trim())}`, {
         method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ Code: qcCode })
+        headers: getAuthHeaders()
       });
       qcMessage = res.ok ? i18n.t.qcSuccess : i18n.t.qcError;
       if (res.ok) { qcCode = ''; modalTimeout = setTimeout(closeModal, 2000); }
@@ -522,7 +524,7 @@
   async function loadRecentTitles() {
     recentLoading = true;
     try {
-      const base = `${session.serverUrl}/Users/${selectedUser.Id}/Items?Recursive=true&IncludeItemTypes=Movie,Episode`
+      const base = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&Recursive=true&IncludeItemTypes=Movie,Episode`
         + `&Fields=SeriesId,SeriesPrimaryImageTag,UserData&EnableImageTypes=Primary&ImageTypeLimit=1`
         + `&SortBy=DatePlayed&SortOrder=Descending&EnableTotalRecordCount=false&Limit=72`;
       const [played, resume] = await Promise.all([
@@ -561,7 +563,7 @@
       const base64 = (avatarTab === 'recent' && avatarPoster)
         ? await renderImageAvatarPng(avatarPoster.imageUrl)
         : await renderAvatarPng(effectiveIcon, effectiveColor);
-      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}/Images/Primary`, {
+      const res = await fetch(`${session.serverUrl}/UserImage?UserId=${selectedUser.Id}`, {
         method: 'POST',
         headers: { ...authHeaders(session.token), 'Content-Type': 'image/png' },   // one auth scheme, one source
         body: base64,
@@ -1415,22 +1417,6 @@
           </div>
         </button>
 
-        <!-- Automatically choose forced/default GRAPHIC subtitles (DVDSUB) — needs transcode (no Direct Play).
-             Text and PGS subtitles are chosen automatically without a transcode anyway. -->
-        <button onclick={() => togglePlaybackPref('forcedGraphicSubs')}
-          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.forcedGraphicSubs}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.forcedGraphicSubsDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.forcedGraphicSubs ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.forcedGraphicSubs ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
-
         <!-- Burn in subtitles -->
         <button onclick={() => togglePlaybackPref('burnSubtitles')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
@@ -1566,7 +1552,7 @@
             {#if hasEditedAvatar && avatarTab === 'recent' && avatarPoster}
               <img src={avatarPoster.imageUrl} alt={avatarPoster.name} class="w-full h-full object-cover" />
             {:else if !hasEditedAvatar && selectedUser?.PrimaryImageTag}
-              <img src="{session.serverUrl}/Users/{selectedUser.Id}/Images/Primary?tag={selectedUser.PrimaryImageTag}&fillWidth=160&fillHeight=160&quality=90&format=webp" alt={i18n.t.profilePicture} class="w-full h-full object-cover" />
+              <img src="{session.serverUrl}/UserImage?UserId={selectedUser.Id}&tag={selectedUser.PrimaryImageTag}&format=webp" alt={i18n.t.profilePicture} class="w-full h-full object-cover" />
             {:else}
               <svg class="w-11 h-11 text-white" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d={AVATAR_ICONS[effectiveIcon]}/></svg>
             {/if}
@@ -1915,16 +1901,6 @@
             <div class="flex justify-between items-baseline gap-4">
               <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusServerVersion}</span>
               <span class="text-white font-mono text-sm">{serverVersion || '—'}</span>
-            </div>
-            <div class="h-px bg-gray-700/70"></div>
-            <div class="flex justify-between items-start gap-4">
-              <div class="pr-2">
-                <span class="text-sm text-gray-300 font-bold block">{i18n.t.statusClientGraphicSubs}</span>
-                <span class="text-xs text-gray-400 mt-0.5 block">{i18n.t.statusClientGraphicSubsDesc}</span>
-              </div>
-              <span class="font-mono text-sm font-bold shrink-0 mt-0.5 {serverVobSub ? 'text-green-400' : 'text-gray-400'}">
-                {serverVobSub ? i18n.t.statusYes : i18n.t.statusNo}
-              </span>
             </div>
           </div>
         {/if}
