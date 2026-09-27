@@ -5,6 +5,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ## [Unreleased]
 
+**This release needs Jellyfin Server 12.0 or newer.** On an older server, stay on 2026.09.22.
+
 ### Added
 
 - **Rewind and fast-forward from another device.** When the TV is controlled from Jellyfin on a
@@ -21,6 +23,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Changed
 
+- **The setting "Auto-pick forced DVD subtitles" is gone.** It only ever applied to servers that
+  could not hand DVD subtitles to the app; Jellyfin 12 always can, so the app picks them like any
+  other subtitle. The status page no longer lists that server capability either.
 - **Your audio and subtitle language apply to every start.** They only took effect when a title was
   started from its details page. A series' play button, play all, shuffle, extras and a start from
   another device played the file's own default track and no subtitles. They now choose tracks the
@@ -65,6 +70,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   new ones exist since 10.9, so nothing changes on older servers.
 - New playlists, the watchlist included, are created the way Jellyfin 12 documents (still private),
   and parameters the server ignores are no longer sent.
+- Code kept only for servers before 12 is gone: the version check for DVD subtitles and the
+  request to an old intro plugin interface that Jellyfin 12 no longer has.
 
 ## 2026.09.22
 

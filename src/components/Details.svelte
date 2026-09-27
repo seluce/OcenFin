@@ -14,7 +14,6 @@
     selectedUser,
     playbackPrefs = { audioLanguage: 'default', subtitleLanguage: 'default' },
     use24h = true,              // time format for the "ends at" chip (follows the setting)
-    serverVobSub = false,       // does the server deliver VobSub/DVD externally (.mks, Jellyfin 12.0+)?
     spoilerProtection = true,   // slightly obscure thumbnails of unwatched episodes
     detailsBackdrop = true,     // show the hero backdrop on the detail page (own toggle, decoupled from reduceAnimations)
     detailsLogo = false,        // title as a logo graphic instead of text (falls back to text if no logo exists)
@@ -100,7 +99,7 @@
   // Choose default audio/subtitle for a source — the shared rule in trackmemory.js, which the Player
   // applies to every start that does not come through this page (series play button, play-all, …).
   function applySourceDefaults(src) {
-    const t = pickDefaultTracks(src, { seriesId: fullItem?.SeriesId, prefs: playbackPrefs, serverVobSub });
+    const t = pickDefaultTracks(src, { seriesId: fullItem?.SeriesId, prefs: playbackPrefs });
     selectedAudioIndex    = t.audio;
     selectedSubtitleIndex = t.subtitle;
   }

@@ -17,7 +17,6 @@
     displaySettings     = { clock: true, hero: true, episodeCount: true },
     playbackPrefs       = { audioLanguage: 'default', subtitleLanguage: 'default', subtitleSize: 'normal' },
     serverVersion       = '',      // Jellyfin server version (status page)
-    serverVobSub        = false,   // does the server deliver graphic subtitles client-side?
     libraries           = [],      // real libraries (for the navigation editor)
     publicUsers         = [],      // selectable profiles (public list from the server)
     sharedProfile       = { enabled: false, members: [] },
@@ -1418,22 +1417,6 @@
           </div>
         </button>
 
-        <!-- Automatically choose forced/default GRAPHIC subtitles (DVDSUB) — needs transcode (no Direct Play).
-             Text and PGS subtitles are chosen automatically without a transcode anyway. -->
-        <button onclick={() => togglePlaybackPref('forcedGraphicSubs')}
-          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.forcedGraphicSubs}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.forcedGraphicSubsDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.forcedGraphicSubs ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.forcedGraphicSubs ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
-
         <!-- Burn in subtitles -->
         <button onclick={() => togglePlaybackPref('burnSubtitles')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
@@ -1918,16 +1901,6 @@
             <div class="flex justify-between items-baseline gap-4">
               <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusServerVersion}</span>
               <span class="text-white font-mono text-sm">{serverVersion || '—'}</span>
-            </div>
-            <div class="h-px bg-gray-700/70"></div>
-            <div class="flex justify-between items-start gap-4">
-              <div class="pr-2">
-                <span class="text-sm text-gray-300 font-bold block">{i18n.t.statusClientGraphicSubs}</span>
-                <span class="text-xs text-gray-400 mt-0.5 block">{i18n.t.statusClientGraphicSubsDesc}</span>
-              </div>
-              <span class="font-mono text-sm font-bold shrink-0 mt-0.5 {serverVobSub ? 'text-green-400' : 'text-gray-400'}">
-                {serverVobSub ? i18n.t.statusYes : i18n.t.statusNo}
-              </span>
             </div>
           </div>
         {/if}

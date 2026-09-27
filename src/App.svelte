@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, serverSupportsVobSub, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
   import { buildPlayQueue } from './playback.js';
   import { session } from './session.svelte.js';
   import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
@@ -155,7 +155,6 @@
   let users            = $state([]);
   let selectedUser     = $state(null);
   let isLoggedIn       = $state(false);
-  let serverVobSub     = $state(false);   // does the server deliver VobSub/DVD externally as .mks? (Jellyfin 12.0+)
   let serverVersion    = $state('');      // Jellyfin server version (for the status page)
   let savedTokens      = $state({});  // { serverId: { userId: token } } — quick switch (only via the profile switch)
   let sharedTokens     = $state({});  // { serverId: { userId: token } } — watch together, SEPARATE from quick switch
@@ -229,7 +228,7 @@
   // fired once already (theme music). Functions, not shared literals: navOrder/navHidden/navIcons
   // must be fresh references on every call.
   const defaultDisplaySettings = () => ({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
-  const defaultPlaybackPrefs   = () => ({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, forcedGraphicSubs: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
+  const defaultPlaybackPrefs   = () => ({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
   let displaySettings = $state(defaultDisplaySettings());
 
   // Default audio/subtitle language
@@ -1338,20 +1337,15 @@
     }
   }
 
-  // Check the server version once → decides whether DVD/VobSub is renderable client-side (libbitsub via
-  // .mks) or still has to be burned in. Faulty/old → false (safe burning).
+  // The server version, for the status page and the log. OcenFin targets Jellyfin 12+, so nothing
+  // is switched on it any more (the VobSub gate that used to hang off it is gone, CODE-HEALTH §38).
   async function detectServerCapabilities() {
-    serverVobSub = false;
     serverVersion = '';
     try {
       const res = await fetch(`${session.serverUrl}/System/Info/Public`);
-      if (res.ok) {
-        const info = await res.json();
-        serverVersion = info?.Version || '';
-        serverVobSub = serverSupportsVobSub(info?.Version);
-      }
+      if (res.ok) serverVersion = (await res.json())?.Version || '';
     } catch {}
-    dlog('[OcenFin] server capabilities:', { version: serverVersion || '(unknown)', vobSub: serverVobSub });
+    dlog('[OcenFin] server version:', serverVersion || '(unknown)');
   }
 
   function toggleCurrentUserSave() {
@@ -2296,7 +2290,7 @@
           <Settings
             {selectedUser} {selectedServer} {savedTokens}
             {screensaverSettings} {reduceAnimations} {displaySettings} {playbackPrefs}
-            {serverVersion} {serverVobSub}
+            {serverVersion}
             libraries={navLibraries}
             publicUsers={users} {sharedProfile} {sharedTokens}
             clientAuthHeader={CLIENT_AUTH_HEADER}
@@ -2319,7 +2313,7 @@
           <Details bind:this={detailsRef}
             focusItemId={pendingCardFocusId} focusScrollTop={pendingCardScrollTop}
             item={currentDetailItem}
-            {selectedUser} {playbackPrefs} {use24h} {serverVobSub}
+            {selectedUser} {playbackPrefs} {use24h}
             spoilerProtection={displaySettings.spoilerProtection}
             detailsBackdrop={displaySettings.detailsBackdrop}
             detailsLogo={displaySettings.detailsLogo}
@@ -2398,7 +2392,7 @@
         {#await lazyPlayer() then Player}
         <Player
           item={currentDetailItem}
-          {selectedUser} {playbackPrefs} {use24h} {serverVobSub}
+          {selectedUser} {playbackPrefs} {use24h}
           showClock={displaySettings.clock}
           showChapters={displaySettings.showChapters}
           seekStep={displaySettings.seekStep}

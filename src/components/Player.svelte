@@ -34,7 +34,6 @@
     queueNext = null,     // next queue element (null = end of queue → normal end of playback)
     queuePrev = null,     // previous queue element
     remoteCommand = null, // admin remote control (dashboard) (from App)
-    serverVobSub = false, // does the server deliver VobSub/DVD externally (.mks, Jellyfin 12.0+)?
     onExit, onPrev, onNext, onSyncplay, onLibChanged,   // callback props (instead of events)
     onPlayState,          // reports the playback status to App (for the screensaver: paused → allowed)
   } = $props();
@@ -551,7 +550,7 @@
         const src = await sourceForPick();
         if (mySetup !== setupToken) return;   // a newer setup started while we fetched
         if (src) {
-          const t = pickDefaultTracks(src, { seriesId: item?.SeriesId, prefs: playbackPrefs, serverVobSub });
+          const t = pickDefaultTracks(src, { seriesId: item?.SeriesId, prefs: playbackPrefs });
           audioIndex    = t.audio;    selectedAudioIndex    = t.audio;
           subtitleIndex = t.subtitle; selectedSubtitleIndex = t.subtitle;
           if (src.MediaStreams?.length) titleStreams = src.MediaStreams;
@@ -599,9 +598,9 @@
       const isPgsSub    = ['pgssub', 'pgs'].includes(subCodec);
       const isVobSub    = ['dvdsub', 'vobsub', 'sub'].includes(subCodec);          // DVD/VobSub → .mks from 12.0
       const isGraphicSub = isPgsSub || isVobSub || ['dvbsub'].includes(subCodec);
-      // libbitsub renders client-side (when enabled): PGS always, VobSub only once the server
-      // delivers .mks (Jellyfin 12.0+). Otherwise the graphic subtitle has to be burned in.
-      const graphicClientRender = clientGraphicRender && (isPgsSub || (isVobSub && serverVobSub));
+      // libbitsub renders PGS and VobSub client-side (when enabled); anything else graphic, or with
+      // client rendering off, has to be burned in.
+      const graphicClientRender = clientGraphicRender && (isPgsSub || isVobSub);
       const subWillBurn = subtitleIndex !== -1 && (playbackPrefs.burnSubtitles || (isGraphicSub && !graphicClientRender));
 
       const enableDirectPlay = !explicitAudio && !subWillBurn && !forceTranscode;
@@ -619,7 +618,7 @@
         maxBitrate: requestBitrate, startTicks: 0,   // resume happens client-side (seekToResume)
         enableDirectPlay, enableDirectStream, allowAudioStreamCopy,
         burnSubtitles: playbackPrefs.burnSubtitles,
-        clientGraphicSubs: clientGraphicRender, serverVobSub,
+        clientGraphicSubs: clientGraphicRender,
         mediaSourceId,
       });
       if (mySetup !== setupToken) return;   // superseded while PlaybackInfo was in flight
@@ -773,7 +772,7 @@
     const isPgs = ['pgssub', 'pgs'].includes(codec);
     const isVob = ['dvdsub', 'vobsub', 'sub'].includes(codec);
     const isAss = ['ass', 'ssa'].includes(codec);
-    if (stream && clientGraphicRender && (isPgs || (isVob && serverVobSub))) {
+    if (stream && clientGraphicRender && (isPgs || isVob)) {
       clearAss();
       subtitleCues = [];                    // no VTT overlay alongside
       applyGraphicSubtitle(stream, ms);     // soft switch without a gap (see below)
@@ -1130,7 +1129,7 @@
       serverUrl: session.serverUrl, userId: selectedUser.Id, token: session.token, itemId: nextEpisode.Id,
       audioStreamIndex: selectedAudioIndex, subtitleStreamIndex: selectedSubtitleIndex,
       maxBitrate, burnSubtitles: playbackPrefs.burnSubtitles, mediaSourceId: null,
-      clientGraphicSubs: clientGraphicRender, serverVobSub,
+      clientGraphicSubs: clientGraphicRender,
     });
   }
 
@@ -1395,7 +1394,7 @@
 
   async function fetchIntroTimestamps() {
     if (item.Type !== 'Episode') return;
-    // 1) Modern Media Segments API (Intro Skipper from Jellyfin 10.9 delivers via this).
+    // 1) Media Segments API (the Intro Skipper plugin and the server's own detection deliver via this).
     //    Query without a type filter and filter ourselves — more robust against server/version differences.
     try {
       const res = await fetch(`${session.serverUrl}/MediaSegments/${item.Id}`, { headers: getAuthHeaders() });
@@ -1411,21 +1410,10 @@
         dlog('[OcenFin] media segments HTTP', res.status);   // e.g. 404 = endpoint missing, 401 = auth
       }
     } catch (e) { dlog('[OcenFin] media segments error:', e?.message); }
-    // 2) Older ConfusedPolarBear plugin API. Some versions deliver the intro flat
-    //    ({ Valid, IntroStart, … }), others as { Introduction, Credits } → handle both shapes.
-    try {
-      const res = await fetch(`${session.serverUrl}/Episode/${item.Id}/IntroTimestamps/v1`, { headers: getAuthHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        dlog('[OcenFin] IntroTimestamps/v1:', JSON.stringify(data));
-        introData = (data.Introduction || data.Credits) ? data : { Introduction: data, Credits: { Valid: false } };
-        return;
-      } else {
-        dlog('[OcenFin] IntroTimestamps/v1 HTTP', res.status);
-      }
-    } catch (e) { dlog('[OcenFin] IntroTimestamps/v1 error:', e?.message); }
-    // 3) No plugin hit → chapter fallback (kicks in reactively once chapters are loaded)
-    dlog('[OcenFin] no media segments / plugin data → chapter fallback');
+    // 2) No segments → chapter fallback (kicks in reactively once chapters are loaded). The old
+    //    ConfusedPolarBear plugin endpoint (/Episode/{id}/IntroTimestamps/v1) is no longer asked: not
+    //    part of Jellyfin 12's API, and the Intro Skipper plugin delivers through media segments.
+    dlog('[OcenFin] no media segments → chapter fallback');
     segmentsChecked = true;
   }
 
@@ -1600,7 +1588,7 @@
         if (deliveredEncoded(idx)) return false;                                    // burned in → reload
         const codec = (s.Codec || '').toLowerCase();
         if (['pgssub', 'pgs'].includes(codec)) return clientGraphicRender;          // PGS: client-side → soft, otherwise burned in
-        if (['dvdsub', 'vobsub', 'sub'].includes(codec)) return clientGraphicRender && serverVobSub;  // VobSub: soft from Jellyfin 12.0
+        if (['dvdsub', 'vobsub', 'sub'].includes(codec)) return clientGraphicRender;                // VobSub: likewise (.mks)
         if (graphicCodecs.includes(codec)) return false;                            // other graphic → not as VTT
         // Text target: with burn-in enabled the profile marks every text subtitle Encode, so
         // switching TO one always needs the reload — the delivery check above only knows about

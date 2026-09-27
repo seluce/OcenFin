@@ -59,16 +59,11 @@ export function matchRememberedSubtitleIndex(streams, seriesId) {
 const GRAPHIC_SUB_CODECS = ['pgssub', 'pgs', 'dvdsub', 'dvbsub', 'vobsub', 'sub'];
 const isGraphicSub = (s) => GRAPHIC_SUB_CODECS.includes((s?.Codec || '').toLowerCase());
 
-// May a subtitle be switched on automatically? Text always; PGS when rendered client-side
-// (libbitsub, Direct Play stays); VobSub/DVD likewise once the server delivers it as .mks (12.0+).
-// On older servers DVD only through the opt-in option, because it is then burned in.
-function subtitleAutoEligible(s, prefs, serverVobSub) {
+// May a subtitle be switched on automatically? Text always; a graphic one (PGS, VobSub/DVD) as long
+// as the app renders them itself (libbitsub, Direct Play stays) — Jellyfin 12 delivers both.
+function subtitleAutoEligible(s, prefs) {
   if (!isGraphicSub(s)) return true;
-  if (prefs.pgsRendering === false) return false;
-  const codec = (s?.Codec || '').toLowerCase();
-  if (['pgssub', 'pgs'].includes(codec)) return true;
-  if (serverVobSub) return true;
-  return !!prefs.forcedGraphicSubs;
+  return prefs.pgsRendering !== false;
 }
 
 // First stream of that type in the preferred language, or null for 'default' / no match.
@@ -80,10 +75,10 @@ function matchLanguageStream(streams, type, prefKey) {
   return match ? match.Index : null;
 }
 
-function pickForcedSubtitle(streams, audioIndex, serverDefault, prefs, serverVobSub) {
+function pickForcedSubtitle(streams, audioIndex, serverDefault, prefs) {
   const audioLang = streams.find(s => s.Type === 'Audio' && s.Index === audioIndex)?.Language?.toLowerCase();
   const subs = streams.filter(s => s.Type === 'Subtitle');
-  const ok = (s) => subtitleAutoEligible(s, prefs, serverVobSub);
+  const ok = (s) => subtitleAutoEligible(s, prefs);
   const pick = subs.find(s => s.IsForced && ok(s) && audioLang && s.Language?.toLowerCase() === audioLang)
             ?? subs.find(s => s.IsForced && ok(s));
   if (pick) return pick.Index;
@@ -95,7 +90,7 @@ function pickForcedSubtitle(streams, audioIndex, serverDefault, prefs, serverVob
 }
 
 // source: a MediaSourceInfo (its MediaStreams plus the server's Default*StreamIndex for this user).
-export function pickDefaultTracks(source, { seriesId = null, prefs = {}, serverVobSub = false } = {}) {
+export function pickDefaultTracks(source, { seriesId = null, prefs = {} } = {}) {
   const streams = source?.MediaStreams || [];
   let audio = null, subtitle = null;
   if (seriesId && prefs.rememberAudioTrack)    audio    = matchRememberedAudioIndex(streams, seriesId);
@@ -109,7 +104,7 @@ export function pickDefaultTracks(source, { seriesId = null, prefs = {}, serverV
       const subPref = matchLanguageStream(streams, 'Subtitle', prefs.subtitleLanguage);
       if (subPref != null) subtitle = subPref;
       else if (prefs.subtitleLanguage === 'default')
-        subtitle = pickForcedSubtitle(streams, audio, source?.DefaultSubtitleStreamIndex, prefs, serverVobSub);
+        subtitle = pickForcedSubtitle(streams, audio, source?.DefaultSubtitleStreamIndex, prefs);
       else subtitle = source?.DefaultSubtitleStreamIndex ?? -1;
     }
   }
