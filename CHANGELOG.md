@@ -3,7 +3,7 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
-## [Unreleased]
+## 2026.09.27
 
 **This release needs Jellyfin Server 12.0 or newer.** On an older server, stay on 2026.09.22.
 
@@ -14,12 +14,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   player's own buttons.
 - **"Included in" on the details page.** A film or series that belongs to a collection now shows it
   in its own row, and the collection opens with one click. Back leads to the same page, even if
-  you had moved on to another title from there. Needs Jellyfin 12; on older servers the row does
-  not appear.
+  you had moved on to another title from there.
 - **Filter a library by audio and subtitle language.** The filter menu lists the languages your
   titles actually have, named in the app's language, so you can show only what has German audio or
   English subtitles, for example. A series counts as soon as one of its episodes has the language.
-  Needs Jellyfin 12; on older servers these sections do not appear.
 
 ### Changed
 
@@ -68,9 +66,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Internal
 
-- Requests use Jellyfin's current addresses instead of the older per-profile ones. Jellyfin 12
-  still answers the old ones but no longer documents them and may drop them in a later version. The
-  new ones exist since 10.9, so nothing changes on older servers.
+- Requests use Jellyfin's current addresses instead of the older per-profile ones, which Jellyfin 12
+  no longer documents and may drop in a later version.
 - New playlists, the watchlist included, are created the way Jellyfin 12 documents (still private),
   and parameters the server ignores are no longer sent.
 - Code kept only for servers before 12 is gone: the version check for DVD subtitles and the
