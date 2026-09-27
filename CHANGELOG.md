@@ -23,6 +23,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Changed
 
+- **Back from a suggestion returns to it.** Opening a title under "More like this" and pressing Back
+  used to land at the top of the page, because that row loaded too late on older servers. With
+  Jellyfin 12 it is there in time, so Back returns to the card you picked, as everywhere else.
 - **The setting "Auto-pick forced DVD subtitles" is gone.** It only ever applied to servers that
   could not hand DVD subtitles to the app; Jellyfin 12 always can, so the app picks them like any
   other subtitle. The status page no longer lists that server capability either.

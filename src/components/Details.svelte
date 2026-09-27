@@ -313,8 +313,10 @@
   });
   onDestroy(stopTheme);
 
+  let loadStartedAt = 0;   // for the similar-row timing below
   async function loadFullDetails(itemId) {
     const myToken = ++detailToken;
+    loadStartedAt = performance.now();
     isLoading    = true;
     fullItem     = null;
     relatedItems = [];
@@ -392,12 +394,22 @@
   }
 
   async function loadSimilarItems(itemId, myToken) {
+    const t0 = performance.now();
     try {
       const res = await fetch(
         `${session.serverUrl}/Items/${itemId}/Similar?Limit=10&Fields=PrimaryImageAspectRatio`,
         { headers: getAuthHeaders() }
       );
-      if (res.ok) { const d = await res.json(); if (myToken !== detailToken) return; similarItems = d.Items || []; }
+      if (res.ok) {
+        const d = await res.json();
+        if (myToken !== detailToken) return;
+        similarItems = d.Items || [];
+        // The way back onto a suggestion card relies on this row arriving inside restoreSpot's
+        // ~1.2 s (CODE-HEALTH §40) — this line tells whether a server still manages that.
+        const now = performance.now();
+        dlog('[details] similar', similarItems.length, 'items · request', Math.round(now - t0), 'ms · on screen',
+             Math.round(now - loadStartedAt), 'ms after the page started (restore waits ~1200 ms)');
+      }
     } catch (e) { console.error(e); }
   }
 
@@ -535,19 +547,17 @@
   const focusUnlessRestoring = (node) => { if (!restorePending) node.focus(); };
   const NAV_STACK_MAX = 30;   // the app runs for days; series ↔ season ping-pong must not grow forever
 
-  // rememberSpot=false for the suggestions row: /Items/{id}/Similar has to be scored by the server
-  // and lands well after the rest of the page, measured still absent after 24 tries on the device.
-  // Waiting that long means either no focus at all meanwhile, or focus visibly jumping from the top
-  // of the page down to the row once it finally arrives. Landing at the top is the better answer
-  // there, and an honest one: the row you came from was not on screen yet anyway. The step is still
-  // pushed, so Back keeps stepping up the chain — only the spot is not restored.
-  function navigateTo(id, rememberSpot = true) {
+  // Every step remembers the card it left from and the scroll offset, the suggestions row included.
+  // That row used to be the one exception (§19/§28): /Items/{id}/Similar came too late for
+  // restoreSpot on Jellyfin 10.x. On 12.1 it was measured on the B4 at 215–296 ms after the page
+  // started (CODE-HEALTH §40), well inside the window, so it is restored like every other row.
+  function navigateTo(id) {
     restorePending = false;   // going forward: the play button is the right landing spot again
     if (fullItem?.Id) {
       navStack.push({
         id: fullItem.Id,
-        focusId: rememberSpot ? (document.activeElement?.getAttribute?.('data-item-id') ?? null) : null,
-        scrollTop: rememberSpot ? (scrollEl?.scrollTop || 0) : 0,
+        focusId: document.activeElement?.getAttribute?.('data-item-id') ?? null,
+        scrollTop: scrollEl?.scrollTop || 0,
       });
       if (navStack.length > NAV_STACK_MAX) navStack.shift();
     }
@@ -588,7 +598,6 @@
     // Applying the offset once is not enough: the page arrives in stages, so with rows still
     // missing below it gets clamped (900 became 602 in a measurement) and with a row arriving above
     // the card slides down. So it re-applies until the card's position and the offset hold still.
-    // Only rows that are there quickly are restored at all — see navigateTo's rememberSpot.
     const attempt = () => {
       if (myToken !== detailToken) return;             // a newer navigation took over
       const card = scrollEl?.querySelector(`[data-item-id="${focusId}"]`);
@@ -602,7 +611,13 @@
         lastTop = pos;
         if (settled >= 3) return;                      // nothing moved any more — done
       }
-      if (++tries < 24) setTimeout(attempt, 50);       // ~1.2 s, ample for those rows
+      if (++tries < 24) { setTimeout(attempt, 50); return; }   // ~1.2 s, ample for those rows
+      // Gave up without the card: its row never came (a server under load) or the card is gone.
+      // The play button held back its own focus for this restore, so without this nothing would be
+      // focused and the next key press would open the sidebar. Land where a fresh page lands.
+      if (!card && (!document.activeElement || document.activeElement === document.body)) {
+        scrollEl?.querySelector('[data-primary-action]')?.focus();
+      }
     };
     await tick();
     attempt();
@@ -793,7 +808,7 @@
 
           <!-- ACTION BUTTONS -->
           <div class="flex items-center gap-4 mb-12">
-            <button onclick={handlePlay} {@attach focusUnlessRestoring}
+            <button onclick={handlePlay} {@attach focusUnlessRestoring} data-primary-action
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-2xl px-12 py-4 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-3 shadow-lg">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
@@ -1138,7 +1153,7 @@
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.similar}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each similarItems as si (si.Id)}
-              <button onclick={() => navigateTo(si.Id, false)} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
+              <button onclick={() => navigateTo(si.Id)} data-item-id={si.Id} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-transform duration-200">
                   {#if getItemImageUrl(si, 'portrait')}
                     <img src={getItemImageUrl(si, 'portrait')} {@attach blurUp(itemBlurHash(si))} alt={si.Name} class="w-full h-full object-cover" loading="lazy" />
