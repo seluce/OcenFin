@@ -267,6 +267,8 @@ export default {
     groupInterface: "Interfejs",
     groupDetails: "Szczegóły",
     groupPlayer: "Odtwarzacz",
+    groupSelection: "Wybór",
+    groupAppearance: "Styl",
     displayDetailsBackdrop: "Podgląd tła (szczegóły)",
     displayDetailsLogo: "Tytuł jako logo zamiast tekstu",
     clockFormat: "Format czasu",

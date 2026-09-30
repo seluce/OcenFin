@@ -1432,6 +1432,11 @@
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{i18n.t.subtitles}</h2>
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
+        <!-- Group: which subtitle -->
+        <div class="px-6 pt-4 pb-2">
+          <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupSelection}</h3>
+        </div>
+
         <!-- Default subtitle: which track is chosen automatically -->
         <button onclick={() => openModal('subtitleLang')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
@@ -1455,9 +1460,14 @@
           </div>
         </button>
 
+        <!-- Group: how subtitles are drawn — burned in, or by the TV -->
+        <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
+          <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.playback}</h3>
+        </div>
+
         <!-- Burn in subtitles -->
         <button onclick={() => togglePlaybackPref('burnSubtitles')}
-          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{i18n.t.burnSubtitles}</span>
@@ -1470,7 +1480,7 @@
           </div>
         </button>
 
-        <!-- PGS rendering + subtitle size are irrelevant when everything is burned in → then hide them -->
+        <!-- Everything below is irrelevant when everything is burned in → hidden, headings included -->
         {#if !playbackPrefs.burnSubtitles}
           <button onclick={() => togglePlaybackPref('pgsRendering')}
             class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
@@ -1501,7 +1511,12 @@
             </div>
           </button>
 
-          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+          <!-- Group: look of text subtitles — gone with burn-in, which draws them into the picture -->
+          <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
+            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupAppearance}</h3>
+          </div>
+
+          <div class="p-6 last:rounded-b-2xl">
             <span class="text-2xl text-white font-medium block">{i18n.t.subtitleSize}</span>
             <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleSizeDesc}</span>
             <div class="flex gap-3">

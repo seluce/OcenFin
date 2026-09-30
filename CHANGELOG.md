@@ -15,8 +15,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Changed
 
-- **The playback settings are grouped** into Audio, Series, Player and Details, so the options that
-  belong together sit together.
+- **The playback and subtitle settings are grouped**, so the options that belong together sit
+  together: Audio, Series, Player and Details under Playback; Selection, Playback and Style under
+  Subtitles.
 
 ### Internal
 

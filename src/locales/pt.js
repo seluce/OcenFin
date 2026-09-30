@@ -267,6 +267,8 @@ export default {
     groupInterface: "Interface",
     groupDetails: "Detalhes",
     groupPlayer: "Leitor",
+    groupSelection: "Seleção",
+    groupAppearance: "Estilo",
     displayDetailsBackdrop: "Pré-visualização de fundo (detalhes)",
     displayDetailsLogo: "Título como logótipo em vez de texto",
     clockFormat: "Formato da hora",
