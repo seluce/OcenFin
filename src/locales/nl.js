@@ -266,6 +266,7 @@ export default {
     groupHome: "Startscherm",
     groupInterface: "Interface",
     groupDetails: "Details",
+    groupPlayer: "Speler",
     displayDetailsBackdrop: "Achtergrondvoorbeeld (details)",
     displayDetailsLogo: "Titel als logo i.p.v. tekst",
     clockFormat: "Tijdnotatie",

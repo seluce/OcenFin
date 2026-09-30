@@ -13,6 +13,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   appears, just like "Skip Intro". Under Settings → Playback it can also be skipped automatically
   (off by default). Needs a server that marks recaps, such as the Intro Skipper plugin.
 
+### Changed
+
+- **The playback settings are grouped** into Audio, Series, Player and Details, so the options that
+  belong together sit together.
+
 ### Internal
 
 - Vite 8.3.0 → 8.3.1 and its Svelte plugin 7.3.0 → 7.3.1, both patch-level build tooling.

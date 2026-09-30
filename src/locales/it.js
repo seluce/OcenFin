@@ -266,6 +266,7 @@ export default {
     groupHome: "Schermata iniziale",
     groupInterface: "Interfaccia",
     groupDetails: "Dettagli",
+    groupPlayer: "Lettore",
     displayDetailsBackdrop: "Anteprima sfondo (dettagli)",
     displayDetailsLogo: "Titolo come logo invece del testo",
     clockFormat: "Formato ora",

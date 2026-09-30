@@ -266,6 +266,7 @@ export default {
     groupHome: "Ekran główny",
     groupInterface: "Interfejs",
     groupDetails: "Szczegóły",
+    groupPlayer: "Odtwarzacz",
     displayDetailsBackdrop: "Podgląd tła (szczegóły)",
     displayDetailsLogo: "Tytuł jako logo zamiast tekstu",
     clockFormat: "Format czasu",
