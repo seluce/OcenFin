@@ -191,6 +191,7 @@ export default {
     secondOne: "secondo",
     secondsMany: "secondi",
     skipIntro: "Salta intro",
+    skipRecap: "Salta riassunto",
     audioLanguage: "Lingua audio predefinita",
     rememberAudioTrack: "Ricorda la lingua audio per serie",
     rememberAudioTrackDesc: "Applica automaticamente la traccia audio scelta agli episodi successivi di una serie.",
@@ -224,6 +225,8 @@ export default {
     langOff: "Disattivati",
     autoSkipIntro: "Salta intro automaticamente",
     autoSkipDesc: "Salta automaticamente le intro (richiede il plugin Intro Skipper).",
+    autoSkipRecap: "Salta riassunto automaticamente",
+    autoSkipRecapDesc: "Salta automaticamente il riassunto degli episodi precedenti (richiede il plugin Intro Skipper).",
     autoSkipOutro: "Salta i titoli di coda automaticamente",
     autoSkipOutroDesc: "Passa automaticamente all'episodio successivo durante i titoli di coda.",
 

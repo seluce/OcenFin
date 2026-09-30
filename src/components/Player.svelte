@@ -20,7 +20,7 @@
     mediaSourceId = null,   // chosen version (FullHD/4K); null = server default
     pickTracks = false,     // App: nobody chose tracks for this title → pick them by the shared rule
     selectedUser,
-    playbackPrefs = { autoSkipIntro: false, autoSkipCredits: false },
+    playbackPrefs = { autoSkipIntro: false, autoSkipRecap: false, autoSkipCredits: false },
     use24h = true,   // time format (from the setting) for the clock in the Player
     showClock = true, // show the clock in the Player (follows the display setting)
     showChapters = false, // chapter markers on the bar (opt-in)
@@ -1056,11 +1056,21 @@
 
   // Intro Skipper / Media Segments
   let introData = $state(null);
+  // "Previously on …": a Recap media segment, { start, end } in seconds. Kept apart from introData on
+  // purpose — introData being set is what switches the chapter fallback for intro/credits off, and a
+  // server that marks only recaps must not take that fallback away.
+  let recapSegment = $state(null);
   let segmentsChecked = $state(false);     // plugin APIs queried → chapter fallback may kick in
   let chapterFallbackDone = false;
   let showSkipIntro = $derived(introData?.Introduction?.Valid
     && currentTime >= (introData.Introduction.ShowSkipPromptAt ?? 0)
     && currentTime <= (introData.Introduction.HideSkipPromptAt ?? 0));
+
+  // `<` rather than `<=`: after the skip the position sits exactly on the end, and the button must go.
+  let showSkipRecap = $derived(!!recapSegment && currentTime >= recapSegment.start && currentTime < recapSegment.end);
+  // ONE skip button for both: a recap usually runs straight into the intro, and one button that just
+  // changes its label keeps the focus where it is instead of dropping and re-grabbing it.
+  let activeSkip = $derived(showSkipRecap ? 'recap' : showSkipIntro ? 'intro' : null);
 
   // Outro/credits (media-segments/plugin data) — trigger for auto-skip & auto-play countdown
   let showSkipCredits = $derived(introData?.Credits?.Valid
@@ -1106,7 +1116,7 @@
     showSkipCredits || (duration - currentTime) <= OUTRO_FALLBACK
   ));
   // An interactive overlay is open → OK should trigger its focused button, not pause.
-  let overlayActive = $derived(showSkipIntro || showStillWatching || (outroPromptActive && !!nextEpisode));
+  let overlayActive = $derived(!!activeSkip || showStillWatching || (outroPromptActive && !!nextEpisode));
   // Exactly then ONE outro decision prompt is visible (timer OR manual) → trap focus there.
   let outroPromptShowing = $derived(!showStillWatching && !!nextEpisode && (nextCountdown !== null || (outroPromptActive && !outroDismissed)));
   // !showStillWatching is essential: when the countdown expires it sets nextCountdown back to null,
@@ -1222,10 +1232,15 @@
   // Auto-skip (depends on the setting + installed intro-skipper plugin).
   // Flags prevent repeated jumping; reset on episode change via the {#key} remount.
   let introAutoSkipped   = false;
+  let recapAutoSkipped   = false;
   let creditsAutoSkipped = false;
   $effect(() => { if (playbackPrefs.autoSkipIntro && showSkipIntro && !introAutoSkipped && videoElement) {
     introAutoSkipped = true;
     skipIntro();
+  } });
+  $effect(() => { if (playbackPrefs.autoSkipRecap && showSkipRecap && !recapAutoSkipped && videoElement) {
+    recapAutoSkipped = true;
+    skipRecap();
   } });
   $effect(() => { if (playbackPrefs.autoSkipCredits && !stopAfterThis && showSkipCredits && !creditsAutoSkipped && nextEpisode && !showStillWatching) {
     creditsAutoSkipped = true;
@@ -1401,6 +1416,11 @@
       if (res.ok) {
         const segs = (await res.json()).Items || [];
         dlog('[OcenFin] media segments:', segs.map(s => s.Type));
+        const recap = segs.find(s => s.Type === 'Recap');
+        if (recap && recap.EndTicks > recap.StartTicks) {
+          recapSegment = { start: recap.StartTicks / 10000000, end: recap.EndTicks / 10000000 };
+          dlog('[OcenFin] media segments → recap', Math.round(recapSegment.start), '–', Math.round(recapSegment.end), 's');
+        }
         const d = segs.length ? segmentsToIntroData(segs) : null;
         if (d) {
           dlog('[OcenFin] media segments → intro', d.Introduction.Valid, '| outro', d.Credits.Valid);
@@ -1636,6 +1656,13 @@
     videoElement.currentTime = introData.Introduction.IntroEnd;
     // On skip do NOT show the controls — you want to keep watching directly. Put focus on the
     // Player, since the skip button vanishes shortly → keypresses keep working.
+    playerContainer?.focus();
+  }
+  // Same as skipIntro, for the recap. When the intro follows right away, the button stays and only
+  // changes its label; focus moving to the container is harmless then, OK/arrows still reach it.
+  function skipRecap() {
+    if (!videoElement || !recapSegment) return;
+    videoElement.currentTime = recapSegment.end;
     playerContainer?.focus();
   }
 
@@ -2512,10 +2539,10 @@
   {/if}
 
 
-  <!-- SKIP INTRO — bottom left -->
-  {#if showSkipIntro}
+  <!-- SKIP RECAP / INTRO — bottom left, one button for both (see activeSkip) -->
+  {#if activeSkip}
     <div transition:uiFade onoutrostart={releaseOverlay} class="absolute bottom-44 left-12 z-[70]">
-      <button onclick={skipIntro} {@attach focusOnMount()}
+      <button onclick={() => (activeSkip === 'recap' ? skipRecap() : skipIntro())} {@attach focusOnMount()}
         class="bg-black/85 border-2 border-white text-white font-bold text-2xl
                px-10 py-5 rounded-xl flex items-center gap-4 shadow-2xl
                hover:bg-white hover:text-black focus:bg-white focus:text-black
@@ -2524,7 +2551,7 @@
         <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
           <path d="M5.59 7.41L10.18 12l-4.59 4.59L7 18l6-6-6-6zM16 6h2v12h-2z"/>
         </svg>
-        {i18n.t.skipIntro}
+        {activeSkip === 'recap' ? i18n.t.skipRecap : i18n.t.skipIntro}
       </button>
     </div>
   {/if}

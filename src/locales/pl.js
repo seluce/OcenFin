@@ -191,6 +191,7 @@ export default {
     secondOne: "sekunda",
     secondsMany: "sekund",
     skipIntro: "Pomiń intro",
+    skipRecap: "Pomiń streszczenie",
     audioLanguage: "Domyślny język audio",
     rememberAudioTrack: "Zapamiętaj język audio dla serialu",
     rememberAudioTrackDesc: "Automatycznie stosuje wybraną ścieżkę audio do kolejnych odcinków serialu.",
@@ -224,6 +225,8 @@ export default {
     langOff: "Wył.",
     autoSkipIntro: "Automatycznie pomijaj intro",
     autoSkipDesc: "Automatycznie pomija intro (wymaga wtyczki Intro Skipper).",
+    autoSkipRecap: "Automatycznie pomijaj streszczenie",
+    autoSkipRecapDesc: "Automatycznie pomija streszczenie poprzednich odcinków (wymaga wtyczki Intro Skipper).",
     autoSkipOutro: "Automatycznie pomijaj napisy końcowe",
     autoSkipOutroDesc: "Automatycznie przechodzi do następnego odcinka podczas napisów końcowych.",
 

@@ -191,6 +191,7 @@ export default {
     secondOne: "seconde",
     secondsMany: "seconden",
     skipIntro: "Intro overslaan",
+    skipRecap: "Samenvatting overslaan",
     audioLanguage: "Standaard audiotaal",
     rememberAudioTrack: "Audiotaal per serie onthouden",
     rememberAudioTrackDesc: "Past de gekozen audiotrack automatisch toe op de volgende afleveringen van een serie.",
@@ -224,6 +225,8 @@ export default {
     langOff: "Uit",
     autoSkipIntro: "Intro automatisch overslaan",
     autoSkipDesc: "Slaat intro's automatisch over (vereist de Intro Skipper-plug-in).",
+    autoSkipRecap: "Samenvatting automatisch overslaan",
+    autoSkipRecapDesc: "Slaat de samenvatting van eerdere afleveringen automatisch over (vereist de Intro Skipper-plug-in).",
     autoSkipOutro: "Aftiteling automatisch overslaan",
     autoSkipOutroDesc: "Springt automatisch naar de volgende aflevering tijdens de aftiteling.",
 

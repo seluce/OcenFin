@@ -1182,6 +1182,23 @@
 
         <div class="h-px bg-gray-700"></div>
 
+        <!-- Auto-Skip Recap ("previously on …") -->
+        <button onclick={() => togglePlaybackPref('autoSkipRecap')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.autoSkipRecap}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.autoSkipRecapDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.autoSkipRecap ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.autoSkipRecap ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        <div class="h-px bg-gray-700"></div>
+
         <!-- Auto-Skip Outro -->
         <button onclick={() => togglePlaybackPref('autoSkipCredits')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700

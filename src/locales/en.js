@@ -191,6 +191,7 @@ export default {
     secondOne: "second",
     secondsMany: "seconds",
     skipIntro: "Skip Intro",
+    skipRecap: "Skip Recap",
     audioLanguage: "Default Audio Language",
     rememberAudioTrack: "Remember audio language per series",
     rememberAudioTrackDesc: "Automatically applies the chosen audio track to the next episodes of a series.",
@@ -224,6 +225,8 @@ export default {
     langOff: "Off",
     autoSkipIntro: "Auto-Skip Intro",
     autoSkipDesc: "Automatically skip intros (requires Intro Skipper plugin).",
+    autoSkipRecap: "Auto-Skip Recap",
+    autoSkipRecapDesc: "Automatically skip the \"previously on\" recap (requires Intro Skipper plugin).",
     autoSkipOutro: "Auto-Skip Outro",
     autoSkipOutroDesc: "Automatically jump to the next episode during credits.",
 

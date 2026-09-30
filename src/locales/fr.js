@@ -191,6 +191,7 @@ export default {
     secondOne: "seconde",
     secondsMany: "secondes",
     skipIntro: "Passer l'intro",
+    skipRecap: "Passer le récap",
     audioLanguage: "Langue audio par défaut",
     rememberAudioTrack: "Mémoriser la langue audio par série",
     rememberAudioTrackDesc: "Applique automatiquement la piste audio choisie aux épisodes suivants d’une série.",
@@ -224,6 +225,8 @@ export default {
     langOff: "Désactivé",
     autoSkipIntro: "Passer l'intro automatiquement",
     autoSkipDesc: "Passe automatiquement les intros (nécessite le plugin Intro Skipper).",
+    autoSkipRecap: "Passer le récap automatiquement",
+    autoSkipRecapDesc: "Passe automatiquement le récapitulatif des épisodes précédents (nécessite le plugin Intro Skipper).",
     autoSkipOutro: "Passer le générique automatiquement",
     autoSkipOutroDesc: "Passe automatiquement à l'épisode suivant pendant le générique.",
 

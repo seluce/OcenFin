@@ -191,6 +191,7 @@ export default {
     secondOne: "segundo",
     secondsMany: "segundos",
     skipIntro: "Saltar intro",
+    skipRecap: "Saltar resumen",
     audioLanguage: "Idioma de audio predeterminado",
     rememberAudioTrack: "Recordar idioma de audio por serie",
     rememberAudioTrackDesc: "Aplica automáticamente la pista de audio elegida a los siguientes episodios de una serie.",
@@ -224,6 +225,8 @@ export default {
     langOff: "Desactivado",
     autoSkipIntro: "Saltar intro automáticamente",
     autoSkipDesc: "Salta las intros automáticamente (requiere el plugin Intro Skipper).",
+    autoSkipRecap: "Saltar resumen automáticamente",
+    autoSkipRecapDesc: "Salta automáticamente el resumen de episodios anteriores (requiere el plugin Intro Skipper).",
     autoSkipOutro: "Saltar créditos automáticamente",
     autoSkipOutroDesc: "Salta automáticamente al siguiente episodio durante los créditos.",
 

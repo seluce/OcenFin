@@ -9,6 +9,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 - **The A–Z bar in a library can be switched off.** Settings → Content → "A–Z Bar (Library)". It is
   on by default and saved per profile; sorting by name keeps working without it.
+- **Skip the recap.** When an episode starts with a "previously on" recap, a "Skip Recap" button
+  appears, just like "Skip Intro". Under Settings → Playback it can also be skipped automatically
+  (off by default). Needs a server that marks recaps, such as the Intro Skipper plugin.
 
 ### Internal
 

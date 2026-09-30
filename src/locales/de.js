@@ -191,6 +191,7 @@ export default {
     secondOne: "Sekunde",
     secondsMany: "Sekunden",
     skipIntro: "Intro überspringen",
+    skipRecap: "Rückblick überspringen",
     audioLanguage: "Standard-Audiosprache",
     rememberAudioTrack: "Audiosprache pro Serie merken",
     rememberAudioTrackDesc: "Übernimmt die gewählte Audiospur automatisch für die nächsten Folgen einer Serie.",
@@ -224,6 +225,8 @@ export default {
     langOff: "Aus",
     autoSkipIntro: "Intro automatisch überspringen",
     autoSkipDesc: "Überspringt Intros automatisch (benötigt Intro-Skipper-Plugin).",
+    autoSkipRecap: "Rückblick automatisch überspringen",
+    autoSkipRecapDesc: "Überspringt den Rückblick „Was bisher geschah“ automatisch (benötigt Intro-Skipper-Plugin).",
     autoSkipOutro: "Outro automatisch überspringen",
     autoSkipOutroDesc: "Springt im Abspann automatisch zur nächsten Folge.",
 
