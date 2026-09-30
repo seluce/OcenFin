@@ -10,6 +10,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **The A–Z bar in a library can be switched off.** Settings → Content → "A–Z Bar (Library)". It is
   on by default and saved per profile; sorting by name keeps working without it.
 
+### Internal
+
+- Vite 8.3.0 → 8.3.1 and its Svelte plugin 7.3.0 → 7.3.1, both patch-level build tooling.
+
 ## 2026.09.27
 
 **This release needs Jellyfin Server 12.0 or newer.** On an older server, stay on 2026.09.22.
