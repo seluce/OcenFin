@@ -250,6 +250,7 @@ export default {
     displayClock: "Reloj",
     displayHero: "Banner destacado",
     displayEpisodeCount: "Número de episodios (series)",
+    displayLetterBar: "Barra A–Z (biblioteca)",
     displayLibraries: "Fila de bibliotecas",
     displayHistory: "Fila de vistos recientemente",
     displayRecommendations: "Recomendaciones («Porque viste…»)",

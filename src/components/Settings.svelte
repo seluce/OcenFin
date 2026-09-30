@@ -619,6 +619,7 @@
     { key: 'showLogo',        label: i18n.t.displayLogo },
     { key: 'clock',           label: i18n.t.displayClock },
     { key: 'episodeCount',    label: i18n.t.displayEpisodeCount },
+    { key: 'letterBar',       label: i18n.t.displayLetterBar },
     { key: 'backdropPreview', label: i18n.t.displayBackdropPreview },
     { key: 'dashboardBackdrop', label: i18n.t.displayDashboardBackdrop },
   ]);

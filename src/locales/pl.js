@@ -250,6 +250,7 @@ export default {
     displayClock: "Zegar",
     displayHero: "Baner wyróżniony",
     displayEpisodeCount: "Liczba odcinków (seriale)",
+    displayLetterBar: "Pasek A–Z (biblioteka)",
     displayLibraries: "Wiersz bibliotek",
     displayHistory: "Wiersz ostatnio oglądanych",
     displayRecommendations: "Rekomendacje („Ponieważ oglądałeś…”)",

@@ -3,6 +3,13 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## [Unreleased]
+
+### Added
+
+- **The A–Z bar in a library can be switched off.** Settings → Content → "A–Z Bar (Library)". It is
+  on by default and saved per profile; sorting by name keeps working without it.
+
 ## 2026.09.27
 
 **This release needs Jellyfin Server 12.0 or newer.** On an older server, stay on 2026.09.22.

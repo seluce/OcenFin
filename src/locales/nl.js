@@ -250,6 +250,7 @@ export default {
     displayClock: "Klok",
     displayHero: "Uitgelichte banner",
     displayEpisodeCount: "Aantal afleveringen (series)",
+    displayLetterBar: "A–Z-balk (bibliotheek)",
     displayLibraries: "Rij met bibliotheken",
     displayHistory: "Rij onlangs bekeken",
     displayRecommendations: "Aanbevelingen ('Omdat je … hebt gekeken')",

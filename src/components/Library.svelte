@@ -20,7 +20,7 @@
     partnerPlayedIds = null,   // IDs watched by AT LEAST ONE member — a union, see App.svelte.
                                // Filtering them out leaves what is new to both. (App loads, Library filters.)
     librarySorts = {},         // remembered sort per library
-    displaySettings = {},      // backdropPreview, episodeCount
+    displaySettings = {},      // backdropPreview, episodeCount, letterBar
     onOpenDetails,             // (item) => void
     onContextMenu,             // (item) => void
     onSortPersist,             // (libId, sort) => void — App saves into the profile
@@ -115,7 +115,10 @@
     { by: 'CommunityRating', order: 'Descending', key: 'sortRating' },
     { by: 'Random',          order: 'Ascending',  key: 'sortRandom' },
   ];
-  let showLetterBar = $derived(currentSort.by === 'SortName');
+  // Only with name sorting, and only if the profile has not switched it off (Settings → Content).
+  // Hiding it needs nothing else: other sorts hide it already, and a letter picked earlier only set
+  // where the list started — it keeps loading upwards and downwards as usual.
+  let showLetterBar = $derived(currentSort.by === 'SortName' && displaySettings.letterBar !== false);
   const sortFilterFocus = makeFocusReturn();   // trigger button for focus return after closing
   $effect(() => { if (!showSortMenu && !showFilterMenu && sortFilterFocus.pending) sortFilterFocus.restore(); });
 
