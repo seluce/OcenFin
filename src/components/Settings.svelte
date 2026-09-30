@@ -606,6 +606,7 @@
   let sharedSetUp = $derived(sharedProfile.enabled && sharedProfile.members.filter(m => m && m.id).length >= 1);
   let homeToggles = $derived([
     { key: 'hero',            label: i18n.t.displayHero },
+    { key: 'dashboardBackdrop', label: i18n.t.displayDashboardBackdrop },
     { key: 'libraries',       label: i18n.t.displayLibraries },
     { key: 'nextUp',          label: i18n.t.nextUp },
     { key: 'watchlist',       label: i18n.t.watchlist },
@@ -618,10 +619,12 @@
   let uiToggles = $derived([
     { key: 'showLogo',        label: i18n.t.displayLogo },
     { key: 'clock',           label: i18n.t.displayClock },
+  ]);
+  // Their labels carried "(Library)" / "(Series)" before this group existed; the heading says it now.
+  let libraryToggles = $derived([
     { key: 'episodeCount',    label: i18n.t.displayEpisodeCount },
     { key: 'letterBar',       label: i18n.t.displayLetterBar },
     { key: 'backdropPreview', label: i18n.t.displayBackdropPreview },
-    { key: 'dashboardBackdrop', label: i18n.t.displayDashboardBackdrop },
   ]);
   let detailToggles = $derived([
     { key: 'detailsBackdrop',   label: i18n.t.displayDetailsBackdrop },
@@ -834,6 +837,12 @@
               {/each}
             </div>
           </div>
+
+          <!-- Group: library (the grid of a library) -->
+          <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
+            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupLibrary}</h3>
+          </div>
+          {@render toggleRows(libraryToggles)}
 
           <!-- Group: home (dashboard rows) -->
           <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">

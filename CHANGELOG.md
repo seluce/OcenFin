@@ -7,7 +7,7 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Added
 
-- **The A–Z bar in a library can be switched off.** Settings → Content → "A–Z Bar (Library)". It is
+- **The A–Z bar in a library can be switched off.** Settings → Content → Library → "A–Z Bar". It is
   on by default and saved per profile; sorting by name keeps working without it.
 - **Skip the recap.** When an episode starts with a "previously on" recap, a "Skip Recap" button
   appears, just like "Skip Intro". Under Settings → Playback it can also be skipped automatically
@@ -15,9 +15,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Changed
 
-- **The playback and subtitle settings are grouped**, so the options that belong together sit
-  together: Audio, Series, Player and Details under Playback; Selection, Playback and Style under
-  Subtitles.
+- **The settings are grouped more clearly**, so the options that belong together sit together:
+  Audio, Series, Player and Details under Playback; Selection, Playback and Style under Subtitles.
+  Content gains a Library group for the episode count, the A–Z bar and the backdrop preview, and
+  the home screen's backdrop preview now sits with the other home screen options.
 
 ### Internal
 
