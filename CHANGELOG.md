@@ -20,6 +20,23 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   Content gains a Library group for the episode count, the A–Z bar and the backdrop preview, and
   the home screen's backdrop preview now sits with the other home screen options.
 
+### Fixed
+
+- **Signing in no longer risks locking your account.** Jellyfin disables an account after a few
+  failed sign-ins. Pressing Enter after the user name in manual sign-in used to try an empty
+  password right away; it now moves on to the password field. Holding the OK button down no longer
+  sends one sign-in after another either.
+- **Changing your password can no longer remove it by accident.** Enter in the "current password"
+  field used to save straight away, with the new password still empty. It now moves on to the new
+  password, and Save waits until one is entered.
+- **A server that is not reachable yet no longer signs you out.** When the TV comes out of standby
+  before the network or the server is up, the app used to forget the saved sign-in. It now keeps
+  it, and the profile list fills in by itself as soon as the server answers again.
+- **Signing in with Quick Connect renews a saved sign-in**, so the password prompt does not keep
+  coming back afterwards.
+- **The profile selection no longer keeps asking the server for profiles** when the server hides
+  all of them from the sign-in screen.
+
 ### Internal
 
 - Vite 8.3.0 → 8.3.1 and its Svelte plugin 7.3.0 → 7.3.1, both patch-level build tooling.

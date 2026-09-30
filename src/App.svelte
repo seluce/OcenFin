@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard, installEnterRepeatGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
   import { buildPlayQueue } from './playback.js';
   import { session } from './session.svelte.js';
   import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
@@ -873,6 +873,8 @@
 
     // Global back key (webOS remote)
     window.addEventListener('keydown', handleGlobalBack);
+    // Held OK must never turn into a series of sign-in attempts (see utils.js).
+    installEnterRepeatGuard();
     // D-pad navigation (group focus model) — active everywhere. The Player is its
     // own focus group; its slider handles Left/Right itself.
     createFocusManager(() => !navReordering);
@@ -903,13 +905,13 @@
       // the saved token and force a password re-entry on the TV remote. Re-check the same token
       // once; only tear down if it is genuinely rejected again.
       const stillValid = await validateToken(session.token, session.serverUrl);
-      if (!stillValid && appPhase === 'app') {
+      if (stillValid === false && appPhase === 'app') {   // null = no verdict (network) → stay
         const sid = selectedServer?.id, uid = selectedUser?.Id;
         if (sid && uid && savedTokens[sid]?.[uid]) { delete savedTokens[sid][uid]; persistSavedTokens(); }
         dlog('[auth] server rejected our token (confirmed) — returning to the profile selection');
         handleSwitchUser();
       } else {
-        dlog('[auth] 401 was transient — token still valid, staying put');
+        dlog('[auth] 401 not confirmed —', stillValid === null ? 'server unreachable, no verdict' : 'token still valid', '— staying put');
       }
       _authTeardownRunning = false;
     })();
@@ -975,7 +977,24 @@
             selectedServer = server;
             session.token    = saved.token;
 
-            if (await validateToken(saved.token, server.url)) {
+            // No verdict (Wi-Fi not up yet after standby, NAS still waking): ask again for a few
+            // seconds under the splash. Bounded by elapsed time rather than by tries, so a host that
+            // swallows packets — each attempt hanging until the connect timeout — is not waited out
+            // several times over.
+            const tValidate = Date.now();
+            let valid = await validateToken(saved.token, server.url);
+            while (valid === null && Date.now() - tValidate < 6000) {
+              await new Promise(r => setTimeout(r, 1500));
+              valid = await validateToken(saved.token, server.url);
+            }
+            if (valid === null) {
+              // Only a REJECTION may cost the saved session. Kept, so the next start signs in by
+              // itself again; until then the profile selection of this server.
+              dlog('[restore] server unreachable → user screen, saved session kept');
+              appPhase = 'users';
+              return;
+            }
+            if (valid) {
               const res = await fetch(`${server.url}/Users/${saved.userId}`, {
                 headers: getAuthHeaders()
               });
@@ -1065,7 +1084,7 @@
 
   // Set a profile as a member. Uses a valid saved token; otherwise it
   // authenticates once with pw. NO session switch — the shared profile stays active.
-  // Returns: 'ok' | 'needPassword' | 'error'
+  // Returns: 'ok' | 'needPassword' | 'sameUser' | 'offline' | 'error'
   // presetToken: already authenticated elsewhere (Quick Connect), so no credentials are needed —
   // the token IS the proof. Everything after the acquisition is shared with the password path.
   async function setSharedMember(slot, user, pw = null, presetToken = null) {
@@ -1079,7 +1098,12 @@
     }
     // Reuse an existing token (own store or self-enabled quick switch).
     let token = presetToken || (user.Id ? (sharedTokens[sid]?.[user.Id] || savedTokens[sid]?.[user.Id]) : null);
-    if (token && !(await validateToken(token))) token = null;   // expired → re-authenticate
+    if (token) {
+      const valid = await validateToken(token);
+      // No verdict: neither trust a token that could not be checked nor ask for a password over it.
+      if (valid === null) return 'offline';
+      if (valid === false) token = null;   // expired → re-authenticate
+    }
     if (!token) {
       // pw null = nobody has been asked yet → ask first. An empty password is NEVER tried unasked:
       // every failed attempt counts toward the lockout, and that DISABLES the account (policy
@@ -1303,12 +1327,17 @@
   // baseUrl can be passed explicitly: on auto-login the reactive session.serverUrl ($:) is not yet
   // updated (Svelte flushes reactivity only after the synchronous block), so
   // `${session.serverUrl}` would point to '' there → relative fetch to the app origin instead of the server.
+  // Three answers, not two: true = valid, false = the server REJECTED it (401/403), null = no verdict
+  // (unreachable, or the server erred). Callers delete tokens and tear sessions down only on false —
+  // a Wi-Fi that is not up yet after standby, or a NAS still waking, used to count as "rejected" and
+  // cost the saved sign-in.
   async function validateToken(token, baseUrl = session.serverUrl) {
     try {
       const res = await fetch(`${baseUrl}/Users/Me`, { headers: authHeaders(token) });
       if (!res.ok) dlog('[auth] token validation failed — HTTP', res.status);
-      return res.ok;
-    } catch (e) { dlog('[auth] token validation — network error:', e?.message || e); return false; }
+      if (res.ok) return true;
+      return (res.status === 401 || res.status === 403) ? false : null;
+    } catch (e) { dlog('[auth] token validation — network error:', e?.message || e); return null; }
   }
 
   function finishLogin(user, token) {

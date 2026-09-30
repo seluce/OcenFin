@@ -17,7 +17,7 @@
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { i18n } from '../i18n.svelte.js';
   import { session } from '../session.svelte.js';
-  import { focusOnMount, tvKeyboard, dlog } from '../utils.js';
+  import { focusOnMount, tvKeyboard, dlog, isRepeatedEnter } from '../utils.js';
 
   let {
     phase = $bindable('servers'), // 'servers' | 'users' — App controls the entry point (startup/profile switch/logout)
@@ -27,7 +27,7 @@
     clientAuthHeader = '',        // auth header without a user reference (Quick Connect Initiate)
     authHeaderFor,                // (name) => auth header with a user-specific DeviceId
     getStoredToken,               // (serverId, userId) => token | undefined (quick switch)
-    onValidateToken,              // (token) => Promise<boolean>
+    onValidateToken,              // (token) => Promise<true | false | null> — null: no verdict (unreachable)
     onServerConnected,            // (server) => void — App sets selectedServer
     onFetchUsers,                 // () => Promise<void> — fills users (App state)
     onSaveServer,                 // (server) => void — append + persist
@@ -58,8 +58,16 @@
   let qcSession = null;   // { promise, cancel } from quickconnect.js — the flow itself lives there
 
   // Entry directly on the profile choice (profile switch or expired auto-login token):
-  // users can be empty then → load once.
-  $effect(() => { if (phase === 'users' && server && users.length === 0) onFetchUsers?.(); });
+  // users can be empty then → load ONCE per visit. A server that hides every profile answers []
+  // — a new array each time, which re-ran this effect and hammered /Users/Public for as long as the
+  // screen stood (the latch App's Settings effect already had for the same reason). The latch is
+  // re-armed while the server is unreachable, so the list loads once it answers again — the start
+  // lands here when the saved session could not be checked (App: restore).
+  let usersFetchTried = false;
+  $effect(() => {
+    if (phase !== 'users' || !server || session.connectionLost) { usersFetchTried = false; return; }
+    if (users.length === 0 && !usersFetchTried) { usersFetchTried = true; onFetchUsers?.(); }
+  });
 
   // QC polling never outlives the view (login success or switch unmounts the component)
   onDestroy(() => qcSession?.cancel());
@@ -317,11 +325,14 @@
   // SIGN-IN
   // ============================================================
 
+  let signingIn = false;   // one sign-in at a time — a held OK clicks a tile or button repeatedly
+
   /** Profile clicked — quick sign-in via a saved token if available, otherwise the password form.
    *  Jellyfin 12 no longer says which profiles have a password (UserDto.HasPassword is obsolete and
    *  always true), so a profile without one confirms the form empty — never tried unasked, since a
    *  failed attempt counts toward the lockout. */
   async function handleUserClick(user) {
+    if (signingIn) return;
     loginError      = '';
     password        = '';
     pendingUser     = user;
@@ -329,8 +340,16 @@
 
     const storedToken = getStoredToken?.(server?.id, user.Id);
     if (storedToken) {
-      if (await onValidateToken?.(storedToken)) {
+      signingIn = true;
+      const valid = await onValidateToken?.(storedToken);
+      signingIn = false;
+      if (valid) {
         onDone?.(user, storedToken);
+        return;
+      } else if (valid === null) {
+        // No verdict — the server did not answer. A password form now would only invite an attempt
+        // that cannot succeed; the saved sign-in is tried again on the next press.
+        loginError = i18n.t.errOffline;
         return;
       } else {
         // Token rejected: do NOT delete the entry — it represents the user's wish to save.
@@ -344,6 +363,11 @@
   }
 
   async function authenticateUser(username, pw) {
+    // Every failed attempt counts toward the lockout that DISABLES the account: one request at a
+    // time, and only on the first Enter of a press — never on the auto-repeat of a held OK, which
+    // otherwise also runs on from a profile tile into this form's field as an empty attempt.
+    if (signingIn || isRepeatedEnter()) return;
+    signingIn = true;
     loginError = '';
     try {
       const res = await fetch(`${session.serverUrl}/Users/AuthenticateByName`, {
@@ -360,6 +384,7 @@
         loginError = i18n.t.errLogin;
       }
     } catch { loginError = i18n.t.errOffline; }
+    finally { signingIn = false; }
   }
 
   // Quick Connect — code on the TV, confirmed on a phone that is already signed in. The flow
@@ -374,6 +399,9 @@
     try {
       const { user, token } = await qcSession.promise;
       qcCode = qcQrSvg = null;
+      // Like the password path: a profile whose saved sign-in had expired gets the fresh token, or
+      // the password form would come back on every switch while "save password" stays on.
+      onTokenRefreshed?.(server?.id, user.Id, token);
       onDone?.(user, token);
     } catch (err) {
       if (err === 'cancelled') return;          // the user backed out — not an error to report
@@ -646,11 +674,13 @@
       {:else if showManualLogin}
         <div class="bg-gray-800 p-10 rounded-2xl shadow-xl max-w-xl w-full text-center border border-gray-700">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.manualLogin}</h2>
+          <!-- Enter in the name moves on to the password. It used to sign in straight away, i.e. try
+               the still empty password — an attempt toward the lockout that nobody asked for. -->
           <input
             type="text"
             bind:value={manualUsername}
             placeholder={i18n.t.username}
-            onkeydown={(e) => e.key === 'Enter' && authenticateUser(manualUsername, manualPassword)}
+            onkeydown={(e) => e.key === 'Enter' && e.currentTarget.parentElement?.querySelector('[data-manual-pw]')?.focus()}
             class="w-full bg-gray-900 text-white text-xl p-5 rounded-xl mb-4 border border-gray-600
                    focus:outline-none focus:ring-4 focus:ring-blue-500"
             {@attach focusOnMount()}
@@ -659,6 +689,7 @@
             type="password"
             bind:value={manualPassword}
             placeholder={i18n.t.password}
+            data-manual-pw
             onkeydown={(e) => e.key === 'Enter' && authenticateUser(manualUsername, manualPassword)}
             class="w-full bg-gray-900 text-white text-xl p-5 rounded-xl mb-6 border border-gray-600
                    focus:outline-none focus:ring-4 focus:ring-blue-500"

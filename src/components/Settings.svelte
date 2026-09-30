@@ -3,7 +3,7 @@
   import { startQuickConnect as startQC } from '../quickconnect.js';
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn, uiFade, dropTrapOnOutro } from '../utils.js';
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { APP_VERSION } from '../version.js';
   import { tick, onDestroy, onMount } from 'svelte';
@@ -177,7 +177,7 @@
         document.querySelector(`[data-slot-btn="${sharedPickerSlot}"]`)?.focus();
       } else {
         sharedQcCode = null; sharedQcQr = null;
-        sharedError = r === 'sameUser' ? i18n.t.sharedInvalidChoice : i18n.t.errLogin;
+        sharedError = r === 'sameUser' ? i18n.t.sharedInvalidChoice : r === 'offline' ? i18n.t.networkError : i18n.t.errLogin;
       }
     } catch (err) {
       if (err === 'cancelled') return;
@@ -256,6 +256,9 @@
     await commitSharedUser(user, null);         // saved sign-in → no password asked (null = not asked)
   }
   async function commitSharedUser(user, pw) {
+    // One attempt per press: a held OK must not become a row of sign-ins (lockout, see utils.js),
+    // and the dialog's Enter used to bypass the disabled Confirm button altogether.
+    if (sharedBusy || (pw != null && isRepeatedEnter())) return;
     sharedBusy = true;
     const slot = sharedPickerSlot;
     const r = await onSharedSetMember(slot, user, pw);
@@ -267,6 +270,7 @@
     }
     else if (r === 'needPassword')  { sharedPickerUser = user; sharedPw = ''; await openModal('sharedPassword'); }
     else if (r === 'sameUser')      sharedError = i18n.t.sharedInvalidChoice;
+    else if (r === 'offline')       sharedError = i18n.t.networkError;
     else                            sharedError = i18n.t.errLogin;
   }
   // Remove the member + focus onto the "choose profile" button of the same slot that then appears.
@@ -283,7 +287,13 @@
   }
   let currentLangName = $derived((LANGUAGES.find(l => l.key === i18n.lang) || {}).name || 'English');
 
+  // Both fields, and one request per press. Jellyfin reads an empty NEW password as "remove the
+  // password" — and Enter in the first field used to send exactly that. A wrong current password
+  // counts toward the lockout like any failed sign-in, so a held OK must not repeat it either.
+  let pwBusy = false;
   async function changePassword() {
+    if (!newPw || pwBusy || isRepeatedEnter()) return;
+    pwBusy = true;
     pwMessage = '';
     try {
       const res = await fetch(`${session.serverUrl}/Users/Password?UserId=${selectedUser.Id}`, {
@@ -297,6 +307,7 @@
         modalTimeout = setTimeout(closeModal, 2000);
       }
     } catch { pwMessage = i18n.t.networkError; }
+    finally { pwBusy = false; }
   }
 
   async function authorizeQuickConnect() {
@@ -2125,9 +2136,10 @@
       {:else if activeModal === 'password'}
         <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.changePassword}</h2>
         <div class="relative">
+          <!-- Enter here moves on to the new password; only that field (or Save) sends the change. -->
           <input type={showCurrentPw ? 'text' : 'password'} bind:value={currentPw} placeholder={i18n.t.currentPassword}
             {@attach tvKeyboard}
-            onkeydown={(e) => e.key === 'Enter' && changePassword()}
+            onkeydown={(e) => e.key === 'Enter' && e.currentTarget.closest('[data-modal]')?.querySelector('[data-new-pw]')?.focus()}
             class="w-full bg-gray-900 text-white text-2xl p-6 pr-20 rounded-xl border border-gray-600
                    focus:outline-none focus:ring-4 focus:ring-blue-500" />
           <button type="button" onclick={() => showCurrentPw = !showCurrentPw}
@@ -2143,7 +2155,7 @@
         </div>
         <div class="relative">
           <input type={showNewPw ? 'text' : 'password'} bind:value={newPw} placeholder={i18n.t.newPassword}
-            {@attach tvKeyboard}
+            {@attach tvKeyboard} data-new-pw
             onkeydown={(e) => e.key === 'Enter' && changePassword()}
             class="w-full bg-gray-900 text-white text-2xl p-6 pr-20 rounded-xl border border-gray-600
                    focus:outline-none focus:ring-4 focus:ring-blue-500" />
@@ -2159,9 +2171,9 @@
           </button>
         </div>
         {#if pwMessage}<p class="text-blue-400 font-bold text-lg">{pwMessage}</p>{/if}
-        <button onclick={changePassword}
+        <button onclick={changePassword} disabled={!newPw}
           class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-2xl py-6 rounded-xl
-                 focus:outline-none focus:ring-4 focus:ring-white mt-2">{i18n.t.save}</button>
+                 focus:outline-none focus:ring-4 focus:ring-white mt-2 disabled:opacity-50">{i18n.t.save}</button>
 
       {:else if activeModal === 'quickConnect'}
         <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.quickConnect}</h2>

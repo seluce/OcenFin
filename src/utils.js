@@ -94,6 +94,29 @@ export function tvKeyboard(node) {
   };
 }
 
+// Held OK auto-repeats on webOS: the keydown AND the click a button makes of it arrive again and
+// again while the key is down (see longPress below). For a sign-in that is fatal — every failed
+// attempt counts toward Jellyfin's lockout, which DISABLES the account (policy default 3) — and a
+// held OK on a profile tile carries straight on into the password field that opens under it, as
+// an empty attempt nobody made. So everything that sends a password first asks whether the Enter
+// behind it is the first of its press. Tracked on window in the capture phase: before any handler,
+// and before the click a button synthesises from the keydown. The 1 s cut-off is only a safety net
+// should a keyup ever go missing (on-screen keyboard); a repeat arrives far faster than that.
+// App-lifetime, installed once from the root's onMount.
+let _enterDownAt = 0, _enterRepeat = false;
+export function installEnterRepeatGuard() {
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.keyCode !== 13) return;
+    const now = Date.now();
+    _enterRepeat = e.repeat || (_enterDownAt > 0 && now - _enterDownAt < 1000);
+    _enterDownAt = now;
+  }, true);
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'Enter' || e.keyCode === 13) { _enterDownAt = 0; _enterRepeat = false; }
+  }, true);
+}
+export function isRepeatedEnter() { return _enterRepeat; }
+
 // Svelte attachment (factory): detects a "long press" (holding OK, or holding mouse/touch).
 // PROBLEM: Enter on a focused <button> fires a click on webOS IMMEDIATELY — and REPEATEDLY
 // while held down. A timer never gets a chance against that.
