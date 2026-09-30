@@ -266,6 +266,7 @@ export default {
     groupInterface: "Interfejs",
     groupDetails: "Szczegóły",
     groupLibrary: "Biblioteka",
+    groupWatchTogether: "Wspólne oglądanie",
     groupPlayer: "Odtwarzacz",
     groupSelection: "Wybór",
     groupAppearance: "Styl",

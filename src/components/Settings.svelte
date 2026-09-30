@@ -1383,7 +1383,9 @@
 
       <!-- Watch together: merge two profiles. Lives under Playback, not under Profile &
            Security: setting it up needs sign-ins, but what it DOES is filter your library — a
-           viewing feature. It sat with the credentials purely because of its plumbing. -->
+           viewing feature. It sat with the credentials purely because of its plumbing.
+           Its own heading like every other group, or it reads as part of the one above it. -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupWatchTogether}</h3>
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
         <button onclick={onSharedToggle}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700

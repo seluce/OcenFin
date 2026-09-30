@@ -266,6 +266,7 @@ export default {
     groupInterface: "Interface",
     groupDetails: "Details",
     groupLibrary: "Bibliotheek",
+    groupWatchTogether: "Samen kijken",
     groupPlayer: "Speler",
     groupSelection: "Selectie",
     groupAppearance: "Stijl",
