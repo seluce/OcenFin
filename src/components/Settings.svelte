@@ -606,7 +606,7 @@
   let sharedSetUp = $derived(sharedProfile.enabled && sharedProfile.members.filter(m => m && m.id).length >= 1);
   let homeToggles = $derived([
     { key: 'hero',            label: i18n.t.displayHero },
-    { key: 'dashboardBackdrop', label: i18n.t.displayDashboardBackdrop },
+    { key: 'dashboardBackdrop', label: i18n.t.displayBackdropPreview },   // same wording as Library's; the heading tells them apart
     { key: 'libraries',       label: i18n.t.displayLibraries },
     { key: 'nextUp',          label: i18n.t.nextUp },
     { key: 'watchlist',       label: i18n.t.watchlist },
@@ -799,28 +799,27 @@
     {#if activeCategory === 'displayElements'}
     <section class="flex flex-col gap-4">
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{i18n.t.displayElements}</h2>
+      <!-- One row per display toggle. Three groups render the identical control, so it lives here
+           once instead of three times — the switch, its colours and the focus ring stay in step
+           by construction. -->
+      {#snippet toggleRows(list)}
+        {#each list as tg}
+          <button onclick={() => toggleDisplay(tg.key)}
+            class="flex items-center justify-between w-full px-6 py-4 hover:bg-gray-700 focus:bg-gray-700
+                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+            <span class="text-lg text-gray-200">{tg.label}</span>
+            <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
+                        {displaySettings[tg.key] ? 'bg-blue-500' : 'bg-gray-600'}">
+              <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
+                          {displaySettings[tg.key] ? 'translate-x-7' : ''}"></div>
+            </div>
+          </button>
+        {/each}
+      {/snippet}
+
+      <!-- Group: interface (general elements) -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupInterface}</h3>
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
-          <!-- Group: interface (general elements) -->
-          <div class="px-6 pt-4 pb-2">
-            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupInterface}</h3>
-          </div>
-          <!-- One row per display toggle. Three groups render the identical control, so it lives here
-               once instead of three times — the switch, its colours and the focus ring stay in step
-               by construction. -->
-          {#snippet toggleRows(list)}
-            {#each list as tg}
-              <button onclick={() => toggleDisplay(tg.key)}
-                class="flex items-center justify-between w-full px-6 py-4 hover:bg-gray-700 focus:bg-gray-700
-                       focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-                <span class="text-lg text-gray-200">{tg.label}</span>
-                <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
-                            {displaySettings[tg.key] ? 'bg-blue-500' : 'bg-gray-600'}">
-                  <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
-                              {displaySettings[tg.key] ? 'translate-x-7' : ''}"></div>
-                </div>
-              </button>
-            {/each}
-          {/snippet}
 
           {@render toggleRows(uiToggles)}
 
@@ -838,16 +837,18 @@
             </div>
           </div>
 
-          <!-- Group: library (the grid of a library) -->
-          <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
-            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupLibrary}</h3>
-          </div>
+      </div>
+
+      <!-- Group: library (the grid of a library) -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupLibrary}</h3>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
           {@render toggleRows(libraryToggles)}
 
-          <!-- Group: home (dashboard rows) -->
-          <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
-            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupHome}</h3>
-          </div>
+      </div>
+
+      <!-- Group: home (dashboard rows) -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupHome}</h3>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
           {@render toggleRows(homeToggles)}
 
           <!-- Number of recommendation rows — only relevant when recommendations are active -->
@@ -866,10 +867,11 @@
             </div>
           {/if}
 
-          <!-- Group: details (detail page of a movie/series) -->
-          <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
-            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupDetails}</h3>
-          </div>
+      </div>
+
+      <!-- Group: details (detail page of a movie/series) -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupDetails}</h3>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
           {@render toggleRows(detailToggles)}
       </div>
     </section>
@@ -1111,12 +1113,9 @@
     {#if activeCategory === 'playback'}
     <section class="flex flex-col gap-4">
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{i18n.t.playback}</h2>
+      <!-- Group: audio track -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.audio}</h3>
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
-
-        <!-- Group: audio track -->
-        <div class="px-6 pt-4 pb-2">
-          <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.audio}</h3>
-        </div>
         <!-- Default audio language -->
         <button onclick={() => openModal('audioLang')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
@@ -1142,10 +1141,11 @@
           </div>
         </button>
 
-        <!-- Group: series — skipping and moving on -->
-        <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
-          <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.series}</h3>
-        </div>
+      </div>
+
+      <!-- Group: series — skipping and moving on -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.series}</h3>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
         <!-- Auto-Skip Intro -->
         <button onclick={() => togglePlaybackPref('autoSkipIntro')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
@@ -1244,10 +1244,11 @@
           </div>
         {/if}
 
-        <!-- Group: player — controls and what it shows -->
-        <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
-          <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupPlayer}</h3>
-        </div>
+      </div>
+
+      <!-- Group: player — controls and what it shows -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupPlayer}</h3>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
         <!-- Jump distance of the forward/back buttons (stacked + flex-1 so it's reachable via D-pad) -->
         <div class="p-6">
           <span class="text-2xl text-white font-medium block">{i18n.t.seekInterval}</span>
@@ -1331,10 +1332,11 @@
           </div>
         </button>
 
-        <!-- Group: details page — theme music -->
-        <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
-          <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupDetails}</h3>
-        </div>
+      </div>
+
+      <!-- Group: details page — theme music -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupDetails}</h3>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
         <!-- Theme music on the details page (opt-in). Scope + volume only show while enabled. -->
         <button onclick={() => togglePlaybackPref('themeMusic')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
@@ -1439,12 +1441,9 @@
     {#if activeCategory === 'subtitles'}
     <section class="flex flex-col gap-4">
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{i18n.t.subtitles}</h2>
+      <!-- Group: which subtitle -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupSelection}</h3>
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
-
-        <!-- Group: which subtitle -->
-        <div class="px-6 pt-4 pb-2">
-          <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupSelection}</h3>
-        </div>
 
         <!-- Default subtitle: which track is chosen automatically -->
         <button onclick={() => openModal('subtitleLang')}
@@ -1469,10 +1468,11 @@
           </div>
         </button>
 
-        <!-- Group: how subtitles are drawn — burned in, or by the TV -->
-        <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
-          <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.playback}</h3>
-        </div>
+      </div>
+
+      <!-- Group: how subtitles are drawn — burned in, or by the TV -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.playback}</h3>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
         <!-- Burn in subtitles -->
         <button onclick={() => togglePlaybackPref('burnSubtitles')}
@@ -1519,86 +1519,87 @@
                           {playbackPrefs.assRendering ? 'translate-x-8' : ''}"></div>
             </div>
           </button>
-
-          <!-- Group: look of text subtitles — gone with burn-in, which draws them into the picture -->
-          <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
-            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupAppearance}</h3>
-          </div>
-
-          <div class="p-6 last:rounded-b-2xl">
-            <span class="text-2xl text-white font-medium block">{i18n.t.subtitleSize}</span>
-            <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleSizeDesc}</span>
-            <div class="flex gap-3">
-              {#each [['small', i18n.t.sizeSmall], ['normal', i18n.t.sizeNormal], ['large', i18n.t.sizeLarge]] as [val, label]}
-                <button onclick={() => setSubtitleSize(val)}
-                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                         {playbackPrefs.subtitleSize === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                  {label}
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <!-- VTT font — text subtitles only, deliberately separate from the UI font (appearance).
-               Buttons show themselves in their own font (preview); Tinos = serif, selectable only here. -->
-          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
-            <span class="text-2xl text-white font-medium block">{i18n.t.subtitleFont}</span>
-            <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleFontDesc}</span>
-            <div class="flex gap-3">
-              {#each [['system', i18n.t.fontSystem, ''], ['arimo', 'Arimo', "'Arimo', sans-serif"], ['noto', 'Noto Sans', "'Noto Sans', sans-serif"], ['tinos', 'Tinos', "'Tinos', serif"]] as [val, label, fam]}
-                <button onclick={() => setSubtitlePref('subtitleFont', val)}
-                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                         {(playbackPrefs.subtitleFont || 'system') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}"
-                  style={fam ? `font-family: ${fam}` : ''}>
-                  {label}
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <!-- Text subtitle styling (color/edge/background) — only WebVTT/SRT, not PGS/VobSub -->
-          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
-            <span class="text-2xl text-white font-medium block">{i18n.t.subtitleColor}</span>
-            <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleStyleHint}</span>
-            <div class="flex gap-3">
-              {#each [['white', i18n.t.colorWhite], ['yellow', i18n.t.colorYellow], ['green', i18n.t.colorGreen], ['cyan', i18n.t.colorCyan]] as [val, label]}
-                <button onclick={() => setSubtitlePref('subtitleColor', val)}
-                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                         {(playbackPrefs.subtitleColor || 'white') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                  {label}
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
-            <span class="text-2xl text-white font-medium block mb-4">{i18n.t.subtitleEdge}</span>
-            <div class="flex gap-3">
-              {#each [['none', i18n.t.styleNone], ['shadow', i18n.t.edgeShadow], ['outline', i18n.t.edgeOutline]] as [val, label]}
-                <button onclick={() => setSubtitlePref('subtitleEdge', val)}
-                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                         {(playbackPrefs.subtitleEdge || 'shadow') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                  {label}
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
-            <span class="text-2xl text-white font-medium block mb-4">{i18n.t.subtitleBackground}</span>
-            <div class="flex gap-3">
-              {#each [['none', i18n.t.styleNone], ['semi', i18n.t.bgSemi], ['solid', i18n.t.bgSolid]] as [val, label]}
-                <button onclick={() => setSubtitlePref('subtitleBackground', val)}
-                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                         {(playbackPrefs.subtitleBackground || 'none') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                  {label}
-                </button>
-              {/each}
-            </div>
-          </div>
         {/if}
-
       </div>
+
+      {#if !playbackPrefs.burnSubtitles}
+        <!-- Group: look of text subtitles — gone with burn-in, which draws them into the picture -->
+        <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupAppearance}</h3>
+        <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+
+        <div class="p-6 last:rounded-b-2xl">
+          <span class="text-2xl text-white font-medium block">{i18n.t.subtitleSize}</span>
+          <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleSizeDesc}</span>
+          <div class="flex gap-3">
+            {#each [['small', i18n.t.sizeSmall], ['normal', i18n.t.sizeNormal], ['large', i18n.t.sizeLarge]] as [val, label]}
+              <button onclick={() => setSubtitleSize(val)}
+                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                       {playbackPrefs.subtitleSize === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                {label}
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <!-- VTT font — text subtitles only, deliberately separate from the UI font (appearance).
+             Buttons show themselves in their own font (preview); Tinos = serif, selectable only here. -->
+        <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+          <span class="text-2xl text-white font-medium block">{i18n.t.subtitleFont}</span>
+          <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleFontDesc}</span>
+          <div class="flex gap-3">
+            {#each [['system', i18n.t.fontSystem, ''], ['arimo', 'Arimo', "'Arimo', sans-serif"], ['noto', 'Noto Sans', "'Noto Sans', sans-serif"], ['tinos', 'Tinos', "'Tinos', serif"]] as [val, label, fam]}
+              <button onclick={() => setSubtitlePref('subtitleFont', val)}
+                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                       {(playbackPrefs.subtitleFont || 'system') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}"
+                style={fam ? `font-family: ${fam}` : ''}>
+                {label}
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <!-- Text subtitle styling (color/edge/background) — only WebVTT/SRT, not PGS/VobSub -->
+        <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+          <span class="text-2xl text-white font-medium block">{i18n.t.subtitleColor}</span>
+          <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleStyleHint}</span>
+          <div class="flex gap-3">
+            {#each [['white', i18n.t.colorWhite], ['yellow', i18n.t.colorYellow], ['green', i18n.t.colorGreen], ['cyan', i18n.t.colorCyan]] as [val, label]}
+              <button onclick={() => setSubtitlePref('subtitleColor', val)}
+                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                       {(playbackPrefs.subtitleColor || 'white') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                {label}
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+          <span class="text-2xl text-white font-medium block mb-4">{i18n.t.subtitleEdge}</span>
+          <div class="flex gap-3">
+            {#each [['none', i18n.t.styleNone], ['shadow', i18n.t.edgeShadow], ['outline', i18n.t.edgeOutline]] as [val, label]}
+              <button onclick={() => setSubtitlePref('subtitleEdge', val)}
+                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                       {(playbackPrefs.subtitleEdge || 'shadow') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                {label}
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+          <span class="text-2xl text-white font-medium block mb-4">{i18n.t.subtitleBackground}</span>
+          <div class="flex gap-3">
+            {#each [['none', i18n.t.styleNone], ['semi', i18n.t.bgSemi], ['solid', i18n.t.bgSolid]] as [val, label]}
+              <button onclick={() => setSubtitlePref('subtitleBackground', val)}
+                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                       {(playbackPrefs.subtitleBackground || 'none') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                {label}
+              </button>
+            {/each}
+          </div>
+        </div>
+        </div>
+      {/if}
     </section>
     {/if}
 
