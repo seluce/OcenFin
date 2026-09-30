@@ -41,12 +41,17 @@ export function startQuickConnect(serverUrl, clientAuthHeader, onCode) {
 
     (async () => {
       let data;
+      // Bounded: nothing is on screen until the code arrives, so a server that never answers would
+      // leave the button pressed with no reaction at all.
+      const ctrl = new AbortController();
+      const initTimer = setTimeout(() => ctrl.abort(), 10000);
       try {
         // POST since 10.9; Jellyfin 12.0 removed the old GET form, which now fails outright.
-        const res = await fetch(`${serverUrl}/QuickConnect/Initiate`, { method: 'POST', headers: { 'Authorization': clientAuthHeader } });
+        const res = await fetch(`${serverUrl}/QuickConnect/Initiate`, { method: 'POST', headers: { 'Authorization': clientAuthHeader }, signal: ctrl.signal });
         if (!res.ok) return finish(reject, 'qcError');
         data = await res.json();
       } catch { return finish(reject, 'networkError'); }
+      finally { clearTimeout(initTimer); }
       if (settled) return;                                  // cancelled while Initiate was in flight
 
       secret = data.Secret;
@@ -65,7 +70,11 @@ export function startQuickConnect(serverUrl, clientAuthHeader, onCode) {
           const poll = await fetch(`${serverUrl}/QuickConnect/Connect?Secret=${secret}`, {
             headers: { 'Authorization': clientAuthHeader }
           });
-          if (!poll.ok) return;            // code expired or server hiccup — keep polling, don't throw
+          // 404: the server no longer knows the code — it expires after a few minutes, and a restart
+          // forgets it. Polling on would show a dead code forever. 401: Quick Connect was switched
+          // off meanwhile. Anything else is a hiccup — keep polling.
+          if (poll.status === 404 || poll.status === 401) return finish(reject, 'qcError');
+          if (!poll.ok) return;
           const pd = await poll.json();
           if (!pd.Authenticated) return;
           const authRes = await fetch(`${serverUrl}/Users/AuthenticateWithQuickConnect`, {

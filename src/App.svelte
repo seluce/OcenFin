@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard, installEnterRepeatGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, makeFocusReturn, installConnectionGuard, installEnterRepeatGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
   import { buildPlayQueue } from './playback.js';
   import { session } from './session.svelte.js';
   import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
@@ -204,6 +204,12 @@
   // Base header without user reference — only for Quick Connect, since the user is still unknown at initiate time.
   const CLIENT_AUTH_HEADER =
     `MediaBrowser Client="OcenFin-TV", Device="LG Smart TV", DeviceId="${BASE_DEVICE_ID}", Version="${APP_VERSION}"`;
+  // Watch together's Quick Connect gets a DeviceId of its own. Jellyfin keeps one token per device
+  // AND user and signs the older one out when it issues a new one — with the sign-in's header, a
+  // code confirmed by the TV's current user (refused as "yourself" anyway) ended the LIVE session
+  // whenever that one had come from Quick Connect as well.
+  const SHARED_QC_AUTH_HEADER =
+    `MediaBrowser Client="OcenFin-TV", Device="LG Smart TV", DeviceId="${BASE_DEVICE_ID}-shared", Version="${APP_VERSION}"`;
 
   // Helpful: which user the current server token points to
   // Feed the app-wide stores (in parallel to the existing props; components are migrated step by step).
@@ -273,6 +279,7 @@
   function saveUserPrefs() {
     if (!activeUserId || applyingPrefs) return;
     localStorage.setItem(userPrefsKey(activeUserId), JSON.stringify({
+      serverId: selectedServer?.id,   // which saved server entry wrote this — see forgetServerProfiles
       language: i18n.lang,
       displaySettings,
       playbackPrefs,
@@ -479,7 +486,11 @@
   // The comment used to say "watched by BOTH" — the opposite; do not "fix" the union into an
   // intersection on the strength of a comment.
   let partnersPlayedIds = $state(null);
-  let sharedReady = $derived(sharedProfile.enabled
+  // Not for age-restricted profiles (Ferris, 2026-09-30): the members' tokens are the members'
+  // accounts, so "For you both" would list their whole catalogue past this profile's rating limit.
+  // Settings hides the card; this keeps a setup made before the restriction from running on.
+  let restrictedProfile = $derived(selectedUser?.Policy?.MaxParentalRating != null);
+  let sharedReady = $derived(sharedProfile.enabled && !restrictedProfile
                    && sharedProfile.members.filter(m => m && m.id).length >= 1);
   // Cleanup: option on, but no profile set → turn off again when leaving the settings.
   $effect(() => { if (viewState !== 'settings' && sharedProfile.enabled
@@ -734,7 +745,12 @@
     connectSyncSocket();                        // open the SyncPlay real-time channel
   } });
 
-  let showExitConfirm = $state(false);   // confirmation dialog "Exit app?" (back on the dashboard)
+  let showExitConfirm = $state(false);   // confirmation dialog "Exit app?" (Back on the dashboard or the server list)
+  // Cancel took the dialog's buttons away with nothing to land on, so the next key opened the
+  // sidebar instead of returning to the tile Back was pressed on.
+  const exitFocus = makeFocusReturn();
+  function openExitConfirm()  { exitFocus.capture(); showExitConfirm = true; }
+  function closeExitConfirm() { showExitConfirm = false; exitFocus.restore(); }
   let librarySorts = $state({});   // remembered sort per library (saved in the profile)
   let apiCache = { dashboard: null };   // dashboard only now; the library cache lives in Library.svelte
 
@@ -1035,7 +1051,33 @@
   // components/Login.svelte (lazy-loaded)
   // ============================================================
 
+  // A removed server's profiles leave their settings and search history behind, under keys nothing
+  // can reach any more — they go with the server (Ferris, 2026-09-30). Which profiles: those this
+  // entry holds a token for, and those whose settings were last saved through it. The same Jellyfin
+  // server can be saved twice (LAN and remote address) with the same user IDs, so a profile that
+  // another entry still holds a token for, or whose settings were last saved through another
+  // entry, keeps its data. Settings from before the tag existed count as this entry's.
+  function forgetServerProfiles(id) {
+    const tagOf = (uid) => loadUserPrefs(uid).serverId;
+    const uids = new Set([...Object.keys(savedTokens[id] || {}), ...Object.keys(sharedTokens[id] || {})]);
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k?.startsWith('user_prefs_') && tagOf(k.slice('user_prefs_'.length)) === id) uids.add(k.slice('user_prefs_'.length));
+      }
+    } catch { /* storage unavailable — nothing to tidy */ }
+    let n = 0;
+    for (const uid of uids) {
+      const tag = tagOf(uid);
+      if (tag && tag !== id) continue;
+      if (savedServers.some(s => s.id !== id && (savedTokens[s.id]?.[uid] || sharedTokens[s.id]?.[uid]))) continue;
+      try { localStorage.removeItem(userPrefsKey(uid)); localStorage.removeItem(`search_history_${uid}`); n++; } catch {}
+    }
+    dlog('[Server] removed — forgot the local data of', n, 'profile(s)');
+  }
+
   function removeServer(id) {
+    forgetServerProfiles(id);   // first: it reads the token stores this function empties
     // Capture before deleting: the URL to send the revocations to, and every token this server
     // holds in either store. Nothing else can be keeping them — the server entry itself is going.
     const baseUrl = savedServers.find(s => s.id === id)?.url;
@@ -1093,7 +1135,22 @@
     // With Quick Connect the account is only known AFTER confirmation — whoever approves the code
     // decides it — so the "not yourself, not the other slot" rule cannot be enforced by filtering
     // the list beforehand and has to be checked here.
-    if (user.Id && (user.Id === selectedUser?.Id || user.Id === sharedProfile.members[slot === 0 ? 1 : 0]?.id)) {
+    const otherId = sharedProfile.members[slot === 0 ? 1 : 0]?.id;
+    if (user.Id && (user.Id === selectedUser?.Id || user.Id === otherId)) {
+      if (presetToken) {
+        // A Quick Connect token for someone who cannot take this slot must not linger as a live
+        // device on the server. One exception: the other slot's member, whose OWN token the server
+        // may just have signed out (same watch-together device, same user) — then the new one
+        // takes its place rather than leaving that slot broken.
+        const held = user.Id === otherId ? sharedTokens[sid]?.[user.Id] : null;
+        if (held && (await validateToken(held)) === false) {
+          sharedTokens[sid][user.Id] = presetToken;
+          sharedTokens = { ...sharedTokens };
+          persistSharedTokens();
+        } else {
+          revokeToken(session.serverUrl, presetToken);
+        }
+      }
       return 'sameUser';
     }
     // Reuse an existing token (own store or self-enabled quick switch).
@@ -1450,6 +1507,17 @@
 
   function handleGlobalBack(e) {
     if (!isBackKey(e)) return;   // Escape / Backspace (except in inputs) / remote 461
+    if (initializing) return;    // splash: nothing on screen to go back from yet
+    // Confirmation dialog open → Back cancels it (instead of closing) — in every phase that asks
+    if (showExitConfirm) { closeExitConfirm(); e.preventDefault(); return; }
+    if (appPhase === 'servers') {
+      // The first screen: Back closes what is open there (the add-server panel, a connect error),
+      // otherwise asks before leaving like the dashboard does. It used to do nothing at all — with
+      // disableBackHistoryAPI webOS leaves Back entirely to the app.
+      e.preventDefault();
+      if (!loginRef?.handleBackKey()) openExitConfirm();
+      return;
+    }
     if (appPhase === 'users') {
       e.preventDefault();
       // Sub-dialogs (password/manual/QC) are closed by the Login component itself;
@@ -1458,8 +1526,6 @@
       return;
     }
     if (appPhase !== 'app') return;
-    // Confirmation dialog open → Back cancels it (instead of closing)
-    if (showExitConfirm) { showExitConfirm = false; e.preventDefault(); return; }
     // Close open overlays first (applies to remote Back too)
     if (showSyncPlay)   { closeSyncPlay();         e.preventDefault(); return; }
     if (contextItem)    { contextItem = null;     e.preventDefault(); return; }
@@ -1473,7 +1539,7 @@
     else if (viewState === 'settings') { backToDashboard('settings');  e.preventDefault(); }
     else if (viewState === 'search')   { backToDashboard('search');    e.preventDefault(); }
     else if (viewState === 'favorites') { backToDashboard('favorites'); e.preventDefault(); }
-    else if (viewState === 'dashboard') { showExitConfirm = true;      e.preventDefault(); }
+    else if (viewState === 'dashboard') { openExitConfirm();           e.preventDefault(); }
   }
 
   // Closes the app on webOS (platformBack at the root); window.close as a fallback.
@@ -2205,7 +2271,7 @@
           <p class="text-gray-400 mt-2">{i18n.t.exitMessage}</p>
         </div>
         <div class="flex gap-3">
-          <button onclick={() => showExitConfirm = false} {@attach focusOnMount()}
+          <button onclick={closeExitConfirm} {@attach focusOnMount()}
             class="flex-1 bg-gray-700 text-white font-bold py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-600 transition-colors">
             {i18n.t.cancel}
           </button>
@@ -2322,7 +2388,7 @@
             {serverVersion}
             libraries={navLibraries}
             publicUsers={users} {sharedProfile} {sharedTokens}
-            clientAuthHeader={CLIENT_AUTH_HEADER}
+            clientAuthHeader={SHARED_QC_AUTH_HEADER}
             onSharedToggle={toggleSharedEnabled}
             onSharedSetMember={setSharedMember}
             onSharedRemoveMember={removeSharedMember}

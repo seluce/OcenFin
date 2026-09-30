@@ -19,6 +19,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   Audio, Series, Player and Details under Playback; Selection, Playback and Style under Subtitles.
   Content gains a Library group for the episode count, the A–Z bar and the backdrop preview, and
   the home screen's backdrop preview now sits with the other home screen options.
+- **Removing a server also removes its profiles' settings and search history** from the TV. A
+  server saved twice, for example under its home and its internet address, keeps what the other
+  entry still uses.
+- **Watch together is no longer offered on age-restricted profiles.** It works with the other
+  profiles' accounts, and their suggestions would not follow the restricted profile's age limit.
 
 ### Fixed
 
@@ -36,6 +41,15 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   coming back afterwards.
 - **The profile selection no longer keeps asking the server for profiles** when the server hides
   all of them from the sign-in screen.
+- **Back works on the server list.** It closes "Add server" or a connection error, and otherwise
+  asks whether to leave the app, just like on the home screen.
+- **Quick Connect ends when you go back or choose another server**, even before the code is shown.
+  An expired code now says so instead of waiting forever, and a server that does not answer gives
+  up after a few seconds.
+- **Confirming a watch-together Quick Connect code with your own account no longer signs out the
+  TV.** Such a code is refused, as before, and now also cleaned up on the server.
+- **After "Exit app?" → Cancel, and after a failed connection, the selection stays where you
+  were** instead of disappearing until the next button press.
 
 ### Internal
 

@@ -12,7 +12,7 @@
   // (startup / quick switch / shared profile) and finishLogin.
   // This component reports results via narrow callbacks.
   // ============================================================
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { startQuickConnect as startQC } from '../quickconnect.js';
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { i18n } from '../i18n.svelte.js';
@@ -71,6 +71,10 @@
 
   // QC polling never outlives the view (login success or switch unmounts the component)
   onDestroy(() => qcSession?.cancel());
+  // …nor the server it was started on. Login stays MOUNTED from the profiles back to the server
+  // list (Back, "choose another server", a logout from App), so an attempt still waiting for its
+  // code kept running there and showed that code on the NEXT server's profile screen.
+  $effect(() => { if (phase === 'servers') untrack(cancelQuickConnect); });
 
   // There is no sidebar in this phase to catch a lost focus, so both places where an element
   // disappears under the focus hand it on explicitly.
@@ -104,15 +108,32 @@
   }
 
   /** Back key, called by App.handleGlobalBack (pattern like Collection.handleBackKey):
-   *  true = consumed here (sub-dialog closed), false = App goes to the server selection. */
+   *  true = consumed here (sub-dialog closed), false = App goes to the server selection — or, on
+   *  the server list itself, asks whether to leave the app. */
   export function handleBackKey() {
-    if (showPasswordForm || showManualLogin || qcCode) {
+    if (phase === 'servers') {
+      if (serverConnectError) { backToServerList(); return true; }
+      if (showAddServer) { showAddServer = false; tick().then(() => addServerBtn?.focus()); return true; }
+      return false;
+    }
+    // qcSession as well as qcCode: while Initiate is still in flight there is no code on screen yet,
+    // and Back has to end that attempt too, not leave it running behind the server list.
+    if (showPasswordForm || showManualLogin || qcCode || qcSession) {
       if (showPasswordForm) closePasswordForm();   // back onto the profile it belonged to
       showManualLogin = false;
-      if (qcCode) cancelQuickConnect();
+      if (qcCode || qcSession) cancelQuickConnect();
       return true;
     }
     return false;
+  }
+
+  // The connect error's "back to the servers" took its own button away and left focus nowhere —
+  // there is no sidebar in this phase to catch it. Land on the server that failed.
+  function backToServerList() {
+    const id = pendingServer?.id;
+    serverConnectError = '';
+    pendingServer = null;
+    tick().then(() => (serverListEl?.querySelector(`[data-server-id="${id}"]`) || addServerBtn)?.focus());
   }
 
   // ============================================================
@@ -395,9 +416,9 @@
     loginError = '';
     showPasswordForm = false;
     showManualLogin  = false;
-    qcSession = startQC(session.serverUrl, clientAuthHeader, ({ code, qrSvg }) => { qcCode = code; qcQrSvg = qrSvg; });
+    const mine = qcSession = startQC(session.serverUrl, clientAuthHeader, ({ code, qrSvg }) => { qcCode = code; qcQrSvg = qrSvg; });
     try {
-      const { user, token } = await qcSession.promise;
+      const { user, token } = await mine.promise;
       qcCode = qcQrSvg = null;
       // Like the password path: a profile whose saved sign-in had expired gets the fresh token, or
       // the password form would come back on every switch while "save password" stays on.
@@ -407,6 +428,10 @@
       if (err === 'cancelled') return;          // the user backed out — not an error to report
       qcCode = qcQrSvg = null;
       loginError = err === 'networkError' ? i18n.t.networkError : i18n.t.qcError;
+    } finally {
+      // Over: forget it, or Back would take one more press to "cancel" a finished attempt. Only if
+      // it is still ours — a second press has already put a new one in its place.
+      if (qcSession === mine) qcSession = null;
     }
   }
 
@@ -440,6 +465,7 @@
             <div class="flex items-center gap-3">
               <button
                 onclick={() => connectToServer(server)}
+                data-server-id={server.id}
                 {@attach focusOnMount(i === 0)}
                 class="flex-1 flex items-center justify-between p-5 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700
                        border border-gray-600 hover:border-blue-500 focus:border-blue-500
@@ -492,7 +518,7 @@
               {i18n.t.serverRetry}
             </button>
             <button
-              onclick={() => { serverConnectError = ''; pendingServer = null; }}
+              onclick={backToServerList}
               class="flex-1 bg-transparent border border-gray-600 hover:bg-gray-800 focus:bg-gray-800 text-gray-300 font-bold py-3 rounded-lg
                      focus:outline-none focus:ring-2 focus:ring-white transition-colors"
             >
