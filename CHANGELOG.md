@@ -7,131 +7,44 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Added
 
-- **The A–Z bar in a library can be switched off.** Settings → Content → Library → "A–Z Bar". It is
-  on by default and saved per profile; sorting by name keeps working without it.
-- **Skip the recap.** When an episode starts with a "previously on" recap, a "Skip Recap" button
-  appears, just like "Skip Intro". Under Settings → Playback it can also be skipped automatically
-  (off by default). Needs a server that marks recaps, such as the Intro Skipper plugin.
+- **Skip the recap.** A "Skip Recap" button like "Skip Intro", optionally automatic (Settings →
+  Playback). Needs a server that marks recaps, such as the Intro Skipper plugin.
+- **The A–Z bar in a library can be switched off** (Settings → Content → Library).
 
 ### Changed
 
-- **The settings are grouped more clearly**, so the options that belong together sit together:
-  Audio, Series, Player and Details under Playback; Selection, Playback and Style under Subtitles.
-  Content gains a Library group for the episode count, the A–Z bar and the backdrop preview, and
-  the home screen's backdrop preview now sits with the other home screen options.
-- **Removing a server also removes its profiles' settings and search history** from the TV. A
-  server saved twice, for example under its home and its internet address, keeps what the other
-  entry still uses.
-- **Each profile remembers its own audio and subtitle choice per series.** It used to be one memory
-  for the whole TV, so one person's choice for a series overrode the next person's language
-  settings. What was remembered so far goes to the first profile that signs in after the update.
-- **Watch together is no longer offered on age-restricted profiles.** It works with the other
-  profiles' accounts, and their suggestions would not follow the restricted profile's age limit.
+- **The settings are grouped**, each group in its own card.
+- **Each profile remembers its own audio and subtitle choice per series.** What the TV remembered
+  so far goes to the first profile that signs in.
+- **Removing a server also removes its profiles' settings and search history** from the TV.
+- **Watch together is no longer offered on age-restricted profiles.**
 
 ### Fixed
 
-- **Signing in no longer risks locking your account.** Jellyfin disables an account after a few
-  failed sign-ins. Pressing Enter after the user name in manual sign-in used to try an empty
-  password right away; it now moves on to the password field. Holding the OK button down no longer
-  sends one sign-in after another either.
-- **Changing your password can no longer remove it by accident.** Enter in the "current password"
-  field used to save straight away, with the new password still empty. It now moves on to the new
-  password, and Save waits until one is entered.
-- **A server that is not reachable yet no longer signs you out.** When the TV comes out of standby
-  before the network or the server is up, the app used to forget the saved sign-in. It now keeps
-  it, and the profile list fills in by itself as soon as the server answers again.
-- **Signing in with Quick Connect renews a saved sign-in**, so the password prompt does not keep
-  coming back afterwards.
-- **The profile selection no longer keeps asking the server for profiles** when the server hides
-  all of them from the sign-in screen.
-- **Back works on the server list.** It closes "Add server" or a connection error, and otherwise
-  asks whether to leave the app, just like on the home screen.
-- **Quick Connect ends when you go back or choose another server**, even before the code is shown.
-  An expired code now says so instead of waiting forever, and a server that does not answer gives
-  up after a few seconds.
-- **Confirming a watch-together Quick Connect code with your own account no longer signs out the
-  TV.** Such a code is refused, as before, and now also cleaned up on the server.
-- **After "Exit app?" → Cancel, and after a failed connection, the selection stays where you
-  were** instead of disappearing until the next button press.
-- **The "Unwatched" filter in a library works.** It never filtered anything: the app asked the
-  server with a name the server does not know, and the server silently ignored it.
-- **Play on a season starts at its first unwatched episode.** It always started at episode 1, for
-  the same reason. Adding a season to the watchlist now also picks the next unwatched episode.
-- **Play on a fully watched series starts at episode 1 again, not at a special.** The watchlist
-  picks the same episode.
-- **Episodes your library does not actually have are skipped.** With "display missing episodes"
-  switched on in the Jellyfin profile, Next and auto-play could land on such an episode and show
-  an error.
-- **The A–Z bar highlights the right letter** for titles the server sorts differently from how
-  they are written, such as "The Matrix" under M.
-- **Empty collections no longer appear on the home screen**, for example ones whose films are all
-  above a profile's age limit.
-- **A track picked on the details page is the one that plays.** If the series had another choice
-  remembered from earlier, the player switched back to that one. A choice made on the details page
-  is now remembered for the series just like one made in the player.
-- **Back while a title is still loading keeps your place.** The resume point was reset to the start,
-  and the title dropped out of "Continue watching". Switching the audio track during loading no
-  longer restarts the title from the beginning either.
-- **After "Skip Recap", "Skip Intro" can be pressed right away.** When the intro followed straight
-  on, the button changed its label but OK did nothing.
-- **Changing the audio track keeps your subtitle timing.** A subtitle delay you had set went back
-  to zero.
-- **Chapters at the same position no longer break the player's display**, and a playlist that
-  contains a title twice plays through instead of looping or getting stuck.
-- **When a title cannot be played directly, the converted version continues where you were.** It
-  started over from the beginning, and "Try again" after a playback error went back to where you
-  had first started the title — or did not get going at all.
-- **SyncPlay: the next episode starts at its beginning.** The player re-applied the group's last
-  command when it opened, so after a pause and resume at 31:00 the next episode started at 31:00
-  for the whole group — and titles started later did too, even after leaving the group.
-- **SyncPlay: when the group jumps back into an intro or recap, this TV stays with it** instead of
-  skipping it on its own and drifting apart from everyone else.
-- **After a title started by the group or from the Jellyfin dashboard, Back returns to where you
-  were.** It led to a page from an earlier visit, such as a collection you had left long before.
-- **Two recommendation rows for titles with the same name no longer break the home screen**, for
-  example after watching a film and a series that are both called "Fargo".
-- **Leaving the home screen while it is still loading no longer leaves rows missing** when you
-  come back; they fill in once they arrive. A profile switch in that moment can no longer carry
-  rows over into the next profile's home screen.
-- **"For you both" and the watch-together filter start fresh on every profile switch.** The
-  previous profile's suggestions could briefly show up, and its viewing history could filter the
-  next profile's library.
-- **Theme music no longer keeps playing on the home screen** after pressing Back quickly while the
-  screensaver was being woken on a title page.
-- **Pressing Play twice on a series no longer loses the way back** to the page it was started from.
-  Starting a title, a random episode or "Play all" and leaving before it begins no longer opens the
-  player over another screen.
-- **A context menu or picker no longer stays open over the profile selection** after a profile
-  switch, and a library's genre filter always lists that library's genres.
-- **Back returns to the right place in more cases:**
-  - after "Shuffle" in a library, to the Shuffle button;
-  - after "Details" from a card's menu, to that card — in a library it used to be the card opened
-    the time before, on the home screen the first copy of the title further up;
-  - after a title from the big banner on the home screen, to the banner with that title, not to
-    the same title further down the page;
-  - after a collection on the home screen, to its card instead of the top of the page.
-- **The selection no longer disappears** after renaming a playlist or cancelling its deletion,
-  after leaving its edit mode with Back, after deleting a playlist from inside it, when the
-  "server unreachable" banner goes away by itself, after closing a trailer, or when adding to a
-  playlist or collection fails.
-- **A title that no longer exists shows a message on its page**, with Back ready, instead of an
-  empty screen — for example one deleted while it was still in Continue watching or the watchlist.
-- **Favourite, watched and similar switches undo themselves when the server refuses them**, on the
-  details page, in a card's menu, on a person's page and in the player. They used to stay as set.
-- **Playlists only offer what you may do with them.** Someone else's shared playlist no longer shows
-  Edit or Delete unless you were given those rights, and a change the server refuses is undone and
-  reported instead of only appearing to work.
-- **The watchlist recovers when its playlist was deleted elsewhere**, and a bookmark the server
-  refuses no longer stays marked or blocks the next try.
-- **Playback that the server refuses says why**: not allowed for this profile, no way to play it on
-  this TV, or the server is at its limit right now.
-- **SyncPlay says when creating or joining a group did not work**, for example because SyncPlay is
-  not enabled for the profile.
-- **Watch together no longer asks to sign a member in again** when that member simply has no access
-  to the library being browsed.
-- **The end credits are recognised more reliably from chapter names.** A chapter such as "Opening
-  Credits" near the start, or a scene whose name merely contained a similar word, counted as the
-  credits: the next episode was started early and the current one marked as watched.
+- **Signing in no longer wastes login attempts**, which can lock a Jellyfin account: Enter after
+  the user name or a held OK button no longer sends empty or repeated passwords, and changing your
+  password can no longer remove it by accident.
+- **A server that is not reachable yet after standby no longer signs you out.**
+- **Back works on the server list**, and Quick Connect stops when you leave it or the code expires.
+- **The "Unwatched" filter works.** A season's Play starts at its first unwatched episode, a fully
+  watched series at episode 1 instead of a special, and missing episodes are skipped.
+- **Playback keeps your place**: Back while a title is loading no longer resets it, and after a
+  playback error the title continues where it stopped.
+- **A track picked on the details page is the one that plays.**
+- **Skip Intro works right after Skip Recap**, the subtitle delay survives an audio switch, and end
+  credits are recognised more reliably from chapter names.
+- **SyncPlay:** the next episode starts at its beginning, the TV stays with the group when it jumps
+  back into an intro, and a group that cannot be created or joined says so.
+- **Back returns to where you were** after Shuffle, a card's menu, the home screen banner and a
+  collection, and dialogs and playlist edits no longer leave nothing selected.
+- **The server saying no is handled**: a removed title shows a message, refused favourite and
+  watched changes undo themselves, playlists only offer what you may do, refused playback says why,
+  and the watchlist recovers when its playlist was deleted elsewhere.
+- **The home screen** no longer breaks on two recommendations with the same name, fills in rows
+  after leaving it early, and carries nothing over to the next profile.
+- Smaller fixes: theme music no longer keeps playing after the screensaver, a double press on Play
+  no longer loses the way back, the A–Z bar highlights the right letter, and empty collections and
+  duplicate playlist entries no longer cause trouble.
 
 ### Internal
 

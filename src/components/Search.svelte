@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { personImageUrl, authHeaders, blurUp, itemBlurHash, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
+  import { personImageUrl, authHeaders, blurUp, itemBlurHash, getItemImageUrlWithFallbacks as getItemImageUrl, asArray } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick } from 'svelte';
 
@@ -53,7 +53,9 @@
     if (searchInput) searchInput.focus();
     try {
       const hist = localStorage.getItem(`search_history_${selectedUser.Id}`);
-      if (hist) searchHistory = JSON.parse(hist);
+      // Strings in an array, or nothing (CODE-HEALTH §15): valid JSON of another shape broke
+      // saveToHistory (.filter on a non-array) and the history list.
+      if (hist) searchHistory = asArray(JSON.parse(hist)).filter(t => typeof t === 'string');
     } catch { }
   });
 

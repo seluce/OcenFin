@@ -1488,7 +1488,7 @@
       </div>
 
       <!-- Group: how subtitles are drawn — burned in, or by the TV -->
-      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.playback}</h3>
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupRendering}</h3>
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
         <!-- Burn in subtitles -->
