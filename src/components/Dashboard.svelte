@@ -356,7 +356,7 @@
       // collapsed to one entry each (buffer for a good mix).
       const pHistory      = fetch(`${session.serverUrl}/Items?UserId=${uId}&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}&EnableTotalRecordCount=false`, opts);
       // Collections (BoxSets)
-      const pCollections  = fetch(`${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=50&EnableTotalRecordCount=false`, opts);
+      const pCollections  = fetch(`${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio,ChildCount&Limit=50&EnableTotalRecordCount=false`, opts);
 
       // Priority: Views + Resume → release the UI immediately
       const [resViews, resResume] = await Promise.all([pViews, pResume]);
@@ -371,6 +371,8 @@
 
       // Load collections independently
       pCollections.then(r => r.json()).then(d => {
+        // ChildCount only comes when asked for (Fields above) — without it this filter saw undefined
+        // and let a collection through that is empty for this profile (e.g. by its age limit).
         collections = (Array.isArray(d) ? d : (d.Items || [])).filter(c => c.ChildCount !== 0);
         apiCache.dashboard.collections = collections;
       }).catch(() => {});

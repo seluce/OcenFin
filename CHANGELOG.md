@@ -50,6 +50,19 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   TV.** Such a code is refused, as before, and now also cleaned up on the server.
 - **After "Exit app?" → Cancel, and after a failed connection, the selection stays where you
   were** instead of disappearing until the next button press.
+- **The "Unwatched" filter in a library works.** It never filtered anything: the app asked the
+  server with a name the server does not know, and the server silently ignored it.
+- **Play on a season starts at its first unwatched episode.** It always started at episode 1, for
+  the same reason. Adding a season to the watchlist now also picks the next unwatched episode.
+- **Play on a fully watched series starts at episode 1 again, not at a special.** The watchlist
+  picks the same episode.
+- **Episodes your library does not actually have are skipped.** With "display missing episodes"
+  switched on in the Jellyfin profile, Next and auto-play could land on such an episode and show
+  an error.
+- **The A–Z bar highlights the right letter** for titles the server sorts differently from how
+  they are written, such as "The Matrix" under M.
+- **Empty collections no longer appear on the home screen**, for example ones whose films are all
+  above a profile's age limit.
 
 ### Internal
 

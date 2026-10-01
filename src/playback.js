@@ -107,9 +107,12 @@ export async function getPlaybackInfo({
   enableDirectPlay = true, enableDirectStream = true, allowAudioStreamCopy = true,
   burnSubtitles = false, mediaSourceId = null, clientGraphicSubs = false,
 }) {
-  // IMPORTANT: Jellyfin reads AudioStreamIndex/SubtitleStreamIndex and the Enable* flags
-  // from the QUERY STRING (only the DeviceProfile belongs in the body). Previously they were
-  // in the body → the server ignored the chosen audio track.
+  // The same values go in the query string AND the body. Jellyfin 12 marks every one of these query
+  // parameters deprecated and takes the body's value wherever the query leaves one out (the
+  // controller does `param ??= dto.X`), so the body alone would do today. The query stays because a
+  // server once ignored the body's AudioStreamIndex — the chosen audio track played as the default
+  // one. Drop it when a server release removes the deprecated parameters, and check with
+  // urlAudioStreamIndex in the log below that an audio switch still arrives (CODE-HEALTH §39).
   const qs = new URLSearchParams({
     UserId: userId,
     StartTimeTicks: String(startTicks),
@@ -125,7 +128,7 @@ export async function getPlaybackInfo({
   if (subtitleStreamIndex !== null && subtitleStreamIndex !== -1) qs.set('SubtitleStreamIndex', String(subtitleStreamIndex));
   if (mediaSourceId) qs.set('MediaSourceId', mediaSourceId);   // force the chosen version
 
-  // Body: DeviceProfile (required) + the same fields for safety (some versions read them here).
+  // Body: DeviceProfile (required) + the same fields — the form Jellyfin 12 documents.
   const body = {
     UserId: userId,
     DeviceProfile: buildDeviceProfile(maxBitrate, burnSubtitles, clientGraphicSubs),
@@ -294,9 +297,11 @@ export async function buildPlayQueue(items, { serverUrl, userId, headers }) {
   const queue = [];
   for (const it of items || []) {
     if (it.Type === 'Series' || it.Type === 'Season') {
+      // IsMissing=false: a placeholder for an episode the library does not have (a metadata plugin
+      // or the profile's "display missing episodes" creates them) has no file to play.
       const url = `${serverUrl}/Items?UserId=${userId}&ParentId=${it.Id}`
         + `&IncludeItemTypes=Episode${it.Type === 'Series' ? '&Recursive=true' : ''}`
-        + `&SortBy=ParentIndexNumber,IndexNumber&EnableTotalRecordCount=false`;
+        + `&SortBy=ParentIndexNumber,IndexNumber&IsMissing=false&EnableTotalRecordCount=false`;
       try {
         const res  = await fetch(url, { headers });
         // Without this an error response made res.json() throw straight into the catch below, and
@@ -312,4 +317,36 @@ export async function buildPlayQueue(items, { serverUrl, userId, headers }) {
     }
   }
   return queue;
+}
+
+// Where "play" starts on a series or a season when there is no Next Up to follow. Specials stay out,
+// as in buildPlayQueue: sorted by number, season 0 comes FIRST, so a fully watched series with
+// specials used to start at S00E01. A specials season opened on its own still plays its specials.
+const regularFirst = (eps) => eps.find(e => e.ParentIndexNumber !== 0) || eps[0] || null;
+
+// The first episode of a season — with unwatchedOnly the first one not yet watched. A season lists
+// few episodes, so all of them come back and the special check runs here: specials shown inside a
+// season carry season 0 and would otherwise sort ahead of its episode 1.
+export async function firstEpisodeInSeason(seasonId, { serverUrl, userId, headers, unwatchedOnly = false }) {
+  try {
+    const res = await fetch(`${serverUrl}/Items?UserId=${userId}&ParentId=${seasonId}&IncludeItemTypes=Episode`
+      + `${unwatchedOnly ? '&Filters=IsUnplayed' : ''}&IsMissing=false&SortBy=ParentIndexNumber,IndexNumber&EnableTotalRecordCount=false`, { headers });
+    if (!res.ok) { console.warn('firstEpisodeInSeason: HTTP', res.status); return null; }
+    return regularFirst((await res.json()).Items || []);
+  } catch (e) { console.error('firstEpisodeInSeason:', e); return null; }
+}
+
+// The first episode of a series: its first regular season, then that season's first episode. Two
+// light requests instead of listing every episode of a long series only to skip the specials.
+export async function firstEpisodeOfSeries(seriesId, { serverUrl, userId, headers }) {
+  try {
+    const res = await fetch(`${serverUrl}/Shows/${seriesId}/Seasons?UserId=${userId}&IsSpecialSeason=false&IsMissing=false&EnableImages=false`, { headers });
+    if (!res.ok) { console.warn('firstEpisodeOfSeries: HTTP', res.status); return null; }
+    const seasons = ((await res.json()).Items || []).sort((a, b) => (a.IndexNumber ?? 0) - (b.IndexNumber ?? 0));
+    for (const season of seasons) {   // a season can be empty (everything in it missing) — take the next
+      const ep = await firstEpisodeInSeason(season.Id, { serverUrl, userId, headers });
+      if (ep) return ep;
+    }
+    return null;
+  } catch (e) { console.error('firstEpisodeOfSeries:', e); return null; }
 }

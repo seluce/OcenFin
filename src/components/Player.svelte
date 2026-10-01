@@ -1475,7 +1475,9 @@
     if (item.Type !== 'Episode' || !item.SeriesId) return;
     try {
       const res = await fetch(
-        `${session.serverUrl}/Shows/${item.SeriesId}/Episodes?UserId=${selectedUser.Id}`,
+        // IsMissing=false: with "display missing episodes" on in the Jellyfin profile the list holds
+        // placeholders without a file, and Next / auto-play landed on the error page.
+        `${session.serverUrl}/Shows/${item.SeriesId}/Episodes?UserId=${selectedUser.Id}&IsMissing=false`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {

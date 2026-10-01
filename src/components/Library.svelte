@@ -206,7 +206,9 @@
     const f = [];
     if (activeFilters.isFavorite)  f.push('IsFavorite');
     if (activeFilters.isPlayed)    f.push('IsPlayed');
-    if (activeFilters.isNotPlayed) f.push('IsNotPlayed');
+    // IsUnplayed — this used to send "IsNotPlayed", which Jellyfin does not know and drops without a
+    // word: the "unwatched" chip never filtered anything.
+    if (activeFilters.isNotPlayed) f.push('IsUnplayed');
     if (f.length) q += `&Filters=${f.join(',')}`;
     for (const g of selectedGenres) q += `&Genres=${encodeURIComponent(g)}`;
     if (selectedFsk.length) {
@@ -350,7 +352,7 @@
     if (myToken !== loadToken) return;   // a newer request arrived during the count query
     firstLoadedIndex = startIndex;
 
-    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${lib.Id}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
+    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${lib.Id}&Fields=PrimaryImageAspectRatio,SortName,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
     url += getFilterQuery();
 
     try {
@@ -396,7 +398,7 @@
     isFetchingMore = true;
     const myToken = loadToken;   // belongs to the CURRENT list — don't append anymore after a reload
     const start = firstLoadedIndex + currentItems.length;
-    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}&EnableTotalRecordCount=false`;
+    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,SortName,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}&EnableTotalRecordCount=false`;
     url += getFilterQuery();
     try {
       const res = await fetch(url, authOpts());
@@ -432,7 +434,7 @@
     const myToken = loadToken;   // belongs to the CURRENT list — don't prepend anymore after a reload
     const newStart = Math.max(0, firstLoadedIndex - libraryItemLimit);
     const count    = firstLoadedIndex - newStart;
-    const url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}&EnableTotalRecordCount=false`;
+    const url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,SortName,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}&EnableTotalRecordCount=false`;
     try {
       const res = await fetch(url, authOpts());
       if (res.ok && myToken === loadToken) {
@@ -514,6 +516,8 @@
       if (item) {
         // ?? '' rather than a bare [0]: this runs on every scroll settle, and a title without a
         // usable name would throw inside the timeout on each one.
+        // SortName (requested in Fields — the server leaves it out otherwise): the letter queries go
+        // by it, so "The Matrix" lives under M, and the bar has to agree.
         const char = ((item.SortName || item.Name || '')[0] ?? '').toUpperCase();
         activeLetter = /[A-Z]/.test(char) ? char : '#';
       }

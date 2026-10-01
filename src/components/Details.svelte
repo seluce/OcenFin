@@ -4,7 +4,7 @@
   import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
   import { pickDefaultTracks } from '../trackmemory.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
-  import { buildPlayQueue } from '../playback.js';
+  import { buildPlayQueue, firstEpisodeInSeason, firstEpisodeOfSeries } from '../playback.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
@@ -416,7 +416,7 @@
   async function loadRelatedItems(parentId, myToken) {
     try {
       const res = await fetch(
-        `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${parentId}&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName&EnableTotalRecordCount=false`,
+        `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${parentId}&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName&IsMissing=false&EnableTotalRecordCount=false`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) { const d = await res.json(); if (myToken !== detailToken) return; relatedItems = d.Items || []; }
@@ -425,25 +425,22 @@
 
   async function handlePlay() {
     if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
-      const url = fullItem.Type === 'Series'
-        ? `${session.serverUrl}/Shows/NextUp?SeriesId=${fullItem.Id}&UserId=${selectedUser.Id}&Limit=1&EnableTotalRecordCount=false`
-        : `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Filters=IsNotPlayed&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`;
+      // Series: Next Up, and once everything is watched the first episode again. Season: its first
+      // unwatched episode, else its first. Neither lands on a special or a placeholder episode
+      // (playback.js). The season used to ask for "IsNotPlayed", a filter Jellyfin does not have —
+      // it was dropped silently, so a season always started at its episode 1.
+      const ctx = { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() };
       try {
-        const res  = await fetch(url, { headers: getAuthHeaders() });
-        if (!res.ok) { console.warn('play next-up: HTTP', res.status); return; }
-        const data = await res.json();
-        if (data.Items?.length > 0) {
-          onPlayVideo?.({ item: data.Items[0], audioIndex: -1, subtitleIndex: -1 });
+        let ep = null;
+        if (fullItem.Type === 'Series') {
+          const res = await fetch(`${session.serverUrl}/Shows/NextUp?SeriesId=${fullItem.Id}&UserId=${selectedUser.Id}&Limit=1&EnableTotalRecordCount=false`, { headers: getAuthHeaders() });
+          if (!res.ok) { console.warn('play next-up: HTTP', res.status); return; }
+          ep = ((await res.json()).Items || [])[0] || await firstEpisodeOfSeries(fullItem.Id, ctx);
         } else {
-          // Fallback: first episode
-          const fb = await fetch(
-            `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`,
-            { headers: getAuthHeaders() }
-          );
-          if (!fb.ok) { console.warn('play first episode: HTTP', fb.status); return; }
-          const fd = await fb.json();
-          if (fd.Items?.length > 0) onPlayVideo?.({ item: fd.Items[0], audioIndex: -1, subtitleIndex: -1 });
+          ep = await firstEpisodeInSeason(fullItem.Id, { ...ctx, unwatchedOnly: true })
+            || await firstEpisodeInSeason(fullItem.Id, ctx);
         }
+        if (ep) onPlayVideo?.({ item: ep, audioIndex: -1, subtitleIndex: -1 });
       } catch (e) { console.error(e); }
     } else {
       onPlayVideo?.({ item: fullItem, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId, tracksChosen: true });

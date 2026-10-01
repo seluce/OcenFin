@@ -6,6 +6,7 @@
 // itemId → playlistItemId. Being a real playlist it also shows up in other clients.
 import { session } from './session.svelte.js';
 import { authHeaders } from './utils.js';
+import { firstEpisodeInSeason, firstEpisodeOfSeries } from './playback.js';
 
 const WATCHLIST_NAME = 'Watchlist';
 
@@ -94,20 +95,18 @@ export function inWatchlist(itemId) {
 
 // Series/seasons cannot live in a playlist — the server would expand them into ALL of
 // their episodes (playlists are playable queues). We store ONE representative episode
-// instead: the next unwatched one, falling back to the first.
+// instead: the next unwatched one, falling back to the first — the same choice as Details'
+// play button (playback.js: no specials, no placeholder episodes).
 async function representativeEpisode(item, userId) {
-  const urls = item.Type === 'Series'
-    ? [`${session.serverUrl}/Shows/NextUp?SeriesId=${item.Id}&UserId=${userId}&Limit=1&EnableTotalRecordCount=false`,
-       `${session.serverUrl}/Items?UserId=${userId}&ParentId=${item.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=ParentIndexNumber,IndexNumber&EnableTotalRecordCount=false`]
-    : [`${session.serverUrl}/Items?UserId=${userId}&ParentId=${item.Id}&IncludeItemTypes=Episode&Filters=IsNotPlayed&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`,
-       `${session.serverUrl}/Items?UserId=${userId}&ParentId=${item.Id}&IncludeItemTypes=Episode&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`];
-  for (const url of urls) {
+  const ctx = { serverUrl: session.serverUrl, userId, headers: headers() };
+  if (item.Type === 'Series') {
     try {
-      const res = await fetch(url, { headers: headers() });
+      const res = await fetch(`${session.serverUrl}/Shows/NextUp?SeriesId=${item.Id}&UserId=${userId}&Limit=1&EnableTotalRecordCount=false`, { headers: headers() });
       if (res.ok) { const d = await res.json(); if (d.Items?.length) return d.Items[0]; }
     } catch { }
+    return firstEpisodeOfSeries(item.Id, ctx);
   }
-  return null;
+  return (await firstEpisodeInSeason(item.Id, { ...ctx, unwatchedOnly: true })) || firstEpisodeInSeason(item.Id, ctx);
 }
 
 // Toggle membership. Remove is optimistic; for add the icon flips immediately via a
