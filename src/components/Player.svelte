@@ -162,6 +162,7 @@
       console.warn('[OcenFin] Direct Play failed → forcing transcode fallback');
       clearBufferWatchdog();
       isBuffering = true; playbackError = false;
+      resumeFromHere();   // a failure at 1:10:00 restarted the transcode at 0:00
       setupPlayback(selectedAudioIndex, selectedSubtitleIndex, true);
       return;
     }
@@ -170,12 +171,20 @@
     playbackError = true;
     flushProgress();          // also save the position on a playback error
   }
+  // The rebuilt stream continues where playback stood, not at the resume point the Player opened with.
+  function resumeFromHere() {
+    startTicks    = Math.round(livePosition() * 10000000);
+    resumeApplied = false;
+  }
+  // Retry builds the stream anew, exactly like a track switch. It used to call load() on the element,
+  // which cannot revive a stopped hls.js — and the error page nearly always shows on a transcode,
+  // because a Direct Play failure goes to the fallback first — so Retry spun until the watchdog
+  // fired again. A stream already on the fallback stays a transcode.
   function retryPlayback() {
     playbackError = false;
     isBuffering = true;
-    resumeApplied = false;          // on retry, jump back to the position if needed
-    sourceLive = false;             // load() empties the element too — see positionTicks()
-    if (videoElement) { videoElement.load(); videoElement.play(); }
+    resumeFromHere();
+    setupPlayback(selectedAudioIndex, selectedSubtitleIndex, triedTranscodeFallback);
     armBufferWatchdog();
   }
 
@@ -391,13 +400,18 @@
     const ticks = item?.RunTimeTicks || 0;          // the element may already be emptied
     return ticks > 0 ? ticks / 10000000 : 0;
   }
+  // Where playback stands, in seconds: the element while a source is live, otherwise the last
+  // position seen (the resume point before the first metadata). Everything that rebuilds the stream
+  // starts from here — a track switch, the transcode fallback, Retry.
+  function livePosition() {
+    return sourceLive ? (videoElement?.currentTime ?? lastPosition) : lastPosition;
+  }
   function positionTicks() {
     if (finishedAtOutro) {
       const runtime = runtimeSeconds();
       if (runtime > 0) return Math.round(runtime * 10000000);
     }
-    const live = sourceLive ? (videoElement?.currentTime ?? lastPosition) : lastPosition;
-    return Math.round(live * 10000000);
+    return Math.round(livePosition() * 10000000);
   }
   let resumeApplied = false;   // execute the resume jump only once
   let playSessionId = crypto.randomUUID();  // replaced by PlaybackInfo
@@ -1473,11 +1487,21 @@
   }
 
   // Fallback from named chapters — only unambiguous hits, otherwise null (no false prompt).
+  // Whole words, and each in its part of the runtime. The credits match used to be a bare substring,
+  // first hit after chapter 0: "Opening Credits" after a cold open, or a scene called "Sending…",
+  // counted as the credits — the outro prompt then stood from there to the end, the countdown moved
+  // on to the next episode and marked this one watched. The credits are the LAST matching chapter
+  // in the second half, never one that names the opening; the intro is the first match in the
+  // first third. Without a runtime the position checks stand aside.
+  const INTRO_CHAPTER   = /\b(intro(duction)?|opening|vorspann|main titles?|titelsequenz)\b/;
+  const CREDITS_CHAPTER = /\b(credits|end ?credits|abspann|ending|outro)\b/;
   function chaptersToIntroData(chs) {
     const T = 10000000;
     const list = chs.map(c => ({ name: (c.Name || '').toLowerCase(), start: c.StartPositionTicks / T }));
-    const introIdx   = list.findIndex(c => /intro|opening|vorspann|main title|titelsequenz/.test(c.name));
-    const creditsIdx = list.findIndex((c, i) => i > 0 && /credit|abspann|ending|outro/.test(c.name));
+    const runtime = (item?.RunTimeTicks || 0) / T;
+    const introIdx = list.findIndex(c => INTRO_CHAPTER.test(c.name) && (!runtime || c.start <= runtime / 3));
+    const creditsIdx = list.findLastIndex((c, i) => i > 0 && CREDITS_CHAPTER.test(c.name)
+      && !INTRO_CHAPTER.test(c.name) && (!runtime || c.start >= runtime / 2));
     const intro = introIdx >= 0 ? {
       Valid: true, IntroStart: list[introIdx].start,
       IntroEnd: list[introIdx + 1]?.start ?? list[introIdx].start + 90,
@@ -1649,7 +1673,7 @@
     // server stream. Save the position → seekToResume restores it after the rebuild.
     // Not the element's currentTime alone: while a source is still loading it reads 0, and a switch
     // made during the spinner restarted the title at 0:00. Same rule as positionTicks().
-    const savedPosition = sourceLive ? (videoElement?.currentTime ?? lastPosition) : lastPosition;
+    const savedPosition = livePosition();
     startTicks    = Math.round(savedPosition * 10000000);
     resumeApplied = false;
     await setupPlayback(selectedAudioIndex, selectedSubtitleIndex);

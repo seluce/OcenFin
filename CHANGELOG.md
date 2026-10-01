@@ -78,6 +78,12 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   to zero.
 - **Chapters at the same position no longer break the player's display**, and a playlist that
   contains a title twice plays through instead of looping or getting stuck.
+- **When a title cannot be played directly, the converted version continues where you were.** It
+  started over from the beginning, and "Try again" after a playback error went back to where you
+  had first started the title — or did not get going at all.
+- **The end credits are recognised more reliably from chapter names.** A chapter such as "Opening
+  Credits" near the start, or a scene whose name merely contained a similar word, counted as the
+  credits: the next episode was started early and the current one marked as watched.
 
 ### Internal
 
