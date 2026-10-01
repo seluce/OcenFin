@@ -152,10 +152,18 @@
     return inProgress;
   }
 
+  // Back from a title opened in the hero should find that title in the hero again; the rotation
+  // otherwise starts over at the first slide (heroIndex 0) and the slide that was opened is gone.
+  function openFromHero() {
+    if (myCache) myCache.heroIndex = heroIndex;
+    onOpenDetails?.(heroCurrent);
+  }
+
   // Start the rotation for the already-set heroItems (shared by "For You" and the fallback).
   function startHeroRotation() {
     if (!alive) return;
-    heroIndex = 0;
+    heroIndex = (myCache?.heroIndex ?? 0) % Math.max(heroItems.length, 1);
+    if (myCache) myCache.heroIndex = 0;   // once — a later visit starts at the beginning again
     prevHeroIndex = -1;
     heroBuilt = true;
     heroLoading = false;   // hero is ready → skeleton gone
@@ -645,7 +653,9 @@
 
   {#snippet collectionCard(col)}
     {@const img = getItemImageUrl(col)}
-    <button onclick={() => onOpenCollection?.(col)} onfocus={() => previewItem(col)} onblur={cancelPreview}
+    <!-- data-item-id: Back from the collection returns to this card (focusCardAgain). The row comes
+         from the cache on the way back, so it is there in time. -->
+    <button onclick={() => onOpenCollection?.(col)} onfocus={() => previewItem(col)} onblur={cancelPreview} data-item-id={col.Id}
       class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
                   border-4 border-transparent group-focus:border-white group-focus:scale-105
@@ -741,7 +751,10 @@
             <p class="text-gray-300 text-lg line-clamp-2 max-w-2xl drop-shadow">{heroCurrent.Overview}</p>
           {/if}
           <div class="flex items-center gap-4 mt-2">
-            <button onclick={() => onOpenDetails?.(heroCurrent)} data-scroll-top
+            <!-- data-item-id + the remembered slide (openFromHero): back from the title, the hero shows
+                 it again and is the FIRST element carrying its id, so focusCardAgain lands here — it
+                 used to pick the same title in "Recently added", deep down the page. -->
+            <button onclick={openFromHero} data-scroll-top data-item-id={heroCurrent?.Id}
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-lg px-8 py-3 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-2 shadow-lg">
               <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>

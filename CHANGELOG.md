@@ -103,6 +103,17 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   player over another screen.
 - **A context menu or picker no longer stays open over the profile selection** after a profile
   switch, and a library's genre filter always lists that library's genres.
+- **Back returns to the right place in more cases:**
+  - after "Shuffle" in a library, to the Shuffle button;
+  - after "Details" from a card's menu, to that card — in a library it used to be the card opened
+    the time before, on the home screen the first copy of the title further up;
+  - after a title from the big banner on the home screen, to the banner with that title, not to
+    the same title further down the page;
+  - after a collection on the home screen, to its card instead of the top of the page.
+- **The selection no longer disappears** after renaming a playlist or cancelling its deletion,
+  after leaving its edit mode with Back, after deleting a playlist from inside it, when the
+  "server unreachable" banner goes away by itself, after closing a trailer, or when adding to a
+  playlist or collection fails.
 - **The end credits are recognised more reliably from chapter names.** A chapter such as "Opening
   Credits" near the start, or a scene whose name merely contained a similar word, counted as the
   credits: the next episode was started early and the current one marked as watched.

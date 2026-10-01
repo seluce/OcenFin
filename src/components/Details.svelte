@@ -224,8 +224,12 @@
 
   const YOUTUBE_APP_ID = 'youtube.leanback.v4';   // LG webOS YouTube app
 
+  // The trailer button, for the way back: the overlay takes the focus and closing it removed the
+  // focused element with nothing to land on, so the next key opened the sidebar.
+  let trailerOpener = null;
   function openTrailer() {
     if (!fullItem?.RemoteTrailers?.length) return;
+    trailerOpener = document.activeElement;
     const url     = fullItem.RemoteTrailers[0].Url;
     const match   = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([^&?\s]{11})/);
     const videoId = match ? match[1] : null;
@@ -260,6 +264,9 @@
 
   function closeTrailer() {
     trailerEmbedUrl = null;
+    const el = trailerOpener;
+    trailerOpener = null;
+    tick().then(() => { if (el?.isConnected) el.focus(); });
   }
 
   const getAuthHeaders = () => authHeaders(session.token);

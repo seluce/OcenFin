@@ -182,7 +182,7 @@
   async function savePlaylistName() {
     const newName = renameValue.trim();
     if (!newName) { renameError = true; return; }
-    if (newName === name) { renamingPlaylist = false; return; }
+    if (newName === name) { endRename(); return; }
     renameError = false;
     try {
       // Playlist's own update endpoint: uses the user's ownership rights (no admin right needed).
@@ -192,15 +192,31 @@
       if (!res.ok) { console.warn('[OcenFin] rename failed', res.status); renameError = true; return; }
     } catch (e) { console.warn('[OcenFin] rename error', e); renameError = true; return; }
     name = newName;
-    renamingPlaylist = false;
+    endRename();
     onPlaylistRenamed?.(collection.Id, newName);   // App: update the grid tile + sidebar
+  }
+
+  // Each edit sub-state takes the control that has the focus away with it (the input, Save, Cancel,
+  // the whole list), and focus fell to <body> — the next key then opened the sidebar. Closing one
+  // hands the focus to the button that opened it. (§23 had covered remove and reorder only.)
+  function endRename() {
+    renamingPlaylist = false;
+    tick().then(() => editList?.querySelector('[data-rename-btn]')?.focus());
+  }
+  function endDeleteConfirm() {
+    confirmDeletePlaylist = false;
+    tick().then(() => editList?.querySelector('[data-delete-btn]')?.focus());
+  }
+  function endEditMode() {
+    playlistEditMode = false;
+    tick().then(() => editBtn?.focus());
   }
 
   // Back key: first unwind the edit states, then (false) → App navigates back.
   export function handleBackKey() {
-    if (renamingPlaylist)      { renamingPlaylist = false;      return true; }
-    if (confirmDeletePlaylist) { confirmDeletePlaylist = false; return true; }
-    if (playlistEditMode)      { playlistEditMode = false;      return true; }
+    if (renamingPlaylist)      { endRename();        return true; }
+    if (confirmDeletePlaylist) { endDeleteConfirm(); return true; }
+    if (playlistEditMode)      { endEditMode();      return true; }
     return false;
   }
 
@@ -333,7 +349,7 @@
                 class="px-6 py-3 rounded-lg font-bold bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
                 {i18n.t.save}
               </button>
-              <button onclick={() => renamingPlaylist = false}
+              <button onclick={endRename}
                 class="px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
                 {i18n.t.cancel}
               </button>
@@ -349,19 +365,19 @@
               class="px-6 py-3 rounded-lg font-bold bg-red-700 hover:bg-red-600 focus:bg-red-600 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               {i18n.t.deletePlaylist}
             </button>
-            <button onclick={() => confirmDeletePlaylist = false} {@attach focusOnMount()}
+            <button onclick={endDeleteConfirm} {@attach focusOnMount()}
               class="px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               {i18n.t.cancel}
             </button>
           </div>
         {:else}
           <div class="flex items-center gap-3 flex-wrap">
-            <button onclick={startRename}
+            <button onclick={startRename} data-rename-btn
               class="flex items-center gap-3 px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
               {i18n.t.renamePlaylist}
             </button>
-            <button onclick={() => confirmDeletePlaylist = true}
+            <button onclick={() => confirmDeletePlaylist = true} data-delete-btn
               class="flex items-center gap-3 px-6 py-3 rounded-lg font-bold bg-red-900/40 hover:bg-red-900/60 focus:bg-red-900/60 text-red-300 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-red-500 transition-colors">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-7 0v12a1 1 0 001 1h6a1 1 0 001-1V7"/></svg>
               {i18n.t.deletePlaylist}

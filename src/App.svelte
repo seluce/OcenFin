@@ -631,7 +631,16 @@
   }
   // Reliably put focus on the button when the banner appears (it mounts due to a
   // background event; focusOnMount didn't catch it there — tick() after the flush wins).
-  $effect(() => { if (session.connectionLost) tick().then(() => retryBtnEl?.focus()); });
+  // …and give it back when the banner goes. It closes by itself once the server answers (a Wi-Fi
+  // blip, the TV waking up), and its buttons took the focus with them: the next key opened the
+  // sidebar instead of continuing where you were.
+  const bannerFocus = makeFocusReturn();
+  let _bannerUp = false;
+  $effect(() => {
+    const up = session.connectionLost && !initializing;
+    if (up && !_bannerUp) { _bannerUp = true; bannerFocus.capture(); tick().then(() => retryBtnEl?.focus()); }
+    else if (!up && _bannerUp) { _bannerUp = false; bannerFocus.restore(); }
+  });
   async function syncCreate() { await createSyncGroup(session.serverUrl, session.token, selectedUser?.Name || 'OcenFin'); syncJoined = true; measureClockOffset(session.serverUrl, session.token); await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
   async function syncJoin(groupId) { await joinSyncGroup(session.serverUrl, session.token, groupId); syncJoined = true; syncMyGroupId = groupId; measureClockOffset(session.serverUrl, session.token); await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
   // syncCommand goes with the group: a Player mounted later must not find the old group's last command.
@@ -1789,7 +1798,10 @@
       dashboardReloadKey++;
     }
     if (collectionStack.length) { popCollectionLevel(false); }   // its card is gone → first one
-    else if (collectionReturnView === 'library' && playlistsLibGone) { currentLibrary = null; viewState = 'dashboard'; }
+    else if (collectionReturnView === 'library' && playlistsLibGone) {
+      currentLibrary = null; viewState = 'dashboard';
+      focusContent({ why: 'playlist deleted, playlists library gone' });
+    }
     else {
       // Back onto the title page it was opened from — but its card is gone, so onto the page itself.
       if (collectionReturnView === 'details' && collectionReturnDetails) {
@@ -1799,6 +1811,11 @@
       collectionReturnDetails = null;
       viewState = collectionReturnView;
       restoreCollectionTrip();
+      // The two views that restore nothing of their own on this way back — focus was left on
+      // nothing and the next key opened the sidebar. The card is gone: the Library takes the one
+      // that moved into its place (restoreView keeps the position), the dashboard its first card.
+      if (viewState === 'library') libraryRef?.restoreView();
+      else if (viewState === 'dashboard') focusCardAgain(id, null, '(playlist deleted)');
     }
   }
 
@@ -2011,9 +2028,17 @@
     }
   }
   function contextOpenDetails(item) {
+    // The card the menu was opened on is the way back — not the menu's own button, which
+    // showItemDetails() would find focused (occurrence 0: Back landed on the FIRST copy of the title,
+    // in Continue watching rather than the watchlist row it came from). The Library keeps its own
+    // memory and has to be told as well, or it restored the card of an earlier visit.
+    const el = contextReturnEl, nth = contextReturnNth;
     contextReturnId = null; contextReturnEl = null;   // Details takes over the focus
     contextItem = null;
-    showItemDetails(item);
+    if (viewState === 'library') libraryRef?.rememberSpot(item, el);
+    showItemDetails(item);   // a playlist or collection opens as one instead — same correction there
+    if (el && viewState === 'details')    { detailsReturnEl = el; detailsReturnNth = nth; detailsReturnScroll = scrollTopOf(el); }
+    if (el && viewState === 'collection') { collectionReturnEl = el; collectionReturnNth = nth; collectionReturnScroll = scrollTopOf(el); }
   }
   // "Add to playlist" from the context menu → open AddToPicker (the focus-return ID stays
   // and only takes effect once the picker is also closed).
@@ -2323,7 +2348,7 @@
           class="bg-white text-red-700 font-bold px-5 py-2 rounded-lg focus:outline-none focus:ring-4 focus:ring-white/70 hover:bg-gray-100 transition-colors">
           {i18n.t.retry}
         </button>
-        <button onclick={() => { session.connectionLost = false; handleLogout(); }}
+        <button onclick={() => { bannerFocus.cancel(); session.connectionLost = false; handleLogout(); }}
           class="bg-red-800 text-white font-bold px-5 py-2 rounded-lg focus:outline-none focus:ring-4 focus:ring-white/70 hover:bg-red-900 transition-colors">
           {i18n.t.switchServer}
         </button>

@@ -144,7 +144,10 @@
       <div class="flex gap-2">
         <input bind:value={newName} placeholder={i18n.t.createNew} maxlength="100"
           class="flex-1 bg-gray-900 text-white text-lg px-4 py-3 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white placeholder-gray-500"/>
-        <button onclick={createNew} disabled={!newName.trim() || busy}
+        <!-- Not disabled while busy: disabling the FOCUSED button drops the focus to <body>, and on a
+             failed request it stayed there — Back then bypassed this picker and went to App (in the
+             player: playback ended). createNew/addTo ignore a press while busy anyway. -->
+        <button onclick={createNew} disabled={!newName.trim()}
           class="bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold px-6 py-3 rounded-lg focus:outline-none focus:ring-4 focus:ring-white transition-colors">
           {i18n.t.create}
         </button>
@@ -157,7 +160,7 @@
         <div class="flex flex-col gap-1">
           {#each items as target (target.Id)}
             {@const has = alreadyIn.has(target.Id)}
-            <button onclick={() => addTo(target)} disabled={busy || has}
+            <button onclick={() => addTo(target)} disabled={has}
               class="text-left px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white flex items-start gap-3
                      {has ? 'opacity-70 cursor-not-allowed' : 'text-gray-200 hover:bg-gray-700 focus:bg-gray-700'}">
               <svg class="w-5 h-5 shrink-0 mt-1 {has ? 'text-green-500' : 'text-gray-500'}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">

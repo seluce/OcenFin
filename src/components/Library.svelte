@@ -456,6 +456,7 @@
 
   async function playRandomItem() {
     if (!currentLibraryId) return;
+    const libId = currentLibraryId, from = document.activeElement;
     try {
       const res = await fetch(
         `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}` +
@@ -464,7 +465,9 @@
       );
       if (res.ok) {
         const data = await res.json();
-        if (data.Items?.length) onOpenDetails?.(data.Items[0]);
+        // Still this library (the draw is a request away)? Then back from the title comes back to
+        // the Shuffle button — it used to restore whatever card had been opened LAST, or nothing.
+        if (data.Items?.length && currentLibraryId === libId) { rememberSpot(null, from); onOpenDetails?.(data.Items[0]); }
       }
     } catch { }
   }
@@ -530,16 +533,24 @@
   let savedScroll  = 0;
   let lastFocusedId = null;
   let lastFocusedIdx = -1;
+  let lastFocusedEl = null;   // a control rather than a card (Shuffle) — restoreView's last resort
   function openDetails(item) {
+    rememberSpot(item);
+    onOpenDetails?.(item);
+  }
+  // Where Back from Details returns to. Every way into Details from this view has to set it — the
+  // grid card here, Shuffle, and App's context menu "Details" (exported) — or restoreView() lands
+  // on the card of an EARLIER visit, possibly at that position in another library, or on nothing.
+  export function rememberSpot(item, el = null) {
     savedScroll   = libraryScrollContainer?.scrollTop || 0;
-    lastFocusedId = item.Id;
+    lastFocusedId = item?.Id ?? null;
+    lastFocusedEl = el;
     // The POSITION in the rendered grid as well, because the card may not be there on the way back:
     // App removes an item that no longer matches an active status filter (favourite taken off in
     // Details), and it does so while restoreView() is already suspended on its tick — so the card
     // is reliably gone by the time the id is looked up. Position is what survives that.
-    lastFocusedIdx = [...(libraryGrid?.querySelectorAll('[data-item-id]') || [])]
-      .findIndex(el => el.getAttribute('data-item-id') === item.Id);
-    onOpenDetails?.(item);
+    lastFocusedIdx = item ? [...(libraryGrid?.querySelectorAll('[data-item-id]') || [])]
+      .findIndex(c => c.getAttribute('data-item-id') === item.Id) : -1;
   }
 
   // ── Callable from App via bind:this ─────────────────────────
@@ -558,6 +569,8 @@
         dlog('[focus] library restore · card gone, took position', lastFocusedIdx, 'of', cards.length);
       }
       if (btn) btn.focus();
+    } else if (lastFocusedEl?.isConnected) {
+      lastFocusedEl.focus();
     }
   }
   export function removeItem(id) {
