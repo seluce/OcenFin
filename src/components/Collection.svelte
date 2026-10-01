@@ -1,5 +1,5 @@
 <script>
-  import { tick } from 'svelte';
+  import { tick, onDestroy, untrack } from 'svelte';
   import { i18n } from '../i18n.svelte.js';
   import { itemBlurHash, blurUp, authHeaders, focusOnMount, getItemImageUrl } from '../utils.js';
   import { buildPlayQueue } from '../playback.js';
@@ -40,6 +40,9 @@
   // Movies/episodes play directly. If the pick lands on a series/season (normal in BoxSets),
   // a random episode is drawn from it (specials/season 0 excluded), because a
   // series itself isn't playable. Uniformly distributed, incl. already watched (comfort rewatch).
+  // Both starts below wait on the server; Back meanwhile must not have the Player pop up afterwards.
+  let alive = true;
+  onDestroy(() => { alive = false; });
   async function playRandom() {
     if (!items.length) return;
     const pick = items[Math.floor(Math.random() * items.length)];
@@ -48,7 +51,7 @@
       // shared specials rule; the random draw ignores its ordering. Was an inline copy of that
       // query — the third one in the codebase.
       const pool = await buildPlayQueue([pick], { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
-      if (!pool.length) return;
+      if (!pool.length || !alive) return;   // left meanwhile — no Player popping up over another view
       onPlayVideo?.({ item: pool[Math.floor(Math.random() * pool.length)], audioIndex: -1, subtitleIndex: -1 });
     } else {
       onPlayVideo?.({ item: pick, audioIndex: -1, subtitleIndex: -1 });
@@ -66,7 +69,7 @@
     let queue = [];
     try { queue = await buildPlayQueue(items, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() }); }
     finally { buildingQueue = false; }
-    if (queue.length) onPlayQueue?.(queue);
+    if (queue.length && alive) onPlayQueue?.(queue);
   }
 
   // Label for an episode: "S1 · E5 · Title"
@@ -206,6 +209,11 @@
   $effect(() => {
     if (collection && collection.Id !== loadedId) { loadedId = collection.Id; loadCollection(); }
   });
+  // Back takes the focus on mount only when no card is to get it. Read ONCE: as the expression
+  // focusOnMount(!focusItemId) the attachment was rebuilt whenever the prop changed — and building
+  // one runs it, so opening a nested collection (focusItemId → null) put focus on Back first
+  // (CLAUDE.md: never feed {@attach} a value that flips).
+  function focusBackOnMount(node) { if (!untrack(() => focusItemId)) node.focus(); }
 </script>
 
 <div bind:this={scrollEl} class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
@@ -221,7 +229,7 @@
     {/if}
   {/snippet}
   <div class="flex items-center gap-6 mb-8">
-    <button onclick={onBack} bind:this={backBtn} {@attach focusOnMount(!focusItemId)}
+    <button onclick={onBack} bind:this={backBtn} {@attach focusBackOnMount}
       class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
       {i18n.t.back}
     </button>

@@ -139,6 +139,11 @@ export function suppressTheme(on) {
   if (on === suppressed) return;
   suppressed = on;
   if (!audio || currentOwnerId === null) return;
-  if (on) fadeTo(0, () => audio.pause());
-  else audio.play().then(() => fadeTo(targetVolume)).catch(() => {});
+  if (on) { fadeTo(0, () => audio.pause()); return; }
+  // Guarded like every other callback here: a key that wakes the screensaver over a title page and a
+  // quick Back after it — stopTheme() starts its fade, THEN this play() resolves, and fading up
+  // cancelled the stop and its release. The theme then looped on the dashboard with no owner, and
+  // the next screensaver could not silence it (no owner → this function returns early).
+  const mySeq = fetchSeq;
+  audio.play().then(() => { if (mySeq === fetchSeq && !suppressed) fadeTo(targetVolume); }).catch(() => {});
 }

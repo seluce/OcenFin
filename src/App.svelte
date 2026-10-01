@@ -1,5 +1,5 @@
 <script>
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
   import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, makeFocusReturn, installConnectionGuard, installEnterRepeatGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
   import { buildPlayQueue } from './playback.js';
@@ -249,7 +249,9 @@
   let activeUserId = $state(null);
 
   // Load (or reset) the user's watchlist whenever the active profile changes.
-  $effect(() => { if (activeUserId) initWatchlist(activeUserId); });
+  // untrack: initWatchlist reads session.token/serverUrl, which made them dependencies — a logout
+  // re-ran it for the old profile with an empty token and a relative URL. Only the profile counts.
+  $effect(() => { const id = activeUserId; if (id) untrack(() => initWatchlist(id)); });
   let prefsReady   = false;   // prevents saving during the initial load
   let applyingPrefs = false;  // prevents saving DURING applyUserPrefs (otherwise a half-finished state)
 
@@ -598,11 +600,19 @@
   function manageReconnect(lost) {
     if (lost && session.serverUrl) {
       if (reconnectTimer) return;
+      // One probe at a time, each bounded: a host that silently drops packets lets a request hang
+      // until the connect timeout, and a new one every 5 s piled up for the whole outage.
+      let probing = false;
       reconnectTimer = setInterval(async () => {
+        if (probing) return;
+        probing = true;
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 4500);
         try {
-          const r = await fetch(`${session.serverUrl}/System/Info/Public`, { cache: 'no-store' });
+          const r = await fetch(`${session.serverUrl}/System/Info/Public`, { cache: 'no-store', signal: ctrl.signal });
           if (r.ok) session.connectionLost = false;
         } catch { /* keep trying */ }
+        finally { clearTimeout(t); probing = false; }
       }, 5000);
     } else if (reconnectTimer) {
       clearInterval(reconnectTimer); reconnectTimer = null;
@@ -1284,6 +1294,7 @@
   let _partnersSeq = 0;   // supersede guard: only the LATEST library switch may publish its result
   async function loadPartnersPlayedIds(libraryId) {
     const seq = ++_partnersSeq;
+    const myCache = partnersPlayedCache;   // this session's — a profile switch replaces the object
     partnersPlayedIds = null;
     if (!librarySharedOn || !sharedReady || !libraryId) return;
     const hit = partnersPlayedCache[libraryId];
@@ -1328,7 +1339,7 @@
       } catch (e) { console.warn('[Shared] error for', m.name, e); }
     }));
     dlog('[Shared] library filter scanned in', Date.now() - tAll, 'ms (members in parallel)');
-    partnersPlayedCache[libraryId] = { ids, at: Date.now() };   // cache stays valid for ITS library
+    myCache[libraryId] = { ids, at: Date.now() };   // cache stays valid for ITS library
     if (seq !== _partnersSeq) return;   // library switched while fetching → don't publish stale IDs
     partnersPlayedIds = ids;
   }
@@ -1346,6 +1357,10 @@
   async function loadSharedSuggestions() {
     if (!sharedSugKey) { sharedSuggestions = []; return; }
     _loadedSugKey = sharedSugKey;   // claim the key in advance → no double fetch
+    // Two of the slowest requests in the app run below. What they bring belongs to THIS profile and
+    // these members: after a profile switch (or a member change) it is dropped, and the partner
+    // cache it fills is the one of this session — applyUserPrefs gives the next one a fresh object.
+    const myKey = sharedSugKey, myUser = activeUserId, myCache = partnersPlayedCache;
     // map + Promise.all rather than a loop: the members are fetched side by side, but the ORDER
     // survives, and memberData[0] supplying the suggestion pool depends on that.
     const memberData = (await Promise.all(sharedProfile.members.map(async (m) => {
@@ -1375,6 +1390,7 @@
         return { items, genreCount, watched };
       } catch { return null; }
     }))).filter(Boolean);
+    if (_loadedSugKey !== myKey || activeUserId !== myUser) return;   // superseded meanwhile
     if (!memberData.length) { sharedSuggestions = []; return; }
 
     // Genre weights: genres that ALL members have watched (product of the counts → "both like it").
@@ -1397,7 +1413,7 @@
     memberData.forEach(d => d.watched.forEach(id => exclude.add(id)));
     // Exactly what the library filter needs — see PARTNERS_ALL_KEY. Handing it over here spares it
     // a full catalogue request per member and per library.
-    partnersPlayedCache[PARTNERS_ALL_KEY] = { ids: exclude, at: Date.now() };
+    myCache[PARTNERS_ALL_KEY] = { ids: exclude, at: Date.now() };
 
     sharedSuggestions = memberData[0].items
       .filter(it => !exclude.has(it.Id))
@@ -1486,6 +1502,14 @@
     disconnectSyncSocket();              // close the SyncPlay socket
     closeSyncPlay(); syncMyGroup = null; syncGroups = []; syncQueue = null; syncCommand = null; _lastSyncQueueItem = null; syncJoined = false; syncMyGroupId = null;   // reset group state
     remoteCommand = null; dismissRemoteMessage();   // discard admin remote control/message
+    // Overlays and watch-together results of the old profile. None of these is tied to the app
+    // phase: a context menu or picker stayed open over the profile selection (its trap included,
+    // its actions now without a token), and "For you both" showed the old profile's row on the next
+    // one's dashboard until that one's own scan replaced it.
+    contextItem = null; contextPickerMode = null; contextPickerItem = null;
+    showExitConfirm = false; exitFocus.cancel();
+    sharedSuggestions = []; _loadedSugKey = null;
+    _partnersSeq++; partnersPlayedIds = null;   // an in-flight library scan must not publish
     viewState = 'dashboard';
     apiCache.dashboard = null;   // clear cache (property mutation instead of reassignment → shared reference stays)
     navLibraries = [];
@@ -2002,12 +2026,15 @@
     contextReturnId = null; contextReturnEl = null;   // playback takes over the focus
     contextItem = null;
     if (!item?.Id) return;
-    detailsOrigin = viewState;
+    const from = viewState, user = activeUserId;
     try {
       const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300`, { headers: getAuthHeaders() });
       if (!res.ok) { console.warn('play playlist: HTTP', res.status); return; }
       const data  = await res.json();
       const queue = await buildPlayQueue(data.Items || [], { serverUrl: session.serverUrl, userId: activeUserId, headers: getAuthHeaders() });
+      // Moved on while the queue was built (another view, another profile) → do not start.
+      if (viewState !== from || activeUserId !== user) return;
+      detailsOrigin = from;
       if (queue.length) { playQueue = { items: queue, index: 0 }; startPlayback({ item: queue[0], audioIndex: -1, subtitleIndex: -1 }); }
     } catch (e) { console.error('play playlist:', e); }
   }
@@ -2038,6 +2065,10 @@
   // in its handing-off state with every key but Back dead.
   let playerRun = $state(0);
   function startPlayback(p) {
+    // Already playing: a second press of a series' Play (its Next Up request was still running) came
+    // here again — and on the way through set playReturnDetails to null, since the view was no longer
+    // the title page. Back from the player then lost the page it was started from.
+    if (viewState === 'player') return;
     // Starting playback by hand is a deliberate action → the "still watching?" counter starts over.
     // Without this a stale streak from an earlier series session would carry into the new one and
     // could trigger the prompt far too early. Auto-advance never comes through here (it goes via

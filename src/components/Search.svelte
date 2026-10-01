@@ -34,6 +34,7 @@
     clearTimeout(searchTimeout);
     query = ''; results = []; people = []; isLoading = false;
     savedScroll = 0; lastFocusedId = null; focusResults = false;
+    personHasTitles.clear();
     searchToken++;                 // any response still in flight is discarded
     tick().then(() => searchInput?.focus());
   }
@@ -99,7 +100,10 @@
   // results. Without it an earlier, slow response can overwrite a later one —
   // you'd then see hits for the second-to-last search term.
   let searchToken = 0;
-  const personHasTitles = new Map();   // personId → boolean; lives only as long as this view is mounted
+  // personId → boolean. Search stays mounted for the whole session, so this is emptied on every fresh
+  // open from the menu (reset) — otherwise it grew for days, and a "no titles" answer was never
+  // asked again even after the library gained some.
+  const personHasTitles = new Map();
 
   function onSearchInput() {
     clearTimeout(searchTimeout);

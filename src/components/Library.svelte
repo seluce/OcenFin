@@ -160,7 +160,9 @@
   async function loadGenres(libraryId) {
     try {
       const res = await fetch(`${session.serverUrl}/Genres?ParentId=${libraryId}&UserId=${selectedUser.Id}&EnableTotalRecordCount=false`, authOpts());
-      if (res.ok) { const d = await res.json(); availableGenres = d.Items || []; }
+      // Same guard as loadLanguages: after a quick A → B switch, A's genres arrived last and filled
+      // B's filter menu.
+      if (res.ok) { const d = await res.json(); if (currentLibraryId === libraryId) availableGenres = d.Items || []; }
     } catch { }
   }
 

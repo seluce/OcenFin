@@ -88,6 +88,21 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   skipping it on its own and drifting apart from everyone else.
 - **After a title started by the group or from the Jellyfin dashboard, Back returns to where you
   were.** It led to a page from an earlier visit, such as a collection you had left long before.
+- **Two recommendation rows for titles with the same name no longer break the home screen**, for
+  example after watching a film and a series that are both called "Fargo".
+- **Leaving the home screen while it is still loading no longer leaves rows missing** when you
+  come back; they fill in once they arrive. A profile switch in that moment can no longer carry
+  rows over into the next profile's home screen.
+- **"For you both" and the watch-together filter start fresh on every profile switch.** The
+  previous profile's suggestions could briefly show up, and its viewing history could filter the
+  next profile's library.
+- **Theme music no longer keeps playing on the home screen** after pressing Back quickly while the
+  screensaver was being woken on a title page.
+- **Pressing Play twice on a series no longer loses the way back** to the page it was started from.
+  Starting a title, a random episode or "Play all" and leaving before it begins no longer opens the
+  player over another screen.
+- **A context menu or picker no longer stays open over the profile selection** after a profile
+  switch, and a library's genre filter always lists that library's genres.
 - **The end credits are recognised more reliably from chapter names.** A chapter such as "Opening
   Credits" near the start, or a scene whose name merely contained a similar word, counted as the
   credits: the next episode was started early and the current one marked as watched.

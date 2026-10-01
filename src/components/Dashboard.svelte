@@ -81,8 +81,14 @@
 
   const skeletons = Array(6).fill(0);
 
+  // The loads below run on after this instance is gone (Back into a library before the hero chain is
+  // through, a profile switch). `alive` stops them arming a hero timer nothing would clear, and
+  // `myCache` — the cache object THIS instance fills — keeps their late results out of whatever
+  // apiCache.dashboard holds by then: after a profile switch that is the NEXT profile's cache.
+  let alive = true;
+  let myCache = null;
   onMount(() => { loadDashboardData(); });
-  onDestroy(() => { clearInterval(heroTimer); clearTimeout(previewTimer); clearTimeout(clearTimer); });
+  onDestroy(() => { alive = false; clearInterval(heroTimer); clearTimeout(previewTimer); clearTimeout(clearTimer); });
 
   // ── Backdrop preview (like in the Library): 700 ms after focusing a card, fade in its backdrop
   //    behind the dashboard; remove it again on leaving. Opt-out via dashboardBackdrop. ──
@@ -148,12 +154,13 @@
 
   // Start the rotation for the already-set heroItems (shared by "For You" and the fallback).
   function startHeroRotation() {
+    if (!alive) return;
     heroIndex = 0;
     prevHeroIndex = -1;
     heroBuilt = true;
     heroLoading = false;   // hero is ready → skeleton gone
     clearInterval(heroTimer);
-    if (apiCache.dashboard) apiCache.dashboard.heroItems = heroItems;   // cache-proof: switching dashboards doesn't reload
+    if (myCache) myCache.heroItems = heroItems;   // cache-proof: switching dashboards doesn't reload
     if (!reduceAnimations && heroItems.length > 1) {
       preloadHero(1);   // preload the next image
       heroTimer = setInterval(() => {
@@ -206,6 +213,7 @@
   // instant display from the cache stays, but the one row that actually changed is
   // correct again (progress/new title). No full reload, the hero stays put (no reshuffle).
   async function refreshResume() {
+    const cache = myCache;
     try {
       const uId  = selectedUser.Id;
       const opts = { headers: getAuthHeaders() };
@@ -213,17 +221,21 @@
         fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
         fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
       ]);
-      continueWatching = (await rRes.json()).Items || [];
-      const dNext = await rNext.json();
+      // An error answer must not empty the rows — it parsed as "no items" and went into the cache.
+      if (!rRes.ok || !rNext.ok) { console.warn('dashboard refresh: HTTP', rRes.status, rNext.status); return; }
+      const resume = (await rRes.json()).Items || [];
+      const dNext  = await rNext.json();
+      if (!alive) return;
+      continueWatching = resume;
       nextUp = filterNextUp(Array.isArray(dNext) ? dNext : (dNext.Items || []));
-      if (apiCache.dashboard) { apiCache.dashboard.continueWatching = continueWatching; apiCache.dashboard.nextUp = nextUp; }
+      if (cache) { cache.continueWatching = continueWatching; cache.nextUp = nextUp; }
       onResumeRefreshed?.();
     } catch { /* the flag stays set → the next dashboard visit tries again */ }
   }
 
   // Recommendations: seeds from recently watched items, then /Items/{id}/Similar.
   // Best practice: shown right in the dashboard, no separate tab.
-  async function loadRecommendations(uId, opts, fields) {
+  async function loadRecommendations(uId, opts, fields, cache) {
     try {
       // Fetch recently played movies/series as the hook
       const res = await fetch(
@@ -243,9 +255,11 @@
           .then(r => r.json()).then(d => d.Items || []).catch(() => [])
       ));
       const rows = [];
-      picked.forEach((seed, i) => { if (results[i].length >= 4) rows.push({ seedTitle: seed.Name, items: results[i] }); });
+      // seedId is the row's key: two recently watched titles can share a name (a remake, a film and
+      // a series called "Fargo"), and a duplicate key makes Svelte abort the whole render.
+      picked.forEach((seed, i) => { if (results[i].length >= 4) rows.push({ seedId: seed.Id, seedTitle: seed.Name, items: results[i] }); });
       recommendations = rows;
-      if (apiCache.dashboard) apiCache.dashboard.recommendations = rows;
+      cache.recommendations = rows;
     } catch { /* recommendations are optional */ }
   }
 
@@ -296,14 +310,29 @@
     heroBuilt = false;   // rebuild per load
     // Cache hit: load from cache immediately, no network
     if (apiCache.dashboard) {
-      ({ libraries, continueWatching, nextUp, latestMovies, latestSeries, recentlyWatched, recommendations } = apiCache.dashboard);
-      recentlyWatched = recentlyWatched || [];
-      recommendations = recommendations || [];
-      collections     = apiCache.dashboard.collections || [];
-      // Cache hit: take the previously built "For You" selection directly (instant, no network);
-      // only if none is cached, build the new-additions fallback.
-      if (apiCache.dashboard.heroItems?.length) { heroItems = apiCache.dashboard.heroItems; startHeroRotation(); }
-      else buildHero();
+      const cache = myCache = apiCache.dashboard;
+      const rowsFromCache = () => {
+        ({ libraries, continueWatching, nextUp, latestMovies, latestSeries, recentlyWatched, recommendations } = cache);
+        recentlyWatched = recentlyWatched || [];
+        recommendations = recommendations || [];
+        collections     = cache.collections || [];
+      };
+      // Take the previously built "For You" selection directly (instant, no network); only if
+      // none is cached, build the new-additions fallback.
+      const heroFromCache = () => {
+        if (cache.heroItems?.length) { heroItems = cache.heroItems; startHeroRotation(); }
+        else buildHero();
+      };
+      rowsFromCache();
+      heroFromCache();
+      // Back before the load behind this cache had finished: its later rows land in the cache, not
+      // here — Up next, the recent rows and the hero stayed missing until the next remount. Take
+      // them over once that load is through; a hero already rotating is left alone.
+      if (cache.loading) cache.loading.then(() => {
+        if (!alive || apiCache.dashboard !== cache) return;
+        rowsFromCache();
+        if (!heroItems.length) heroFromCache();
+      });
       if (resumeStale) refreshResume();   // background refresh, the UI is already up from the cache
       return;
     }
@@ -330,7 +359,8 @@
         .catch(() => { heroForYouPending = false; if (!heroBuilt) buildHero(); });
       // Derive recommendations ("Because you watched X") from recently watched — independent of
       // Views/Resume, so it also goes out before the await.
-      loadRecommendations(uId, opts, fields);
+      const cache = myCache = { libraries: [], continueWatching: [], nextUp: [], latestMovies: [], latestSeries: [], recentlyWatched: [], recommendations: [], collections: [], heroItems: [] };
+      const pRecs = loadRecommendations(uId, opts, fields, cache);
       const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
       // Both "recently added" rows ask by DateCreated rather than through /Items/Latest. Measured
       // against a real library, that endpoint answers in 504 ms for Movie but 9951 ms for Series —
@@ -360,26 +390,36 @@
 
       // Priority: Views + Resume → release the UI immediately
       const [resViews, resResume] = await Promise.all([pViews, pResume]);
+      // An answer, but an error: the server IS reachable, so no "server unreachable" banner (a 401
+      // made json() throw into the catch below and raised exactly that), and nothing is cached — the
+      // next visit loads again. A revoked token is App's to handle (session.authLost).
+      if (!resViews.ok || !resResume.ok) {
+        console.warn('dashboard: HTTP', resViews.status, resResume.status);
+        isLoading = false; heroLoading = false;
+        return;
+      }
       // Hide the same collection types as the sidebar (music / live TV — unsupported views).
       libraries        = ((await resViews.json()).Items || []).filter(l => !NAV_HIDDEN_TYPES.includes((l.CollectionType || '').toLowerCase()));
       continueWatching = (await resResume.json()).Items || [];
       isLoading        = false;
       session.connectionLost = false;   // server reachable
 
-      // Fill the cache early → sidebar navigation works immediately
-      apiCache.dashboard = { libraries, continueWatching, nextUp: [], latestMovies: [], latestSeries: [], recentlyWatched: [], recommendations: [], collections: [], heroItems: [] };
+      // Fill the cache early → sidebar navigation works immediately. Only while this instance is
+      // still the dashboard on screen — after a profile switch the cache belongs to the next one.
+      cache.libraries = libraries; cache.continueWatching = continueWatching;
+      if (alive) apiCache.dashboard = cache;
 
       // Load collections independently
-      pCollections.then(r => r.json()).then(d => {
+      const pCols = pCollections.then(r => r.json()).then(d => {
         // ChildCount only comes when asked for (Fields above) — without it this filter saw undefined
         // and let a collection through that is empty for this profile (e.g. by its age limit).
         collections = (Array.isArray(d) ? d : (d.Items || [])).filter(c => c.ChildCount !== 0);
-        apiCache.dashboard.collections = collections;
+        cache.collections = collections;
       }).catch(() => {});
 
 
       // Load history + collapse by series
-      pHistory.then(r => r.json()).then(async d => {
+      const pHist = pHistory.then(r => r.json()).then(async d => {
         let items = dedupeHistory(d.Items || []).slice(0, ROW_LIMIT);   // uniform row length; capping BEFORE the enrichment saves series lookups
         // Show series with a real year range like in the library ("2016 – 2019" / "2024 – today"):
         // load the real series info (year/status/EndDate) once for all series entries.
@@ -399,7 +439,7 @@
           } catch { /* enrichment optional — if it fails, only the title remains */ }
         }
         recentlyWatched = items;
-        apiCache.dashboard.recentlyWatched = recentlyWatched;
+        cache.recentlyWatched = recentlyWatched;
       }).catch(() => {});
 
       // Update secondary sections independently — the fastest comes first
@@ -407,11 +447,11 @@
       // FIX: .catch(() => {}) so a single error doesn't block everything
       // /Items/Latest returns a DIRECT array (not { Items: [...] })!
       // Other endpoints return { Items, TotalRecordCount }. Handle both cases.
-      pNextUp.then(r => r.json()).then(d => {
+      const pNext = pNextUp.then(r => r.json()).then(d => {
         const raw = Array.isArray(d) ? d : (d.Items || []);
         // Exclude in-progress titles (already in "Continue Watching") — like the Jellyfin app.
         nextUp = filterNextUp(raw);
-        apiCache.dashboard.nextUp = nextUp;
+        cache.nextUp = nextUp;
       }).catch(() => {});
 
       // Process the latest fetches INDEPENDENTLY: each row fills immediately, and the hero is
@@ -419,19 +459,21 @@
       // of the two fetches returns (that was the actual skeleton bottleneck).
       const pm = pLatestMovies.then(r => r.json()).catch(() => []);
       const ps = pLatestSeries.then(r => r.json()).catch(() => []);
-      pm.then(d => {
+      const pmDone = pm.then(d => {
         latestMovies = Array.isArray(d) ? d : (d.Items || []);
-        apiCache.dashboard.latestMovies = latestMovies;
+        cache.latestMovies = latestMovies;
         buildHero();
       });
-      ps.then(d => {
+      const psDone = ps.then(d => {
         latestSeries = Array.isArray(d) ? d : (d.Items || []);
-        apiCache.dashboard.latestSeries = latestSeries;
+        cache.latestSeries = latestSeries;
         buildHero();
       });
       // Safety net: end the skeleton only once Latest AND "For You" have decided
       // (otherwise the placeholder would vanish while the For-You fetch is still running → gap/jump).
       Promise.all([pm, ps, pHeroForYou]).then(() => { heroLoading = false; });
+      // Everything that still fills this cache — a dashboard mounted before it is done takes over.
+      cache.loading = Promise.allSettled([pmDone, psDone, pHeroForYou, pNext, pHist, pRecs, pCols]).then(() => { cache.loading = null; });
 
     } catch (err) {
       console.error("Dashboard load failed:", err);
@@ -811,7 +853,7 @@
     {/if}
 
     <!-- RECOMMENDATIONS: "Because you watched X" — personalized, hence near the top -->
-    {#each (showRecommendations ? recommendations.slice(0, recommendationRows) : []) as rec (rec.seedTitle)}
+    {#each (showRecommendations ? recommendations.slice(0, recommendationRows) : []) as rec (rec.seedId ?? rec.seedTitle)}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">

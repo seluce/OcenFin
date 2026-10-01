@@ -196,7 +196,9 @@ function _pfKey(p) {
   // with the default flags must never satisfy a request that needs a transcode (explicit audio
   // track, burn-in, capped bitrate). Defaults mirror getPlaybackInfo's signature, since the
   // prefetch call site omits the flags.
-  return [p.itemId, p.audioStreamIndex ?? -1, p.subtitleStreamIndex ?? -1, !!p.burnSubtitles,
+  // userId too: a profile switch within the TTL must not hand one profile's PlaybackInfo (its play
+  // session, its user data) to the next.
+  return [p.itemId, p.userId || '', p.audioStreamIndex ?? -1, p.subtitleStreamIndex ?? -1, !!p.burnSubtitles,
           p.mediaSourceId || '', !!p.clientGraphicSubs,
           p.enableDirectPlay ?? true, p.enableDirectStream ?? true, p.allowAudioStreamCopy ?? true,
           p.maxBitrate ?? 120000000].join('|');
@@ -207,6 +209,9 @@ export function prefetchPlaybackInfo(params) {
   const key = _pfKey(params);
   const existing = _pfCache.get(params.itemId);
   if (existing && existing.key === key && Date.now() - existing.ts < _PF_TTL) return;  // already freshly loaded
+  // Entries only leave when a start takes them; a prefetch nobody used (the countdown cancelled, the
+  // player left) stayed for good — days of a running TV. Expired ones go here.
+  for (const [id, e] of _pfCache) if (Date.now() - e.ts >= _PF_TTL) _pfCache.delete(id);
   _pfCache.set(params.itemId, { ts: Date.now(), key, promise: getPlaybackInfo(params).catch(() => null) });
 }
 

@@ -1,9 +1,9 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { authHeaders, focusOnMount } from '../utils.js';
+  import { authHeaders } from '../utils.js';
   import { session } from '../session.svelte.js';
   import PosterCard from './PosterCard.svelte';
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
 
   // focusItemId: the title to land on after the parent brought us back from a detail page. Passed
   // in rather than resolved here, because this view unmounts — the memory lives in App.svelte.
@@ -104,6 +104,11 @@
   $effect(() => {
     if (person && person.Id !== loadedId) { loadedId = person.Id; loadPerson(); }
   });
+  // Back takes the focus on mount only when no card is to get it. Read ONCE: as the expression
+  // focusOnMount(!focusItemId) the attachment was rebuilt whenever the prop changed — and building
+  // one runs it, so opening a nested collection (focusItemId → null) put focus on Back first
+  // (CLAUDE.md: never feed {@attach} a value that flips).
+  function focusBackOnMount(node) { if (!untrack(() => focusItemId)) node.focus(); }
 </script>
 
 <div bind:this={scrollEl} class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
@@ -122,7 +127,7 @@
     {/if}
   {/snippet}
   <div class="flex items-center gap-6 mb-8">
-    <button onclick={onBack} bind:this={backBtn} {@attach focusOnMount(!focusItemId)}
+    <button onclick={onBack} bind:this={backBtn} {@attach focusBackOnMount}
       class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
       {i18n.t.back}
     </button>

@@ -431,8 +431,16 @@
     } catch (e) { console.error(e); }
   }
 
+  // The series/season starts and the random episode wait on the server. Gone or on another title by
+  // the time it answers (Back, a step along the chain, a second press already playing) → nothing
+  // is started: the Player used to pop up over whatever was on screen by then.
+  let alive = true;
+  onDestroy(() => { alive = false; });
+  const stillHere = (id) => alive && fullItem?.Id === id;
+
   async function handlePlay() {
     if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
+      const startedOn = fullItem.Id;
       // Series: Next Up, and once everything is watched the first episode again. Season: its first
       // unwatched episode, else its first. Neither lands on a special or a placeholder episode
       // (playback.js). The season used to ask for "IsNotPlayed", a filter Jellyfin does not have —
@@ -448,7 +456,7 @@
           ep = await firstEpisodeInSeason(fullItem.Id, { ...ctx, unwatchedOnly: true })
             || await firstEpisodeInSeason(fullItem.Id, ctx);
         }
-        if (ep) onPlayVideo?.({ item: ep, audioIndex: -1, subtitleIndex: -1 });
+        if (ep && stillHere(startedOn)) onPlayVideo?.({ item: ep, audioIndex: -1, subtitleIndex: -1 });
       } catch (e) { console.error(e); }
     } else {
       onPlayVideo?.({ item: fullItem, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId, tracksChosen: true });
@@ -468,8 +476,9 @@
     // Shared expansion (playback.js): all episodes across seasons for a series, this season only
     // for a season, specials excluded — the identical pool the old inline query built; the random
     // draw ignores buildPlayQueue's ordering.
+    const startedOn = fullItem.Id;
     const pool = await buildPlayQueue([fullItem], { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
-    if (!pool.length) return;
+    if (!pool.length || !stillHere(startedOn)) return;
     onPlayVideo?.({ item: pool[Math.floor(Math.random() * pool.length)], audioIndex: -1, subtitleIndex: -1 });
   }
 
