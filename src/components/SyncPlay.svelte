@@ -6,6 +6,7 @@
     group   = null,   // current group { GroupId, GroupName, Participants: [name] } or null
     groups  = [],     // available groups
     loading = false,
+    error   = '',     // the server refused create/join (App: syncCreate/syncJoin)
     onClose, onLeave, onCreate, onRefresh, onJoin,   // callback props (instead of events)
   } = $props();
 </script>
@@ -84,6 +85,8 @@
         {/if}
       </div>
     {/if}
+
+    {#if error}<p class="text-red-400 font-semibold text-center">{error}</p>{/if}
 
     <button onclick={() => onClose?.()}
       class="w-full bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-gray-300 font-bold py-3 rounded-xl

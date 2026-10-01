@@ -32,21 +32,30 @@
   function headers() {
     return authHeaders(session.token);
   }
+  // true when the server took it. Each action below changes the card optimistically and puts it
+  // back when not — an error ANSWER (403, 404, 500) never threw, so the card kept a state the
+  // server had refused.
   async function call(method, path) {
     try {
-      await fetch(`${session.serverUrl}${path}`, { method, headers: headers() });
+      const res = await fetch(`${session.serverUrl}${path}`, { method, headers: headers() });
+      if (!res.ok) console.warn('context action failed: HTTP', res.status, path);
+      return res.ok;
     } catch (e) {
       console.error('context action failed', e);
+      return false;
     }
   }
 
   async function toggleWatched() {
     if (!armed) return;
-    const next = !played;
+    const next = !played, hadResume = hasResume;
     played = next;                         // toggle optimistically
     if (next) hasResume = false;           // marked as watched → no more resume
     if (item.UserData) item.UserData.Played = next;
-    await call(next ? 'POST' : 'DELETE', `/UserPlayedItems/${item.Id}?UserId=${userId}`);
+    if (!(await call(next ? 'POST' : 'DELETE', `/UserPlayedItems/${item.Id}?UserId=${userId}`))) {
+      played = !next; hasResume = hadResume;
+      if (item.UserData) item.UserData.Played = !next;
+    }
     onChanged?.();                   // reload only AFTER the server write (otherwise a race: reload reads stale data)
   }
   async function toggleFavorite() {
@@ -54,14 +63,21 @@
     const next = !favorite;
     favorite = next;
     if (item.UserData) item.UserData.IsFavorite = next;
-    await call(next ? 'POST' : 'DELETE', `/UserFavoriteItems/${item.Id}?UserId=${userId}`);
+    if (!(await call(next ? 'POST' : 'DELETE', `/UserFavoriteItems/${item.Id}?UserId=${userId}`))) {
+      favorite = !next;
+      if (item.UserData) item.UserData.IsFavorite = !next;
+    }
     onChanged?.();
   }
   async function resetProgress() {
     if (!armed) return;
+    const was = { hasResume, played, data: item.UserData ? { ...item.UserData } : null };
     hasResume = false; played = false;     // out of "Continue Watching"
     if (item.UserData) { item.UserData.Played = false; item.UserData.PlaybackPositionTicks = 0; }
-    await call('DELETE', `/UserPlayedItems/${item.Id}?UserId=${userId}`);
+    if (!(await call('DELETE', `/UserPlayedItems/${item.Id}?UserId=${userId}`))) {
+      hasResume = was.hasResume; played = was.played;
+      if (was.data) Object.assign(item.UserData, was.data);
+    }
     onChanged?.();
   }
   function openDetails() { if (!armed) return; onOpenDetails?.(item); onClose?.(); }

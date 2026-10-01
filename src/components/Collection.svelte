@@ -79,6 +79,28 @@
     return [code, item.Name].filter(Boolean).join(' · ');
   }
 
+  // What this profile may do with the playlist. Jellyfin: renaming and editing the entries is for
+  // its owner or a share with edit rights, deleting for the owner or an administrator (the item's
+  // CanDelete says exactly that). Edit and Delete used to be offered on every playlist, other
+  // users' shared ones included, and the server's refusal went unseen. Optimistic until known.
+  let canEdit   = $state(true);
+  let canDelete = $state(true);
+  async function loadPlaylistRights(id) {
+    canEdit = canDelete = true;
+    const norm = (v) => String(v || '').replace(/-/g, '').toLowerCase();
+    try {
+      const r = await fetch(`${session.serverUrl}/Items/${id}?UserId=${selectedUser.Id}&Fields=CanDelete`, { headers: getAuthHeaders() });
+      if (!r.ok || id !== loadedId) return;
+      const owner = (await r.json()).CanDelete;
+      if (id !== loadedId || owner !== false) return;   // owner/admin, or unknown → leave everything on
+      canDelete = false;
+      const p = await fetch(`${session.serverUrl}/Playlists/${id}`, { headers: getAuthHeaders() });
+      const shares = p.ok ? ((await p.json()).Shares || []) : [];
+      if (id !== loadedId) return;
+      canEdit = shares.some(sh => sh.CanEdit && norm(sh.UserId) === norm(selectedUser.Id));
+    } catch { /* stays permissive — a refusal is still reported */ }
+  }
+
   async function loadCollection() {
     // Guard against a superseded load: opening a second collection while the first is still
     // fetching would otherwise show the slower response's items under the newer title.
@@ -87,7 +109,8 @@
     name      = collection.Name;
     items     = [];
     isLoading = true;
-    playlistEditMode = false; confirmDeletePlaylist = false; renamingPlaylist = false;
+    playlistEditMode = false; confirmDeletePlaylist = false; renamingPlaylist = false; editFailed = false;
+    if (collection.Type === 'Playlist') loadPlaylistRights(myId);
     // Playlists via their own endpoint (reliable + in list order),
     // collections/BoxSets via ParentId.
     const url = collection.Type === 'Playlist'
@@ -120,6 +143,8 @@
     if (toIndex < 0 || toIndex >= items.length) return;
     const item = items[fromIndex];
     if (!item?.PlaylistItemId) return;
+    const before = items;
+    editFailed = false;
     const arr = [...items];
     const [moved] = arr.splice(fromIndex, 1);
     arr.splice(toIndex, 0, moved);
@@ -137,12 +162,22 @@
     try {
       const res = await fetch(`${session.serverUrl}/Playlists/${collection.Id}/Items/${item.PlaylistItemId}/Move/${toIndex}`,
         { method: 'POST', headers: getAuthHeaders() });
-      if (!res.ok) console.warn('[OcenFin] move failed', res.status);
-    } catch (e) { console.warn('[OcenFin] move error', e); }
+      if (!res.ok) { console.warn('[OcenFin] move failed', res.status); editRollback(before); }
+    } catch (e) { console.warn('[OcenFin] move error', e); editRollback(before); }
+  }
+  // A refused or failed change puts the list back as the server still has it, and says so — it used
+  // to stay changed on screen only (another user's playlist answers 403).
+  let editFailed = $state(false);
+  function editRollback(before) {
+    items = before;
+    onChildCountChanged?.(collection.Id, items.length);
+    editFailed = true;
   }
 
   async function removePlaylistItem(item) {
     if (!item?.PlaylistItemId) return;
+    const before = items;
+    editFailed = false;
     const gap = items.findIndex(i => i.PlaylistItemId === item.PlaylistItemId);
     items = items.filter(i => i.PlaylistItemId !== item.PlaylistItemId);
     onChildCountChanged?.(collection.Id, items.length);   // carry the overview tile (ChildCount) along
@@ -157,8 +192,8 @@
     try {
       const res = await fetch(`${session.serverUrl}/Playlists/${collection.Id}/Items?EntryIds=${item.PlaylistItemId}`,
         { method: 'DELETE', headers: getAuthHeaders() });
-      if (!res.ok) console.warn('[OcenFin] remove failed', res.status);
-    } catch (e) { console.warn('[OcenFin] remove error', e); }
+      if (!res.ok) { console.warn('[OcenFin] remove failed', res.status); editRollback(before); }
+    } catch (e) { console.warn('[OcenFin] remove error', e); editRollback(before); }
   }
 
   // Delete the whole playlist (inline confirmation in edit mode).
@@ -166,8 +201,8 @@
     if (collection.Type !== 'Playlist') return;
     try {
       const res = await fetch(`${session.serverUrl}/Items/${collection.Id}`, { method: 'DELETE', headers: getAuthHeaders() });
-      if (!res.ok) { console.warn('[OcenFin] playlist delete failed', res.status); return; }
-    } catch (e) { console.warn('[OcenFin] playlist delete error', e); return; }
+      if (!res.ok) { console.warn('[OcenFin] playlist delete failed', res.status); editFailed = true; endDeleteConfirm(); return; }
+    } catch (e) { console.warn('[OcenFin] playlist delete error', e); editFailed = true; endDeleteConfirm(); return; }
     confirmDeletePlaylist = false;
     playlistEditMode      = false;
     onPlaylistDeleted?.(collection.Id);   // App: remove from the grid, reload the sidebar, navigation
@@ -280,7 +315,7 @@
         {i18n.t.shuffle}
       </button>
     {/if}
-    {#if collection?.Type === 'Playlist'}
+    {#if collection?.Type === 'Playlist' && canEdit}
       <button bind:this={editBtn}
         onclick={() => { playlistEditMode = !playlistEditMode; confirmDeletePlaylist = false; renamingPlaylist = false; }}
         class="shrink-0 px-6 py-3 rounded-xl font-bold focus:outline-none focus:ring-4 focus:ring-white transition-colors
@@ -377,12 +412,17 @@
               <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
               {i18n.t.renamePlaylist}
             </button>
+            {#if canDelete}
             <button onclick={() => confirmDeletePlaylist = true} data-delete-btn
               class="flex items-center gap-3 px-6 py-3 rounded-lg font-bold bg-red-900/40 hover:bg-red-900/60 focus:bg-red-900/60 text-red-300 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-red-500 transition-colors">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-7 0v12a1 1 0 001 1h6a1 1 0 001-1V7"/></svg>
               {i18n.t.deletePlaylist}
             </button>
+            {/if}
           </div>
+        {/if}
+        {#if editFailed}
+          <p class="text-red-400 text-sm font-semibold mt-3">{i18n.t.actionFailed}</p>
         {/if}
       </div>
     </div>

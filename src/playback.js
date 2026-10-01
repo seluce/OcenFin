@@ -157,6 +157,14 @@ export async function getPlaybackInfo({
     throw new Error(`PlaybackInfo HTTP ${res.status}`);
   }
   const data = await res.json();
+  // The server can answer 200 and still refuse: NotAllowed (the profile may not play it),
+  // NoCompatibleStream, RateLimitExceeded. Read as a normal answer this ended as a direct-play attempt
+  // and a generic "playback failed". The Player names the reason instead.
+  if (data.ErrorCode) {
+    const err = new Error(`PlaybackInfo refused: ${data.ErrorCode}`);
+    err.code = data.ErrorCode;
+    throw err;
+  }
   const ms = (mediaSourceId && data.MediaSources?.find(s => s.Id === mediaSourceId)) || data.MediaSources?.[0] || null;
   const vStream = ms?.MediaStreams?.find(s => s.Type === 'Video');
   const aStream = ms?.MediaStreams?.find(s => s.Type === 'Audio' && (audioStreamIndex == null || audioStreamIndex < 0 || s.Index === audioStreamIndex));

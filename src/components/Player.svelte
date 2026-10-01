@@ -97,6 +97,7 @@
   // Loading animation + error state
   let isBuffering = $state(true);
   let playbackError = $state(false);     // shows an error message instead of an endless spinner
+  let playbackRefusal = $state(null);    // the server's ErrorCode when it refused outright (setupPlayback)
   let bufferWatchdog = null;
 
   // If playback REALLY hangs (a stall without an 'error' event), show an error.
@@ -182,6 +183,7 @@
   // fired again. A stream already on the fallback stays a transcode.
   function retryPlayback() {
     playbackError = false;
+    playbackRefusal = null;
     isBuffering = true;
     resumeFromHere();
     setupPlayback(selectedAudioIndex, selectedSubtitleIndex, triedTranscodeFallback);
@@ -677,6 +679,15 @@
       await attachSource(resolved.url, resolved.isHls);
       applySubtitleOverlay(subtitleIndex, ms);
     } catch (e) {
+      if (mySetup !== setupToken) return;
+      // A refusal with a reason (getPlaybackInfo): the server said no — a direct-play attempt would be
+      // refused just the same. Show why.
+      if (e?.code) {
+        console.warn('[OcenFin] PlaybackInfo refused:', e.code);
+        playbackRefusal = e.code;
+        isBuffering = false; playbackError = true;
+        return;
+      }
       console.error('PlaybackInfo failed, falling back to Direct Play:', e);
       playMethod = 'DirectPlay';
       const url = `${session.serverUrl}/Videos/${item.Id}/stream?static=true&ApiKey=${session.token}` +
@@ -1769,14 +1780,17 @@
   }
 
   async function toggleFavorite() {
-    isFavorite = !isFavorite;
+    const next = !isFavorite;
+    isFavorite = next;
     resetControlsTimeout();
+    // Rolled back when the server refuses or cannot be reached — the heart used to stay as set.
     try {
-      await fetch(`${session.serverUrl}/UserFavoriteItems/${item.Id}?UserId=${selectedUser.Id}`, {
-        method: isFavorite ? "POST" : "DELETE",
+      const res = await fetch(`${session.serverUrl}/UserFavoriteItems/${item.Id}?UserId=${selectedUser.Id}`, {
+        method: next ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
-    } catch { }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (e) { console.warn('[OcenFin] favorite toggle failed, rolled back:', e?.message || e); isFavorite = !next; }
   }
 
   // ============================================================
@@ -2227,7 +2241,10 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m0 3.75h.008M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
         </svg>
         <p class="text-white text-2xl font-bold">{i18n.t.playbackError}</p>
-        <p class="text-gray-400">{i18n.t.playbackErrorHint}</p>
+        <p class="text-gray-400">{playbackRefusal === 'NotAllowed' ? i18n.t.playbackNotAllowed
+          : playbackRefusal === 'NoCompatibleStream' ? i18n.t.playbackNoStream
+          : playbackRefusal === 'RateLimitExceeded' ? i18n.t.playbackRateLimit
+          : i18n.t.playbackErrorHint}</p>
         <div class="flex gap-4 mt-2">
           <button onclick={retryPlayback} {@attach focusOnMount()}
             class="bg-white text-black font-bold px-6 py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">

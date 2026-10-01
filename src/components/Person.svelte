@@ -94,8 +94,9 @@
     const next = !fav;
     fav = next;
     try {
-      await fetch(`${session.serverUrl}/UserFavoriteItems/${person.Id}?UserId=${selectedUser.Id}`,
+      const res = await fetch(`${session.serverUrl}/UserFavoriteItems/${person.Id}?UserId=${selectedUser.Id}`,
         { method: next ? 'POST' : 'DELETE', headers: getAuthHeaders() });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);   // an error answer is a failure as well
     } catch (e) { console.warn('[OcenFin] person favorite failed, rolled back:', e); fav = !next; }
   }
 

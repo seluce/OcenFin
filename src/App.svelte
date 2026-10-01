@@ -586,6 +586,7 @@
   }
   function closeSyncPlay() {
     showSyncPlay = false;
+    syncError = '';
     if (syncPollTimer) { clearInterval(syncPollTimer); syncPollTimer = null; }
     const el = syncReturnEl;
     syncReturnEl = null;
@@ -641,8 +642,19 @@
     if (up && !_bannerUp) { _bannerUp = true; bannerFocus.capture(); tick().then(() => retryBtnEl?.focus()); }
     else if (!up && _bannerUp) { _bannerUp = false; bannerFocus.restore(); }
   });
-  async function syncCreate() { await createSyncGroup(session.serverUrl, session.token, selectedUser?.Name || 'OcenFin'); syncJoined = true; measureClockOffset(session.serverUrl, session.token); await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
-  async function syncJoin(groupId) { await joinSyncGroup(session.serverUrl, session.token, groupId); syncJoined = true; syncMyGroupId = groupId; measureClockOffset(session.serverUrl, session.token); await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
+  // Create/join can be refused — SyncPlay switched off for this profile on the server is the usual
+  // reason (403). The result used to be ignored: the dialog did nothing, and syncJoined claimed a group.
+  let syncError = $state('');
+  async function syncCreate() {
+    syncError = '';
+    if (!(await createSyncGroup(session.serverUrl, session.token, selectedUser?.Name || 'OcenFin'))) { syncError = i18n.t.syncPlayFailed; return; }
+    syncJoined = true; measureClockOffset(session.serverUrl, session.token); await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh();
+  }
+  async function syncJoin(groupId) {
+    syncError = '';
+    if (!(await joinSyncGroup(session.serverUrl, session.token, groupId))) { syncError = i18n.t.syncPlayFailed; return; }
+    syncJoined = true; syncMyGroupId = groupId; measureClockOffset(session.serverUrl, session.token); await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh();
+  }
   // syncCommand goes with the group: a Player mounted later must not find the old group's last command.
   async function syncLeave() { await leaveSyncGroup(session.serverUrl, session.token); syncJoined = false; syncMyGroupId = null; syncQueue = null; syncCommand = null; _lastSyncQueueItem = null; await syncRefresh(); }
 
@@ -1335,7 +1347,14 @@
         );
         if (!res.ok) {
           console.warn('[Shared] query failed for', m.name, '· HTTP', res.status);
-          if (res.status === 401 || res.status === 403) warnSharedMember(m);   // that member's token died
+          // A 401 is ALSO what a member gets for a library their account may not open — with a token
+          // that is perfectly fine, and "sign in again" then asked for something that cannot help.
+          // Only a token the server rejects outright needs signing in; otherwise that member simply
+          // has nothing in this library to hide.
+          if (res.status === 401 || res.status === 403) {
+            if ((await validateToken(token)) === false) warnSharedMember(m);   // that member's token died
+            else dlog('[Shared]', m.name, 'has no access to this library — nothing to hide for them');
+          }
           return;
         }
         let n = 0;
@@ -2617,6 +2636,7 @@
       group={syncMyGroup}
       groups={syncGroups}
       loading={syncLoading}
+      error={syncError}
       onCreate={syncCreate}
       onJoin={(groupId) => syncJoin(groupId)}
       onLeave={syncLeave}

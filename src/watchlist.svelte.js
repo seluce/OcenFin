@@ -29,13 +29,15 @@ export async function initWatchlist(userId) {
   watchlist.items = [];
   try {
     const res = await fetch(
-      `${session.serverUrl}/Items?UserId=${userId}&IncludeItemTypes=Playlist&Recursive=true&EnableTotalRecordCount=false`,
+      `${session.serverUrl}/Items?UserId=${userId}&IncludeItemTypes=Playlist&Recursive=true&Fields=CanDelete&EnableTotalRecordCount=false`,
       { headers: headers() }
     );
     if (!res.ok) return;
     const d = await res.json();
     if (userId !== currentUserId) return;   // profile switched meanwhile → discard
-    const pl = (d.Items || []).find(p => p.Name === WATCHLIST_NAME);
+    // This profile's OWN watchlist: another user's playlist of the same name can be visible too
+    // (public or shared), and adding to it fails. CanDelete is Jellyfin's "owner (or admin)".
+    const pl = (d.Items || []).find(p => p.Name === WATCHLIST_NAME && p.CanDelete !== false);
     if (!pl) return;                        // none yet → created lazily on the first add
     watchlist.playlistId = pl.Id;
     await refreshEntries(userId);
@@ -50,6 +52,12 @@ async function refreshEntries(userId) {
     `${session.serverUrl}/Playlists/${watchlist.playlistId}/Items?UserId=${userId}&Limit=500`,
     { headers: headers() }
   );
+  // Deleted in another client: forget it, so the next bookmark creates a new one instead of every
+  // add failing against a playlist that no longer exists (with the icon stuck on "saved").
+  if (res.status === 404 && userId === currentUserId) {
+    watchlist.playlistId = null; watchlist.entries = {}; watchlist.items = [];
+    return;
+  }
   if (!res.ok) return;
   const d = await res.json();
   if (userId !== currentUserId) return;
@@ -122,9 +130,11 @@ export async function toggleWatchlist(item) {
       const ids = related.map(it => it.PlaylistItemId).filter(Boolean);
       watchlist.items = watchlist.items.filter(it => !related.includes(it));
       for (const it of related) delete watchlist.entries[it.Id];
-      if (ids.length)
-        await fetch(`${session.serverUrl}/Playlists/${watchlist.playlistId}/Items?EntryIds=${ids.join(',')}`,
+      if (ids.length) {
+        const res = await fetch(`${session.serverUrl}/Playlists/${watchlist.playlistId}/Items?EntryIds=${ids.join(',')}`,
           { method: 'DELETE', headers: headers() });
+        if (!res.ok) await refreshEntries(userId);   // refused → show what the server still has
+      }
     } else if (!watchlist.entries[item.Id]) {
       watchlist.entries[item.Id] = 'pending';   // instant icon feedback; refresh replaces it
       let target = item;
@@ -133,8 +143,12 @@ export async function toggleWatchlist(item) {
         if (!target) { delete watchlist.entries[item.Id]; return; }   // series without episodes
       }
       if (watchlist.playlistId) {
-        await fetch(`${session.serverUrl}/Playlists/${watchlist.playlistId}/Items?Ids=${target.Id}&UserId=${userId}`,
+        const res = await fetch(`${session.serverUrl}/Playlists/${watchlist.playlistId}/Items?Ids=${target.Id}&UserId=${userId}`,
           { method: 'POST', headers: headers() });
+        // Refused: the 'pending' marker must go — it showed "saved" and, being truthy, blocked every
+        // further press until a restart. A 404 means the playlist is gone: the refresh below forgets
+        // it, and the next press creates a new one.
+        if (!res.ok) { console.warn('[watchlist] add: HTTP', res.status); delete watchlist.entries[item.Id]; }
       } else {
         // First ever add: creating the playlist and adding the item is one call.
         // Body, not the query form 12.x marks obsolete. IsPublic stated on purpose: the body's default

@@ -114,6 +114,21 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   after leaving its edit mode with Back, after deleting a playlist from inside it, when the
   "server unreachable" banner goes away by itself, after closing a trailer, or when adding to a
   playlist or collection fails.
+- **A title that no longer exists shows a message on its page**, with Back ready, instead of an
+  empty screen — for example one deleted while it was still in Continue watching or the watchlist.
+- **Favourite, watched and similar switches undo themselves when the server refuses them**, on the
+  details page, in a card's menu, on a person's page and in the player. They used to stay as set.
+- **Playlists only offer what you may do with them.** Someone else's shared playlist no longer shows
+  Edit or Delete unless you were given those rights, and a change the server refuses is undone and
+  reported instead of only appearing to work.
+- **The watchlist recovers when its playlist was deleted elsewhere**, and a bookmark the server
+  refuses no longer stays marked or blocks the next try.
+- **Playback that the server refuses says why**: not allowed for this profile, no way to play it on
+  this TV, or the server is at its limit right now.
+- **SyncPlay says when creating or joining a group did not work**, for example because SyncPlay is
+  not enabled for the profile.
+- **Watch together no longer asks to sign a member in again** when that member simply has no access
+  to the library being browsed.
 - **The end credits are recognised more reliably from chapter names.** A chapter such as "Opening
   Credits" near the start, or a scene whose name merely contained a similar word, counted as the
   credits: the next episode was started early and the current one marked as watched.

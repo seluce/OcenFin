@@ -329,10 +329,15 @@
   onDestroy(stopTheme);
 
   let loadStartedAt = 0;   // for the similar-row timing below
+  // The title could not be loaded: deleted meanwhile (from Continue watching, the watchlist, a
+  // suggestion), no access any more, or the server did not answer. The page used to stay EMPTY —
+  // no message, nothing focusable, the next key opened the sidebar.
+  let loadError = $state(false);
   async function loadFullDetails(itemId) {
     const myToken = ++detailToken;
     loadStartedAt = performance.now();
     isLoading    = true;
+    loadError    = false;
     fullItem     = null;
     relatedItems = [];
     similarItems = [];
@@ -372,8 +377,11 @@
         } else if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
           loadRelatedItems(fullItem.Id, myToken);
         }
+      } else {
+        console.warn('[details] item', itemId, '→ HTTP', res.status);
+        if (myToken === detailToken) loadError = true;
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); if (myToken === detailToken) loadError = true; }
     // Only clear the spinner if we're still current — otherwise an old response kills the new one's.
     finally     { if (myToken === detailToken) isLoading = false; }
   }
@@ -503,10 +511,13 @@
     shown.UserData = { ...shown.UserData, Played: willBePlayed };
     if (carry) item.UserData = { ...item.UserData, Played: willBePlayed };
     try {
-      await fetch(`${session.serverUrl}/UserPlayedItems/${shown.Id}?UserId=${selectedUser.Id}`, {
+      // An error ANSWER is a failure too: it never threw, so the tick stayed although the server
+      // had refused (or no longer knew the title).
+      const res = await fetch(`${session.serverUrl}/UserPlayedItems/${shown.Id}?UserId=${selectedUser.Id}`, {
         method: willBePlayed ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch (e) {
       // Roll back on error
       console.warn('[OcenFin] played-status toggle failed, rolled back:', e);
@@ -522,10 +533,11 @@
     shown.UserData = { ...shown.UserData, IsFavorite: willBeFav };
     if (carry) item.UserData = { ...item.UserData, IsFavorite: willBeFav };
     try {
-      await fetch(`${session.serverUrl}/UserFavoriteItems/${shown.Id}?UserId=${selectedUser.Id}`, {
+      const res = await fetch(`${session.serverUrl}/UserFavoriteItems/${shown.Id}?UserId=${selectedUser.Id}`, {
         method: willBeFav ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);   // see togglePlayed
     } catch (e) {
       console.warn('[OcenFin] favorite toggle failed, rolled back:', e);
       shown.UserData = { ...shown.UserData, IsFavorite: !willBeFav };
@@ -693,6 +705,15 @@
   {#if isLoading}
     <div class="flex-1 flex items-center justify-center">
       <div class="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+
+  {:else if loadError}
+    <div class="flex-1 flex flex-col items-center justify-center gap-6 p-10 text-center" data-focus-group="details-top">
+      <p class="text-2xl text-gray-300 font-semibold max-w-xl">{i18n.t.itemLoadFailed}</p>
+      <button onclick={() => { if (!handleBackKey()) onClose?.(); }} {@attach focusOnMount()}
+        class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-8 py-3 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
+        {i18n.t.back}
+      </button>
     </div>
 
   {:else if fullItem}
