@@ -81,6 +81,13 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **When a title cannot be played directly, the converted version continues where you were.** It
   started over from the beginning, and "Try again" after a playback error went back to where you
   had first started the title — or did not get going at all.
+- **SyncPlay: the next episode starts at its beginning.** The player re-applied the group's last
+  command when it opened, so after a pause and resume at 31:00 the next episode started at 31:00
+  for the whole group — and titles started later did too, even after leaving the group.
+- **SyncPlay: when the group jumps back into an intro or recap, this TV stays with it** instead of
+  skipping it on its own and drifting apart from everyone else.
+- **After a title started by the group or from the Jellyfin dashboard, Back returns to where you
+  were.** It led to a page from an earlier visit, such as a collection you had left long before.
 - **The end credits are recognised more reliably from chapter names.** A chapter such as "Opening
   Credits" near the start, or a scene whose name merely contained a similar word, counted as the
   credits: the next episode was started early and the current one marked as watched.

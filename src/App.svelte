@@ -624,7 +624,8 @@
   $effect(() => { if (session.connectionLost) tick().then(() => retryBtnEl?.focus()); });
   async function syncCreate() { await createSyncGroup(session.serverUrl, session.token, selectedUser?.Name || 'OcenFin'); syncJoined = true; measureClockOffset(session.serverUrl, session.token); await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
   async function syncJoin(groupId) { await joinSyncGroup(session.serverUrl, session.token, groupId); syncJoined = true; syncMyGroupId = groupId; measureClockOffset(session.serverUrl, session.token); await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
-  async function syncLeave() { await leaveSyncGroup(session.serverUrl, session.token); syncJoined = false; syncMyGroupId = null; syncQueue = null; _lastSyncQueueItem = null; await syncRefresh(); }
+  // syncCommand goes with the group: a Player mounted later must not find the old group's last command.
+  async function syncLeave() { await leaveSyncGroup(session.serverUrl, session.token); syncJoined = false; syncMyGroupId = null; syncQueue = null; syncCommand = null; _lastSyncQueueItem = null; await syncRefresh(); }
 
   // Auto-load: open the item the group is playing programmatically in the Player (jumps to the group position via Ready→Unpause).
   async function openItemInPlayer(itemId) {
@@ -636,17 +637,37 @@
     try {
       const res = await fetch(`${session.serverUrl}/Items/${itemId}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
       if (res.ok) {
-        currentDetailItem   = await res.json();
-        activeAudioIndex    = -1;
-        activeSubtitleIndex = -1;
-        activeMediaSourceId = null;
-        activePickTracks    = true;
-        playReturnDetails   = null;   // started from outside, not from a title page
-        viewState = 'player';
+        playFromOutside(await res.json());
         dlog('[SyncPlay] auto-load →', currentDetailItem?.Name);
       }
     } catch {}
     _syncOpeningId = null;
+  }
+
+  // A title the group (SyncPlay) or the server's "play" puts on screen. Nobody chose it on a title
+  // page, so the way back is the view that was open — set up like a fresh trip. It used to leave the
+  // origin alone, and Back from the title page the player ends on applied the origin of some EARLIER
+  // trip: a collection left long ago, a library instead of the dashboard. On a title page it is
+  // startPlayback's own case (that page is kept whole, chain included); while a title already plays,
+  // only the title changes and the way back stays what it was.
+  function playFromOutside(item) {
+    if (viewState === 'player') {
+      currentDetailItem   = item;
+      activeAudioIndex    = -1;
+      activeSubtitleIndex = -1;
+      activeMediaSourceId = null;
+      activePickTracks    = true;
+      return;
+    }
+    if (viewState !== 'details') {
+      beginChainIfRoot();
+      detailsOrigin       = viewState;
+      detailsReturnId     = null;
+      detailsReturnEl     = document.activeElement;
+      detailsReturnNth    = 0;
+      detailsReturnScroll = scrollTopOf(detailsReturnEl);
+    }
+    startPlayback({ item, audioIndex: -1, subtitleIndex: -1 });
   }
 
   // ── SyncPlay WebSocket (Phase 2) ───────────────────────────────────────────
@@ -700,7 +721,7 @@
       const type = msg.Data?.Type;
       // Anchor my own membership authoritatively on the socket (GroupId), not on the name.
       if (type === 'GroupJoined') { syncJoined = true; syncMyGroupId = msg.Data?.GroupId || syncMyGroupId; measureClockOffset(session.serverUrl, session.token); syncRefresh(); }
-      else if (['GroupLeft', 'NotInGroup', 'GroupDoesNotExist'].includes(type)) { syncJoined = false; syncMyGroupId = null; syncQueue = null; syncRefresh(); }
+      else if (['GroupLeft', 'NotInGroup', 'GroupDoesNotExist'].includes(type)) { syncJoined = false; syncMyGroupId = null; syncQueue = null; syncCommand = null; syncRefresh(); }
       else if (['UserJoined', 'UserLeft'].includes(type)) syncRefresh();
       else if (type === 'PlayQueue') {
         // Current group queue state (which item, which position) → passed on to the Player.

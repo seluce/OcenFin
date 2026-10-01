@@ -231,7 +231,18 @@
   let syncReady        = false;   // send only after a real playback start (prevents sending on the resume seek/autostart)
   let syncQueueSet     = false;   // SetNewQueue for this item already sent/confirmed?
   let syncSuppressUntil = 0;      // briefly suppress outgoing sends while a received command takes effect
-  let _appliedSyncSeq  = 0;       // last applied command (dedupe)
+  // Last applied command (dedupe). App keeps the group's LAST command around, and starting from 0 this
+  // Player applied it again on mount — an Unpause at 31:00 from the previous episode started the next
+  // one at 31:00 (and, through SetNewQueue's position, the whole group with it), also long after the
+  // group was left. A command emitted only moments ago — it arrived while this Player was still
+  // loading — is still applied.
+  const SYNC_CMD_FRESH_MS = 5000;
+  let _appliedSyncSeq  = untrack(() => {
+    const c = syncCommand;
+    if (!c) return 0;
+    const at = new Date(c.EmittedAt || c.When || 0).getTime();
+    return Number.isFinite(at) && syncNow() - at < SYNC_CMD_FRESH_MS ? 0 : c._seq;
+  });
   let _expectSeekEcho  = false;   // the next 'seeked' comes from a received command → don't send it back (robust even on a slow seek)
   let _groupWantsPaused = false;  // the group last commanded pause → undo unwanted auto-play (transcode restart)
   let _userPlayIntent  = 0;       // timestamp of a real user play action (backstop)
@@ -286,6 +297,15 @@
     sendSyncReady(session.serverUrl, session.token, posTicks(), true, syncQueue.playlistItemId);
   }
 
+  // The group jumped INTO an intro or recap: someone chose to watch it. This TV's auto-skip must not
+  // jump out again — the skip's own seek fell inside the echo window and was never sent on, so this
+  // TV sat at the segment's end while everyone else played it.
+  function groupSeekedTo(pos) {
+    const i = introData?.Introduction;
+    if (i?.Valid && pos >= (i.ShowSkipPromptAt ?? 0) && pos <= (i.HideSkipPromptAt ?? 0)) introAutoSkipped = true;
+    if (recapSegment && pos >= recapSegment.start && pos < recapSegment.end) recapAutoSkipped = true;
+  }
+
   // Apply a received group command (with a rough time reference via "When"; fine sync = phase 2b).
   function applySyncCommand(cmd) {
     if (!cmd || cmd._seq === _appliedSyncSeq || !videoElement) return;
@@ -307,14 +327,15 @@
     syncSuppressUntil = Date.now() + delay + 600;   // local clock: only ever compared to Date.now()
     dlog('[SyncPlay] ← apply', command, 'pos', Math.round(pos), 'in', delay, 'ms');
     if (command === 'Seek') {
+      groupSeekedTo(pos);
       _expectSeekEcho = true; videoElement.currentTime = pos; currentTime = pos;
     } else if (command === 'Pause') {
       _groupWantsPaused = true;
-      if (Math.abs(videoElement.currentTime - pos) > 1) { _expectSeekEcho = true; videoElement.currentTime = pos; currentTime = pos; }
+      if (Math.abs(videoElement.currentTime - pos) > 1) { groupSeekedTo(pos); _expectSeekEcho = true; videoElement.currentTime = pos; currentTime = pos; }
       videoElement.pause();
     } else if (command === 'Unpause') {
       _groupWantsPaused = false;
-      if (Math.abs(videoElement.currentTime - pos) > 1) { _expectSeekEcho = true; videoElement.currentTime = pos; }
+      if (Math.abs(videoElement.currentTime - pos) > 1) { groupSeekedTo(pos); _expectSeekEcho = true; videoElement.currentTime = pos; }
       setTimeout(() => videoElement?.play().catch(() => {}), delay);
     } else if (command === 'Stop') {
       _groupWantsPaused = true;
