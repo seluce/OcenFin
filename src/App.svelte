@@ -22,6 +22,7 @@
   import Collection  from './components/Collection.svelte';
   import { registerSession, listSyncGroups, createSyncGroup, joinSyncGroup, leaveSyncGroup, syncSocketUrl, setSyncIgnoreWait, measureClockOffset } from './syncplay.js';
   import { suppressTheme } from './thememusic.js';
+  import { setTrackMemoryUser } from './trackmemory.js';
 
   // Lazy-loaded views (Vite code-splitting): loaded only on first open, then cached.
   // Keeps the cold-start bundle small — especially the Player pulls the heavy deps (hls.js, assjs) only on
@@ -293,6 +294,7 @@
   function applyUserPrefs(userId) {
     applyingPrefs = true;
     activeUserId = userId;
+    setTrackMemoryUser(userId);   // the per-series track memory is per profile too
     const p = loadUserPrefs(userId);
     if (p.language) {
       setLang(p.language);
@@ -1051,12 +1053,12 @@
   // components/Login.svelte (lazy-loaded)
   // ============================================================
 
-  // A removed server's profiles leave their settings and search history behind, under keys nothing
-  // can reach any more — they go with the server (Ferris, 2026-09-30). Which profiles: those this
-  // entry holds a token for, and those whose settings were last saved through it. The same Jellyfin
-  // server can be saved twice (LAN and remote address) with the same user IDs, so a profile that
-  // another entry still holds a token for, or whose settings were last saved through another
-  // entry, keeps its data. Settings from before the tag existed count as this entry's.
+  // A removed server's profiles leave their settings, search history and track memory behind, under
+  // keys nothing can reach any more — they go with the server (Ferris, 2026-09-30). Which profiles:
+  // those this entry holds a token for, and those whose settings were last saved through it. The
+  // same Jellyfin server can be saved twice (LAN and remote address) with the same user IDs, so a
+  // profile that another entry still holds a token for, or whose settings were last saved through
+  // another entry, keeps its data. Settings from before the tag existed count as this entry's.
   function forgetServerProfiles(id) {
     const tagOf = (uid) => loadUserPrefs(uid).serverId;
     const uids = new Set([...Object.keys(savedTokens[id] || {}), ...Object.keys(sharedTokens[id] || {})]);
@@ -1071,7 +1073,12 @@
       const tag = tagOf(uid);
       if (tag && tag !== id) continue;
       if (savedServers.some(s => s.id !== id && (savedTokens[s.id]?.[uid] || sharedTokens[s.id]?.[uid]))) continue;
-      try { localStorage.removeItem(userPrefsKey(uid)); localStorage.removeItem(`search_history_${uid}`); n++; } catch {}
+      try {
+        localStorage.removeItem(userPrefsKey(uid));
+        localStorage.removeItem(`search_history_${uid}`);
+        localStorage.removeItem(`ocenfin:trackmem:${uid}`);
+        n++;
+      } catch {}
     }
     dlog('[Server] removed — forgot the local data of', n, 'profile(s)');
   }
@@ -1574,8 +1581,9 @@
     activeMediaSourceId = null;   // new episode → its own default version, not the previous one's
     carryOrPickTracks(episodeItem);
     currentDetailItem = episodeItem;
-    syncQueueIndex(episodeItem);
-    // viewState stays 'player' — {#key currentDetailItem.Id} in the template forces a remount
+    playerRun++;
+    syncQueueIndex(episodeItem, +1);
+    // viewState stays 'player' — the {#key} on id + playerRun in the template forces a remount
   }
 
   function handlePrevEpisode(episodeItem) {
@@ -1584,7 +1592,8 @@
     activeMediaSourceId = null;
     carryOrPickTracks(episodeItem);
     currentDetailItem = episodeItem;
-    syncQueueIndex(episodeItem);
+    playerRun++;
+    syncQueueIndex(episodeItem, -1);
   }
 
   // ── Person view (filmography) ───────────────────────────────
@@ -1993,12 +2002,20 @@
   let queuePrev = $derived(playQueue && playQueue.index > 0 ? playQueue.items[playQueue.index - 1] : null);
   $effect(() => { if (viewState !== 'player' && playQueue) playQueue = null; });
 
-  // Carry the queue pointer along on title change in the Player (covers both next AND prev)
-  function syncQueueIndex(playedItem) {
+  // Carry the queue pointer along on title change in the Player (covers both next AND prev). The
+  // neighbour in the direction of travel first: a playlist may hold a title twice, and findIndex
+  // jumped back to its FIRST occurrence — [X, Y, X] then looped Y → X → Y for good.
+  function syncQueueIndex(playedItem, step = 0) {
     if (!playQueue || !playedItem) return;
-    const qi = playQueue.items.findIndex(x => x.Id === playedItem.Id);
+    const near = playQueue.index + step;
+    const qi = step && playQueue.items[near]?.Id === playedItem.Id
+      ? near : playQueue.items.findIndex(x => x.Id === playedItem.Id);
     if (qi >= 0) playQueue = { ...playQueue, index: qi };
   }
+  // Counts every next/previous inside the Player, so the SAME title twice in a row (a playlist can
+  // hold one twice) still remounts it: keyed on the id alone nothing changed, and the Player stayed
+  // in its handing-off state with every key but Back dead.
+  let playerRun = $state(0);
   function startPlayback(p) {
     // Starting playback by hand is a deliberate action → the "still watching?" counter starts over.
     // Without this a stale streak from an earlier series session would carry into the new one and
@@ -2483,7 +2500,7 @@
          the end of a video / on back). Entering stays instant so playback isn't delayed.
          uiFade honours "reduce animations" (duration 0). -->
     <div out:uiFade={{ duration: 150 }} class="absolute inset-0 z-[100] bg-black w-full h-full">
-      {#key currentDetailItem.Id}
+      {#key `${currentDetailItem.Id}:${playerRun}`}
         {#await lazyPlayer() then Player}
         <Player
           item={currentDetailItem}

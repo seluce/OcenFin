@@ -22,6 +22,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Removing a server also removes its profiles' settings and search history** from the TV. A
   server saved twice, for example under its home and its internet address, keeps what the other
   entry still uses.
+- **Each profile remembers its own audio and subtitle choice per series.** It used to be one memory
+  for the whole TV, so one person's choice for a series overrode the next person's language
+  settings. What was remembered so far goes to the first profile that signs in after the update.
 - **Watch together is no longer offered on age-restricted profiles.** It works with the other
   profiles' accounts, and their suggestions would not follow the restricted profile's age limit.
 
@@ -63,6 +66,18 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   they are written, such as "The Matrix" under M.
 - **Empty collections no longer appear on the home screen**, for example ones whose films are all
   above a profile's age limit.
+- **A track picked on the details page is the one that plays.** If the series had another choice
+  remembered from earlier, the player switched back to that one. A choice made on the details page
+  is now remembered for the series just like one made in the player.
+- **Back while a title is still loading keeps your place.** The resume point was reset to the start,
+  and the title dropped out of "Continue watching". Switching the audio track during loading no
+  longer restarts the title from the beginning either.
+- **After "Skip Recap", "Skip Intro" can be pressed right away.** When the intro followed straight
+  on, the button changed its label but OK did nothing.
+- **Changing the audio track keeps your subtitle timing.** A subtitle delay you had set went back
+  to zero.
+- **Chapters at the same position no longer break the player's display**, and a playlist that
+  contains a title twice plays through instead of looping or getting stuck.
 
 ### Internal
 

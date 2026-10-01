@@ -1,7 +1,7 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro, getItemImageUrl } from '../utils.js';
-  import { rememberTrack, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks } from '../trackmemory.js';
+  import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks } from '../trackmemory.js';
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady, syncNow } from '../syncplay.js';
@@ -364,7 +364,11 @@
   // So: remember the last position seen while a source was attached, and let positionTicks() decide
   // which of the two to trust. sourceLive is false from just before every teardown until the next
   // source has announced its metadata.
-  let lastPosition = 0;        // seconds
+  // Seeded with the resume point, not 0: until the first loadedmetadata there is no live position,
+  // and the 'play' event (attachSource calls play() before the metadata) flushes a Progress report
+  // right then. With 0 that report wiped the server's resume point on every resumed start, and Back
+  // during the spinner sent Stopped at 0 — the title lost its place and left Continue watching.
+  let lastPosition = startTicks / 10000000;   // seconds
   let sourceLive   = false;
 
   // Moving on FROM the outro means the episode is finished — even though the player deliberately
@@ -763,9 +767,13 @@
   }
 
   // Apply subtitle – routes by codec: PGS/VobSub → libbitsub overlay, text → VTT overlay.
+  // The offset belongs to the TRACK: reset when another one is chosen, kept when the same track is
+  // set up again — an audio switch or the transcode fallback rebuilds the overlay too, and used to
+  // throw away a sync the user had just dialled in. The renderers take it over on creation.
+  let offsetTrack = null;
   function applySubtitleOverlay(index, ms) {
     subtitleFetchToken++;   // invalidate in-flight VTT fetches (otherwise a text overlay next to graphic/ASS)
-    subtitleOffset = 0;     // new track switch → reset the offset (content-specific)
+    if (index !== offsetTrack) { subtitleOffset = 0; offsetTrack = index; }
     if (index === -1 || !ms) { disposeGraphic(); clearAss(); subtitleCues = []; return; }
     const stream = (ms.MediaStreams || []).find(s => s.Index === index && s.Type === 'Subtitle');
     const codec  = (stream?.Codec || '').toLowerCase();
@@ -819,6 +827,7 @@
       ensureVideoFrameCallback();               // webOS: rVFC polyfill active BEFORE assjs reads it
       disposeAss();                            // no setTrack → remove the old overlay, rebuild fresh
       assRenderer = new ASS(content, videoElement, { container: assContainer });
+      if (subtitleOffset) assRenderer.delay = subtitleOffset;   // kept across a rebuild (applySubtitleOverlay)
       assActive = true;
       // assjs drives its render loop via requestAnimationFrame, started by the video's 'play'/'playing'
       // event. On a track switch in the MIDDLE of playback the video is already running → it fires
@@ -884,6 +893,7 @@
     // Prefetched while the menu entry was focused → hand the bytes over directly (a blob: URL is
     // local and instant), otherwise fall back to the network URL.
     let firstCuesLogged = false;   // per switch → the progress event fires many times
+    let mine = null;               // this switch's renderer — see onError
     const cached = subBlobs.get(stream.Index);
     if (cached) graphicObjectUrl = URL.createObjectURL(cached);
     const opts = {
@@ -909,7 +919,9 @@
       // and takes the glue URL from the main thread (bundled builds hash the asset names, so deriving
       // it from the wasm URL doesn't work). Don't downgrade below 1.11.0 — the fallback is silent.
       onWarning: (w) => dlog('[OcenFin] libbitsub notice:', w?.code || w?.message || w, w?.details),
-      onError: (e) => { console.warn('[OcenFin] libbitsub error:', e?.code || '', e?.message || e); disposeGraphic(); },
+      // Only ITS renderer: a superseded one whose streaming load fails late (dispose does not abort
+      // it) used to dispose whichever renderer was current — the track just switched to.
+      onError: (e) => { console.warn('[OcenFin] libbitsub error:', e?.code || '', e?.message || e); if (!mine || graphicRenderer === mine) disposeGraphic(); },
       onEvent: (ev) => {
         // renderer-change → GRAPHICS backend, only ever 'webgpu' | 'webgl2' | 'canvas2d' (webgl2 on the
         // B4, WebGPU is unavailable there). worker-state.fallback → decoding moved to the main thread.
@@ -929,9 +941,10 @@
     };
     try {
       // The codec is known → pick the explicit renderer (no format auto-detection needed).
-      graphicRenderer = ['pgssub', 'pgs'].includes(codec)
+      mine = graphicRenderer = ['pgssub', 'pgs'].includes(codec)
         ? new PgsRenderer(opts)
         : new VobSubRenderer({ ...opts, fileName: graphicSubFileName(url, stream) });   // VobSub/DVD: .mks container
+      if (subtitleOffset) graphicRenderer.timeOffset = -subtitleOffset;   // kept across a rebuild, sign as in adjustSubtitleOffset
       dlog('[OcenFin] image subtitle via libbitsub:', stream.Index, stream.Codec);
     } catch (e) { dlog('[OcenFin] libbitsub renderer error:', e?.message); disposeGraphic(); }
   }
@@ -1355,14 +1368,22 @@
     // PlaybackInfo decides Direct Play vs. transcode; sets the source + HLS if needed.
     // Resume (startTicks) happens client-side after 'loadedmetadata' (seekToResume).
     await setupPlayback(selectedAudioIndex, selectedSubtitleIndex);
+    // Gone meanwhile (Back during the spinner, zapping to the next episode): onDestroy has already
+    // run, so going on would report Playing AFTER Stopped — a ghost "now playing" on the server — and
+    // start two intervals nothing ever clears, each holding this dead instance for days.
+    if (destroyed) return;
 
     await reportPlaybackStart();
+    if (destroyed) return;
     progressTimer = setInterval(reportPlaybackProgress, 10000);
     updateClock();
     clockTimer = setInterval(updateClock, 15000);
   });
 
+  let destroyed = false;
   onDestroy(() => {
+    destroyed = true;
+    setupToken++;   // a setupPlayback still waiting on PlaybackInfo stands down instead of attaching
     window.removeEventListener('keydown', markInteraction);
     window.removeEventListener('pointermove', markInteraction);
     window.removeEventListener('click', markInteraction);
@@ -1574,24 +1595,9 @@
     showSettings = false;
     resetControlsTimeout();
 
-    // Remember the chosen track language per series (matched by language across episodes). Subtitle
-    // "Off" (-1) is stored as 'off'. Applied on the next episode's first setup in setupPlayback.
-    if (item?.SeriesId) {
-      if (type === 'audio') {
-        if (playbackPrefs.rememberAudioTrack) {
-          const lang = mediaStreams.find(s => s.Index === index && s.Type === 'Audio')?.Language;
-          if (lang) rememberTrack(item.SeriesId, 'audio', lang);
-        }
-      } else if (playbackPrefs.rememberSubtitleTrack) {
-        if (index === -1) {
-          rememberTrack(item.SeriesId, 'subtitle', 'off');
-        } else {
-          const st = mediaStreams.find(s => s.Index === index && s.Type === 'Subtitle');
-          // Store language + the flags that distinguish same-language variants (Full vs Forced vs SDH).
-          if (st?.Language) rememberTrack(item.SeriesId, 'subtitle', { lang: st.Language, forced: !!st.IsForced, sdh: !!st.IsHearingImpaired });
-        }
-      }
-    }
+    // Remember the chosen track language per series (matched by language across episodes). Applied
+    // on the next episode's first setup in setupPlayback.
+    rememberChoice(item?.SeriesId, type, index, mediaStreams, playbackPrefs);
 
     if (type === 'subtitle') {
       const oldStream = mediaStreams.find(s => s.Index === selectedSubtitleIndex && s.Type === 'Subtitle');
@@ -1641,7 +1647,9 @@
 
     // Hard reload (fallback): an audio switch or burned-in subtitles require a new
     // server stream. Save the position → seekToResume restores it after the rebuild.
-    const savedPosition = videoElement?.currentTime ?? 0;
+    // Not the element's currentTime alone: while a source is still loading it reads 0, and a switch
+    // made during the spinner restarted the title at 0:00. Same rule as positionTicks().
+    const savedPosition = sourceLive ? (videoElement?.currentTime ?? lastPosition) : lastPosition;
     startTicks    = Math.round(savedPosition * 10000000);
     resumeApplied = false;
     await setupPlayback(selectedAudioIndex, selectedSubtitleIndex);
@@ -1660,11 +1668,16 @@
     // Player, since the skip button vanishes shortly → keypresses keep working.
     playerContainer?.focus();
   }
-  // Same as skipIntro, for the recap. When the intro follows right away, the button stays and only
-  // changes its label; focus moving to the container is harmless then, OK/arrows still reach it.
+  // Same as skipIntro, for the recap — except when the intro follows right away. Then the button
+  // stays mounted and only changes its label, and it must KEEP the focus: handed to the container,
+  // "Skip intro" stood there unfocused and OK did nothing (the pause shortcut stands down while an
+  // overlay is up). The test is showSkipIntro's own condition, at the position the skip lands on.
   function skipRecap() {
     if (!videoElement || !recapSegment) return;
-    videoElement.currentTime = recapSegment.end;
+    const to = recapSegment.end;
+    videoElement.currentTime = to;
+    const intro = introData?.Introduction;
+    if (intro?.Valid && to >= (intro.ShowSkipPromptAt ?? 0) && to <= (intro.HideSkipPromptAt ?? 0)) return;
     playerContainer?.focus();
   }
 
@@ -2304,7 +2317,9 @@
             </div>
           {/if}
           {#if showChapters && duration > 0 && chapters.length > 1}
-            {#each chapters as ch (ch.StartPositionTicks)}
+            <!-- Keyed by position in the list: two chapters at the same timestamp (common in rips) made
+                 StartPositionTicks a duplicate key, and Svelte aborts the render on one. -->
+            {#each chapters as ch, i (i)}
               <div class="absolute top-1/2 -translate-y-1/2 w-0.5 h-3 bg-white/60 rounded-full pointer-events-none"
                    style="left: {(ch.StartPositionTicks / 10000000 / duration) * 100}%"></div>
             {/each}

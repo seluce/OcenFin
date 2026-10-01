@@ -2,7 +2,7 @@
   import { i18n } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
   import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
-  import { pickDefaultTracks } from '../trackmemory.js';
+  import { pickDefaultTracks, rememberChoice } from '../trackmemory.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
   import { buildPlayQueue, firstEpisodeInSeason, firstEpisodeOfSeries } from '../playback.js';
   import { session } from '../session.svelte.js';
@@ -102,6 +102,14 @@
     const t = pickDefaultTracks(src, { seriesId: fullItem?.SeriesId, prefs: playbackPrefs });
     selectedAudioIndex    = t.audio;
     selectedSubtitleIndex = t.subtitle;
+  }
+
+  // A track picked here counts like one picked in the Player's menu: it becomes the series' memory.
+  // The Player re-applies that memory on its first setup, and used to overrule this page's choice
+  // with an older one — "subtitles off" remembered, English picked here, played without subtitles.
+  function pickTrack(kind, index) {
+    if (kind === 'audio') selectedAudioIndex = index; else selectedSubtitleIndex = index;
+    rememberChoice(fullItem?.SeriesId, kind, index, getMediaStreams(kind === 'audio' ? 'Audio' : 'Subtitle'), playbackPrefs);
   }
 
   // On resolution/version change: reset the tracks to the source's default values
@@ -967,7 +975,7 @@
                     {#if openDropdown === 'audio'}
                       <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
                         {#each getMediaStreams('Audio') as stream (stream.Index)}
-                          <button onclick={() => { selectedAudioIndex = stream.Index; closeDropdown(); }} data-opt data-active={stream.Index === selectedAudioIndex || undefined}
+                          <button onclick={() => { pickTrack('audio', stream.Index); closeDropdown(); }} data-opt data-active={stream.Index === selectedAudioIndex || undefined}
                             class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedAudioIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                             {audioLabel(stream)}
                           </button>
@@ -999,12 +1007,12 @@
                     </button>
                     {#if openDropdown === 'subtitle'}
                       <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
-                        <button onclick={() => { selectedSubtitleIndex = -1; closeDropdown(); }} data-opt data-active={selectedSubtitleIndex === -1 || undefined}
+                        <button onclick={() => { pickTrack('subtitle', -1); closeDropdown(); }} data-opt data-active={selectedSubtitleIndex === -1 || undefined}
                           class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {selectedSubtitleIndex === -1 ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                           {i18n.t.subtitleOff}
                         </button>
                         {#each getMediaStreams('Subtitle') as stream (stream.Index)}
-                          <button onclick={() => { selectedSubtitleIndex = stream.Index; closeDropdown(); }} data-opt data-active={stream.Index === selectedSubtitleIndex || undefined}
+                          <button onclick={() => { pickTrack('subtitle', stream.Index); closeDropdown(); }} data-opt data-active={stream.Index === selectedSubtitleIndex || undefined}
                             class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedSubtitleIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                             {subtitleLabel(stream)}
                           </button>
