@@ -10,6 +10,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Skip the recap.** A "Skip Recap" button like "Skip Intro", optionally automatic (Settings →
   Playback). Needs a server that marks recaps, such as the Intro Skipper plugin.
 - **The A–Z bar in a library can be switched off** (Settings → Content → Library).
+- **Find subtitles from the TV.** "Search subtitles…" on a title's page lists what the server's
+  subtitle providers (such as the OpenSubtitles plugin) offer; the one you pick is downloaded and
+  selected. For profiles that may manage subtitles on the server.
 
 ### Changed
 

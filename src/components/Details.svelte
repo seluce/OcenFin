@@ -1,5 +1,5 @@
 <script>
-  import { i18n } from '../i18n.svelte.js';
+  import { i18n, LANGUAGES } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
   import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
   import { pickDefaultTracks, rememberChoice } from '../trackmemory.js';
@@ -8,6 +8,7 @@
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
+  import SubtitleSearch from './SubtitleSearch.svelte';
 
   let {
     item,
@@ -110,6 +111,56 @@
   function pickTrack(kind, index) {
     if (kind === 'audio') selectedAudioIndex = index; else selectedSubtitleIndex = index;
     rememberChoice(fullItem?.SeriesId, kind, index, getMediaStreams(kind === 'audio' ? 'Audio' : 'Subtitle'), playbackPrefs);
+  }
+
+  // ---- Find subtitles with the server's providers (SubtitleSearch) ---------------------------------
+  // Only for profiles the server lets manage subtitles (admin, or "allow subtitle management") — the
+  // search and the download both answer 403 otherwise.
+  const canSearchSubtitles = $derived(!!(selectedUser?.Policy?.IsAdministrator || selectedUser?.Policy?.EnableSubtitleManagement));
+  let subtitleSearchOpen = $state(false);
+  const subtitleSearchReturn = makeFocusReturn();
+  function openSubtitleSearch() {
+    subtitleSearchReturn.capture(openTrigger || document.activeElement);
+    closeDropdown(false);
+    subtitleSearchOpen = true;
+  }
+  function closeSubtitleSearch() {
+    subtitleSearchOpen = false;
+    // Back where it was opened — unless that was the "Search subtitles" button of a title WITHOUT
+    // subtitles, which has just turned into the dropdown: then the dropdown.
+    const back = document.querySelector('[data-subtitle-trigger]');
+    tick().then(() => {
+      if (subtitleSearchReturn.pending) subtitleSearchReturn.restore();
+      tick().then(() => { if (!document.activeElement || document.activeElement === document.body) back?.isConnected && back.focus(); });
+    });
+  }
+  // The language to search first: the profile's subtitle language, else the app's.
+  const subtitleSearchLang = $derived(LANGUAGES.some(l => l.key === playbackPrefs.subtitleLanguage) ? playbackPrefs.subtitleLanguage : i18n.lang);
+  // The server reads a downloaded subtitle in with a refresh it queues — wait for the new track (a
+  // stream this version did not have before, by content, since indexes of external files can shift)
+  // and pick it. Bounded; false when it is not there yet, and the dialog says it will turn up.
+  async function awaitNewSubtitle() {
+    const id = fullItem?.Id, srcId = selectedMediaSourceId;
+    const key = (st) => `${st.Codec}|${st.Language}|${st.Path || st.DisplayTitle || ''}|${st.IsForced}`;
+    const before = new Set(getMediaStreams('Subtitle').map(key));
+    for (let i = 0; i < 12; i++) {
+      await new Promise(r => setTimeout(r, 1500));
+      if (!alive || fullItem?.Id !== id) return false;
+      try {
+        const r = await fetch(`${session.serverUrl}/Items/${id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
+        if (!r.ok) continue;
+        const d = await r.json();
+        const src = (d.MediaSources || []).find(x => x.Id === srcId) || d.MediaSources?.[0];
+        const added = (src?.MediaStreams || []).find(st => st.Type === 'Subtitle' && !before.has(key(st)));
+        if (!added || !alive || fullItem?.Id !== id) continue;
+        fullItem.MediaSources = d.MediaSources;
+        fullItem.MediaStreams = d.MediaStreams;
+        pickTrack('subtitle', added.Index);
+        dlog('[subtitles] downloaded track on the title after', (i + 1) * 1.5, 's:', added.DisplayTitle || added.Language);
+        return true;
+      } catch { /* next try */ }
+    }
+    return false;
   }
 
   // On resolution/version change: reset the tracks to the source's default values
@@ -1037,7 +1088,7 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
                   </svg>
                   <div class="flex-1" data-dropdown data-focus-trap={openDropdown === 'subtitle' || undefined}>
-                    <button onclick={(e) => toggleDropdown('subtitle', e)}
+                    <button onclick={(e) => toggleDropdown('subtitle', e)} data-subtitle-trigger
                       class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
                       <span>{selectedSubtitleIndex === -1 ? i18n.t.subtitleOff : subtitleLabel(getMediaStreams('Subtitle').find(s => s.Index === selectedSubtitleIndex))}</span>
                       <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'subtitle' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
@@ -1054,6 +1105,12 @@
                             {subtitleLabel(stream)}
                           </button>
                         {/each}
+                        {#if canSearchSubtitles}
+                          <button onclick={openSubtitleSearch} data-opt
+                            class="text-left text-sm px-3 py-2 mt-1 rounded border-t border-gray-700/70 text-blue-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white">
+                            {i18n.t.subtitleSearch}
+                          </button>
+                        {/if}
                       </div>
                     {/if}
                   </div>
@@ -1065,6 +1122,13 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
                   </svg>
                   <span class="text-sm font-semibold text-gray-300">{i18n.t.subtitleOff}</span>
+                  <!-- No track at all is exactly when a search helps most. -->
+                  {#if canSearchSubtitles}
+                    <button onclick={openSubtitleSearch}
+                      class="ml-auto text-sm px-4 py-2 rounded border border-gray-600 bg-gray-900 text-blue-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white">
+                      {i18n.t.subtitleSearch}
+                    </button>
+                  {/if}
                 </div>
               {/if}
 
@@ -1334,6 +1398,10 @@
       <p class="text-gray-400 text-base text-center max-w-md">{i18n.t.shareHint}</p>
     </div>
   </div>
+{/if}
+
+{#if subtitleSearchOpen && fullItem}
+  <SubtitleSearch item={fullItem} initialLang={subtitleSearchLang} onClose={closeSubtitleSearch} onDownloaded={awaitNewSubtitle} />
 {/if}
 
 <!-- Add to collection / playlist (shared component) -->
