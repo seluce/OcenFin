@@ -2515,6 +2515,7 @@
             onOpenCollection={(col) => openCollection(col)}
             onOpenContext={(item) => openContextMenu(item)}
             onPlay={(item, el) => playFromCard(item, el, cardOrdinal(el, item.Id))}
+            navIcons={displaySettings.navIcons}
           />
           {/key}
 

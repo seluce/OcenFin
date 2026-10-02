@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, itemBadge, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, NAV_HIDDEN_TYPES, getItemImageUrl } from '../utils.js';
+  import { itemProgress, itemBadge, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, NAV_HIDDEN_TYPES, getItemImageUrl, libraryIcon } from '../utils.js';
   import WatchedBadge from './WatchedBadge.svelte';
   import { session } from '../session.svelte.js';
   import { watchlist, refreshWatchlist } from '../watchlist.svelte.js';
@@ -26,6 +26,7 @@
     onResumeRefreshed,          // () => void — App resets the flag
     onLibrariesLoaded, onOpenCollection, onOpenContext, onOpenDetails, onOpenLibrary,   // callback props
     onPlay,                     // (item, el) => void — the banner's Play: App plays it straight away
+    navIcons = {},              // the profile's sidebar icon picks — a library tile without a picture shows the same
   } = $props();
 
   let isLoading        = $state(false);
@@ -808,7 +809,11 @@
                   <img src={getItemImageUrl(library)} {@attach blurUp(itemBlurHash(library))} alt={library.Name}
                     class="w-full h-full object-cover opacity-80 group-focus:opacity-100" loading="lazy" />
                 {:else}
-                  <span class="text-2xl text-gray-500 font-bold">{library.Name}</span>
+                  <!-- No picture: the library's icon (as in the sidebar), not its name — the name is
+                       already written right under the tile. -->
+                  <svg class="w-14 h-14 text-gray-500 group-focus:text-gray-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d={libraryIcon(library, navIcons)}/>
+                  </svg>
                 {/if}
               </div>
               <!-- block + w-64 (= tile width) + truncate: without a width bound a long library name

@@ -339,17 +339,20 @@ export const NAV_HIDDEN_TYPES = ['music', 'musicvideos', 'livetv'];
 // Builds the full entry list: fixed views (translated, dashboard/settings locked)
 // + one entry per real library (server name, language-independent). `iconOverrides` (per profile,
 // {entryId: paletteKey}) wins over the type default. One source for sidebar and editor.
+// A library's icon: the profile's own pick for its sidebar entry, else its type's, else a folder.
+// The dashboard's library tiles show the same one when the library has no picture.
+export function libraryIcon(lib, iconOverrides = {}) {
+  const type = (lib?.CollectionType || '').toLowerCase();
+  return NAV_ICON_PALETTE[iconOverrides['lib:' + lib?.Id]] || NAV_ICON_PALETTE[type] || NAV_ICON_PALETTE.folder;
+}
+
 export function buildNavEntries(libraries, t, iconOverrides = {}) {
   const pick = (id, fallbackKey) =>
     NAV_ICON_PALETTE[iconOverrides[id]] || NAV_ICON_PALETTE[fallbackKey] || NAV_ICON_PALETTE.folder;
   const libItems = (libraries || [])
     .filter(l => !NAV_HIDDEN_TYPES.includes((l.CollectionType || '').toLowerCase()))
-    .map(l => {
-      const id = 'lib:' + l.Id;
-      const type = (l.CollectionType || '').toLowerCase();
-      return { id, kind: 'library', lib: l, label: l.Name,
-               icon: pick(id, NAV_ICON_PALETTE[type] ? type : 'folder'), locked: false };
-    });
+    .map(l => ({ id: 'lib:' + l.Id, kind: 'library', lib: l, label: l.Name,
+                 icon: libraryIcon(l, iconOverrides), locked: false }));
   return [
     { id: 'dashboard', kind: 'view', target: 'dashboard', label: t.dashboard, icon: pick('dashboard', 'dashboard'), locked: true },
     { id: 'search',    kind: 'view', target: 'search',    label: t.search,    icon: pick('search', 'search'),       locked: false },

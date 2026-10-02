@@ -107,7 +107,6 @@
                   || selectedAudioLangs.length > 0 || selectedSubtitleLangs.length > 0);
 
   // ── Sorting ─────────────────────────────────────────────────
-  let showSortMenu = $state(false);
   let currentSort  = $state({ by: 'SortName', order: 'Ascending' });
   const sortOptions = [
     { by: 'SortName',        order: 'Ascending',  key: 'sortName' },
@@ -121,7 +120,7 @@
   // where the list started — it keeps loading upwards and downwards as usual.
   let showLetterBar = $derived(currentSort.by === 'SortName' && displaySettings.letterBar !== false);
   const sortFilterFocus = makeFocusReturn();   // trigger button for focus return after closing
-  $effect(() => { if (!showSortMenu && !showFilterMenu && sortFilterFocus.pending) sortFilterFocus.restore(); });
+  $effect(() => { if (!showFilterMenu && sortFilterFocus.pending) sortFilterFocus.restore(); });
 
   // ── Watch together ──────────────────────────────────────────
   let sharedWatchMode = $state(false);
@@ -284,7 +283,6 @@
     } else {
       currentSort = { by: option.by, order: option.order };
     }
-    showSortMenu = false;
     if (currentSort.by !== 'SortName') { currentLetter = ''; activeLetter = '#'; }
     if (currentLibraryId) onSortPersist?.(currentLibraryId, { ...currentSort });
     loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, null);
@@ -675,15 +673,6 @@
           </svg>
           {i18n.t.surpriseMe}
         </button>
-        <button onclick={(e) => { sortFilterFocus.capture(e.currentTarget); showSortMenu = true; }}
-          class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
-                 focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105"
-          title={i18n.t.sortBy}>
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M3 4h13M3 8h9M3 12h5m4 4l4 4m0 0l4-4m-4 4V8"/>
-          </svg>
-          {i18n.t.sortBy}
-        </button>
         <button onclick={openFilterMenu}
           class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
                  focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105">
@@ -707,7 +696,9 @@
       </div>
     </div>
 
-    <!-- Quick-filter chips: favorites + sorting -->
+    <!-- Quick-filter chips: favorites + sorting. The ONE place to sort — a "Sort" button with a dialog
+         of the very same options sat above it; pressing the active chip again flips the direction,
+         and its arrow shows which way (hence "Name", no longer "Name (A-Z)" under a Z→A arrow). -->
     <div class="flex gap-3 mb-6 px-2 py-3 overflow-x-auto hide-scrollbar">
       <button onclick={() => toggleFilter('isFavorite')}
         class="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm whitespace-nowrap
@@ -837,47 +828,6 @@
   {/if}
 </div>
 
-<!-- SORT MENU -->
-{#if showSortMenu}
-  <div data-focus-trap role="dialog" tabindex="-1" transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
-    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showSortMenu = false; } }}>
-    <div class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full max-w-xl flex flex-col gap-4 shadow-2xl">
-      <div class="flex justify-between items-center mb-2">
-        <h2 class="text-4xl text-white font-bold">{i18n.t.sortBy}</h2>
-        <button onclick={() => showSortMenu = false} {@attach focusOnMount()} aria-label={i18n.t.close}
-          class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
-          <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-          </svg>
-        </button>
-      </div>
-      {#each sortOptions as opt}
-        <button onclick={() => setSort(opt)}
-          class="w-full text-left p-5 text-xl font-bold rounded-xl transition-colors flex items-center justify-between
-                 focus:outline-none focus:ring-4 focus:ring-white
-                 {currentSort.by === opt.by ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-200 hover:bg-blue-600 focus:bg-blue-600'}">
-          <span>{i18n.t[opt.key]}</span>
-          {#if currentSort.by === opt.by}
-            {#if opt.by === 'Random'}
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-            {:else}
-              <span class="flex items-center gap-1 text-sm">
-                {currentSort.order === 'Ascending' ? i18n.t.sortAsc : i18n.t.sortDesc}
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  {#if currentSort.order === 'Ascending'}
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/>
-                  {:else}
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                  {/if}
-                </svg>
-              </span>
-            {/if}
-          {/if}
-        </button>
-      {/each}
-    </div>
-  </div>
-{/if}
 
 <!-- FILTER MENU -->
 {#if showFilterMenu}

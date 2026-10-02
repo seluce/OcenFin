@@ -14,6 +14,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   opened the details page), with "More info" next to it, and holds still while you are on it. A
   card's menu starts with Play or Resume; a series plays its next episode.
 - **The player's buttons say what they do** when you move onto them.
+- **The library sorts from one row of buttons.** The separate "Sort" button repeated the same
+  options; pressing the active sort again flips its direction. Library tiles on the home screen
+  without a picture show the library's icon instead of its name twice.
 - **Series and season pages show what comes next.** Play names the episode it starts ("Play ·
   S2:E2"), the episode row marks it, and the episode you move onto shows its length and description
   below the row (unless spoiler protection hides it). Season pages name their series.
