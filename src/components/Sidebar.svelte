@@ -2,6 +2,7 @@
   import { i18n } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, buildNavEntries, applyNavConfig } from '../utils.js';
   import { session } from '../session.svelte.js';
+  import AppMark from './AppMark.svelte';
 
   let {
     selectedUser,
@@ -93,10 +94,7 @@
   <!-- LOGO + NAME (above the profile) — hideable via a setting -->
   {#if showLogo}
   <div class="w-full px-5 mb-5 flex items-center gap-3 select-none">
-    <svg viewBox="0 0 512 512" class="w-11 h-11 shrink-0 drop-shadow">
-      <rect x="0" y="0" width="512" height="512" rx="118" ry="118" fill="var(--color-blue-600, #2563eb)"/>
-      <circle cx="256" cy="256" r="118" fill="none" stroke="#ffffff" stroke-width="64"/>
-    </svg>
+    <AppMark class="w-11 h-11 shrink-0 drop-shadow" />
     <span class="text-2xl font-bold tracking-wide text-white overflow-hidden whitespace-nowrap transition-opacity duration-300
                  {isExpanded ? 'opacity-100' : 'opacity-0'}">OcenFin</span>
   </div>

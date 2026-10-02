@@ -18,6 +18,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   so far goes to the first profile that signs in.
 - **Removing a server also removes its profiles' settings and search history** from the TV.
 - **Watch together is no longer offered on age-restricted profiles.**
+- **A cleaner look in a few places:** "watched" is green on every card, the library's random-title
+  button is called "Surprise me" so it is no longer mistaken for the random sort order, and the
+  sign-in screens show the app's logo, larger secondary text and a colour per profile without a
+  picture.
 
 ### Fixed
 

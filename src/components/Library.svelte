@@ -4,6 +4,7 @@
   // scroll, its own view cache, backdrop preview). App only coordinates navigation/details/sort
   // persistence and passes things in via props/callbacks (pattern like Collection/Favorites).
   import { tick } from 'svelte';
+  import WatchedBadge from './WatchedBadge.svelte';
   import { session } from '../session.svelte.js';
   import { i18n } from '../i18n.svelte.js';
   import { itemProgress, itemBadge, getItemSubtitle, getItemImageUrl, blurUp, itemBlurHash, longPress,
@@ -663,14 +664,16 @@
         <span class="text-xl text-gray-500 font-normal shrink-0">({totalLibraryItems})</span>
       </h1>
       <div class="flex items-center gap-3 shrink-0">
+        <!-- "Surprise me", not "Shuffle": this opens ONE random title, and the sort row below has a
+             "Random" ORDER — in German both read "Zufällig", side by side. -->
         <button onclick={playRandomItem}
           class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
                  focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105"
-          title={i18n.t.shuffle}>
+          title={i18n.t.surpriseMe}>
           <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M4 4h4l12 16h4M4 20h4l3-4m4-9l2-3h3M20 4v4m0 12v-4"/>
           </svg>
-          {i18n.t.shuffle}
+          {i18n.t.surpriseMe}
         </button>
         <button onclick={(e) => { sortFilterFocus.capture(e.currentTarget); showSortMenu = true; }}
           class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
@@ -767,9 +770,7 @@
                 </div>
               {/if}
               {#if badge}
-                <div class="absolute top-2 left-2 z-10 min-w-[1.6rem] h-[1.6rem] px-1.5 rounded-full flex items-center justify-center bg-blue-600/90 text-white text-xs font-bold shadow-md pointer-events-none">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-                </div>
+                <WatchedBadge />
               {/if}
               {#if itemProgress(item) > 0}
                 <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">

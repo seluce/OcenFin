@@ -17,7 +17,8 @@
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { i18n } from '../i18n.svelte.js';
   import { session } from '../session.svelte.js';
-  import { focusOnMount, tvKeyboard, dlog, isRepeatedEnter } from '../utils.js';
+  import { focusOnMount, tvKeyboard, dlog, isRepeatedEnter, AVATAR_COLORS } from '../utils.js';
+  import AppMark from './AppMark.svelte';
 
   let {
     phase = $bindable('servers'), // 'servers' | 'users' — App controls the entry point (startup/profile switch/logout)
@@ -346,6 +347,13 @@
   // SIGN-IN
   // ============================================================
 
+  // A stable colour per profile name for tiles without a picture (same hash idea as deviceIdHash in App).
+  function initialColor(name) {
+    let h = 5381; const s = String(name || '');
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+    return AVATAR_COLORS[h % AVATAR_COLORS.length];
+  }
+
   let signingIn = false;   // one sign-in at a time — a held OK clicks a tile or button repeatedly
 
   /** Profile clicked — quick sign-in via a saved token if available, otherwise the password form.
@@ -449,9 +457,12 @@
   <div class="h-full flex items-center justify-center p-8">
     <div class="w-full max-w-2xl flex flex-col gap-6">
 
-      <div class="text-center mb-2">
-        <h1 class="text-4xl font-bold text-blue-500 mb-1">{i18n.t.title}</h1>
-        <p class="text-gray-400">{i18n.t.serverSelectPrompt}</p>
+      <!-- The app's mark rather than a blue word: the first screen of a fresh install is where the
+           logo belongs most. -->
+      <div class="text-center mb-2 flex flex-col items-center">
+        <AppMark class="w-20 h-20 mb-4 drop-shadow-xl" />
+        <h1 class="text-4xl font-bold text-white mb-2">{i18n.t.title}</h1>
+        <p class="text-gray-400 text-lg">{i18n.t.serverSelectPrompt}</p>
       </div>
 
       <!-- Saved servers + error message: own focus group -->
@@ -647,8 +658,8 @@
 
       <!-- Server name as context -->
       {#if server}
-        <p class="text-gray-500 text-lg font-medium tracking-wide">
-          {server.name} · <span class="text-gray-600">{server.url}</span>
+        <p class="text-gray-400 text-xl font-medium tracking-wide">
+          {server.name} · <span class="text-gray-500">{server.url}</span>
         </p>
       {/if}
 
@@ -747,7 +758,9 @@
                   {#if user.PrimaryImageTag}
                     <img src="{session.serverUrl}/UserImage?UserId={user.Id}&tag={user.PrimaryImageTag}&format=webp" alt={user.Name} class="w-full h-full object-cover"/>
                   {:else}
-                    <div class="w-full h-full bg-gray-700 flex items-center justify-center">
+                    <!-- No picture: the initial on a colour of its own per name (the avatar palette),
+                         so several such profiles are told apart at a glance from the sofa. -->
+                    <div class="w-full h-full flex items-center justify-center" style="background-color: {initialColor(user.Name)}">
                       <span class="text-6xl font-bold">{user.Name.charAt(0)}</span>
                     </div>
                   {/if}
@@ -761,7 +774,7 @@
         <!-- Divider -->
         <div class="flex items-center gap-4 w-full max-w-xl mt-4">
           <div class="flex-1 h-px bg-gray-800"></div>
-          <span class="text-gray-600 text-sm">{i18n.t.or}</span>
+          <span class="text-gray-500 text-base">{i18n.t.or}</span>
           <div class="flex-1 h-px bg-gray-800"></div>
         </div>
 
@@ -795,7 +808,8 @@
         <!-- Choose a different server -->
         <button
           onclick={onSwitchServer}
-          class="text-gray-600 hover:text-gray-400 focus:text-gray-400 focus:outline-none text-sm font-medium mt-2"
+          class="text-gray-400 hover:text-white focus:text-white focus:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-white
+                 text-lg font-medium mt-2 px-5 py-2 rounded-lg transition-colors"
         >
           ← {i18n.t.switchServer}
         </button>

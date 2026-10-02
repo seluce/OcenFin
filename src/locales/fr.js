@@ -105,6 +105,7 @@ export default {
     filterClose: "Terminé",
     filterActive: "Actif",
     shuffle: "Aléatoire",
+    surpriseMe: "Surprends-moi",
     playAll: "Tout lire",
     sortBy: "Trier",
     sortName: "Nom (A-Z)",

@@ -1,6 +1,7 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
   import { itemProgress, itemBadge, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, NAV_HIDDEN_TYPES, getItemImageUrl } from '../utils.js';
+  import WatchedBadge from './WatchedBadge.svelte';
   import { session } from '../session.svelte.js';
   import { watchlist, refreshWatchlist } from '../watchlist.svelte.js';
   import { onMount, onDestroy } from 'svelte';
@@ -593,9 +594,7 @@
             class="w-full h-full object-cover" loading="lazy" />
         {/if}
         {#if badge}
-          <div class="absolute top-2 left-2 z-10 min-w-[1.6rem] h-[1.6rem] px-1.5 rounded-full flex items-center justify-center bg-blue-600/90 text-white text-xs font-bold shadow-md pointer-events-none">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-          </div>
+          <WatchedBadge />
         {/if}
         {#if prog > 0}
           <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
@@ -632,9 +631,7 @@
             class="w-full h-full object-cover" loading="lazy" />
         {/if}
         {#if badge}
-          <div class="absolute top-2 left-2 z-10 min-w-[1.6rem] h-[1.6rem] px-1.5 rounded-full flex items-center justify-center bg-blue-600/90 text-white text-xs font-bold shadow-md pointer-events-none">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-          </div>
+          <WatchedBadge />
         {/if}
         {#if prog > 0}
           <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">

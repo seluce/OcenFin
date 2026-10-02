@@ -105,6 +105,7 @@ export default {
     filterClose: "Hecho",
     filterActive: "Activo",
     shuffle: "Aleatorio",
+    surpriseMe: "Sorpréndeme",
     playAll: "Reproducir todo",
     sortBy: "Ordenar",
     sortName: "Nombre (A-Z)",
