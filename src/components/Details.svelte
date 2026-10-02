@@ -25,6 +25,14 @@
 
   let fullItem     = $state(null);
   let relatedItems = $state([]);
+  // Series/season pages: what Play starts (playableFor — Next Up, else the first episode), fetched
+  // with the page so the button can SAY it ("Play · S2:E2") and the episode row can mark it. Play
+  // then starts exactly that one.
+  let nextToPlay = $state(null);
+  // The episode the row's description panel shows: the one under the focus, else the next one.
+  let focusedEpisode = $state(null);
+  const epCode = (ep) => `S${ep?.ParentIndexNumber ?? '?'}:E${ep?.IndexNumber ?? '?'}`;
+  const epMinutes = (ep) => ep?.RunTimeTicks ? `${Math.round(ep.RunTimeTicks / 600000000)} ${i18n.t.minuteShort}` : '';
   let similarItems = $state([]);
   let collections  = $state([]);   // collections (BoxSets) that contain the title — Jellyfin 12+
   let extras       = $state([]);   // special features (making-ofs, deleted scenes, …)
@@ -391,6 +399,8 @@
     loadError    = false;
     fullItem     = null;
     relatedItems = [];
+    nextToPlay = null;
+    focusedEpisode = null;
     similarItems = [];
     collections  = [];
     extras = [];
@@ -427,6 +437,7 @@
           loadRelatedItems(fullItem.SeasonId, myToken);
         } else if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
           loadRelatedItems(fullItem.Id, myToken);
+          loadNextToPlay(fullItem, myToken);
         }
       } else {
         console.warn('[details] item', itemId, '→ HTTP', res.status);
@@ -487,6 +498,13 @@
     } catch (e) { console.error(e); }
   }
 
+  async function loadNextToPlay(it, myToken) {
+    try {
+      const ep = await playableFor(it, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+      if (myToken === detailToken) nextToPlay = ep;
+    } catch { /* the button just says "Play"; handlePlay resolves it again */ }
+  }
+
   async function loadRelatedItems(parentId, myToken) {
     try {
       const res = await fetch(
@@ -512,7 +530,8 @@
       // (playback.js). The season used to ask for "IsNotPlayed", a filter Jellyfin does not have —
       // it was dropped silently, so a season always started at its episode 1.
       try {
-        const ep = await playableFor(fullItem, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+        // The one the button names, if it is known already; otherwise resolve it now.
+        const ep = nextToPlay || await playableFor(fullItem, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
         if (ep && stillHere(startedOn)) onPlayVideo?.({ item: ep, audioIndex: -1, subtitleIndex: -1 });
       } catch (e) { console.error(e); }
     } else {
@@ -794,6 +813,12 @@
             <button onclick={() => navigateTo(fullItem.SeasonId)}
               class="hover:text-white focus:text-white focus:outline-none">{fullItem.SeasonName}</button>
           </div>
+        {:else if fullItem.Type === 'Season' && fullItem.SeriesId}
+          <!-- A season page said only "Season 2" — which series, the page did not tell. -->
+          <div class="flex items-center text-xl font-semibold text-gray-400 gap-2">
+            <button onclick={() => navigateTo(fullItem.SeriesId)}
+              class="hover:text-white focus:text-white focus:outline-none">{fullItem.SeriesName}</button>
+          </div>
         {/if}
       </div>
 
@@ -888,7 +913,13 @@
             </div>
           {/if}
 
-          <p class="text-xl text-gray-300 mb-10 line-clamp-4 leading-relaxed">{fullItem.Overview || i18n.t.noDescription}</p>
+          <!-- Nothing rather than "No description available": seasons rarely have one, and the filler
+               line read like an error. -->
+          {#if fullItem.Overview}
+            <p class="text-xl text-gray-300 mb-10 line-clamp-4 leading-relaxed">{fullItem.Overview}</p>
+          {:else}
+            <div class="mb-6"></div>
+          {/if}
 
           <!-- ACTION BUTTONS -->
           <div class="flex items-center gap-4 mb-12">
@@ -896,7 +927,10 @@
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-2xl px-12 py-4 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-3 shadow-lg">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
-              {#if fullItem.UserData?.PlaybackPositionTicks > 0}{i18n.t.resumePlay}{:else}{i18n.t.play}{/if}
+              {#if nextToPlay && nextToPlay.Type === 'Episode'}
+                {nextToPlay.UserData?.PlaybackPositionTicks > 0 ? i18n.t.resumePlay : i18n.t.play}
+                <span class="text-xl font-semibold text-gray-600">{epCode(nextToPlay)}</span>
+              {:else if fullItem.UserData?.PlaybackPositionTicks > 0}{i18n.t.resumePlay}{:else}{i18n.t.play}{/if}
             </button>
 
             {#if fullItem.Type === 'Series' || fullItem.Type === 'Season'}
@@ -1148,6 +1182,7 @@
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each relatedItems as ep (ep.Id)}
               <button onclick={() => navigateTo(ep.Id)} data-item-id={ep.Id}
+                onfocus={() => { if (ep.Type === 'Episode') focusedEpisode = ep; }}
                 class="shrink-0 scroll-m-4 group flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
                 <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
                   {#if getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')}
@@ -1159,8 +1194,11 @@
                       <div class="h-full bg-blue-500" style="width:{itemProgress(ep)}%"></div>
                     </div>
                   {/if}
+                  {#if ep.Id === nextToPlay?.Id && ep.Type === 'Episode'}
+                    <div class="absolute top-2 left-2 bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-md shadow-md">{i18n.t.nextUp}</div>
+                  {/if}
                   {#if ep.UserData?.Played}
-                    <div class="absolute top-2 right-2 bg-green-500 text-white rounded-full p-1 shadow-md">
+                    <div class="absolute top-2 right-2 bg-green-600/90 text-white rounded-full p-1 shadow-md">
                       <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                         <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
                       </svg>
@@ -1173,6 +1211,23 @@
               </button>
             {/each}
           </div>
+          <!-- The row showed a number and a title only. Underneath now: the episode under the focus —
+               or, until the row is entered, the next one — with its length and description. Fixed
+               height, so the page below does not jump while moving along the row. The description
+               stays hidden for an episode the spoiler protection blurs. -->
+          {#if fullItem.Type !== 'Series'}
+            {@const shown = focusedEpisode || relatedItems.find(e => e.Id === nextToPlay?.Id) || null}
+            <div class="px-2 -mt-2 min-h-[7.5rem] max-w-5xl">
+              {#if shown}
+                <p class="text-xl font-bold text-white">
+                  {epCode(shown)} · {shown.Name}{#if epMinutes(shown)}<span class="text-gray-400 font-medium">{' · '}{epMinutes(shown)}</span>{/if}
+                </p>
+                {#if shown.Overview && !epSpoiler(shown)}
+                  <p class="text-lg text-gray-300 mt-2 line-clamp-3 leading-relaxed">{shown.Overview}</p>
+                {/if}
+              {/if}
+            </div>
+          {/if}
         </div>
       {/if}
 

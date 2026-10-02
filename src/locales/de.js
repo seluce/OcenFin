@@ -56,7 +56,6 @@ export default {
 
     // Library / Filter
     noItems: "Keine Inhalte in dieser Bibliothek gefunden.",
-    noDescription: "Keine Beschreibung verfügbar.",
     status: "Status",
     mediaInfo: "Medieninfos",
     more: "Mehr",

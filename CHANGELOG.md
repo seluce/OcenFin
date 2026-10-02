@@ -14,6 +14,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   opened the details page), with "More info" next to it, and holds still while you are on it. A
   card's menu starts with Play or Resume; a series plays its next episode.
 - **The player's buttons say what they do** when you move onto them.
+- **Series and season pages show what comes next.** Play names the episode it starts ("Play ·
+  S2:E2"), the episode row marks it, and the episode you move onto shows its length and description
+  below the row (unless spoiler protection hides it). Season pages name their series.
 - **Find subtitles from the TV.** "Search subtitles…" on a title's page lists what the server's
   subtitle providers (such as the OpenSubtitles plugin) offer; the one you pick is downloaded and
   selected. For profiles that may manage subtitles on the server.
