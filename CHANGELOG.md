@@ -22,6 +22,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   button is called "Surprise me" so it is no longer mistaken for the random sort order, and the
   sign-in screens show the app's logo, larger secondary text and a colour per profile without a
   picture.
+- **The subtitle settings explain themselves in plain words** instead of technical terms, and no
+  longer mention limits of servers older than Jellyfin 12.
 
 ### Fixed
 
