@@ -25,6 +25,7 @@
     resumeStale = false,        // App: playback happened since the last dashboard visit → fetch Resume/NextUp fresh
     onResumeRefreshed,          // () => void — App resets the flag
     onLibrariesLoaded, onOpenCollection, onOpenContext, onOpenDetails, onOpenLibrary,   // callback props
+    onPlay,                     // (item, el) => void — the banner's Play: App plays it straight away
   } = $props();
 
   let isLoading        = $state(false);
@@ -159,6 +160,15 @@
     if (myCache) myCache.heroIndex = heroIndex;
     onOpenDetails?.(heroCurrent);
   }
+  // The banner's Play really plays — it used to open the details page under a "Play" label. A series
+  // starts its next episode (App: playFromCard).
+  function playFromHero(e) {
+    if (myCache) myCache.heroIndex = heroIndex;
+    onPlay?.(heroCurrent, e.currentTarget);
+  }
+  // The banner holds still while you stand on its buttons: it moved on every 8 s, so OK could land on
+  // the next title while you were still reading the previous one.
+  let heroHasFocus = false;
 
   // Start the rotation for the already-set heroItems (shared by "For You" and the fallback).
   function startHeroRotation() {
@@ -173,6 +183,7 @@
     if (!reduceAnimations && heroItems.length > 1) {
       preloadHero(1);   // preload the next image
       heroTimer = setInterval(() => {
+        if (heroHasFocus) return;
         prevHeroIndex = heroIndex;
         heroIndex = (heroIndex + 1) % heroItems.length;
         preloadHero((heroIndex + 1) % heroItems.length);
@@ -747,15 +758,22 @@
           {#if heroCurrent.Overview}
             <p class="text-gray-300 text-lg line-clamp-2 max-w-2xl drop-shadow">{heroCurrent.Overview}</p>
           {/if}
-          <div class="flex items-center gap-4 mt-2">
-            <!-- data-item-id + the remembered slide (openFromHero): back from the title, the hero shows
-                 it again and is the FIRST element carrying its id, so focusCardAgain lands here — it
-                 used to pick the same title in "Recently added", deep down the page. -->
-            <button onclick={openFromHero} data-scroll-top data-item-id={heroCurrent?.Id}
+          <div class="flex items-center gap-4 mt-2" onfocusin={() => heroHasFocus = true} onfocusout={() => heroHasFocus = false}>
+            <!-- data-item-id + the remembered slide (heroIndex): back from the title or the player, the
+                 hero shows it again and its two buttons are the FIRST elements carrying its id, so
+                 focusCardAgain lands on the one that was pressed (occurrence 0 or 1) — it used to pick
+                 the same title in "Recently added", deep down the page. -->
+            <button onclick={playFromHero} data-scroll-top data-item-id={heroCurrent?.Id}
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-lg px-8 py-3 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-2 shadow-lg">
               <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
-              {i18n.t.play}
+              {(heroCurrent?.UserData?.PlaybackPositionTicks || 0) > 0 ? i18n.t.resumePlay : i18n.t.play}
+            </button>
+            <button onclick={openFromHero} data-item-id={heroCurrent?.Id}
+              class="bg-gray-800/80 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold text-lg px-7 py-3 rounded-xl
+                     focus:outline-none focus:ring-4 focus:ring-white transition-all flex items-center gap-2 shadow-lg">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
+              {i18n.t.moreInfo}
             </button>
             <!-- Dot indicators — only when it also rotates (with reduced motion: a static hero without dots) -->
             {#if !reduceAnimations && heroItems.length > 1}

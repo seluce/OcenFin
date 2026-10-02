@@ -509,6 +509,11 @@ function _pushLog(level, args) {
     if (_logBuffer.length > LOG_BUFFER_MAX) _logBuffer.shift();
   } catch {}
 }
+// The Player's controls fade out while a button keeps the focus — its hint would stay floating over
+// the picture. hideHints() takes every open one down; the next focus shows it again.
+const HIDE_HINTS = 'ocenfin:hidehints';
+export function hideHints() { window.dispatchEvent(new Event(HIDE_HINTS)); }
+
 // Focus/hover hint for icon-only buttons on TV: shows the node's aria-label as a small
 // tooltip above it — on FOCUS (D-pad) and hover (pointer), since a TV rarely hovers.
 // Reuses aria-label so dynamic labels (watched <-> unwatched) stay correct (read at show
@@ -565,7 +570,9 @@ export function hint(delay = 350) {
     node.addEventListener('blur', destroy);
     node.addEventListener('mouseenter', show);
     node.addEventListener('mouseleave', destroy);
+    window.addEventListener(HIDE_HINTS, destroy);
     return () => {
+      window.removeEventListener(HIDE_HINTS, destroy);
       observer.disconnect();
       destroy();
       node.removeEventListener('focus', show);

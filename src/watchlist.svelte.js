@@ -6,7 +6,7 @@
 // itemId → playlistItemId. Being a real playlist it also shows up in other clients.
 import { session } from './session.svelte.js';
 import { authHeaders } from './utils.js';
-import { firstEpisodeInSeason, firstEpisodeOfSeries } from './playback.js';
+import { playableFor } from './playback.js';
 
 const WATCHLIST_NAME = 'Watchlist';
 
@@ -106,15 +106,7 @@ export function inWatchlist(itemId) {
 // instead: the next unwatched one, falling back to the first — the same choice as Details'
 // play button (playback.js: no specials, no placeholder episodes).
 async function representativeEpisode(item, userId) {
-  const ctx = { serverUrl: session.serverUrl, userId, headers: headers() };
-  if (item.Type === 'Series') {
-    try {
-      const res = await fetch(`${session.serverUrl}/Shows/NextUp?SeriesId=${item.Id}&UserId=${userId}&Limit=1&EnableTotalRecordCount=false`, { headers: headers() });
-      if (res.ok) { const d = await res.json(); if (d.Items?.length) return d.Items[0]; }
-    } catch { }
-    return firstEpisodeOfSeries(item.Id, ctx);
-  }
-  return (await firstEpisodeInSeason(item.Id, { ...ctx, unwatchedOnly: true })) || firstEpisodeInSeason(item.Id, ctx);
+  return playableFor(item, { serverUrl: session.serverUrl, userId, headers: headers() });
 }
 
 // Toggle membership. Remove is optimistic; for add the icon flips immediately via a

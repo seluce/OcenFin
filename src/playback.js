@@ -363,3 +363,23 @@ export async function firstEpisodeOfSeries(seriesId, { serverUrl, userId, header
     return null;
   } catch (e) { console.error('firstEpisodeOfSeries:', e); return null; }
 }
+
+// What "play" means for a title: a series → its Next Up, else its first episode; a season → its
+// first unwatched episode, else its first; anything else → itself. One rule for the details page,
+// the home screen's banner, a card's menu and the watchlist's stand-in episode. null when a series
+// or season has nothing to play.
+export async function playableFor(item, { serverUrl, userId, headers }) {
+  const ctx = { serverUrl, userId, headers };
+  if (item?.Type === 'Series') {
+    try {
+      const res = await fetch(`${serverUrl}/Shows/NextUp?SeriesId=${item.Id}&UserId=${userId}&Limit=1&EnableTotalRecordCount=false`, { headers });
+      if (res.ok) { const ep = ((await res.json()).Items || [])[0]; if (ep) return ep; }
+      else console.warn('next up: HTTP', res.status);
+    } catch (e) { console.warn('next up:', e?.message || e); }
+    return firstEpisodeOfSeries(item.Id, ctx);
+  }
+  if (item?.Type === 'Season') {
+    return (await firstEpisodeInSeason(item.Id, { ...ctx, unwatchedOnly: true })) || firstEpisodeInSeason(item.Id, ctx);
+  }
+  return item || null;
+}

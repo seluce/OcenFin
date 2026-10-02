@@ -2,7 +2,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
   import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, makeFocusReturn, installConnectionGuard, installEnterRepeatGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
-  import { buildPlayQueue } from './playback.js';
+  import { buildPlayQueue, playableFor } from './playback.js';
   import { session } from './session.svelte.js';
   import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
   import { APP_VERSION } from './version.js';
@@ -2046,6 +2046,32 @@
       libraryRef.removeItem(contextItem.Id);
     }
   }
+  // Play a card's title straight away — the home screen banner's Play and a card menu's Play/Resume.
+  // A series or season plays its next episode (playableFor, the details page's rule). The way back
+  // is the card, set up like a trip into Details from it: after the player comes the title page of
+  // what played, and Back from there lands on the card (or, from a title page, on that page).
+  async function playFromCard(item, el, nth = 0) {
+    const from = viewState, user = activeUserId;
+    const target = await playableFor(item, { serverUrl: session.serverUrl, userId: activeUserId, headers: getAuthHeaders() });
+    if (!target || viewState !== from || activeUserId !== user) return;   // moved on while it resolved
+    if (from !== 'details') {
+      beginChainIfRoot();
+      detailsOrigin       = from;
+      detailsReturnId     = item.Id;
+      detailsReturnEl     = el;
+      detailsReturnNth    = nth;
+      detailsReturnScroll = scrollTopOf(el);
+      if (from === 'library') libraryRef?.rememberSpot(item, el);
+    }
+    startPlayback({ item: target, audioIndex: -1, subtitleIndex: -1 });
+  }
+  function contextPlay(item) {
+    const el = contextReturnEl, nth = contextReturnNth;   // the card, not the menu's button
+    contextReturnId = null; contextReturnEl = null;       // playback takes over the focus
+    contextItem = null;
+    playFromCard(item, el, nth);
+  }
+
   function contextOpenDetails(item) {
     // The card the menu was opened on is the way back — not the menu's own button, which
     // showItemDetails() would find focused (occurrence 0: Back landed on the FIRST copy of the title,
@@ -2488,6 +2514,7 @@
             onOpenDetails={(item) => showItemDetails(item)}
             onOpenCollection={(col) => openCollection(col)}
             onOpenContext={(item) => openContextMenu(item)}
+            onPlay={(item, el) => playFromCard(item, el, cardOrdinal(el, item.Id))}
           />
           {/key}
 
@@ -2654,6 +2681,7 @@
       onClose={() => contextItem = null}
       onChanged={onContextChanged}
       onOpenDetails={contextOpenDetails}
+      onPlay={contextPlay}
       onAddToList={contextAddToList}
       onAddToCollection={contextAddToCollection}
       onPlayAll={contextPlayPlaylist}

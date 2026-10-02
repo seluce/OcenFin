@@ -120,6 +120,9 @@ export default {
 
     // Details
     play: "Abspielen",
+    rewindBy: "{n} s zurück",
+    forwardBy: "{n} s vor",
+    moreInfo: "Mehr Infos",
     resumePlay: "Fortsetzen",
     playFromStart: "Von Anfang",
     markWatched: "Als gesehen markieren",

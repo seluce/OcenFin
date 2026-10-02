@@ -4,7 +4,7 @@
   import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
   import { pickDefaultTracks, rememberChoice } from '../trackmemory.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
-  import { buildPlayQueue, firstEpisodeInSeason, firstEpisodeOfSeries } from '../playback.js';
+  import { buildPlayQueue, playableFor } from '../playback.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
@@ -511,17 +511,8 @@
       // unwatched episode, else its first. Neither lands on a special or a placeholder episode
       // (playback.js). The season used to ask for "IsNotPlayed", a filter Jellyfin does not have —
       // it was dropped silently, so a season always started at its episode 1.
-      const ctx = { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() };
       try {
-        let ep = null;
-        if (fullItem.Type === 'Series') {
-          const res = await fetch(`${session.serverUrl}/Shows/NextUp?SeriesId=${fullItem.Id}&UserId=${selectedUser.Id}&Limit=1&EnableTotalRecordCount=false`, { headers: getAuthHeaders() });
-          if (!res.ok) { console.warn('play next-up: HTTP', res.status); return; }
-          ep = ((await res.json()).Items || [])[0] || await firstEpisodeOfSeries(fullItem.Id, ctx);
-        } else {
-          ep = await firstEpisodeInSeason(fullItem.Id, { ...ctx, unwatchedOnly: true })
-            || await firstEpisodeInSeason(fullItem.Id, ctx);
-        }
+        const ep = await playableFor(fullItem, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
         if (ep && stillHere(startedOn)) onPlayVideo?.({ item: ep, audioIndex: -1, subtitleIndex: -1 });
       } catch (e) { console.error(e); }
     } else {

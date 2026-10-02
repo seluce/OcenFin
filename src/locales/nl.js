@@ -120,6 +120,9 @@ export default {
 
     // Details
     play: "Afspelen",
+    rewindBy: "{n} s terug",
+    forwardBy: "{n} s vooruit",
+    moreInfo: "Meer info",
     resumePlay: "Hervatten",
     playFromStart: "Vanaf begin",
     markWatched: "Als bekeken markeren",

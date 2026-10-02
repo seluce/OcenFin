@@ -5,7 +5,13 @@
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
   import { onMount, onDestroy, untrack } from 'svelte';
 
-  let { item, userId, selectedUser, onChanged, onOpenDetails, onAddToList, onAddToCollection, onPlayAll, onClose } = $props();
+  let { item, userId, selectedUser, onChanged, onOpenDetails, onPlay, onAddToList, onAddToCollection, onPlayAll, onClose } = $props();
+
+  // Play is the menu's first entry for anything that can be watched — the most common thing to do
+  // with a card, and it was only reachable through the details page. A series or season plays its
+  // next episode (App: playFromCard). "Resume" when the title itself has a resume point.
+  const PLAYABLE = ['Movie', 'Episode', 'Series', 'Season', 'Video', 'MusicVideo'];
+  const canPlay = PLAYABLE.includes(untrack(() => item?.Type));   // read once — it feeds {@attach}
 
   // Local (optimistic) states — toggled immediately on click so the
   // label/icons in the menu show the change directly. Initialized from the item.
@@ -82,6 +88,7 @@
   }
   function openDetails() { if (!armed) return; onOpenDetails?.(item); onClose?.(); }
   function playAll()     { if (!armed) return; onPlayAll?.(item); onClose?.(); }
+  function play()        { if (!armed) return; onPlay?.(item); }
   function addToList()   { if (!armed) return; onAddToList?.(item); onClose?.(); }
   function addToCollection() { if (!armed) return; onAddToCollection?.(item); onClose?.(); }
   // Show collection only if the profile has the right (like in Details/Player). Hide only on an explicit
@@ -129,7 +136,15 @@
           {i18n.t.openDetails}
         </button>
       {:else}
-      <button onclick={toggleWatched} {@attach focusOnMount()}
+      {#if canPlay}
+        <button onclick={play} {@attach focusOnMount()}
+          class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
+                 hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
+          <svg class="w-6 h-6 shrink-0 text-gray-400" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          {hasResume ? i18n.t.resumePlay : i18n.t.play}
+        </button>
+      {/if}
+      <button onclick={toggleWatched} {@attach focusOnMount(!canPlay)}
         class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
                hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
         <svg class="w-6 h-6 shrink-0 {played ? 'text-green-400' : 'text-gray-400'}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">

@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro, getItemImageUrl } from '../utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints } from '../utils.js';
   import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks } from '../trackmemory.js';
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
@@ -1849,6 +1849,9 @@
   // Cannot loop: showControls is already true here, so writing it again is not a change, and the
   // timeout's own showControls = false makes this condition false rather than re-entering.
   $effect(() => { if (isPlaying && showControls) resetControlsTimeout(); });
+  // The icon buttons name themselves on focus (hint). The HUD fades out with focus still on one of
+  // them, which would leave its label floating over the picture — take it down with the HUD.
+  $effect(() => { if (!showControls) hideHints(); });
 
   function togglePlay() {
     if (isPlaying) { _groupWantsPaused = inSyncGroup; videoElement.pause(); }
@@ -2327,7 +2330,7 @@
       </div>
       <div class="flex items-center gap-4 shrink-0">
         <button onclick={(e) => { e.stopPropagation(); controlOpener = e.currentTarget; onSyncplay?.(); }}
-          aria-label={i18n.t.syncPlay} title={i18n.t.syncPlay}
+          aria-label={i18n.t.syncPlay} title={i18n.t.syncPlay} {@attach hint()}
           class="text-white/90 hover:text-blue-300 focus:text-white focus:bg-blue-600 rounded-lg p-2
                  focus:outline-none focus:ring-2 focus:ring-white transition-colors">
           <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -2408,7 +2411,7 @@
           <button onclick={goToPrevEpisode}
             disabled={!prevEpisode}
             class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none disabled:opacity-30"
-            title={i18n.t.prevEpisode}>
+            title={i18n.t.prevEpisode} aria-label={i18n.t.prevEpisode} {@attach hint()}>
             <!-- |◄ : bar on the left + triangle points LEFT -->
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/>
@@ -2418,7 +2421,7 @@
           <!-- Chapter back — only when enabled AND chapter markers exist.
                Icon deliberately DIFFERENT from the episode skip: chevron onto a dot (= chapter marker). -->
           {#if hasChapterNav}
-            <button onclick={chapterPrev} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={i18n.t.chapterPrev}>
+            <button onclick={chapterPrev} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={i18n.t.chapterPrev} aria-label={i18n.t.chapterPrev} {@attach hint()}>
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 7l-5 5 5 5"/>
                 <circle cx="8" cy="12" r="1.6" fill="currentColor" stroke="none"/>
@@ -2426,7 +2429,8 @@
             </button>
           {/if}
 
-          <button onclick={() => skip(-seekStep)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none" title="-{seekStep}s">
+          <button onclick={() => skip(-seekStep)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none"
+            title={i18n.t.rewindBy.replace('{n}', seekStep)} aria-label={i18n.t.rewindBy.replace('{n}', seekStep)} {@attach hint()}>
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.334 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z"/>
             </svg>
@@ -2441,7 +2445,8 @@
             {/if}
           </button>
 
-          <button onclick={() => skip(seekStep)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none" title="+{seekStep}s">
+          <button onclick={() => skip(seekStep)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none"
+            title={i18n.t.forwardBy.replace('{n}', seekStep)} aria-label={i18n.t.forwardBy.replace('{n}', seekStep)} {@attach hint()}>
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M11.934 12.8a1 1 0 000-1.6l-5.334-4A1 1 0 005 8v8a1 1 0 001.6.8l5.334-4zM19.934 12.8a1 1 0 000-1.6l-5.334-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.334-4z"/>
             </svg>
@@ -2450,7 +2455,7 @@
           <!-- Chapter forward — only when enabled AND chapter markers exist.
                Icon deliberately DIFFERENT from the episode skip: chevron onto a dot (= chapter marker). -->
           {#if hasChapterNav}
-            <button onclick={chapterNext} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={i18n.t.chapterNext}>
+            <button onclick={chapterNext} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={i18n.t.chapterNext} aria-label={i18n.t.chapterNext} {@attach hint()}>
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 7l5 5-5 5"/>
                 <circle cx="16" cy="12" r="1.6" fill="currentColor" stroke="none"/>
@@ -2462,7 +2467,7 @@
           <button onclick={() => goToNextEpisode(true)}
             disabled={!nextByIndex}
             class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none disabled:opacity-30"
-            title={i18n.t.nextEpisode}>
+            title={i18n.t.nextEpisode} aria-label={i18n.t.nextEpisode} {@attach hint()}>
             <!-- ►| : triangle points RIGHT + bar on the right -->
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M16 6h2v12h-2zm-10 0l9 6-9 6V6z"/>
@@ -2475,7 +2480,7 @@
           <!-- ONLY THIS EPISODE — one-shot sleep switch (opt-in), first of the right group.
                Only visible when enabled AND an auto-advance is active (otherwise pointless). -->
           {#if playbackPrefs.sleepButton && autoAdvanceOn}
-            <button onclick={(e) => { e.stopPropagation(); toggleStopAfter(); }} title={i18n.t.stopAfterEpisode} aria-label={i18n.t.stopAfterEpisode}
+            <button onclick={(e) => { e.stopPropagation(); toggleStopAfter(); }} title={i18n.t.stopAfterEpisode} aria-label={i18n.t.stopAfterEpisode} {@attach hint()}
               class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                      {stopAfterThis ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -2484,7 +2489,7 @@
             </button>
           {/if}
           <!-- Favorite -->
-          <button onclick={toggleFavorite} aria-label={isFavorite ? i18n.t.removeFavorite : i18n.t.addFavorite}
+          <button onclick={toggleFavorite} aria-label={isFavorite ? i18n.t.removeFavorite : i18n.t.addFavorite} {@attach hint()}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors {isFavorite ? 'text-red-500' : 'text-gray-400 hover:text-white focus:text-white'}">
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
@@ -2492,21 +2497,21 @@
           </button>
 
           <!-- Add to playlist -->
-          <button onclick={(e) => { e.stopPropagation(); openPicker('playlist'); }} title={i18n.t.addToPlaylist} aria-label={i18n.t.addToPlaylist}
+          <button onclick={(e) => { e.stopPropagation(); openPicker('playlist'); }} title={i18n.t.addToPlaylist} aria-label={i18n.t.addToPlaylist} {@attach hint()}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors text-gray-400 hover:text-white focus:text-white">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h13M3 12h9m-9 6h9m4-3v6m3-3h-6"/></svg>
           </button>
 
           {#if canManageCollections}
           <!-- Add to collection -->
-          <button onclick={(e) => { e.stopPropagation(); openPicker('collection'); }} title={i18n.t.addToCollection} aria-label={i18n.t.addToCollection}
+          <button onclick={(e) => { e.stopPropagation(); openPicker('collection'); }} title={i18n.t.addToCollection} aria-label={i18n.t.addToCollection} {@attach hint()}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors text-gray-400 hover:text-white focus:text-white">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
           </button>
           {/if}
 
           <!-- AUDIO — icon only (replaces the gear) -->
-          <button onclick={(e) => { e.stopPropagation(); openSettings('audio'); }} title={i18n.t.audio} aria-label={i18n.t.audio}
+          <button onclick={(e) => { e.stopPropagation(); openSettings('audio'); }} title={i18n.t.audio} aria-label={i18n.t.audio} {@attach hint()}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                    {showSettings && settingsTab === 'audio' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -2515,7 +2520,7 @@
           </button>
 
           <!-- SUBTITLES — icon only -->
-          <button onclick={(e) => { e.stopPropagation(); openSettings('subtitle'); }} title={i18n.t.subtitles} aria-label={i18n.t.subtitles}
+          <button onclick={(e) => { e.stopPropagation(); openSettings('subtitle'); }} title={i18n.t.subtitles} aria-label={i18n.t.subtitles} {@attach hint()}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                    {showSettings && settingsTab === 'subtitle' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -2526,7 +2531,7 @@
 
           <!-- PLAYBACK INFO — only when enabled in the settings -->
           {#if playbackPrefs.showPlaybackInfo}
-            <button onclick={(e) => { e.stopPropagation(); toggleInfoOverlay(); }} title={i18n.t.playbackInfo} aria-label={i18n.t.playbackInfo}
+            <button onclick={(e) => { e.stopPropagation(); toggleInfoOverlay(); }} title={i18n.t.playbackInfo} aria-label={i18n.t.playbackInfo} {@attach hint()}
               class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                      {showInfoOverlay ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
