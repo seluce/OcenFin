@@ -105,8 +105,9 @@ export function matchRememberedSubtitleIndex(streams, seriesId) {
 const subCodec = (s) => (s?.Codec || '').toLowerCase();
 
 // May a subtitle be switched on automatically? Text always; a graphic one only when the app renders
-// it itself (PGS, VobSub/DVD via libbitsub — Direct Play stays). DVB bitmap subtitles are always
-// burned in, which costs Direct Play — so never automatically, only when chosen.
+// it itself (PGS, VobSub/DVD via libbitsub — Direct Play stays). DVB bitmap subtitles can only be
+// burned in (the server cannot hand them out, see utils.js), which costs Direct Play — so never
+// automatically, only when chosen.
 function subtitleAutoEligible(s, prefs) {
   if (!GRAPHIC_SUB_CODECS.includes(subCodec(s))) return true;
   return CLIENT_SUB_CODECS.includes(subCodec(s)) && prefs.pgsRendering !== false;
