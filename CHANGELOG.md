@@ -42,6 +42,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **The home screen's banner and the picture behind the rows no longer overlap.** The banner is
   either whole or gone: one step down into the rows moves it away completely and the selected
   title's picture fades in; back up, the banner returns. It only changes titles while it is in view.
+- **DVB picture subtitles are no longer switched on by themselves.** They always have to be burned
+  in, which costs the direct playback; pick them yourself when you want them.
 - **Moving between buttons is lighter on the TV.** Their highlight appears at once instead of
   fading in; only the slight zoom is still animated, as on the cards.
 
@@ -77,7 +79,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 ### Internal
 
 - Vite 8.3.0 → 8.3.1 and its Svelte plugin 7.3.0 → 7.3.1, both patch-level build tooling.
-- Old code and outdated comments removed throughout; behaviour unchanged.
+- Old code and outdated comments removed throughout; behaviour unchanged. Starting a title from the
+  home screen asks the server once instead of twice.
 
 ## 2026.09.27
 

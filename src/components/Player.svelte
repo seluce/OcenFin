@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints } from '../utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS } from '../utils.js';
   import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks } from '../trackmemory.js';
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
@@ -369,12 +369,6 @@
     else if (cmd === 'fastforward') skip(seekStep);
     else if (cmd === 'nexttrack') { if (nextEpisode) goToNextEpisode(true); }
     else if (cmd === 'previoustrack') { goToPrevEpisode(); }
-    // Volume/mute (GeneralCommand)
-    else if (cmd === 'setvolume' && videoElement) { const v = parseInt(c.args?.Volume, 10); if (!isNaN(v)) videoElement.volume = Math.max(0, Math.min(1, v / 100)); }
-    else if (cmd === 'volumeup'   && videoElement) videoElement.volume = Math.min(1, videoElement.volume + 0.1);
-    else if (cmd === 'volumedown' && videoElement) videoElement.volume = Math.max(0, videoElement.volume - 0.1);
-    else if ((cmd === 'mute' || cmd === 'unmute' || cmd === 'togglemute') && videoElement)
-      videoElement.muted = cmd === 'mute' ? true : cmd === 'unmute' ? false : !videoElement.muted;
   }
   let settingsTab   = $state('audio');     // 'audio' | 'subtitle' — which section is shown in the panel
   let controlsTimeout;
@@ -475,12 +469,7 @@
   // fetched once.
   async function sourceForPick() {
     let sources = item?.MediaSources;
-    if (!sources?.length && item?.Id) {
-      try {
-        const r = await fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
-        if (r.ok) sources = (await r.json()).MediaSources;
-      } catch {}
-    }
+    if (!sources?.length && item?.Id) sources = (await fetchFullItem())?.MediaSources;
     if (!sources?.length) return null;
     return (mediaSourceId && sources.find(s => s.Id === mediaSourceId)) || sources[0];
   }
@@ -600,10 +589,8 @@
         }
       }
       if (!titleStreams.length && item?.Id) {
-        try {
-          const r = await fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
-          if (r.ok) { const full = await r.json(); if (full?.MediaStreams?.length) titleStreams = full.MediaStreams; }
-        } catch {}
+        const full = await fetchFullItem();
+        if (full?.MediaStreams?.length) titleStreams = full.MediaStreams;
       }
       // Apply the per-series remembered track language ONCE, on the first setup (mount). Matched by
       // language so it's robust across episodes (track order/index may differ). A later manual switch
@@ -635,9 +622,9 @@
       const subStreams = allStreams;
       const subStream  = subtitleIndex !== -1 ? subStreams.find(s => s.Index === subtitleIndex && s.Type === 'Subtitle') : null;
       const subCodec    = (subStream?.Codec || '').toLowerCase();
-      const isPgsSub    = ['pgssub', 'pgs'].includes(subCodec);
-      const isVobSub    = ['dvdsub', 'vobsub', 'sub'].includes(subCodec);          // DVD/VobSub → .mks from 12.0
-      const isGraphicSub = isPgsSub || isVobSub || ['dvbsub'].includes(subCodec);
+      const isPgsSub    = PGS_CODECS.includes(subCodec);
+      const isVobSub    = VOBSUB_CODECS.includes(subCodec);          // DVD/VobSub → .mks from 12.0
+      const isGraphicSub = GRAPHIC_SUB_CODECS.includes(subCodec);
       // libbitsub renders PGS and VobSub client-side (when enabled); anything else graphic, or with
       // client rendering off, has to be burned in.
       const graphicClientRender = clientGraphicRender && (isPgsSub || isVobSub);
@@ -809,7 +796,7 @@
     const m = (url.split('?')[0] || '').match(/\.(\w+)$/);
     if (m) return `track.${m[1].toLowerCase()}`;
     const codec = (stream?.Codec || '').toLowerCase();
-    return ['dvdsub', 'vobsub', 'sub'].includes(codec) ? 'track.mks' : 'track.sup';
+    return VOBSUB_CODECS.includes(codec) ? 'track.mks' : 'track.sup';
   }
 
   // Apply subtitle – routes by codec: PGS/VobSub → libbitsub overlay, text → VTT overlay.
@@ -823,8 +810,8 @@
     if (index === -1 || !ms) { disposeGraphic(); clearAss(); subtitleCues = []; return; }
     const stream = (ms.MediaStreams || []).find(s => s.Index === index && s.Type === 'Subtitle');
     const codec  = (stream?.Codec || '').toLowerCase();
-    const isPgs = ['pgssub', 'pgs'].includes(codec);
-    const isVob = ['dvdsub', 'vobsub', 'sub'].includes(codec);
+    const isPgs = PGS_CODECS.includes(codec);
+    const isVob = VOBSUB_CODECS.includes(codec);
     const isAss = ['ass', 'ssa'].includes(codec);
     if (stream && clientGraphicRender && (isPgs || isVob)) {
       clearAss();
@@ -929,8 +916,8 @@
   }
   function applyGraphicSubtitle(stream, ms) {
     if (!videoElement) return;
-    const url = graphicSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
-    if (!url) { disposeGraphic(); dlog('[OcenFin] image subtitle not available (server does not provide it externally):', stream.Index); return; }
+    const url = graphicSubtitleUrl({ serverUrl: session.serverUrl, stream, token: session.token });
+    if (!url) { disposeGraphic(); dlog('[OcenFin] image subtitle not available (no DeliveryUrl from the server):', stream.Index); return; }
     // TV-friendly: STRICTLY SEQUENTIAL. Fully destroy the old renderer before creating the new one,
     // so only one decoder is ever alive. A short gap on a manual switch is acceptable.
     disposeGraphic();
@@ -987,7 +974,7 @@
     };
     try {
       // The codec is known → pick the explicit renderer (no format auto-detection needed).
-      mine = graphicRenderer = ['pgssub', 'pgs'].includes(codec)
+      mine = graphicRenderer = PGS_CODECS.includes(codec)
         ? new PgsRenderer(opts)
         : new VobSubRenderer({ ...opts, fileName: graphicSubFileName(url, stream) });   // VobSub/DVD: .mks container
       if (subtitleOffset) graphicRenderer.timeOffset = -subtitleOffset;   // kept across a rebuild, sign as in adjustSubtitleOffset
@@ -1014,14 +1001,14 @@
     if (!menuStream || !ms || prefetchedSubs.has(menuStream.Index)) return;
     // Resolve the stream from currentMediaSource, exactly like applySubtitleOverlay does: only THOSE
     // objects carry the server-computed DeliveryUrl. The menu's copies come from MediaStreams and
-    // lack it, which would fall back to the generic .sup endpoint — rejected with 400 here.
+    // lack it, and without it there is nothing to fetch.
     const stream = (ms.MediaStreams || []).find(x => x.Index === menuStream.Index && x.Type === 'Subtitle');
     if (!stream) return;
     const codec = (stream.Codec || '').toLowerCase();
-    const isGraphic = ['pgssub', 'pgs', 'dvdsub', 'vobsub', 'sub'].includes(codec);
+    const isGraphic = CLIENT_SUB_CODECS.includes(codec);   // what libbitsub can render
     const isAss     = ['ass', 'ssa'].includes(codec);
     const url = (isGraphic && clientGraphicRender)
-      ? graphicSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token })
+      ? graphicSubtitleUrl({ serverUrl: session.serverUrl, stream, token: session.token })
       : (isAss && clientAssRender)
         ? assSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token })
         : null;
@@ -1097,7 +1084,7 @@
     const stream = (ms.MediaStreams || []).find(s => s.Index === index && s.Type === 'Subtitle');
     if (!stream) return;
     const method = (stream.DeliveryMethod || '').toLowerCase();
-    const graphic = ['pgssub', 'dvdsub', 'pgs', 'dvbsub', 'vobsub', 'sub'].includes((stream.Codec || '').toLowerCase());
+    const graphic = GRAPHIC_SUB_CODECS.includes((stream.Codec || '').toLowerCase());
     if (method === 'encode' || graphic) return;   // burned in or graphic subtitle → no VTT overlay
 
     const url = externalSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
@@ -1456,14 +1443,23 @@
 
   const getAuthHeaders = () => authHeaders(session.token);
 
+  // ONE /Items/{id} request per Player: fetchMediaSources (chapters, track lists, trickplay), the
+  // picked start's source (sourceForPick) and the title-streams fallback read the same answer — a
+  // start from a card used to fetch it twice, up to three times. The Player is remounted per title
+  // ({#key} in App), so the answer stays valid for this instance; a failed request is not kept, so a
+  // later caller tries again.
+  let _fullItemP = null;
+  function fetchFullItem() {
+    _fullItemP ??= fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() })
+      .then(r => (r.ok ? r.json() : null)).catch(() => null)
+      .then(d => { if (!d) _fullItemP = null; return d; });
+    return _fullItemP;
+  }
+
   async function fetchMediaSources() {
     try {
-      const res = await fetch(
-        `${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`,
-        { headers: getAuthHeaders() }
-      );
-      if (res.ok) {
-        const data = await res.json();
+      const data = await fetchFullItem();
+      if (data) {
         chapters = data.Chapters || [];
         // Track list only for the selection UI (audio/subtitle). The actual
         // delivery (track vs. burned in) is decided by PlaybackInfo in setupPlayback.
@@ -1660,7 +1656,6 @@
       const newStream = mediaStreams.find(s => s.Index === index && s.Type === 'Subtitle');
       // A soft switch is possible when the subtitle doesn't need to be burned in: "Off", or
       // a text subtitle (whether delivered externally or embedded → we fetch it as VTT).
-      const graphicCodecs = ['pgssub', 'dvdsub', 'pgs', 'dvbsub', 'vobsub', 'sub'];
       // Delivery (track vs. burned in) is decided by PlaybackInfo, so it lives on
       // currentMediaSource.MediaStreams — the item's track list (mediaStreams) NEVER carries
       // DeliveryMethod (see fetchMediaSources). Check the real source, not the UI copy.
@@ -1671,9 +1666,8 @@
         if (!s) return false;
         if (deliveredEncoded(idx)) return false;                                    // burned in → reload
         const codec = (s.Codec || '').toLowerCase();
-        if (['pgssub', 'pgs'].includes(codec)) return clientGraphicRender;          // PGS: client-side → soft, otherwise burned in
-        if (['dvdsub', 'vobsub', 'sub'].includes(codec)) return clientGraphicRender;                // VobSub: likewise (.mks)
-        if (graphicCodecs.includes(codec)) return false;                            // other graphic → not as VTT
+        if (CLIENT_SUB_CODECS.includes(codec)) return clientGraphicRender;          // PGS/VobSub: client-side → soft, otherwise burned in
+        if (GRAPHIC_SUB_CODECS.includes(codec)) return false;                       // DVB bitmap → burned in, never soft
         // Text target: with burn-in enabled the profile marks every text subtitle Encode, so
         // switching TO one always needs the reload — the delivery check above only knows about
         // the track the current source was set up with.

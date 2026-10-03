@@ -9,6 +9,7 @@
 // sign-in (setTrackMemoryUser); without one nothing is read or written.
 
 import { LANGUAGES } from './i18n.svelte.js';
+import { CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS } from './utils.js';
 
 const LEGACY_KEY = 'ocenfin:trackmem';
 const keyFor = (userId) => `${LEGACY_KEY}:${userId}`;
@@ -101,14 +102,14 @@ export function matchRememberedSubtitleIndex(streams, seriesId) {
 //   subtitle: remembered → off → the app's language → in "default" mode a forced track, ideally in
 //             the audio's language → the server's default → none
 // Returns stream indexes; -1 means "none" for subtitles and "the file's default" for audio.
-const GRAPHIC_SUB_CODECS = ['pgssub', 'pgs', 'dvdsub', 'dvbsub', 'vobsub', 'sub'];
-const isGraphicSub = (s) => GRAPHIC_SUB_CODECS.includes((s?.Codec || '').toLowerCase());
+const subCodec = (s) => (s?.Codec || '').toLowerCase();
 
-// May a subtitle be switched on automatically? Text always; a graphic one (PGS, VobSub/DVD) as long
-// as the app renders them itself (libbitsub, Direct Play stays) — Jellyfin 12 delivers both.
+// May a subtitle be switched on automatically? Text always; a graphic one only when the app renders
+// it itself (PGS, VobSub/DVD via libbitsub — Direct Play stays). DVB bitmap subtitles are always
+// burned in, which costs Direct Play — so never automatically, only when chosen.
 function subtitleAutoEligible(s, prefs) {
-  if (!isGraphicSub(s)) return true;
-  return prefs.pgsRendering !== false;
+  if (!GRAPHIC_SUB_CODECS.includes(subCodec(s))) return true;
+  return CLIENT_SUB_CODECS.includes(subCodec(s)) && prefs.pgsRendering !== false;
 }
 
 // First stream of that type in the preferred language, or null for 'default' / no match.

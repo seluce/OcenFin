@@ -286,20 +286,15 @@ export function assSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, token
   return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.ass?ApiKey=${token}`;
 }
 
-// Returns the raw graphic-subtitle URL for libbitsub. ALWAYS prefers the DeliveryUrl computed by
-// the server (correct format: PGS=.sup, VobSub=.mks from Jellyfin 12.0). Falls back only for PGS to
-// the default .sup endpoint — VobSub WITHOUT a DeliveryUrl isn't retrievable (Jellyfin 12 always sends one).
-export function graphicSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, token }) {
-  if (!stream) return null;
-  if (stream.DeliveryUrl) {
-    const u = stream.DeliveryUrl;
-    if (/^https?:/i.test(u)) return u;
-    return `${serverUrl}${u}${u.includes('ApiKey') ? '' : (u.includes('?') ? '&' : '?') + 'ApiKey=' + token}`;
-  }
-  const codec = (stream.Codec || '').toLowerCase();
-  if (codec === 'pgssub' || codec === 'pgs')
-    return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.sup?ApiKey=${token}`;
-  return null;   // VobSub/DVDSub without a DeliveryUrl → not client-side renderable (burn in)
+// Returns the raw graphic-subtitle URL for libbitsub: the DeliveryUrl the server computes for an
+// External subtitle (PGS=.sup, VobSub=.mks; Jellyfin 12 always sends one). Without it there is
+// nothing to fetch — the generic Stream.sup endpoint it used to fall back to answered 400 — and the
+// caller logs that and shows no subtitle.
+export function graphicSubtitleUrl({ serverUrl, stream, token }) {
+  const u = stream?.DeliveryUrl;
+  if (!u) return null;
+  if (/^https?:/i.test(u)) return u;
+  return `${serverUrl}${u}${u.includes('ApiKey') ? '' : (u.includes('?') ? '&' : '?') + 'ApiKey=' + token}`;
 }
 
 

@@ -528,8 +528,8 @@
   let syncCmdSeq  = $state(0);
   let syncQueue   = $state(null);   // { itemId, playlistItemId, positionTicks, isPlaying }
 
-  // Admin remote control (Jellyfin dashboard): Playstate/GeneralCommand over the same WebSocket.
-  let remoteCommand = $state(null);   // { command, seekTicks?, args?, _seq } → to the Player
+  // Admin remote control (Jellyfin dashboard): Playstate commands (+ DisplayMessage) over the same WebSocket.
+  let remoteCommand = $state(null);   // { command, seekTicks?, _seq } → to the Player
   let remoteCmdSeq  = $state(0);
   let remoteMessage = $state(null);   // { header, text } – admin message as an overlay
   let remoteMessageTimer = null;
@@ -769,13 +769,12 @@
       if (cmd) { remoteCommand = { command: cmd, seekTicks: msg.Data?.SeekPositionTicks ?? null, _seq: ++remoteCmdSeq }; }
     } else if (msg.MessageType === 'GeneralCommand') {
       const name = msg.Data?.Name;
+      // Only DisplayMessage: it is the one GeneralCommand the session advertises (registerSession),
+      // so the dashboard offers no other — volume in particular stays the TV's own business.
       if (name === 'DisplayMessage') {
         const a = msg.Data?.Arguments || {};
         showRemoteMessage(a.Header, a.Text, parseInt(a.TimeoutMs, 10) || 0);
-      } else if (name) {
-        // Volume/mute etc. → pass on to the Player.
-        remoteCommand = { command: name, args: msg.Data?.Arguments || {}, _seq: ++remoteCmdSeq };
-      }
+      } else if (name) dlog('[remote] GeneralCommand not supported:', name);
     } else if (msg.MessageType === 'Play') {
       // Admin "Play on this device" → open the first item.
       const itemId = msg.Data?.ItemIds?.[0];
@@ -989,10 +988,10 @@
     // On some builds/appinfo configs (handlesRelaunch:true) the app then stays stuck in the
     // background and appears not to start — so we explicitly bring it to the
     // foreground. Harmless if webOS handles it itself anyway.
+    // webOSSystem only: PalmSystem is its pre-webOS-6 name, and webOS 25 is the target.
     const toForeground = () => {
-      dlog('[Lifecycle] webOSRelaunch → activate');
-      try { window.PalmSystem?.activate?.(); } catch (e) { console.warn('[Lifecycle] activate failed:', e); }
-      try { window.webOSSystem?.activate?.(); } catch { /* not present */ }
+      dlog('[Lifecycle] webOSRelaunch → activate', typeof window.webOSSystem?.activate === 'function' ? '(webOSSystem)' : '(NOT AVAILABLE)');
+      try { window.webOSSystem?.activate?.(); } catch (e) { console.warn('[Lifecycle] activate failed:', e); }
     };
     document.addEventListener('webOSRelaunch', toForeground, true);
 
