@@ -21,16 +21,16 @@
   --tw-shadow: 0 0 26px 0 color-mix(in oklab, var(--color-blue-500) 50%, transparent), 0 20px 25px -5px rgb(0 0 0 / 0.1);
 }
 
-/* A view's background: a faint accent glow instead of flat gray. `local` paints it WITH the content
-   when set on a scroller — it scrolls along, so nothing fixed sits behind moving content. The image
-   is sized to the glow's own band: a gradient is drawn over its whole box, transparent part
-   included, and as tall as a scroller's content that added raster work to every row of a library
-   (measured, §47). The dashboard sets --ambient-y to centre it below the hero: a glow reaching up
-   would meet the hero's solid bottom edge as a visible seam. */
+/* The quieter views' background: a faint accent glow in the top-left corner instead of flat gray.
+   NOT on the dashboard and the library — the focused title's backdrop colours those already, and a
+   third effect there tipped into busy; at 20 % warm accents (amber, orange, rose) turned muddy over
+   the bluish gray, hence 12 %. `local` paints it WITH the content when set on a scroller, so nothing
+   fixed sits behind moving content; the image is sized to the glow's own band, because a gradient is
+   drawn over its whole box, transparent part included (as tall as a library it cost raster, §47). */
 @utility ambient {
-  background-image: radial-gradient(1100px 560px at 6% 50%, color-mix(in oklab, var(--color-blue-600) 20%, transparent), transparent);
+  background-image: radial-gradient(1100px 560px at 6% 50%, color-mix(in oklab, var(--color-blue-600) 12%, transparent), transparent);
   background-size: 100% 1120px;
-  background-position: 0 calc(var(--ambient-y, 0px) - 560px);
+  background-position: 0 -560px;
   background-repeat: no-repeat;
   background-attachment: local;
 }

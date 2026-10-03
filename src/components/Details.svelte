@@ -931,7 +931,7 @@
           <div class="flex items-center gap-4 mb-12">
             <button onclick={handlePlay} {@attach focusUnlessRestoring} data-primary-action
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-2xl px-12 py-4 rounded-xl
-                     focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-3 shadow-lg">
+                     focus:outline-none focus:ring-4 focus:ring-blue-500 flex items-center gap-3 shadow-lg">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
               {#if nextToPlay && nextToPlay.Type === 'Episode'}
                 {nextToPlay.UserData?.PlaybackPositionTicks > 0 ? i18n.t.resumePlay : i18n.t.play}
@@ -942,7 +942,7 @@
             {#if fullItem.Type === 'Series' || fullItem.Type === 'Season'}
               <button onclick={playRandomEpisode}
                 class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold text-lg px-8 py-4 rounded-xl
-                       focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg flex items-center gap-2">
+                       focus:outline-none focus:ring-4 focus:ring-blue-500 shadow-lg flex items-center gap-2">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
                   <polyline points="16 3 21 3 21 8"/>
                   <line x1="4" y1="20" x2="21" y2="3"/>
@@ -957,7 +957,7 @@
             {#if fullItem.UserData?.PlaybackPositionTicks > 0 && fullItem.Type !== 'Series' && fullItem.Type !== 'Season'}
               <button onclick={playFromBeginning}
                 class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold text-lg px-7 py-4 rounded-xl
-                       focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg flex items-center gap-2">
+                       focus:outline-none focus:ring-4 focus:ring-blue-500 shadow-lg flex items-center gap-2">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"/>
                 </svg>
@@ -968,7 +968,7 @@
             {#if fullItem.RemoteTrailers?.length > 0}
               <button onclick={openTrailer} {@attach hint()} aria-label={i18n.t.trailer}
                 class="p-4 rounded-xl bg-gray-800 text-white hover:bg-gray-700 focus:bg-gray-700
-                       focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg">
+                       focus:outline-none focus:ring-4 focus:ring-blue-500 shadow-lg">
                 <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M4.5 4.5a3 3 0 00-3 3v9a3 3 0 003 3h8.25a3 3 0 003-3v-9a3 3 0 00-3-3H4.5zM19.94 18.75l-2.69-2.69V7.94l2.69-2.69c.944-.945 2.56-.276 2.56 1.06v11.38c0 1.336-1.616 2.005-2.56 1.06z"/>
                 </svg>
@@ -977,7 +977,7 @@
 
             <button onclick={togglePlayed} {@attach hint()}
               aria-label={fullItem.UserData?.Played ? i18n.t.markUnwatched : i18n.t.markWatched}
-              class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg
+              class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 shadow-lg
                      {fullItem.UserData?.Played ? 'bg-green-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
@@ -986,7 +986,7 @@
 
             <button onclick={toggleFavorite} {@attach hint()}
               aria-label={fullItem.UserData?.IsFavorite ? i18n.t.removeFavorite : i18n.t.addFavorite}
-              class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg
+              class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 shadow-lg
                      {fullItem.UserData?.IsFavorite ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
@@ -995,7 +995,7 @@
 
             <button onclick={() => toggleWatchlist(fullItem)} {@attach hint()}
               aria-label={inWatchlist(fullItem.Id) ? i18n.t.removeFromWatchlist : i18n.t.addToWatchlist}
-              class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg
+              class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 shadow-lg
                      {inWatchlist(fullItem.Id) ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill={inWatchlist(fullItem.Id) ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"/>
@@ -1005,7 +1005,7 @@
             {#if fullItem.MediaSources?.length > 0 || fullItem.Type === 'Series' || fullItem.Type === 'Season'}
               <div class="relative" data-dropdown data-focus-trap={openDropdown === 'kebab' || undefined}>
                 <button bind:this={kebabBtnEl} onclick={(e) => toggleDropdown('kebab', e)} {@attach hint()} aria-label={i18n.t.more}
-                  class="p-4 rounded-xl bg-gray-800 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg">
+                  class="p-4 rounded-xl bg-gray-800 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-blue-500 shadow-lg">
                   <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
                 </button>
                 {#if openDropdown === 'kebab'}

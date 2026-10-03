@@ -901,7 +901,7 @@
           <div class="flex items-center gap-2 px-3 py-1.5 border-b border-gray-700/40 last:border-b-0 {entry.hidden ? 'opacity-50' : ''}">
             <!-- Lift / move (OK grabs, ▲▼ moves) -->
             <button data-nav-id={entry.id} onclick={() => toggleGrab(entry)} onkeydown={(e) => onNavRowKey(e, entry)}
-              class="flex-1 flex items-center gap-4 p-3 rounded-xl text-left focus:outline-none transition-all
+              class="flex-1 flex items-center gap-4 p-3 rounded-xl text-left focus:outline-none transition-transform
                      {grabbedId === entry.id
                        ? 'bg-blue-600 text-white ring-4 ring-white scale-[1.02] shadow-xl'
                        : 'text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:ring-4 focus:ring-white'}">
@@ -1820,7 +1820,7 @@
       <!-- Clear cache (directly below the server address) -->
       <button onclick={() => onClearCache?.()}
         class="bg-gray-800/80 border border-gray-700 rounded-2xl shadow-xl flex items-center justify-between w-full p-6
-               hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-4 focus:ring-white transition-all text-left">
+               hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-4 focus:ring-white text-left">
         <div>
           <span class="text-xl text-white font-bold block">{i18n.t.clearCache}</span>
           <span class="text-gray-400 mt-1 block text-sm">{i18n.t.clearCacheDesc}</span>
@@ -1835,7 +1835,7 @@
         <button onclick={() => onSwitchUser?.()}
           class="flex flex-col items-center justify-center p-7 bg-gray-800 border border-gray-700 rounded-2xl
                  hover:bg-gray-700 hover:scale-105 focus:scale-105
-                 focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-xl">
+                 focus:outline-none focus:ring-4 focus:ring-white transition-transform shadow-xl">
           <svg class="w-11 h-11 text-white mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7"/>
           </svg>
@@ -1846,7 +1846,7 @@
         <button onclick={() => onLogout?.()}
           class="flex flex-col items-center justify-center p-7 bg-red-900/40 border border-red-800/50 rounded-2xl
                  hover:bg-red-900/70 focus:bg-red-900/70 focus:scale-105
-                 focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-xl group">
+                 focus:outline-none focus:ring-4 focus:ring-white transition-transform shadow-xl group">
           <svg class="w-11 h-11 text-red-400 group-hover:text-red-200 group-focus:text-red-200 mb-3 transition-colors"
             fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"

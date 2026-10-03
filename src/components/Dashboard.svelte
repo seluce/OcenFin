@@ -586,9 +586,7 @@
       <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-gray-900/60"></div>
     </div>
   {/if}
-  <!-- ambient (app.css): with the hero shown, the glow starts at its bottom edge -->
-  <div class="relative z-10 px-10 pt-16 pb-20 flex flex-col gap-12 ambient"
-    style:--ambient-y={showHero ? 'calc(max(44vh, 320px) + 560px)' : null}>
+  <div class="relative z-10 px-10 pt-16 pb-20 flex flex-col gap-12">
 
   <!-- Reusable card snippets (instead of 8 nearly identical blocks) -->
   {#snippet landscapeCard(item)}
@@ -768,13 +766,13 @@
                  the same title in "Recently added", deep down the page. -->
             <button onclick={playFromHero} data-scroll-top data-item-id={heroCurrent?.Id}
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-lg px-8 py-3 rounded-xl
-                     focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-2 shadow-lg">
+                     focus:outline-none focus:ring-4 focus:ring-blue-500 flex items-center gap-2 shadow-lg">
               <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
               {(heroCurrent?.UserData?.PlaybackPositionTicks || 0) > 0 ? i18n.t.resumePlay : i18n.t.play}
             </button>
             <button onclick={openFromHero} data-item-id={heroCurrent?.Id}
               class="bg-gray-800/80 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold text-lg px-7 py-3 rounded-xl
-                     focus:outline-none focus:ring-4 focus:ring-white transition-all flex items-center gap-2 shadow-lg">
+                     focus:outline-none focus:ring-4 focus:ring-white flex items-center gap-2 shadow-lg">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
               {i18n.t.moreInfo}
             </button>

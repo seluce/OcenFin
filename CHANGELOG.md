@@ -37,8 +37,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   picture.
 - **The subtitle settings explain themselves in plain words** instead of technical terms, and no
   longer mention limits of servers older than Jellyfin 12.
-- **Less grey.** A soft glow in your accent colour behind the home screen, the lists and the
-  settings; the selected card glows in it, and a title's page takes on a hint of its poster's colour.
+- **Less grey.** The selected card glows in your accent colour, a title's page takes on a hint of
+  its poster's colour, and search, favourites, collections and the settings carry a faint glow.
+- **Moving between buttons is lighter on the TV.** Their highlight appears at once instead of
+  fading in; only the slight zoom is still animated, as on the cards.
 
 ### Fixed
 

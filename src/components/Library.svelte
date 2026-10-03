@@ -652,7 +652,7 @@
   {/if}
 
   <div bind:this={libraryScrollContainer} onscroll={handleLibraryScroll}
-    class="flex-1 p-10 pt-16 overflow-y-auto hide-scrollbar relative z-10 [scroll-padding-top:4rem] ambient">
+    class="flex-1 p-10 pt-16 overflow-y-auto hide-scrollbar relative z-10 [scroll-padding-top:4rem]">
 
     <div class="flex justify-between items-center gap-6 mb-10 pr-6">
       <!-- min-w-0 + truncate on the name, shrink-0 on the count and the actions: a very long library
@@ -666,7 +666,7 @@
              "Random" ORDER — in German both read "Zufällig", side by side. -->
         <button onclick={playRandomItem}
           class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
-                 focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105"
+                 focus:outline-none focus:ring-4 focus:ring-white transition-transform shadow-lg border border-gray-700 focus:scale-105"
           title={i18n.t.surpriseMe}>
           <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M4 4h4l12 16h4M4 20h4l3-4m4-9l2-3h3M20 4v4m0 12v-4"/>
@@ -675,7 +675,7 @@
         </button>
         <button onclick={openFilterMenu}
           class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
-                 focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105">
+                 focus:outline-none focus:ring-4 focus:ring-white transition-transform shadow-lg border border-gray-700 focus:scale-105">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
           </svg>
@@ -684,7 +684,7 @@
         </button>
         {#if sharedReady}
           <button onclick={toggleSharedWatch}
-            class="flex items-center gap-3 px-6 py-3 rounded-xl font-bold focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border focus:scale-105
+            class="flex items-center gap-3 px-6 py-3 rounded-xl font-bold focus:outline-none focus:ring-4 focus:ring-white transition-transform shadow-lg border focus:scale-105
                    {sharedWatchMode ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-white'}"
             title={i18n.t.watchTogether}>
             <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -820,7 +820,7 @@
         onfocus={() => showJumpLetter(letter)}
         data-hbar-current={activeLetter === letter ? '' : null}
         class="w-10 h-10 flex items-center justify-center rounded-full text-sm font-bold drop-shadow
-               focus:outline-none focus:ring-4 focus:ring-white transition-all transform focus:scale-125
+               focus:outline-none focus:ring-4 focus:ring-white transition-transform transform focus:scale-125
                {activeLetter === letter ? 'text-white bg-blue-600 shadow-lg scale-110' : 'text-gray-300/80 hover:text-white hover:bg-white/10'}"
       >{letter}</button>
     {/each}

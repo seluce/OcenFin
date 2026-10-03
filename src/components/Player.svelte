@@ -2630,7 +2630,7 @@
         class="bg-black/85 border-2 border-white text-white font-bold text-2xl
                px-10 py-5 rounded-xl flex items-center gap-4 shadow-2xl
                hover:bg-white hover:text-black focus:bg-white focus:text-black
-               focus:outline-none transition-colors duration-200">
+               focus:outline-none">
         <!-- Double arrow right for "skip" -->
         <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
           <path d="M5.59 7.41L10.18 12l-4.59 4.59L7 18l6-6-6-6zM16 6h2v12h-2z"/>

@@ -107,7 +107,7 @@
     class="group w-full px-5 mb-6 focus:outline-none flex items-center gap-4 relative"
   >
     <div class="w-14 h-14 shrink-0 rounded-full overflow-hidden border-4 border-transparent
-                group-focus:border-blue-500 shadow-md transition-all">
+                group-focus:border-blue-500 shadow-md">
       {#if getAvatarUrl(selectedUser)}
         <img src={getAvatarUrl(selectedUser)} alt={i18n.t.profile} class="w-full h-full object-cover" />
       {:else}
