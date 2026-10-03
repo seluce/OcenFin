@@ -10,10 +10,8 @@
 
   function updateTime() {
     const now = new Date();
-    timeString = now.toLocaleTimeString(
-      i18n.lang === 'de' ? 'de-DE' : 'en-US',
-      { hour: '2-digit', minute: '2-digit', hour12: !use24h }
-    );
+    // The app language is a valid BCP-47 tag (as in the screensaver): every locale formats its own way.
+    timeString = now.toLocaleTimeString(i18n.lang || 'en', { hour: '2-digit', minute: '2-digit', hour12: !use24h });
   }
 
   // Language + format reactive: $effect tracks the reads in updateTime (i18n.lang, use24h)

@@ -380,7 +380,6 @@ export default {
     quickConnect: "Quick Connect",
     qcInstruction: "Introduza este código na sua aplicação Jellyfin (telemóvel/web) em «Quick Connect»:",
     qcQrHint: "Digitalize com um telemóvel ligado ao Jellyfin.",
-    qcCancel: "Cancelar",
     qcAuthInstruction: "Introduza um código de 6 dígitos de outro dispositivo para o autorizar:",
     qcAuthorizeBtn: "Autorizar dispositivo",
     qcSuccess: "Dispositivo autorizado com sucesso!",

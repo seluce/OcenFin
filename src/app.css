@@ -1,7 +1,7 @@
 @import "tailwindcss";
 /* Hide scrollbars globally — everywhere .hide-scrollbar is set. */
 .hide-scrollbar::-webkit-scrollbar { display: none; }                 /* Chromium / WebKit (also webOS) */
-.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }  /* Firefox / Edge legacy */
+.hide-scrollbar { scrollbar-width: none; }                            /* Firefox (desktop dev) */
 
 /* LESSON content-visibility: the former .cv-auto/.cv-card classes (content-visibility:
    auto) were removed from all grid/dashboard cards and NOT reintroduced.

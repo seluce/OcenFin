@@ -17,7 +17,7 @@
   let isLoadingFavorites = $state(false);
   let favoritesGrid = $state();
 
-  // Grouping like in search: movies / series / seasons / collections (empty groups are dropped in the template)
+  // Grouping: movies / series / seasons / collections (empty groups are dropped in the template)
   let favGroups = $derived([
     { key: 'movies',      label: i18n.t.movies,      items: favoriteItems.filter(i => i.Type === 'Movie'  && i.UserData?.IsFavorite) },
     { key: 'series',      label: i18n.t.series,      items: favoriteItems.filter(i => i.Type === 'Series' && i.UserData?.IsFavorite) },

@@ -62,7 +62,7 @@
       }
     }
     return out.slice(0, ROW_LIMIT);   // uniform row length, like the other dashboard rows
-  });   // "Recently Watched" (history)
+  });
   let recommendations  = $state([]);   // [{ seedTitle, items }] — "Because you watched X"
   let collections      = $state([]);   // BoxSets ("Collections")
 
@@ -108,9 +108,6 @@
       else if (pTag) previewBackdrop = `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${pTag}&maxWidth=1280&quality=70&format=webp`;
     }, 700);
   }
-  // Focus leaves a card: stop the fade-in timer and clear the backdrop with a short delay.
-  // If another card focus follows immediately (card→card), previewItem cancels the clearing → no
-  // flicker. If focus goes to the hero, the library tiles or the navigation, the clearing stands.
 
   // ── The banner: whole or not at all (CODE-HEALTH §49) ──
   // The banner and the focused card's backdrop never share the screen. Two states only:
@@ -167,13 +164,15 @@
   const heroShown = $derived(showHero && !!heroCurrent);
   $effect(() => { heroShown; handoff?.(); });
 
+  // Focus leaves a card: stop the fade-in timer and clear the backdrop with a short delay.
+  // If another card focus follows immediately (card→card), previewItem cancels the clearing → no
+  // flicker. If focus goes to the hero, the library tiles or the navigation, the clearing stands.
   function cancelPreview() {
     clearTimeout(previewTimer);
     clearTimeout(clearTimer);
     clearTimer = setTimeout(() => { previewBackdrop = ""; }, 150);
   }
 
-  // Build the featured list from the newest movies/series with a backdrop + start the rotation
   // Preloads the image of the next hero item → seamless switch without popping in.
   function preloadHero(index) {
     const next = heroItems[index];
@@ -255,12 +254,11 @@
   const FIELDS = "PrimaryImageAspectRatio,Overview,BackdropImageTags";
   const ROW_LIMIT = 12;   // uniform row length: rows are teasers, the catalog is the library
   const HERO_MIN = 3;     // use the "For You" pool only from this many usable titles on, otherwise new-additions fallback
-                          // (exceptions deliberate: hero = 5-item rotation, collections = curated, uncapped)
+                          // (exceptions deliberate: hero = 5-item rotation, collections = curated, their own cap)
 
   // Clean NextUp of titles already in "Continue Watching" (by episode or series ID).
   function filterNextUp(raw) {
-    const inProgress = new Set();
-    continueWatching.forEach(i => { inProgress.add(i.Id); if (i.SeriesId) inProgress.add(i.SeriesId); });
+    const inProgress = heroInProgressSet();
     return raw.filter(i => !inProgress.has(i.Id) && !inProgress.has(i.SeriesId));
   }
 
@@ -282,7 +280,7 @@
       const dNext  = await rNext.json();
       if (!alive) return;
       continueWatching = resume;
-      nextUp = filterNextUp(Array.isArray(dNext) ? dNext : (dNext.Items || []));
+      nextUp = filterNextUp(dNext.Items || []);
       if (cache) { cache.continueWatching = continueWatching; cache.nextUp = nextUp; }
       onResumeRefreshed?.();
     } catch { /* the flag stays set → the next dashboard visit tries again */ }
@@ -318,7 +316,7 @@
     } catch { /* recommendations are optional */ }
   }
 
-  // "For You" hero (variant A): derives the most frequent genres from recently watched and pulls
+  // "For You" hero: derives the most frequent genres from recently watched and pulls
   // UNWATCHED, well-rated titles with a backdrop from them — instead of "newest additions, random".
   // Returns the candidate pool (rating-sorted). Empty = no signal / error → the caller
   // falls back to the previous new-additions logic so the hero never looks empty.
@@ -468,7 +466,7 @@
       const pCols = pCollections.then(r => r.json()).then(d => {
         // ChildCount only comes when asked for (Fields above) — without it this filter saw undefined
         // and let a collection through that is empty for this profile (e.g. by its age limit).
-        collections = (Array.isArray(d) ? d : (d.Items || [])).filter(c => c.ChildCount !== 0);
+        collections = (d.Items || []).filter(c => c.ChildCount !== 0);
         cache.collections = collections;
       }).catch(() => {});
 
@@ -497,13 +495,10 @@
         cache.recentlyWatched = recentlyWatched;
       }).catch(() => {});
 
-      // Update secondary sections independently — the fastest comes first
-      // FIX: removed `|| d` (d would be the response object, not an array)
-      // FIX: .catch(() => {}) so a single error doesn't block everything
-      // /Items/Latest returns a DIRECT array (not { Items: [...] })!
-      // Other endpoints return { Items, TotalRecordCount }. Handle both cases.
+      // Update secondary sections independently — the fastest comes first; each has its own
+      // .catch so a single error doesn't block the rest.
       const pNext = pNextUp.then(r => r.json()).then(d => {
-        const raw = Array.isArray(d) ? d : (d.Items || []);
+        const raw = d.Items || [];
         // Exclude in-progress titles (already in "Continue Watching") — like the Jellyfin app.
         nextUp = filterNextUp(raw);
         cache.nextUp = nextUp;
@@ -512,15 +507,15 @@
       // Process the latest fetches INDEPENDENTLY: each row fills immediately, and the hero is
       // built as soon as the FIRST usable data is there — not only when the slower
       // of the two fetches returns (that was the actual skeleton bottleneck).
-      const pm = pLatestMovies.then(r => r.json()).catch(() => []);
-      const ps = pLatestSeries.then(r => r.json()).catch(() => []);
+      const pm = pLatestMovies.then(r => r.json()).catch(() => ({}));
+      const ps = pLatestSeries.then(r => r.json()).catch(() => ({}));
       const pmDone = pm.then(d => {
-        latestMovies = Array.isArray(d) ? d : (d.Items || []);
+        latestMovies = d.Items || [];
         cache.latestMovies = latestMovies;
         buildHero();
       });
       const psDone = ps.then(d => {
-        latestSeries = Array.isArray(d) ? d : (d.Items || []);
+        latestSeries = d.Items || [];
         cache.latestSeries = latestSeries;
         buildHero();
       });
@@ -569,15 +564,6 @@
       if (out.length >= 16) break;
     }
     return out;
-  }
-
-  // History cards uniformly portrait: episodes use the series poster
-  function getHistoryImageUrl(item) {
-    if (item.Type === 'Episode' && item.SeriesId && item.SeriesPrimaryImageTag)
-      return `${session.serverUrl}/Items/${item.SeriesId}/Images/Primary?tag=${item.SeriesPrimaryImageTag}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
-    if (item.ImageTags?.Primary)
-      return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
-    return null;
   }
 
   function getItemTitle(item) {
@@ -902,7 +888,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.recentlyWatched}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each recentlyWatched as item (item.Id)}
-            {@render portraitCard(item, getHistoryImageUrl(item), itemBlurHash(item))}
+            {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}   <!-- episodes arrive as their series (dedupeHistory) -->
           {/each}
         </div>
       </div>
@@ -920,7 +906,7 @@
       </div>
     {/if}
 
-    <!-- RECOMMENDATIONS: "Because you watched X" — personalized, hence near the top -->
+    <!-- RECOMMENDATIONS: "Because you watched X" — personalized -->
     {#each (showRecommendations ? recommendations.slice(0, recommendationRows) : []) as rec (rec.seedId ?? rec.seedTitle)}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>

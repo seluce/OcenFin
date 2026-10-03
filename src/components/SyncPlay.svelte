@@ -7,7 +7,7 @@
     groups  = [],     // available groups
     loading = false,
     error   = '',     // the server refused create/join (App: syncCreate/syncJoin)
-    onClose, onLeave, onCreate, onRefresh, onJoin,   // callback props (instead of events)
+    onClose, onLeave, onCreate, onRefresh, onJoin,   // callback props
   } = $props();
 </script>
 

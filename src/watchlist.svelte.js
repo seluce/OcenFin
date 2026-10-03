@@ -8,7 +8,7 @@ import { session } from './session.svelte.js';
 import { authHeaders } from './utils.js';
 import { playableFor } from './playback.js';
 
-const WATCHLIST_NAME = 'Watchlist';
+export const WATCHLIST_NAME = 'Watchlist';   // the playlist's fixed name on the server
 
 export const watchlist = $state({
   playlistId: null,
@@ -67,8 +67,6 @@ async function refreshEntries(userId) {
   watchlist.items = d.Items || [];
 }
 
-// An item counts as bookmarked if it is in the playlist itself OR (for series/seasons)
-// if any stored entry belongs to it — series are stored as ONE representative episode.
 // Called by App when a playlist is deleted in the UI. If it was the watchlist itself,
 // clear the local state — otherwise the bookmark icons would keep answering from the
 // stale in-memory entries until the next full re-init (app reload / profile switch).
@@ -96,6 +94,8 @@ export function handlePlaylistItemsChanged(playlistId) {
   if (playlistId && playlistId === watchlist.playlistId) refreshWatchlist();
 }
 
+// An item counts as bookmarked if it is in the playlist itself OR (for series/seasons)
+// if any stored entry belongs to it — series are stored as ONE representative episode.
 export function inWatchlist(itemId) {
   if (watchlist.entries[itemId]) return true;
   return watchlist.items.some(it => it.SeriesId === itemId || it.SeasonId === itemId);

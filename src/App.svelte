@@ -52,8 +52,9 @@
 
   // Focus the first usable element in the CONTENT area, outside the hero. The view it belongs to
   // may still be loading, so this retries in the bounded, self-terminating shape used throughout
-  // this file — never an interval. Three callers share it, and they differ only in when to stand
-  // down, which is why `heldByOther` is a parameter: at app start anything already focused wins,
+  // this file — never an interval. Four callers share it, and they differ only in when to stand
+  // down, which is why `heldByOther` is a parameter (required — without it the first attempt
+  // throws and nothing gets focus): at app start anything already focused wins,
   // while a sidebar selection has to take focus OUT of the sidebar and may only stop for focus that
   // has gone somewhere else entirely.
   function focusContent({ why, heldByOther, maxTries = 12, gap = 100, onGiveUp }) {
@@ -94,9 +95,8 @@
   // first content tile is the target.
   //
   // Waiting is unavoidable: one tick in, the dashboard is still loading and its skeletons are plain
-  // <div>s, so nothing there is focusable yet. Bounded retries in the shape of
-  // restoreContextFocus() below — no interval, ends by itself, and cancelled if the phase changes
-  // underneath it. The window is short in practice: the libraries row comes out of the FIRST
+  // <div>s, so nothing there is focusable yet. Bounded retries (focusContent above) — no interval,
+  // ends by itself, and cancelled if the phase changes underneath it. The window is short in practice: the libraries row comes out of the FIRST
   // response round (Views/Resume), the same one that releases the rest of the screen.
   //
   // The hero ([data-hero]) is skipped deliberately: OK on its play button jumps into a rotating
@@ -105,13 +105,13 @@
   // assumption about what the page shows; with every row hidden the hero button is taken after all,
   // and with nothing focusable at all the sidebar entry closes the chain.
   //
-  // Guard unchanged: it only ever acts while nothing holds focus, so it never steals from a modal,
+  // Guard: it only ever acts while nothing holds focus, so it never steals from a modal,
   // the connection-lost retry button or a restore path.
   $effect(() => {
     if (appPhase !== 'app') return;
     return focusContent({
       why: 'start',
-      heldByOther: (a) => !!a && a !== document.body,   // unchanged: at start, anyone else wins
+      heldByOther: (a) => !!a && a !== document.body,   // at start, anyone else wins
       maxTries: 30, gap: 100,                           // ~3 s while the dashboard loads
       onGiveUp: () => {
         dlog('[focus] start → sidebar (no content to focus)');
@@ -124,7 +124,7 @@
   let resumeStale = $state(false);    // after playback: dashboard fetches Resume/NextUp fresh (cache stays otherwise)
   let currentLibrary     = $state(null);  // { Id, Name } — active library (to Library.svelte)
   let libraryReloadKey   = $state(0);     // increment → Library discards its view cache + reloads
-  let libraryFocusFirst  = $state(false); // when opened from the menu, focus the first card
+  let libraryFocusFirst  = $state(false); // set on every explicit open (navigateToLibrary): Library focuses its first card
   let librarySharedOn    = $state(false); // "watch together" active (reported by Library)
   let libraryMounted     = $state(false); // permanently mounted from the first library visit on (state persists)
   let searchMounted      = $state(false); // same for Search — mounted from its first visit on
@@ -146,10 +146,6 @@
   let savedServers      = $state([]);   // [{ id, url, name }]
   let selectedServer    = $state(null); // currently connected server
 
-  // Discovery
-
-  // Manual entry in the add panel
-
   // ============================================================
   // AUTH / USERS
   // ============================================================
@@ -159,10 +155,6 @@
   let serverVersion    = $state('');      // Jellyfin server version (for the status page)
   let savedTokens      = $state({});  // { serverId: { userId: token } } — quick switch (only via the profile switch)
   let sharedTokens     = $state({});  // { serverId: { userId: token } } — watch together, SEPARATE from quick switch
-
-  // Login sub-views
-
-  // Quick Connect (login flow — TV shows the code, phone scans it)
 
   // Device base ID: generated randomly once per installation and kept in localStorage so that
   // the same profile on two TVs does NOT get the same DeviceId (Jellyfin allows only one token per
@@ -212,16 +204,10 @@
   const SHARED_QC_AUTH_HEADER =
     `MediaBrowser Client="OcenFin-TV", Device="LG Smart TV", DeviceId="${BASE_DEVICE_ID}-shared", Version="${APP_VERSION}"`;
 
-  // Helpful: which user the current server token points to
-  // Feed the app-wide stores (in parallel to the existing props; components are migrated step by step).
   // Derive session.serverUrl from the selected server — in the pre phase so children
   // (Dashboard etc.) already read the current URL on remount. The token is written imperatively on
-  // login/switch/logout directly into session.token (no feed, no timing lag).
+  // login/switch/logout directly into session.token.
   $effect.pre(() => { session.serverUrl = selectedServer?.url ?? ''; });
-  let isCurrentUserSaved = $derived(!!(
-    selectedUser && selectedServer &&
-    savedTokens[selectedServer.id]?.[selectedUser.Id]
-  ));
 
   // ============================================================
   // ANIMATIONS
@@ -238,7 +224,7 @@
   const defaultPlaybackPrefs   = () => ({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipRecap: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
   let displaySettings = $state(defaultDisplaySettings());
 
-  // Default audio/subtitle language
+  // Playback and subtitle preferences
   let playbackPrefs = $state(defaultPlaybackPrefs());
 
   // ── Profile-specific settings ───────────────────────────────
@@ -255,8 +241,7 @@
   let prefsReady   = false;   // prevents saving during the initial load
   let applyingPrefs = false;  // prevents saving DURING applyUserPrefs (otherwise a half-finished state)
 
-  // Persist language changes (including from the settings) centrally. Tracks i18n.lang reactively
-  // and replaces the earlier currentLang.subscribe.
+  // Persist language changes (including from the settings) centrally. Tracks i18n.lang reactively.
   $effect(() => {
     const v = i18n.lang;
     if (!prefsReady || applyingPrefs) return;
@@ -265,7 +250,7 @@
   });
 
   // 12h/24h format for both clocks (top right + screensaver).
-  // "auto" follows the language: German → 24h, English → 12h. Overridable.
+  // "auto" follows the language: English → 12h, every other language → 24h. Overridable.
   let use24h = $derived(displaySettings.clockFormat === '24h' ? true
             : displaySettings.clockFormat === '12h' ? false
             : i18n.lang !== 'en');
@@ -372,7 +357,10 @@
     saveUserPrefs();
   }
 
-  let screensaverSettings = $state({ enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45 });
+  // One source for the defaults: the initializer here and the merge on load (onMount) — the same
+  // paste-twice trap as the profile prefs above.
+  const defaultScreensaverSettings = () => ({ enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45 });
+  let screensaverSettings = $state(defaultScreensaverSettings());
   let showScreensaver     = $state(false);
   // Theme music yields to the screensaver: silence while it is up, resume when it goes.
   $effect(() => { suppressTheme(showScreensaver); });
@@ -449,7 +437,7 @@
   let autoPlayStreak = $state(0);           // "still watching?": episodes auto-played in a row without interaction
 
   // Remember position: where was Details opened from (scroll/focus now live in Library.svelte)
-  let detailsOrigin      = $state('dashboard');   // 'dashboard' | 'library' | 'search'
+  let detailsOrigin      = $state('dashboard');   // the view Details was opened from (a viewState value)
   // The card Details was opened from, so Back can hand focus straight back to it. Without this the
   // view returns but nothing is focused: activeElement falls to <body>, and the next D-pad press
   // then runs spatialnav's no-focus path, which picks geometrically from the screen corner and
@@ -459,8 +447,9 @@
   let detailsReturnNth   = 0;
   let detailsReturnScroll = 0;
   // Views that UNMOUNT cannot remember their own focus, so the card to return to is held here and
-  // handed down as a prop. Favourites and Collection focus at the end of their own load, so an
-  // outside call would race them — they take the id and decide themselves. The dashboard has no
+  // handed down as a prop. Favourites, Collection and Person focus at the end of their own load, so
+  // an outside call would race them — they take the id and decide themselves (Details too, on the
+  // way back from a person page). The dashboard has no
   // such logic of its own and is served directly by focusCardAgain().
   let pendingCardFocusId = $state(null);
   let pendingCardScrollTop = $state(0);
@@ -474,7 +463,7 @@
     }
     return 0;
   }
-  // Same three things for a collection/watchlist, whose Back leads somewhere else entirely.
+  // The same for a collection/watchlist, whose Back leads somewhere else entirely.
   let collectionReturnId = null, collectionReturnEl = null, collectionReturnNth = 0, collectionReturnScroll = 0;
   // A person page is reached from the cast list, from search and from favourites — same deal.
   let personReturnId = null, personReturnEl = null, personReturnNth = 0, personReturnScroll = 0;
@@ -482,7 +471,7 @@
 
   // ── Watch together ─────────────────────────────────────────────────────────
   // The logged-in (shared) profile references two other profiles. Their tokens
-  // live in savedTokens (tied to "save token"); here only ID + name are remembered.
+  // live in sharedTokens (jellyfin_shared_tokens_v1); here only ID + name are remembered.
   let sharedProfile     = $state({ enabled: false, members: [] });  // members: [{ id, name }]
   // Set of item IDs watched by AT LEAST ONE member (a union — the loop below adds every member's
   // watched items to one Set). Library hides exactly these, which is the documented behaviour:
@@ -526,7 +515,7 @@
   $effect(() => { if (!sharedSugKey && sharedSuggestions.length) sharedSuggestions = []; });
   $effect(() => { if (viewState === 'dashboard' && sharedSugKey && sharedSugKey !== _loadedSugKey) loadSharedSuggestions(); });
 
-  // ── SyncPlay (group playback) — phase 1: manage groups ─────────────────────
+  // ── SyncPlay (group playback): groups ───────────────────────────────────────
   let showSyncPlay = $state(false);
   let syncMyGroup  = $state(null);    // { GroupId, GroupName, Participants } or null
   let syncGroups   = $state([]);      // available groups (excluding my own)
@@ -534,7 +523,7 @@
   let syncPollTimer = null;
   let syncJoined   = $state(false);   // is THIS session in a group? (authoritative, not the profile name)
   let syncMyGroupId = $state(null);   // GroupId of my own group (set from the socket GroupJoined or on join)
-  // Phase 2: received playback commands + current group queue state (passed on to the Player)
+  // Received playback commands + current group queue state (passed on to the Player)
   let syncCommand = $state(null);   // last SyncPlayCommand { ...Data, _seq }
   let syncCmdSeq  = $state(0);
   let syncQueue   = $state(null);   // { itemId, playlistItemId, positionTicks, isPlaying }
@@ -701,9 +690,9 @@
     startPlayback({ item, audioIndex: -1, subtitleIndex: -1 });
   }
 
-  // ── SyncPlay WebSocket (Phase 2) ───────────────────────────────────────────
-  // Real-time channel: group updates (join/leave) and – from step 2 on –
-  // playback commands (Play/Pause/Seek). Connects after login, keeps itself
+  // ── SyncPlay WebSocket ─────────────────────────────────────────────────────
+  // Real-time channel: group updates (join/leave) and playback commands
+  // (Unpause/Pause/Seek/Stop). Connects after login, keeps itself
   // open via KeepAlive and reconnects automatically on drop.
   let syncSocket = null;
   let syncSocketWanted = false;
@@ -770,7 +759,7 @@
         }
       }
     } else if (msg.MessageType === 'SyncPlayCommand') {
-      // Playback command (Play/Pause/Seek) → to the Player; _seq serves the Player as a dedupe marker.
+      // Playback command (Unpause/Pause/Seek/Stop) → to the Player; _seq serves the Player as a dedupe marker.
       syncCommand = { ...msg.Data, _seq: ++syncCmdSeq };
       dlog('[SyncPlay] command received', syncCommand.Command, syncCommand.PositionTicks);
     } else if (msg.MessageType === 'Playstate') {
@@ -921,40 +910,9 @@
   // LIFECYCLE
   // ============================================================
 
-  onMount(async () => {
-    migrateOldData();
-    savedServers        = loadSavedServers();
-    savedTokens         = loadSavedTokens();
-    sharedTokens        = loadSharedTokens();
-    screensaverSettings = { enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45, ...loadScreensaverSettings() };
-    // timeout drives setTimeout: a non-numeric value makes that NaN, which fires IMMEDIATELY and
-    // then again on every reschedule — a screensaver flashing over the whole interface, hard to
-    // escape with a remote. Clamped rather than merely defaulted, so an absurd stored number
-    // cannot disable it either. brightness likewise, since it reaches CSS.
-    screensaverSettings.timeout    = asNumber(screensaverSettings.timeout, 90, 10, 3600);
-    screensaverSettings.brightness = asNumber(screensaverSettings.brightness, 0.45, 0, 1);
-    setDebug(localStorage.getItem('ocenfin_debug') === '1');   // device-wide diagnostic logging (opt-in)
-
-    // Device language for pre-login screens (server/user selection): last chosen language →
-    // otherwise device language → otherwise English. Validated against existing translations.
-    // Profile-specific settings are only loaded on login via applyUserPrefs.
-    setLang(detectUiLang());
-    prefsReady = true;   // from now on changes are persisted
-
-    // Global back key (webOS remote)
-    window.addEventListener('keydown', handleGlobalBack);
-    // Held OK must never turn into a series of sign-in attempts (see utils.js).
-    installEnterRepeatGuard();
-    // D-pad navigation (group focus model) — active everywhere. The Player is its
-    // own focus group; its slider handles Left/Right itself.
-    createFocusManager(() => !navReordering);
-    // Boot milestone: the shell is wired up (listeners, focus manager, connection guard). The
-    // second milestone follows below when the splash actually goes away.
-    perfMark('boot shell');
-    // Long-session sampler. App-lifetime by design like the listeners above — the root never
-    // unmounts — and it bails out immediately while debug is off, so it costs one timer.
-    startPerfSampler();
-    // Session died server-side (see session.svelte.js). Drop the token that just proved invalid —
+  // Top level on purpose: inside onMount's async callback an effect only works while no await
+  // precedes it.
+  // Session died server-side (see session.svelte.js). Drop the token that just proved invalid —
   // otherwise auto-login reuses it on the next start, collects another 401 and bounces straight
   // back here — then run the normal profile teardown. No banner on purpose: the profile picker
   // says it better than any message could. Token revoked → the profile is still listed and you
@@ -987,7 +945,40 @@
     })();
   });
 
-  // Monitor network status (banner on connection loss). The offline/online events cover the
+  onMount(async () => {
+    migrateOldData();
+    savedServers        = loadSavedServers();
+    savedTokens         = loadSavedTokens();
+    sharedTokens        = loadSharedTokens();
+    screensaverSettings = { ...defaultScreensaverSettings(), ...loadScreensaverSettings() };
+    // timeout drives setTimeout: a non-numeric value makes that NaN, which fires IMMEDIATELY and
+    // then again on every reschedule — a screensaver flashing over the whole interface, hard to
+    // escape with a remote. Clamped rather than merely defaulted, so an absurd stored number
+    // cannot disable it either. brightness likewise, since it reaches CSS.
+    screensaverSettings.timeout    = asNumber(screensaverSettings.timeout, 90, 10, 3600);
+    screensaverSettings.brightness = asNumber(screensaverSettings.brightness, 0.45, 0, 1);
+    setDebug(localStorage.getItem('ocenfin_debug') === '1');   // device-wide diagnostic logging (opt-in)
+
+    // Device language for pre-login screens (server/user selection): last chosen language →
+    // otherwise device language → otherwise English. Validated against existing translations.
+    // Profile-specific settings are only loaded on login via applyUserPrefs.
+    setLang(detectUiLang());
+    prefsReady = true;   // from now on changes are persisted
+
+    // Global back key (webOS remote)
+    window.addEventListener('keydown', handleGlobalBack);
+    // Held OK must never turn into a series of sign-in attempts (see utils.js).
+    installEnterRepeatGuard();
+    // D-pad navigation (group focus model) — active everywhere. The Player is its
+    // own focus group; its slider handles Left/Right itself.
+    createFocusManager(() => !navReordering);
+    // Boot milestone: the shell is wired up (listeners, focus manager, connection guard). The
+    // second milestone follows below when the splash actually goes away.
+    perfMark('boot shell');
+    // Long-session sampler. App-lifetime by design like the listeners above — the root never
+    // unmounts — and it bails out immediately while debug is off, so it costs one timer.
+    startPerfSampler();
+    // Monitor network status (banner on connection loss). The offline/online events cover the
     // OS network state; the connection guard additionally catches "server unreachable while the
     // network is up" (NAS reboot etc.) by watching server fetches for network-level failures.
     installConnectionGuard();
@@ -1632,8 +1623,6 @@
   // EPISODE NAVIGATION
   // ============================================================
 
-  // The Player now sends the full episode object via dispatch('next/prev', episodeItem).
-  // No separate API call needed anymore — just set currentDetailItem.
   // The Player sends { episode, resetStreak }. resetStreak=true → the user was awake (manual/interaction),
   // counter to 0; otherwise increment (for the "still watching?" sleep protection).
   // Next/previous title. An episode of the SAME series goes on the way the first one started: tracks
@@ -1648,7 +1637,7 @@
   }
 
   function handleNextEpisode(detail) {
-    const episodeItem = detail?.episode ?? detail;   // robustness: also accepts a bare episode object
+    const episodeItem = detail?.episode;
     if (!episodeItem) return;
     autoPlayStreak = detail?.resetStreak ? 0 : autoPlayStreak + 1;
     activeMediaSourceId = null;   // new episode → its own default version, not the previous one's
@@ -1673,7 +1662,6 @@
   let currentPerson      = $state(null);       // seed person for the person view (Person.svelte loads itself)
   let personReturnView   = $state('search');   // where "Back" leads
 
-  // Collections (BoxSets) — own grid view, mirrored from the person view
   // Collections/playlists — own view (Collection.svelte loads itself).
   let currentCollection    = $state(null);          // seed BoxSet/playlist
   let collectionReturnView = $state('dashboard');   // where "Back" leads
@@ -1819,7 +1807,7 @@
     if (collectionStack.length) { popCollectionLevel(false); }   // its card is gone → first one
     else if (collectionReturnView === 'library' && playlistsLibGone) {
       currentLibrary = null; viewState = 'dashboard';
-      focusContent({ why: 'playlist deleted, playlists library gone' });
+      focusContent({ why: 'playlist deleted, playlists library gone', heldByOther: heldOutsideSidebar });
     }
     else {
       // Back onto the title page it was opened from — but its card is gone, so onto the page itself.
@@ -1972,14 +1960,6 @@
     contextReturnNth = cardOrdinal(contextReturnEl, contextReturnId);
     contextItem = item;
   }
-  // Put focus back on a card that may not exist yet, because the view it belongs to can still be
-  // reloading. Three routes, in order: the live element (instant where the view stayed mounted, e.g.
-  // the dashboard after a context action), the item's data-item-id once its card is back, and only
-  // then the first card in the view rather than losing focus altogether.
-  //
-  // Every attempt stands down if something else holds focus by then, so a poll running over half a
-  // second can never fight a user who has already navigated on. Bounded and self-terminating — the
-  // shape to copy for anything that must focus an element which does not exist yet (see CLAUDE.md).
   // The same title can sit in SEVERAL rows at once — "Continue watching" and the watchlist show it
   // together, and the two card snippets are reused across eight rows. data-item-id is therefore not
   // unique, and querySelector would always hand back the topmost row. So remember WHICH occurrence
@@ -1991,6 +1971,14 @@
     return i < 0 ? 0 : i;
   }
 
+  // Put focus back on a card that may not exist yet, because the view it belongs to can still be
+  // reloading. Three routes, in order: the live element (instant where the view stayed mounted, e.g.
+  // the dashboard after a context action), the item's data-item-id once its card is back, and only
+  // then the first card in the view rather than losing focus altogether.
+  //
+  // Every attempt stands down if something else holds focus by then, so a poll running over half a
+  // second can never fight a user who has already navigated on. Bounded and self-terminating — the
+  // shape to copy for anything that must focus an element which does not exist yet (see CLAUDE.md).
   function focusCardAgain(id, el, why = '', nth = 0) {
     let tries = 0;
     const attempt = () => {
@@ -2109,9 +2097,6 @@
     } catch (e) { console.error('play playlist:', e); }
   }
 
-  // Back from Details/Player → to the origin, restore the library position
-  // Starts playback of an item — used by Details (Play/From-start/Random-episode)
-  // and Collection (random playback). One source instead of two inline copies.
   // "Play all" (collection/playlist): an ordered playback queue. Lives only while the
   // Player is open — it's cleared on leaving so later normal playbacks
   // don't accidentally advance.
@@ -2193,7 +2178,7 @@
     resumeStale = true;
   }
 
-  async function returnFromDetails() {
+  function returnFromDetails() {
     const backId = detailsReturnId, backEl = detailsReturnEl, backNth = detailsReturnNth;
     const backScroll = detailsReturnScroll;
     detailsReturnId = null; detailsReturnEl = null; detailsReturnNth = 0; detailsReturnScroll = 0;
@@ -2212,11 +2197,10 @@
       // still be listed in the overview until you switched views. Increment the key → Favorites reloads.
       favReloadKey++;
     }
-    // The dashboard is the ONLY origin that establishes no focus of its own when it comes back, so
-    // it is the only one handed the card here. Every other view already owns this (see CLAUDE.md):
-    // Library restores scroll AND focus in restoreView() above, Search focuses its input on mount,
-    // and Favourites, Collection and Person each focus at the end of their own load. Calling this
-    // for them would either be inert or fight their own logic.
+    // Each origin gets back its card in its own way (see CLAUDE.md): Library and Search restore
+    // themselves (restoreView), Favourites/Collection/Person take the card as a prop and focus it at
+    // the end of their own load, and the dashboard — the only view with no focus logic of its own —
+    // is focused directly. Calling into the others would either be inert or fight their logic.
     // Unlike those, the dashboard remounts from scratch, so focusing the card also brings its
     // scroll position back — the browser scrolls a focused element into view.
     if (detailsOrigin === 'search') searchRef?.restoreView();
@@ -2303,7 +2287,7 @@
 
   /* TV scaling (10-foot UI): raises the rem-based base size so text and
      spacing look larger from couch distance. Standard browsers are 16px; 20px = +25%.
-     Adjust further if needed, if still too small/large on the TV. */
+     The baseline before the appearance effect applies uiSize (small/medium/large) inline. */
   :global(html) { font-size: 20px; }
 
   /* Accent color themes: in Tailwind v4 all blue utilities use CSS variables.
@@ -2351,7 +2335,7 @@
     animation-duration:  0ms !important;
   }
   /* backdrop-blur is the most expensive GPU effect — disable it under "reduce
-     animations" so older/weaker TVs stay smooth. */
+     animations" so the TV stays smooth. */
   :global([data-reduce-motion="1"] .backdrop-blur-sm),
   :global([data-reduce-motion="1"] .backdrop-blur-md),
   :global([data-reduce-motion="1"] .backdrop-blur-lg) {
@@ -2691,7 +2675,7 @@
   {/if}
 
   <!-- AddToPicker for the context menu (focus returns to the card after closing) -->
-  <AddToPicker mode={contextPickerMode} item={contextPickerItem} {selectedUser} {getAuthHeaders}
+  <AddToPicker mode={contextPickerMode} item={contextPickerItem} {selectedUser}
     onCreated={refreshLibraries} onClose={() => contextPickerMode = null} />
 
   <!-- CLOCK — top right in the app views. In the Player NOT this overlay: the Player brings

@@ -13,7 +13,7 @@
     navHidden = [],            // hidden entries (locked ones stay visible)
     navIcons = {},             // per-entry chosen icons {entryId: paletteKey}
     showLogo = true,           // logo at the top of the sidebar (setting, opt-out)
-    onNavigate, onNavigateLibrary, onSwitchUser, onLogOutServer,   // callback props (instead of events)
+    onNavigate, onNavigateLibrary, onSwitchUser, onLogOutServer,   // callback props
   } = $props();
 
   let isExpanded      = $state(false);
@@ -152,7 +152,7 @@
     </div>
   {/if}
 
-  <!-- NAV BUTTONS — activeNavId is $: reactive, the class is updated correctly -->
+  <!-- NAV BUTTONS -->
   <!-- The active row deliberately has NO box-shadow. It used to carry shadow-lg shadow-blue-600/30,
        which is precisely the case the edge-shadow note above rules out: a BLURRED shadow on an
        element whose width animates is re-rasterized on every frame of the expand on the B4. That

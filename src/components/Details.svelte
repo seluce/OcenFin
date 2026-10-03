@@ -19,8 +19,8 @@
     detailsBackdrop = true,     // show the hero backdrop on the detail page (own toggle, decoupled from reduceAnimations)
     detailsLogo = false,        // title as a logo graphic instead of text (falls back to text if no logo exists)
     focusItemId = null, focusScrollTop = 0,   // where to land when App brings us back (person page)
-    takeResume = null,          // App: hands back, ONCE, what was on screen when we were left for a collection
-    onClose, onLibChanged, onOpenPerson, onOpenCollection, onPlayVideo,   // callback props (instead of events)
+    takeResume = null,          // App: hands back, ONCE, what was on screen when we were left for a collection, a person page or the player
+    onClose, onLibChanged, onOpenPerson, onOpenCollection, onPlayVideo,   // callback props
   } = $props();
 
   let fullItem     = $state(null);
@@ -184,7 +184,7 @@
 
   // ---- Custom dropdowns (resolution/audio/subtitle) -------------------------------------------
   // A native <select> freezes on webOS on the back button → D-pad-capable custom dropdowns.
-  let openDropdown = $state(null);     // 'resolution' | 'audio' | 'subtitle'
+  let openDropdown = $state(null);     // 'resolution' | 'audio' | 'subtitle' | 'kebab'
   let openTrigger  = null;     // trigger button (DOM ref; focus returns there on close)
 
   async function toggleDropdown(key, e) {
@@ -229,15 +229,15 @@
 
   // Share: QR code with a public title link (IMDb/TMDb) — anyone can scan it, no server access needed.
   let showShare = $state(false);
-  let kebabBtnEl = $state();                 // three-dots button (bind:this, always in the DOM)
+  let kebabBtnEl = $state();                 // three-dots button (bind:this)
   const shareFocus = makeFocusReturn();   // focus return after closing the share modal
   // The same return for media info + playlist/collection picker (never open at once): without it
   // focus fell to the body after closing → the navigation caught it (share was correct,
   // the other three weren't). Now it lands back on the three-dots button.
   const menuReturn = makeFocusReturn();
   // May this profile manage collections? Policy.EnableCollectionManagement comes with the
-  // login user. Deliberately hide only on an explicit false: if the field is missing (older server),
-  // the entry stays visible and the 403 fallback in AddToPicker kicks in. Admins have true.
+  // login user. Deliberately hide only on an explicit false: if the field is missing, the entry
+  // stays visible and the 403 fallback in AddToPicker kicks in. Admins have true.
   const canManageCollections = $derived(selectedUser?.Policy?.EnableCollectionManagement !== false);
   // After closing the share modal, put focus back on the three dots.
   $effect(() => { if (!showShare && shareFocus.pending) shareFocus.restore(); });
@@ -342,14 +342,14 @@
   let detailToken = 0;
 
   // Reactive: reloads as soon as the 'item' prop changes. untrack() so the effect reacts ONLY to
-  // item — not to stores/user that loadFullDetails reads synchronously internally.
+  // item — not to session/selectedUser that loadFullDetails reads synchronously internally.
   // A change of `item` means a FRESH entry from App, never internal navigation — so the chain
   // starts over and Back leads back out rather than sideways into the previous visit.
   $effect(() => {
     const id = item?.Id;
     if (!id) return;
     untrack(() => {
-      // Back from a collection opened on this page: App returns what was on screen and the chain
+      // Back from a collection, a person page or the player opened from this page: App returns what was on screen and the chain
       // that led there, so we land on THAT title rather than the entry point. A function, called
       // once — a plain prop would still be lying around for the next, unrelated mount.
       const resume = takeResume?.();
@@ -454,7 +454,7 @@
   }
 
   // Extras / special features of the opened item (movie, series or season).
-  // NOTE: the endpoint returns a DIRECT array (like /Items/Latest), not { Items }.
+  // NOTE: the endpoint returns a DIRECT array, not { Items }.
   async function loadExtras(itemId, myToken) {
     try {
       const res = await fetch(
@@ -763,7 +763,7 @@
     if (!targetItem?.RunTimeTicks) return "";
     const remainingTicks = targetItem.RunTimeTicks - (targetItem.UserData?.PlaybackPositionTicks || 0);
     const endDate = new Date(Date.now() + remainingTicks / 10000);
-    return `${i18n.t.endsAt} ${endDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`;   // i18n instead of hardcoded German
+    return `${i18n.t.endsAt} ${endDate.toLocaleTimeString(i18n.lang || 'en', { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`;
   }
 </script>
 
@@ -789,7 +789,7 @@
          edge with its ring-4 focus ring clipped. Same value as in Library/Settings. -->
     <div bind:this={scrollEl} class="flex-1 overflow-y-auto hide-scrollbar [scroll-padding-top:4rem]">
 
-      <!-- ════ CINEMATIC HERO BANNER — the backdrop scrolls along, fading into the app gray at bottom/left ════ -->
+      <!-- ════ CINEMATIC HERO BANNER — the backdrop scrolls along, fading into the page colour (title tint, else app gray) at bottom/left ════ -->
       <div class="relative">
         {#if detailsBackdrop && getItemBackdropUrl(fullItem)}
           <div class="absolute inset-0 z-0 max-h-[95vh] overflow-hidden" style:--color-gray-900={tint?.bg}>
@@ -1172,7 +1172,7 @@
       </div>
       <!-- ════ /HERO-BANNER ════ -->
 
-      <!-- CONTENT (rows) on full app gray — its own focus group per row,
+      <!-- CONTENT (rows) on the page colour — its own focus group per row,
            so D-pad LEFT at the start of a row jumps directly to the sidebar. -->
       <div class="relative z-10 px-10 pb-16 bg-gray-900 flex flex-col" style:background-color={tint?.bg}>
 
@@ -1457,7 +1457,7 @@
 {/if}
 
 <!-- Add to collection / playlist (shared component) -->
-<AddToPicker mode={pickerMode} item={fullItem} {selectedUser} {getAuthHeaders}
+<AddToPicker mode={pickerMode} item={fullItem} {selectedUser}
   onCreated={() => onLibChanged?.()} onClose={() => pickerMode = null} />
 
 <style>

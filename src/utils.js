@@ -23,7 +23,7 @@ export function dropTrapOnOutro(e) {
 
 // Focus return after closing a modal/overlay: on open remember the trigger, on close
 // jump back to it. capture()/restore() (incl. tick timing) are unified here;
-// WHEN restore() runs is decided by each component via its own reactive statement,
+// WHEN restore() runs is decided by each component via its own $effect or close handler,
 // because the close condition differs (a single bool vs. several menus).
 export function makeFocusReturn() {
   let saved = null;
@@ -123,7 +123,7 @@ export function isRepeatedEnter() { return _enterRepeat; }
 // SOLUTION: suppress the automatic click via preventDefault and drive the action
 // ourselves. The 'longpress' event fires via a timer already WHILE holding (the desired
 // behavior). So that the still-held OK key doesn't immediately trigger the first menu entry,
-// the context menu only "arms" itself after release / a short delay.
+// the context menu only "arms" itself after the key or pointer is released.
 // When the element loses focus (menu opens), the press state is reset.
 export function longPress(duration = 500) {
   return (node) => {
@@ -199,7 +199,7 @@ export function personImageUrl(serverUrl, person) {
 
 // Card image URL for grid items (Library, Favorites, Person, Collection). 'portrait' = 2:3 poster,
 // 'landscape' = 16:9 still (episode Primary, otherwise series Thumb as fallback). Centralized because it was
-// previously duplicated identically across several grids. (Search deliberately uses its own variant with a backdrop fallback.)
+// previously duplicated identically across several grids. (Search and Details use getItemImageUrlWithFallbacks below.)
 // preferThumb=true selects show-level landscape artwork (own/parent/series thumb → backdrop →
 // primary), used by the continue-watching row. The default prefers the item's OWN still first
 // (correct for episode lists, extras, favorites), then the series thumb.
@@ -231,13 +231,6 @@ export function getItemImageUrl(item, format = 'portrait', preferThumb = false) 
   return null;
 }
 
-// Progress 0–100: resume position (movies/episodes) or share of watched episodes
-// (series, via Jellyfin's PlayedPercentage). For progress bars.
-// Card badge "Watched" (top left; top right belongs to the episode-counter opt-in, or in the
-// details strips to the green check there): ONLY a check, ONLY when fully watched.
-// Jellyfin sets Played on series/seasons/collections only once ALL contained titles are watched
-// — exactly the desired semantics. Deliberately NO unwatched counter: it would visually
-// duplicate the episode counter in the top right.
 // Card image with fallbacks — Search and Details need more than the plain getItemImageUrl
 // above: episodes prefer their own Primary in landscape, anything falls back to the backdrop,
 // portrait falls back to the series poster. Deliberately separate from getItemImageUrl (different
@@ -256,8 +249,15 @@ export function getItemImageUrlWithFallbacks(item, format = 'portrait') {
   return null;
 }
 
+// Progress 0–100: resume position (movies/episodes) or share of watched episodes
+// (series, via Jellyfin's PlayedPercentage). For progress bars.
+// Card badge "Watched" (top left; top right belongs to the episode-counter opt-in, or in the
+// details strips to the green check there): ONLY a check, ONLY when fully watched.
+// Jellyfin sets Played on series/seasons/collections only once ALL contained titles are watched
+// — exactly the desired semantics. Deliberately NO unwatched counter: it would visually
+// duplicate the episode counter in the top right.
 export function itemBadge(item) {
-  return item?.UserData?.Played ? { check: true } : null;
+  return !!item?.UserData?.Played;
 }
 export function itemProgress(item) {
   if (item.UserData?.PlaybackPositionTicks && item.RunTimeTicks)
@@ -268,7 +268,7 @@ export function itemProgress(item) {
 
 // Card/grid subtitle: episode → "S1:E2 – Title"; series → year range
 // ("2016 – 2019" / "2024 – today"); otherwise the production year.
-// `todayLabel` = localized "today" ($t.today), since $t isn't available here.
+// `todayLabel` = localized "today" (i18n.t.today), passed in by the caller.
 export function getItemSubtitle(item, todayLabel = '') {
   if (item.Type === 'Episode') {
     const s = item.ParentIndexNumber ?? '?';
@@ -336,9 +336,6 @@ export const NAV_ICON_KEYS = ['dashboard','search','settings','movies','tvshows'
 // Exported so the dashboard's library row filters by the exact same list as the sidebar.
 export const NAV_HIDDEN_TYPES = ['music', 'musicvideos', 'livetv'];
 
-// Builds the full entry list: fixed views (translated, dashboard/settings locked)
-// + one entry per real library (server name, language-independent). `iconOverrides` (per profile,
-// {entryId: paletteKey}) wins over the type default. One source for sidebar and editor.
 // A library's icon: the profile's own pick for its sidebar entry, else its type's, else a folder.
 // The dashboard's library tiles show the same one when the library has no picture.
 export function libraryIcon(lib, iconOverrides = {}) {
@@ -346,6 +343,9 @@ export function libraryIcon(lib, iconOverrides = {}) {
   return NAV_ICON_PALETTE[iconOverrides['lib:' + lib?.Id]] || NAV_ICON_PALETTE[type] || NAV_ICON_PALETTE.folder;
 }
 
+// Builds the full entry list: fixed views (translated, dashboard/settings locked)
+// + one entry per real library (server name, language-independent). `iconOverrides` (per profile,
+// {entryId: paletteKey}) wins over the type default. One source for sidebar and editor.
 export function buildNavEntries(libraries, t, iconOverrides = {}) {
   const pick = (id, fallbackKey) =>
     NAV_ICON_PALETTE[iconOverrides[id]] || NAV_ICON_PALETTE[fallbackKey] || NAV_ICON_PALETTE.folder;
@@ -795,7 +795,7 @@ export function getTvDeviceInfo() {
 }
 
 // Codec probe via the browser pipeline (canPlayType / MediaSource). NOTE: reflects the
-// browser decoder, NOT necessarily the TV hardware (on old webOS this underestimates HEVC). Hence
+// browser decoder, NOT necessarily the TV hardware. Hence
 // labeled "browser decoder" in the UI. true = playable according to the browser.
 export function probeBrowserCodecs() {
   if (typeof document === 'undefined') return {};
@@ -944,7 +944,7 @@ export function blurHashTint(hash) {
 }
 
 // Svelte attachment (factory): set the decoded BlurHash as the background of an <img> (cached per hash).
-// No update needed anymore — on hash change the attachment re-runs automatically (reactive effect).
+// On a hash change the attachment re-runs automatically (it is a reactive effect).
 const _blurCache = new Map();
 export function blurUp(hash) {
   return (node) => {
@@ -964,9 +964,9 @@ export function blurUp(hash) {
     const cached = _blurCache.get(hash);
     if (cached !== undefined) { apply(cached); return; }
 
-    // First time for this hash: decode OFF the mount path. Measured on the B4, one decode costs
-    // 15-21 ms (worst seen 224 ms) — the cosine tables took care of the maths, but the canvas plus
-    // toDataURL() PNG encode remains, and a page of cards mounts them all in one go. That was half
+    // First time for this hash: decode OFF the mount path. Measured on the B4, one decode cost
+    // 15-21 ms (worst seen 224 ms) while it still went through a canvas and toDataURL() — since
+    // replaced by bmpDataUrl() — and a page of cards mounts them all in one go. That was half
     // a second of blocked main thread per page, which is precisely what an arrow press landed in
     // while scrolling. Deferring costs nothing visually: the placeholder appears a frame or two
     // later, and the real poster is still on its way regardless.

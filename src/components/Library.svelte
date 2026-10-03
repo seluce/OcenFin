@@ -15,7 +15,7 @@
     library = null,            // { Id, Name } — which library to show (from App)
     reloadKey = 0,             // increment → discard the view cache + reload
     focusFirstOnLoad = false,  // opened from the menu OR a dashboard tile: focus the first card
-                               // (not "Random"). Both entry points mean the same thing — the
+                               // (not "Surprise me"). Both entry points mean the same thing — the
                                // dashboard one passed false until 2026-08-25, so it came up blank.
     sharedReady = false,       // App level: shared profile active? (shows the "watch together" toggle)
     partnerPlayedIds = null,   // IDs watched by AT LEAST ONE member — a union, see App.svelte.
@@ -119,8 +119,8 @@
   // Hiding it needs nothing else: other sorts hide it already, and a letter picked earlier only set
   // where the list started — it keeps loading upwards and downwards as usual.
   let showLetterBar = $derived(currentSort.by === 'SortName' && displaySettings.letterBar !== false);
-  const sortFilterFocus = makeFocusReturn();   // trigger button for focus return after closing
-  $effect(() => { if (!showFilterMenu && sortFilterFocus.pending) sortFilterFocus.restore(); });
+  const filterFocus = makeFocusReturn();   // trigger button for focus return after closing
+  $effect(() => { if (!showFilterMenu && filterFocus.pending) filterFocus.restore(); });
 
   // ── Watch together ──────────────────────────────────────────
   let sharedWatchMode = $state(false);
@@ -268,7 +268,7 @@
   let filterMenuSnapshot = '';
   const filterStateKey = () => JSON.stringify([activeFilters, selectedGenres, selectedFsk, selectedAudioLangs, selectedSubtitleLangs]);
   function openFilterMenu(e) {
-    sortFilterFocus.capture(e.currentTarget);
+    filterFocus.capture(e.currentTarget);
     filterMenuSnapshot = filterStateKey();
     showFilterMenu = true;
   }
@@ -465,7 +465,7 @@
       if (res.ok) {
         const data = await res.json();
         // Still this library (the draw is a request away)? Then back from the title comes back to
-        // the Shuffle button — it used to restore whatever card had been opened LAST, or nothing.
+        // the "Surprise me" button — it used to restore whatever card had been opened LAST, or nothing.
         if (data.Items?.length && currentLibraryId === libId) { rememberSpot(null, from); onOpenDetails?.(data.Items[0]); }
       }
     } catch { }
@@ -532,13 +532,13 @@
   let savedScroll  = 0;
   let lastFocusedId = null;
   let lastFocusedIdx = -1;
-  let lastFocusedEl = null;   // a control rather than a card (Shuffle) — restoreView's last resort
+  let lastFocusedEl = null;   // a control rather than a card ("Surprise me") — restoreView's last resort
   function openDetails(item) {
     rememberSpot(item);
     onOpenDetails?.(item);
   }
   // Where Back from Details returns to. Every way into Details from this view has to set it — the
-  // grid card here, Shuffle, and App's context menu "Details" (exported) — or restoreView() lands
+  // grid card here, "Surprise me", and App's context menu "Details" (exported) — or restoreView() lands
   // on the card of an EARLIER visit, possibly at that position in another library, or on nothing.
   export function rememberSpot(item, el = null) {
     savedScroll   = libraryScrollContainer?.scrollTop || 0;
@@ -656,7 +656,7 @@
 
     <div class="flex justify-between items-center gap-6 mb-10 pr-6">
       <!-- min-w-0 + truncate on the name, shrink-0 on the count and the actions: a very long library
-           name would otherwise push "random / sort / filter" out of view and make them unreachable. -->
+           name would otherwise push "Surprise me / Filter / Watch together" out of view and make them unreachable. -->
       <h1 class="text-4xl font-bold text-white min-w-0 flex items-baseline gap-2">
         <span class="truncate">{currentLibraryName}</span>
         <span class="text-xl text-gray-500 font-normal shrink-0">({totalLibraryItems})</span>
@@ -777,7 +777,7 @@
         {/each}
         <!-- Load-more skeleton: fills the freeing grid area with placeholders (same tiles as
              the initial skeleton) so that when scrolling down fast you don't get "stuck" on the last
-             card until the next 50 items are there. -->
+             card until the next page is there. -->
         {#if isFetchingMore}
           {#each Array(12).fill(0) as _}
             <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg animate-pulse"></div>

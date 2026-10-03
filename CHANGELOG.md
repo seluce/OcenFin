@@ -62,19 +62,22 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **SyncPlay:** the next episode starts at its beginning, the TV stays with the group when it jumps
   back into an intro, and a group that cannot be created or joined says so.
 - **Back returns to where you were** after Shuffle, a card's menu, the home screen banner and a
-  collection, and dialogs and playlist edits no longer leave nothing selected.
+  collection, and dialogs and playlist edits (deleting the last playlist included) no longer leave
+  nothing selected.
 - **The server saying no is handled**: a removed title shows a message, refused favourite and
   watched changes undo themselves, playlists only offer what you may do, refused playback says why,
   and the watchlist recovers when its playlist was deleted elsewhere.
 - **The home screen** no longer breaks on two recommendations with the same name, fills in rows
   after leaving it early, and carries nothing over to the next profile.
 - Smaller fixes: theme music no longer keeps playing after the screensaver, a double press on Play
-  no longer loses the way back, the A–Z bar highlights the right letter, and empty collections and
-  duplicate playlist entries no longer cause trouble.
+  no longer loses the way back, the A–Z bar highlights the right letter, empty collections and
+  duplicate playlist entries no longer cause trouble, and times and the subtitle delay are written
+  the way your language writes them (six of eight languages got the US format).
 
 ### Internal
 
 - Vite 8.3.0 → 8.3.1 and its Svelte plugin 7.3.0 → 7.3.1, both patch-level build tooling.
+- Old code and outdated comments removed throughout; behaviour unchanged.
 
 ## 2026.09.27
 

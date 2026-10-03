@@ -1,7 +1,6 @@
 // Quick Connect — a code appears on the TV, someone confirms it on a device that is already signed
 // in, and the server hands back a token for THAT account. Extracted from Login.svelte because the
-// watch-together picker needs the identical flow: copying it would have been the eighth duplicated
-// mechanism this week.
+// watch-together picker needs the identical flow.
 //
 // The important property for watch together: the TV never picks the account. Whoever confirms the
 // code decides which profile is granted, on their own device, without their password ever being
@@ -46,7 +45,7 @@ export function startQuickConnect(serverUrl, clientAuthHeader, onCode) {
       const ctrl = new AbortController();
       const initTimer = setTimeout(() => ctrl.abort(), 10000);
       try {
-        // POST since 10.9; Jellyfin 12.0 removed the old GET form, which now fails outright.
+        // POST: Jellyfin 12 removed the GET form, which fails outright.
         const res = await fetch(`${serverUrl}/QuickConnect/Initiate`, { method: 'POST', headers: { 'Authorization': clientAuthHeader }, signal: ctrl.signal });
         if (!res.ok) return finish(reject, 'qcError');
         data = await res.json();

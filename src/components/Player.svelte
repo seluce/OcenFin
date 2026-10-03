@@ -15,8 +15,8 @@
 
   let {
     item,
-    selectedAudioIndex = $bindable(),
-    selectedSubtitleIndex = $bindable(),
+    selectedAudioIndex,
+    selectedSubtitleIndex,
     mediaSourceId = null,   // chosen version (FullHD/4K); null = server default
     pickTracks = false,     // App: nobody chose tracks for this title → pick them by the shared rule
     selectedUser,
@@ -39,7 +39,7 @@
   } = $props();
 
   // May this profile manage collections? (Policy.EnableCollectionManagement comes with the login user.
-  //  Only hide on an explicit false → older server/missing field: visible + 403 fallback.)
+  //  Only hide on an explicit false → a missing field stays visible, with the 403 fallback.)
   const canManageCollections = $derived(selectedUser?.Policy?.EnableCollectionManagement !== false);
 
   let videoElement;
@@ -75,7 +75,7 @@
   // this derived stays live for the whole film and used to rebuild a Date plus a fresh
   // Intl.DateTimeFormat (toLocaleTimeString with options) ~4×/s. The formatter is cached per
   // language/format; the ≤59 s bucketing error is well inside an estimate that drifts anyway.
-  let endTimeFmt   = $derived(new Intl.DateTimeFormat(i18n.lang === 'de' ? 'de-DE' : 'en-US',
+  let endTimeFmt   = $derived(new Intl.DateTimeFormat(i18n.lang || 'en',
     { hour: '2-digit', minute: '2-digit', hour12: !use24h }));
   let remainingMin = $derived(duration ? Math.floor(Math.max(0, duration - currentTime) / 60) : 0);
   let rightTimeLabel = $derived.by(() => {
@@ -89,7 +89,7 @@
   let clockNow = $state('');
   let clockTimer;
   function updateClock() {
-    clockNow = new Date().toLocaleTimeString(i18n.lang === 'de' ? 'de-DE' : 'en-US',
+    clockNow = new Date().toLocaleTimeString(i18n.lang || 'en',
       { hour: '2-digit', minute: '2-digit', hour12: !use24h });
   }
   $effect(() => { i18n.lang; use24h; updateClock(); });
@@ -229,7 +229,7 @@
     }
   }
 
-  // ── SyncPlay engine (phase 2a): send local actions + apply received commands ──
+  // ── SyncPlay engine: send local actions + apply received commands ──
   let syncReady        = false;   // send only after a real playback start (prevents sending on the resume seek/autostart)
   let syncQueueSet     = false;   // SetNewQueue for this item already sent/confirmed?
   let syncSuppressUntil = 0;      // briefly suppress outgoing sends while a received command takes effect
@@ -308,7 +308,7 @@
     if (recapSegment && pos >= recapSegment.start && pos < recapSegment.end) recapAutoSkipped = true;
   }
 
-  // Apply a received group command (with a rough time reference via "When"; fine sync = phase 2b).
+  // Apply a received group command at its "When" time (server clock, see syncNow below).
   function applySyncCommand(cmd) {
     if (!cmd || cmd._seq === _appliedSyncSeq || !videoElement) return;
     _appliedSyncSeq = cmd._seq;
@@ -471,9 +471,8 @@
     return (mediaSourceId && sources?.find(s => s.Id === mediaSourceId)?.MediaStreams) || null;
   }
   // The media source a picked start chooses from: the chosen version, else the FIRST — exactly what
-  // getPlaybackInfo() then plays, and what Details preselects. Not "the item's own": 12.x sorts that
-  // one first anyway, but 10.x sorts by resolution only, and there the tracks would have come from a
-  // different file than the one playing. List items carry no MediaSources → fetched once.
+  // getPlaybackInfo() then plays, and what Details preselects. List items carry no MediaSources →
+  // fetched once.
   async function sourceForPick() {
     let sources = item?.MediaSources;
     if (!sources?.length && item?.Id) {
@@ -560,7 +559,7 @@
   // ============================================================
 
   // Fetches the server's decision and attaches the matching source to the <video>.
-  // On errors: fall back to the old Direct Play logic (behavior as before).
+  // PlaybackInfo failed without a reason → try the file as a static stream.
   // Supersede guard, same idea as subtitleFetchToken: setupPlayback awaits two round trips, and
   // it can be re-entered before the first finishes — the transcode fallback, a hard audio or
   // subtitle switch, a SyncPlay or admin command. Without this the older call could finish last
@@ -760,8 +759,9 @@
     // immediately, so an adjustment lands while paused too: currentTime stays put, the cue moves.
     if (graphicRenderer) graphicRenderer.timeOffset = -subtitleOffset;
   }
+  // In the app's language: "+0,5 s" in German, "+0.5 s" in English (it used to force the comma).
   function formatOffset(s) {
-    return (s > 0 ? '+' : '') + s.toFixed(1).replace('.', ',') + ' s';
+    return s.toLocaleString(i18n.lang || 'en', { minimumFractionDigits: 1, maximumFractionDigits: 1, signDisplay: 'exceptZero' }) + ' s';
   }
   let subtitleFetchToken = 0;      // ignores responses from a superseded switch
   let graphicRenderer = $state(null);      // libbitsub instance for the currently visible graphic-subtitle overlay
@@ -776,7 +776,7 @@
   let clientAssRender = $derived(playbackPrefs.assRendering && !playbackPrefs.burnSubtitles);
 
   // Text subtitle styling (ONLY for the .subtitle-box overlay = WebVTT/SRT). PGS/VobSub are bitmaps
-  // (only scalable), ASS brings its own styling. Defaults = previous behavior.
+  // (only scalable), ASS brings its own styling.
   let subColor = $derived(({ white:'#ffffff', yellow:'#ffe14d', green:'#6dff6d', cyan:'#66e0ff' })[playbackPrefs.subtitleColor || 'white'] || '#ffffff');
   let subEdgeCss = $derived((playbackPrefs.subtitleEdge === 'outline')
         ? '-webkit-text-stroke:0.35vh #000;paint-order:stroke fill;text-shadow:0 0 3px rgba(0,0,0,.55);'
@@ -799,7 +799,7 @@
   // otherwise black despite the color choice. Setting it explicitly forces the chosen color (a no-op on desktop anyway).
   let subStyle = $derived(`color:${subColor};-webkit-text-fill-color:${subColor};${subFontCss}${subEdgeCss}${subBgCss}`);
 
-  // Subtitle size → libbitsub scaling (variant B: applies to PGS AND VobSub, not just VTT).
+  // Subtitle size → libbitsub scaling (applies to PGS AND VobSub, not just VTT).
   function graphicSubScale() {
     const s = playbackPrefs.subtitleSize || 'normal';
     return s === 'small' ? 0.85 : s === 'large' ? 1.25 : 1.0;
@@ -957,7 +957,7 @@
       // NOTE: our rVFC polyfill would also satisfy the check, but it is installed in the ASS path
       // only — relying on that call order to keep graphic subtitles alive would be fragile.
       frameAwareSync: false,
-      // REQUIRES libbitsub >= 1.11.0 (running 1.12.0). Up to 1.10.2 the worker never came up: its inline glue
+      // REQUIRES libbitsub >= 1.11.0. Up to 1.10.2 the worker never came up: its inline glue
       // instantiated the WASM with a single `__wbindgen_placeholder__` import while the shipped module
       // needs 10 from './libbitsub_bg.js', the resulting LinkError was swallowed, and the first parse
       // then failed with "reading 'PgsParser'" of null — so every cue was decoded on the main thread,
@@ -1119,7 +1119,7 @@
   // purpose — introData being set is what switches the chapter fallback for intro/credits off, and a
   // server that marks only recaps must not take that fallback away.
   let recapSegment = $state(null);
-  let segmentsChecked = $state(false);     // plugin APIs queried → chapter fallback may kick in
+  let segmentsChecked = $state(false);     // media segments queried → chapter fallback may kick in
   let chapterFallbackDone = false;
   let showSkipIntro = $derived(introData?.Introduction?.Valid
     && currentTime >= (introData.Introduction.ShowSkipPromptAt ?? 0)
@@ -1158,7 +1158,7 @@
   const OUTRO_FALLBACK  = 45;     // without chapter/segment data: show the "next episode" card in the last X s
   const STILL_WATCHING_TIMEOUT = 120;  // "still watching?": closes the Player after X s without a reaction (relieve the NAS)
 
-  // Chapter fallback for intro/credits: kicks in reactively once the plugin APIs returned nothing
+  // Chapter fallback for intro/credits: kicks in reactively once the media segments returned nothing
   // AND the chapters are loaded (only clearly named chapters, otherwise no prompt).
   $effect(() => { if (segmentsChecked && !chapterFallbackDone && introData === null && chapters.length) {
     chapterFallbackDone = true;
@@ -1288,7 +1288,7 @@
     return junk ? `${i18n.t.chapter} ${idx + 1}` : raw;
   });
 
-  // Auto-skip (depends on the setting + installed intro-skipper plugin).
+  // Auto-skip (depends on the setting + intro/outro data: media segments, else named chapters).
   // Flags prevent repeated jumping; reset on episode change via the {#key} remount.
   let introAutoSkipped   = false;
   let recapAutoSkipped   = false;
@@ -1349,7 +1349,7 @@
     if (mins) {
       parts.push(`${mins} ${i18n.t.minShort}`);
       const end = new Date(Date.now() + mins * 60000);
-      parts.push(`${i18n.t.endsAt} ${end.toLocaleTimeString(i18n.lang === 'de' ? 'de-DE' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`);
+      parts.push(`${i18n.t.endsAt} ${end.toLocaleTimeString(i18n.lang || 'en', { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`);
     }
     return parts.join(' · ');
   });
@@ -1477,7 +1477,7 @@
   async function fetchIntroTimestamps() {
     if (item.Type !== 'Episode') return;
     // 1) Media Segments API (the Intro Skipper plugin and the server's own detection deliver via this).
-    //    Query without a type filter and filter ourselves — more robust against server/version differences.
+    //    Query without a type filter and filter ourselves — the Recap segment is read from the same answer.
     try {
       const res = await fetch(`${session.serverUrl}/MediaSegments/${item.Id}`, { headers: getAuthHeaders() });
       if (res.ok) {
@@ -1494,7 +1494,7 @@
           introData = d; return;
         }
       } else {
-        dlog('[OcenFin] media segments HTTP', res.status);   // e.g. 404 = endpoint missing, 401 = auth
+        dlog('[OcenFin] media segments HTTP', res.status);   // e.g. 404 = item not found, 401 = auth
       }
     } catch (e) { dlog('[OcenFin] media segments error:', e?.message); }
     // 2) No segments → chapter fallback (kicks in reactively once chapters are loaded). The old
@@ -1512,7 +1512,7 @@
     if (!intro && !outro) return null;
     const mk = (s) => s ? {
       Valid: true,
-      IntroStart: s.StartTicks / T, IntroEnd: s.EndTicks / T,
+      IntroEnd: s.EndTicks / T,
       ShowSkipPromptAt: s.StartTicks / T, HideSkipPromptAt: s.EndTicks / T,
     } : { Valid: false };
     return { Introduction: mk(intro), Credits: mk(outro) };
@@ -1535,13 +1535,13 @@
     const creditsIdx = list.findLastIndex((c, i) => i > 0 && CREDITS_CHAPTER.test(c.name)
       && !INTRO_CHAPTER.test(c.name) && (!runtime || c.start >= runtime / 2));
     const intro = introIdx >= 0 ? {
-      Valid: true, IntroStart: list[introIdx].start,
+      Valid: true,
       IntroEnd: list[introIdx + 1]?.start ?? list[introIdx].start + 90,
       ShowSkipPromptAt: list[introIdx].start,
       HideSkipPromptAt: list[introIdx + 1]?.start ?? list[introIdx].start + 90,
     } : { Valid: false };
     const credits = creditsIdx >= 0 ? {
-      Valid: true, IntroStart: list[creditsIdx].start, IntroEnd: list[creditsIdx].start + 60,
+      Valid: true, IntroEnd: list[creditsIdx].start + 60,
       ShowSkipPromptAt: list[creditsIdx].start, HideSkipPromptAt: Infinity,
     } : { Valid: false };
     return (intro.Valid || credits.Valid) ? { Introduction: intro, Credits: credits } : null;
@@ -1903,7 +1903,7 @@
     resetControlsTimeout();
   }
 
-  // Focus after closing the panel/switching tracks back onto the triggering button (subtitle/audio/gear),
+  // Focus after closing the panel/switching tracks back onto the triggering button (subtitle/audio),
   // so a VISIBLE control is focused — not the invisible container. With no usable opener (e.g.
   // a colour key opened the panel while the HUD was hidden) land on play/pause while the HUD is
   // up — focusing the invisible container would leave no focus ring and a dead OK (the Enter
@@ -1922,8 +1922,8 @@
   // in App.svelte — still works. That was the "OK stops working mid-episode" bug.
   // Also drops the trap in the fading subtree: during the ~150 ms fade it still counts as visible
   // (isVisible checks pointer-events, not opacity), so onFocusIn would drag the focus back in.
-  // True from the moment we ask App for another episode until this instance is gone. {#key item.Id}
-  // replaces the whole Player, and the NEW instance focuses its own container on mount — pulling
+  // True from the moment we ask App for another episode until this instance is gone. App's {#key}
+  // (per title and start) replaces the whole Player, and the NEW instance focuses its own container on mount — pulling
   // the focus into THIS dying one would recreate the very bug, so only the trap is dropped then.
   let handingOff = false;
 
@@ -1934,7 +1934,7 @@
     if (root && root.contains(document.activeElement)) playerContainer?.focus();
   }
 
-  // FIX: auto-focus the settings panel for the webOS D-pad
+  // Opens/closes the track panel: focus goes to its first entry, and back to the opener on close.
   async function toggleSettings() {
     if (!showSettings) {
       // Remember the opening button (if it's outside the panel)
@@ -1952,7 +1952,7 @@
     } else {
       resetControlsTimeout();
       await tick();
-      // Focus back onto the triggering button (audio/subtitle/gear), otherwise onto the Player
+      // Focus back onto the triggering button (audio/subtitle), otherwise onto the Player
       restoreControlFocus();
       controlOpener = null;
     }
@@ -1976,7 +1976,7 @@
   // ONLY freely assignable keys in the app: it stays at these four keys — no free remapping of
   // arbitrary keys, ever. A remapping UI for the whole remote would collide with the D-pad, the
   // number keys and the channel rocker, all of which already carry fixed meanings here.
-  // Both spellings are matched, exactly like the number keys above: webOS reports the colour keys
+  // Both spellings are matched, exactly like the number keys in handleKeyDown: webOS reports the colour keys
   // as keyCode 403–406 AND as e.key "ColorF0Red" … "ColorF3Blue", and which one arrives has varied
   // between firmware levels. Reading both means a firmware that only sends one of them still works.
   const REMOTE_COLOR_KEYCODES = { 403: 'remoteColorRed', 404: 'remoteColorGreen', 405: 'remoteColorYellow', 406: 'remoteColorBlue' };
@@ -1991,8 +1991,8 @@
   // exactly the track the user had, instead of guessing a "first" one. A plain let, not $state:
   // only the key handler reads it and it must not cause a re-render. The instance is replaced via
   // {#key} on an episode change, so it resets per playback by construction. The effect catches
-  // every path that turns a subtitle on: the panel, the remembered per-series track applied during
-  // setup, and a SyncPlay/remote-driven switch.
+  // every path that turns a subtitle on: the panel, the colour-key toggle and the remembered
+  // per-series track applied during setup.
   let lastOnSubtitleIndex = -1;
   $effect(() => { if (selectedSubtitleIndex !== -1) lastOnSubtitleIndex = selectedSubtitleIndex; });
 
@@ -2181,8 +2181,7 @@
   bind:this={playerContainer}
   data-focus-trap
   tabindex="0"
-  class="w-full h-screen bg-black relative overflow-hidden flex items-center justify-center cursor-none focus:outline-none subs-{playbackPrefs.subtitleSize || 'normal'}"
-  onmousemove={resetControlsTimeout}
+  class="w-full h-screen bg-black relative overflow-hidden flex items-center justify-center cursor-none focus:outline-none"
   onpointermove={resetControlsTimeout}
   onkeydown={handleKeyDown}
 >
@@ -2308,7 +2307,7 @@
     </div>
   {/if}
 
-  <!-- MAIN OVERLAY — clicking the empty picture area (|self, not on buttons) pauses/plays -->
+  <!-- MAIN OVERLAY — clicking the empty picture area (the overlay itself, not its buttons) pauses/plays -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/50 flex flex-col justify-between p-10 transition-opacity duration-500 z-50
@@ -2596,10 +2595,10 @@
             <div class="mt-3 pt-3 border-t border-gray-700/60 flex items-center justify-between gap-3 px-1">
               <span class="text-sm text-gray-300 font-medium">{i18n.t.subtitleOffset}</span>
               <div class="flex items-center gap-2">
-                <button onclick={() => adjustSubtitleOffset(-0.5)} aria-label="-0,5 s"
+                <button onclick={() => adjustSubtitleOffset(-0.5)} aria-label={formatOffset(-0.5)}
                   class="w-9 h-9 rounded-lg bg-gray-800 text-white text-xl font-bold leading-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white hover:bg-gray-700 focus:bg-gray-700 transition-colors">−</button>
                 <span class="text-sm font-mono text-white w-16 text-center tabular-nums">{formatOffset(subtitleOffset)}</span>
-                <button onclick={() => adjustSubtitleOffset(0.5)} aria-label="+0,5 s"
+                <button onclick={() => adjustSubtitleOffset(0.5)} aria-label={formatOffset(0.5)}
                   class="w-9 h-9 rounded-lg bg-gray-800 text-white text-xl font-bold leading-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white hover:bg-gray-700 focus:bg-gray-700 transition-colors">+</button>
               </div>
             </div>
@@ -2742,7 +2741,7 @@
 </div>
 
 <!-- Add to collection / playlist (shared component) -->
-<AddToPicker mode={pickerMode} {item} {selectedUser} {getAuthHeaders}
+<AddToPicker mode={pickerMode} {item} {selectedUser}
   onCreated={() => onLibChanged?.()}
   onClose={async () => { pickerMode = null; if (wasPlayingBeforePicker) videoElement?.play().catch(() => {}); wasPlayingBeforePicker = false; await tick(); if (controlOpener && document.contains(controlOpener)) controlOpener.focus(); else playerContainer?.focus(); controlOpener = null; }} />
 
@@ -2790,15 +2789,10 @@
     box-shadow: 0 0 0 5px var(--color-blue-500, #3b82f6), 0 0 16px 3px rgba(59,130,246,.55);
   }
 
-  /* Subtitle size (scales the native VTT cues; vh for TV distance) */
-  :global(.subs-small video::cue)  { font-size: 2.6vh; }
-  :global(.subs-normal video::cue) { font-size: 3.4vh; }
-  :global(.subs-large video::cue)  { font-size: 4.8vh; }
-
-  /* Our own subtitle overlay renderer (external VTT) — no box, just a strong shadow */
+  /* Our own subtitle overlay renderer (external VTT): layout and size only — colour, edge and
+     background come from subStyle (the subtitle prefs). */
   .subtitle-box {
-    white-space: pre-line; text-align: center; color: #fff; font-weight: 600; line-height: 1.35;
-    text-shadow: 0 1px 2px #000, 0 2px 8px rgba(0,0,0,.95), 0 0 4px rgba(0,0,0,.9);
+    white-space: pre-line; text-align: center; font-weight: 600; line-height: 1.35;
     max-width: 100%;
   }
   .sub-small  { font-size: 2.6vh; }

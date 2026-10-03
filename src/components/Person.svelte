@@ -107,7 +107,7 @@
   });
   // Back takes the focus on mount only when no card is to get it. Read ONCE: as the expression
   // focusOnMount(!focusItemId) the attachment was rebuilt whenever the prop changed — and building
-  // one runs it, so opening a nested collection (focusItemId → null) put focus on Back first
+  // one runs it, so a later prop change could put focus on Back after a card had it
   // (CLAUDE.md: never feed {@attach} a value that flips).
   function focusBackOnMount(node) { if (!untrack(() => focusItemId)) node.focus(); }
 </script>

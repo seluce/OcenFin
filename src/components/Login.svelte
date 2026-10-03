@@ -564,7 +564,7 @@
         <svg class="w-6 h-6 transition-transform {showAddServer ? 'rotate-45' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
         </svg>
-        {showAddServer ? i18n.t.qcCancel : i18n.t.addServer}
+        {showAddServer ? i18n.t.cancel : i18n.t.addServer}
       </button>
 
       {#if showAddServer}
@@ -617,7 +617,7 @@
             <div class="flex-1 h-px bg-gray-700"></div>
           </div>
 
-          <!-- Manuelle URL -->
+          <!-- Manual URL -->
           <div class="flex gap-3">
             <!-- tvKeyboard here and nowhere else in this view: on the way to the OK button you pass
                  THROUGH this field, and a bare input opens the on-screen keyboard the moment focus
@@ -671,7 +671,7 @@
           <button onclick={cancelQuickConnect} {@attach focusOnMount()}
             class="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-4 rounded-xl
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-            {i18n.t.qcCancel}
+            {i18n.t.cancel}
           </button>
         </div>
 

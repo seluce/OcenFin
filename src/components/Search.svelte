@@ -48,7 +48,7 @@
   let searchHistory  = $state([]);
   const MAX_HISTORY  = 8;
 
-  // FIX: only a single onMount — loads the history AND focuses the input field
+  // Loads the history and focuses the input field (one onMount for both).
   onMount(() => {
     if (searchInput) searchInput.focus();
     try {

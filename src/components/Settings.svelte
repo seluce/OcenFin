@@ -24,9 +24,9 @@
     clientAuthHeader    = '',      // auth header without a user reference — watch together's Quick Connect (own DeviceId, App)
     onSharedToggle       = () => {},
     onSharedSetMember    = async () => 'error',   // (slot, user, pw, presetToken)
-                                                 //   → 'ok'|'needPassword'|'sameUser'|'error'
+                                                 //   → 'ok'|'needPassword'|'sameUser'|'offline'|'error'
     onSharedRemoveMember = () => {},
-    // Callback props (replace the former events)
+    // Callback props
     onToggleSave, onSwitchUser, onLogout, onScreensaverChange, onReduceAnimationsChange,
     onDisplayChange, onReorderingChange, onProfileImageChanged, onPlaybackPrefsChange, onClearCache,
   } = $props();
@@ -117,9 +117,6 @@
     const cur = playbackPrefs.themeMusicVolume ?? 40;
     onPlaybackPrefsChange?.({ ...playbackPrefs, themeMusicVolume: Math.max(5, Math.min(100, cur + d)) });
   }
-
-  // Version: YYYYMMDD — adjust here on updates
-  // APP_VERSION now comes centrally from version.js (source: appinfo.json)
 
   let isCurrentUserSaved = $derived(!!(
     selectedUser && selectedServer &&
@@ -392,7 +389,7 @@
   const capText  = (v) => v === true ? i18n.t.statusYes : v === false ? i18n.t.statusNo : i18n.t.statusUnknown;
   const capClass = (v) => v === true ? 'text-green-400' : v === false ? 'text-gray-400' : 'text-gray-600';
   // Collapsible status groups (focusable headers → the D-pad can move down/scroll).
-  // All collapsed by default: a shorter list, and from each subtitle menu item you reach
+  // All collapsed by default: a shorter list, and from each category on the left you reach
   // the settings cleanly via Right without intervening content.
   let openStatus = $state({ tv: false, runtime: false, components: false });
   const toggleStatus = (k) => { openStatus = { ...openStatus, [k]: !openStatus[k] }; };
@@ -649,7 +646,6 @@
   // Reset the content scroll position on category switch, so a new category always starts at the
   // top instead of inheriting the previous category's scroll depth.
   $effect(() => { activeCategory; if (contentEl) contentEl.scrollTop = 0; });
-  // Close the "display elements" sub-item as soon as you leave the appearance tab
   // Everything that changes the television itself, the account, or exposes diagnostics is dropped
   // for a restricted profile. What shapes their own viewing — appearance, content, navigation,
   // remote, playback, subtitles — stays, so the profile still feels like theirs.
@@ -710,7 +706,7 @@
   <div bind:this={contentEl} data-enter-top class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16 [scroll-padding-top:4rem] [scroll-padding-bottom:4rem]">
     <div class="max-w-4xl flex flex-col gap-10 pb-32">
     <!-- ══════════════════════════════════════════
-         1. APPEARANCE
+         APPEARANCE
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'appearance'}
     <section class="flex flex-col gap-4">
@@ -1028,7 +1024,7 @@
     {/if}
 
     <!-- ══════════════════════════════════════════
-         2. OLED PROTECTION
+         OLED PROTECTION
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'oled'}
     <section class="flex flex-col gap-4">
@@ -1120,7 +1116,7 @@
     {/if}
 
     <!-- ══════════════════════════════════════════
-         PLAYBACK — default languages
+         PLAYBACK
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'playback'}
     <section class="flex flex-col gap-4">
@@ -1802,7 +1798,7 @@
     {/if}
 
     <!-- ══════════════════════════════════════════
-         5. ACCOUNT & SERVER
+         ACCOUNT & SERVER
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'account'}
     <section class="flex flex-col gap-4">
@@ -2100,7 +2096,7 @@
 {/if}
 
 <!-- ══════════════════════════════════════════
-     MODAL (language / password / Quick Connect)
+     MODALS (language, password, Quick Connect, pickers, watch together)
 ══════════════════════════════════════════ -->
 {#if activeModal}
   <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8" role="dialog" tabindex="-1"
@@ -2262,7 +2258,7 @@
 
       <button onclick={closeModal}
         class="w-full bg-transparent hover:bg-gray-700 focus:bg-gray-700 text-gray-400 font-bold text-xl py-4 rounded-xl
-               border border-gray-600 focus:outline-none focus:ring-4 focus:ring-white mt-2">{i18n.t.qcCancel}</button>
+               border border-gray-600 focus:outline-none focus:ring-4 focus:ring-white mt-2">{i18n.t.cancel}</button>
 
     </div>
   </div>

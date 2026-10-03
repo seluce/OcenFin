@@ -13,8 +13,8 @@ import { dlog, authHeaders } from './utils.js';
 //  • Direct Play broadly allowed: the B4 decodes HEVC, VP9, AV1, H.264 natively.
 //  • Hi10P (10-bit H.264) is blocked via a CodecProfile → the server transcodes.
 //    (Practically no hardware can decode 10-bit H.264, not even high-end TVs.)
-//  • DTS NOT in Direct Play → the browser often can't decode DTS (otherwise video
-//    plays but there's no sound). The server then does a light audio-only transcode.
+//  • DTS / TrueHD / MP2 in Direct Play only on real webOS: a desktop browser would play the
+//    video without sound, so there the server transcodes the audio (light, audio only).
 //  • Transcode target: HLS (TS/H.264/AAC) — universally playable via hls.js.
 //  • Subtitles: text tracks delivered externally (VTT overlay; ASS via assjs), PGS/VobSub
 //    rendered client-side via libbitsub where possible — burned in only when the prefs force it
@@ -31,7 +31,7 @@ export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false
 
   // Is the app running on the real TV (webOS)? There the media pipeline also decodes DTS, Dolby
   // TrueHD/Atmos and MP2 (European DVB/TS content) → allow them in Direct Play so the server
-  // does NOT transcode unnecessarily. In browser dev (Firefox/Linux) it stays with safely decodable
+  // does NOT transcode unnecessarily. In a desktop browser (dev) it stays with safely decodable
   // codecs (otherwise picture without sound). All additions are purely additive → they can only widen Direct Play.
   const isWebOS = (typeof window !== 'undefined' && !!window.webOSSystem)
                || (typeof navigator !== 'undefined' && /web0s|webos/i.test(navigator.userAgent || ''));
@@ -97,9 +97,8 @@ export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false
   };
 }
 
-// Calls /Items/{id}/PlaybackInfo and returns the server's decision.
-// AutoOpenLiveStream=true ensures that a transcode session, if needed, is
-// opened immediately and a usable TranscodingUrl is returned.
+// Calls /Items/{id}/PlaybackInfo and returns the server's decision (DirectPlay, or a ready
+// TranscodingUrl). AutoOpenLiveStream only matters for live sources, which the app does not play.
 export async function getPlaybackInfo({
   serverUrl, userId, token, itemId,
   audioStreamIndex = null, subtitleStreamIndex = null,

@@ -27,7 +27,7 @@ const lastFocus = new WeakMap();
 // getBoundingClientRect() forces layout, getComputedStyle() forces style resolution, and ONE
 // arrow press asks for the same elements up to four times: isVisible() measures every focusable
 // in the group, pickGeometric() then measures the very same candidates again, and the Left/Right
-// fallback runs that whole pick a second time. The library group grows with paging (50 items per
+// fallback runs that whole pick a second time. The library group grows with paging (25 items per
 // page, never trimmed — CODE-HEALTH §8), so this is several hundred elements × 4 in a long
 // browsing session, which is exactly where D-pad latency creeps up.
 //
@@ -235,8 +235,9 @@ function focusEl(el) {
   el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 
-// Entry point of a group on transition: last focused (if still visible),
-// otherwise geometrically nearest in the direction, otherwise nearest overall.
+// Entry point of a group on transition, in this order: [data-enter-first] → [data-group-current] →
+// the last focused element (if still visible) → [data-enter-first-fresh] → geometrically nearest
+// in the direction → nearest overall. The steps below say why each comes where it does.
 function entryOf(group, dir, from) {
   // Opt-in [data-enter-first]: When entering the group (Up/Down between sections) always land on
   // its FIRST card — stable and predictable, no matter which column you came from. Within the group
@@ -310,7 +311,7 @@ export function createFocusManager(isEnabled) {
   function onFocusIn(e) {
     endMeasure();   // focus moved → any pending measurement describes the state before that
     // If a modal/banner is open as a trap, focus must not leave it — not even via
-    // a programmatic focus() of a view mounting in parallel (e.g. the Movies autofocus
+    // a programmatic focus() of a view mounting in parallel (e.g. the library's autofocus
     // while the "server unreachable" banner appears). In that case pull focus back into the modal.
     const trap = activeTrap();
     if (trap && !trap.contains(e.target)) {
