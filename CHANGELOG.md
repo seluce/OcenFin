@@ -39,6 +39,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   longer mention limits of servers older than Jellyfin 12.
 - **Less grey.** The selected card glows in your accent colour, a title's page takes on a hint of
   its poster's colour, and search, favourites, collections and the settings carry a faint glow.
+- **The home screen's banner and the picture behind the rows no longer overlap.** The banner is
+  either whole or gone: one step down into the rows moves it away completely and the selected
+  title's picture fades in; back up, the banner returns. It only changes titles while it is in view.
 - **Moving between buttons is lighter on the TV.** Their highlight appears at once instead of
   fading in; only the slight zoom is still animated, as on the cards.
 

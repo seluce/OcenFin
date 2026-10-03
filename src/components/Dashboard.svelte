@@ -110,28 +110,62 @@
   }
   // Focus leaves a card: stop the fade-in timer and clear the backdrop with a short delay.
   // If another card focus follows immediately (card→card), previewItem cancels the clearing → no
-  // flicker. If focus goes to the hero, the library tiles or the navigation, the clearing stands
-  // → no backdrop behind the hero anymore (see the screenshot problem).
-  // Couple the backdrop opacity to the hero visibility: at the very top (hero visible) off → no
-  // conflict with the hero image; on scrolling down it fades in as soon as the hero leaves the
-  // picture. This way Continue Watching/Up Next get the backdrop too, just only on scrolling.
-  let bgOpacity = $state(0);
-  function heroScrollFade(node) {
-    let sc = node.parentElement;   // find the scrolling ancestor (App main area)
-    while (sc && !(/(auto|scroll)/.test(getComputedStyle(sc).overflowY) && sc.scrollHeight > sc.clientHeight + 4)) sc = sc.parentElement;
-    if (!sc) { bgOpacity = 1; return; }
+  // flicker. If focus goes to the hero, the library tiles or the navigation, the clearing stands.
+
+  // ── The banner: whole or not at all (CODE-HEALTH §49) ──
+  // The banner and the focused card's backdrop never share the screen. Two states only:
+  //  • top  — the banner fully visible (focus in it, or in a row that fits below it whole): it
+  //           rotates, no backdrop;
+  //  • rows — the banner fully scrolled away: the focused card's backdrop fades in.
+  // spatialnav scrolls "nearest", so one step from the libraries into Continue watching moved the
+  // page by half a banner — the banner's lower half on top, the card's backdrop already half faded
+  // in below it: two pictures with a hard edge between. After every focus change the position is
+  // settled into one of the two states; a microtask, so it runs after spatialnav's scrollIntoView
+  // (still inside its key handler) and before the frame is drawn — no visible double step.
+  let bgOpacity = $state(1);
+  let heroFull = true;       // plain: read by the rotation timer — the banner only turns while whole
+  let handoff = null;        // the attachment's update(), for the effect below
+  function heroHandoff(node) {
+    let sc = node.parentElement;   // the App's main area scrolls the dashboard
+    while (sc && !/(auto|scroll)/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement;
+    if (!sc) return;
+    // The banner's bottom edge in the scroller's content coordinates; 0 = no banner on screen.
+    // Read from the DOM, not from props: the attachment must not track a rune (CLAUDE.md).
+    const heroBottom = () => {
+      const h = node.querySelector('[data-hero]');
+      return h ? h.getBoundingClientRect().bottom - sc.getBoundingClientRect().top + sc.scrollTop : 0;
+    };
     let raf = 0;
     const update = () => {
       raf = 0;
-      if (!showHero || !heroItems.length) { bgOpacity = 1; return; }   // no hero → no conflict, show fully
-      const heroH = sc.clientHeight * 0.44;   // corresponds to the hero height (h-[44vh])
-      bgOpacity = Math.min(1, Math.max(0, sc.scrollTop / heroH));
+      const hb = heroBottom();
+      heroFull = sc.scrollTop <= 2;
+      bgOpacity = !hb || sc.scrollTop >= hb - 2 ? 1 : 0;   // no banner → nothing to share the screen with
+    };
+    const settle = () => {
+      const el = document.activeElement, hb = heroBottom();
+      if (!hb || !el || !node.contains(el)) return;
+      const top = sc.getBoundingClientRect().top;
+      // fits below the whole banner? (24 px: the focused card's zoom and glow)
+      if (el.getBoundingClientRect().bottom - top + sc.scrollTop + 24 <= sc.clientHeight) {
+        if (sc.scrollTop) sc.scrollTop = 0;
+      } else if (sc.scrollTop < hb) sc.scrollTop = hb;
     };
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
-    sc.addEventListener("scroll", onScroll, { passive: true });
-    update();   // initial value immediately
-    return () => { sc.removeEventListener("scroll", onScroll); if (raf) cancelAnimationFrame(raf); };
+    const onFocusIn = () => queueMicrotask(settle);
+    sc.addEventListener('scroll', onScroll, { passive: true });
+    node.addEventListener('focusin', onFocusIn);
+    handoff = update;
+    update();
+    return () => {
+      sc.removeEventListener('scroll', onScroll); node.removeEventListener('focusin', onFocusIn);
+      if (raf) cancelAnimationFrame(raf);
+      handoff = null;
+    };
   }
+  // The banner appears (data loaded) or goes (setting) without a scroll — recompute.
+  const heroShown = $derived(showHero && !!heroCurrent);
+  $effect(() => { heroShown; handoff?.(); });
 
   function cancelPreview() {
     clearTimeout(previewTimer);
@@ -184,7 +218,7 @@
     if (!reduceAnimations && heroItems.length > 1) {
       preloadHero(1);   // preload the next image
       heroTimer = setInterval(() => {
-        if (heroHasFocus) return;
+        if (heroHasFocus || !heroFull) return;   // held while you are on it, and while it is not whole
         prevHeroIndex = heroIndex;
         heroIndex = (heroIndex + 1) % heroItems.length;
         preloadHero((heroIndex + 1) % heroItems.length);
@@ -573,12 +607,13 @@
     return null;
   }</script>
 
-<div class="relative">
+<div class="relative" {@attach heroHandoff}>
   <!-- Dashboard backdrop: backdrop of the focused title, pinned to the top of the viewport
        (sticky, not absolute — the dashboard scrolls in the App container). -mb-[100vh] cancels its
-       own height again, so the content sits above it instead of sliding underneath. -->
+       own height again, so the content sits above it instead of sliding underneath. Shown only
+       while the banner is fully away (heroHandoff); the fade is opacity, run by the compositor. -->
   {#if dashboardBackdrop && previewBackdrop}
-    <div {@attach heroScrollFade} style="opacity:{bgOpacity}" class="sticky top-0 h-screen w-full -mb-[100vh] z-0 pointer-events-none overflow-hidden">
+    <div style="opacity:{bgOpacity}" class="sticky top-0 h-screen w-full -mb-[100vh] z-0 pointer-events-none overflow-hidden transition-opacity duration-300">
       {#key previewBackdrop}
         <img src={previewBackdrop} alt="" class="w-full h-full object-cover object-top preview-fade" />
       {/key}
