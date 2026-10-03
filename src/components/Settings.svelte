@@ -674,7 +674,8 @@
   });
 </script>
 
-<div class="flex h-full">
+<!-- ambient on the whole page, not the content column: there it began hard at the category bar's edge -->
+<div class="flex h-full ambient">
 
   <!-- LEFT: category navigation. data-hbar: enter via Left/Right, Up/Down moves
        within; when entering from the right, focus lands on the active category (data-hbar-current). -->

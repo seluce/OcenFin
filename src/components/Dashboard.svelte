@@ -586,7 +586,9 @@
       <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-gray-900/60"></div>
     </div>
   {/if}
-  <div class="relative z-10 px-10 pt-16 pb-20 flex flex-col gap-12">
+  <!-- ambient (app.css): with the hero shown, the glow starts at its bottom edge -->
+  <div class="relative z-10 px-10 pt-16 pb-20 flex flex-col gap-12 ambient"
+    style:--ambient-y={showHero ? 'calc(max(44vh, 320px) + 560px)' : null}>
 
   <!-- Reusable card snippets (instead of 8 nearly identical blocks) -->
   {#snippet landscapeCard(item)}
@@ -599,7 +601,7 @@
       onfocus={() => previewItem(item)} onblur={cancelPreview}
       class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
-                  border-4 border-transparent group-focus:border-white group-focus:scale-105
+                  border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow
                   transition-transform duration-200 shadow-xl relative">
         {#if img}
           <img src={img} {@attach blurUp(itemBlurHash(item, 'Backdrop'))} alt={item.Name}
@@ -636,7 +638,7 @@
       onfocus={() => previewItem(item)} onblur={cancelPreview}
       class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                  border-4 border-transparent group-focus:border-white group-focus:scale-105
+                  border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow
                   transition-transform duration-200 shadow-xl">
         {#if img}
           <img src={img} {@attach blurUp(blur)} alt={item.Name}
@@ -667,7 +669,7 @@
     <button onclick={() => onOpenCollection?.(col)} onfocus={() => previewItem(col)} onblur={cancelPreview} data-item-id={col.Id}
       class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                  border-4 border-transparent group-focus:border-white group-focus:scale-105
+                  border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow
                   transition-transform duration-200 shadow-xl">
         {#if img}
           <img src={img} {@attach blurUp(itemBlurHash(col))} alt={col.Name}
@@ -803,7 +805,7 @@
             <button onclick={() => onOpenLibrary?.(library)} data-item-id={library.Id}
               class="shrink-0 scroll-mt-24 scroll-mx-4 group flex flex-col items-center focus:outline-none">
               <div class="w-64 h-36 bg-gray-800 rounded-xl flex items-center justify-center
-                          border-4 border-transparent group-focus:border-white group-focus:scale-105 group-hover:border-gray-400
+                          border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow group-hover:border-gray-400
                           transition-transform duration-200 shadow-lg overflow-hidden">
                 {#if getItemImageUrl(library)}
                   <img src={getItemImageUrl(library)} {@attach blurUp(itemBlurHash(library))} alt={library.Name}

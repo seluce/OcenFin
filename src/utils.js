@@ -917,6 +917,32 @@ export function itemBlurHash(item, type = 'Primary') {
   return tag ? (item.ImageBlurHashes[type]?.[tag] || null) : null;
 }
 
+// A title's own colour, for its details page, read from its BlurHash: the hash's first component IS
+// the picture's average colour, so this reads four characters and never touches the image. Only hue
+// and colourfulness are kept — lightness is fixed, so a white or a black poster tints as gently as
+// any other — and a grey picture (too little colour to have a hue) gives none.
+// Returns { bg, glow } — the app's gray-900 with 30 % of that colour in it (same darkness), and a
+// bright, half-transparent version for the poster's shadow — or null. Plain colour values: the page
+// sets them on the few elements that show them, not as a variable all of it would inherit (§47).
+const GRAY_900_AB = [-0.00316, -0.03385];   // Tailwind's gray-900, oklch(21% .034 264.665), as OKLab a/b
+export function blurHashTint(hash) {
+  if (!hash || hash.length < 6) return null;
+  const v = b83(hash.substr(2, 4));
+  const r = sRGBtoLin(v >> 16), g = sRGBtoLin((v >> 8) & 255), b = sRGBtoLin(v & 255);
+  // linear sRGB → OKLab (Björn Ottosson); its lightness is not needed
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const A = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
+  const B = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
+  const chroma = Math.hypot(A, B);
+  if (!(chroma >= 0.03)) return null;
+  const k = Math.min(chroma, 0.12) / chroma, ta = A * k, tb = B * k;   // capped colourfulness, same hue
+  const mix = (g, t) => (0.7 * g + 0.3 * t).toFixed(4);
+  return { bg: `oklab(0.219 ${mix(GRAY_900_AB[0], ta)} ${mix(GRAY_900_AB[1], tb)})`,
+           glow: `oklab(0.6 ${ta.toFixed(4)} ${tb.toFixed(4)} / 0.55)` };
+}
+
 // Svelte attachment (factory): set the decoded BlurHash as the background of an <img> (cached per hash).
 // No update needed anymore — on hash change the attachment re-runs automatically (reactive effect).
 const _blurCache = new Map();

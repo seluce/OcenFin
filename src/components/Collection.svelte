@@ -267,7 +267,7 @@
   function focusBackOnMount(node) { if (!untrack(() => focusItemId)) node.focus(); }
 </script>
 
-<div bind:this={scrollEl} class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
+<div bind:this={scrollEl} class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar ambient">
 
   <!-- Label under the poster; the card itself is shared (PosterCard). -->
   {#snippet cardCaption(item)}

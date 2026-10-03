@@ -85,7 +85,7 @@
   });
 </script>
 
-<div bind:this={scrollEl} class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
+<div bind:this={scrollEl} class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar ambient">
 
   <!-- Label under the poster; the card itself is shared (PosterCard). -->
   {#snippet cardCaption(item)}
@@ -134,7 +134,7 @@
             <button onclick={() => onOpenDetails(item)} data-item-id={item.Id}
               {@attach longPress()} onlongpress={() => onContextMenu(item)}
               class="group focus:outline-none text-left scroll-my-4">
-              <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
+              <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
                 {#if getItemImageUrl(item, 'landscape')}
                   <img src={getItemImageUrl(item, 'landscape')} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                 {/if}
@@ -156,7 +156,7 @@
         <div class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-6 pr-4 mb-12">
           {#each favPersons as p (p.Id)}
             <button onclick={() => onOpenPerson(p)} data-item-id={p.Id} class="group focus:outline-none text-center scroll-my-4">
-              <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl">
+              <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl">
                 {#if personImageUrl(session.serverUrl, p)}
                   <img src={personImageUrl(session.serverUrl, p)} {@attach blurUp(itemBlurHash(p))} alt={p.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                 {:else}

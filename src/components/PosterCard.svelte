@@ -22,7 +22,7 @@
 <button onclick={() => onOpenDetails(item)} data-item-id={item.Id}
   {@attach longPress()} onlongpress={() => onContextMenu(item)}
   class="group focus:outline-none text-left scroll-my-4">
-  <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
+  <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
     {#if badge}
       <WatchedBadge />
     {/if}

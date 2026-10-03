@@ -1,7 +1,7 @@
 <script>
   import { i18n, LANGUAGES } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
-  import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
+  import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
   import { pickDefaultTracks, rememberChoice } from '../trackmemory.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
   import { buildPlayQueue, playableFor } from '../playback.js';
@@ -24,6 +24,11 @@
   } = $props();
 
   let fullItem     = $state(null);
+  // The title's own colour (poster, else backdrop): page background, the backdrop's fade, the rows'
+  // background and the poster's shadow colour. Set as plain values on exactly those four elements —
+  // as ONE variable on the root, every title change recalculated the style of the whole page
+  // (measured, CODE-HEALTH §47). Solid colours and the existing shadow: no layer, blur or animation.
+  let tint = $derived(blurHashTint(itemBlurHash(fullItem) || itemBlurHash(fullItem, 'Backdrop')));
   let relatedItems = $state([]);
   // Series/season pages: what Play starts (playableFor — Next Up, else the first episode), fetched
   // with the page so the button can SAY it ("Play · S2:E2") and the episode row can mark it. Play
@@ -762,7 +767,7 @@
   }
 </script>
 
-<div class="flex flex-col h-full relative overflow-hidden">
+<div class="flex flex-col h-full relative overflow-hidden" style:background-color={tint?.bg}>
   {#if isLoading}
     <div class="flex-1 flex items-center justify-center">
       <div class="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
@@ -787,7 +792,7 @@
       <!-- ════ CINEMATIC HERO BANNER — the backdrop scrolls along, fading into the app gray at bottom/left ════ -->
       <div class="relative">
         {#if detailsBackdrop && getItemBackdropUrl(fullItem)}
-          <div class="absolute inset-0 z-0 max-h-[95vh] overflow-hidden">
+          <div class="absolute inset-0 z-0 max-h-[95vh] overflow-hidden" style:--color-gray-900={tint?.bg}>
             <img src={getItemBackdropUrl(fullItem)} {@attach blurUp(itemBlurHash(fullItem, 'Backdrop'))} alt="" class="w-full h-full object-cover object-top" />
             <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/60 to-gray-900/20"></div>
             <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/40 to-transparent"></div>
@@ -825,7 +830,8 @@
       <!-- HERO -->
       <div class="flex gap-12 items-start mb-8">
 
-        <div class="w-64 shrink-0 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800 relative">
+        <div class="w-64 shrink-0 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800 relative"
+          style:--tw-shadow-color={tint?.glow}>
           {#if getItemImageUrl(fullItem)}
             <img src={getItemImageUrl(fullItem)} {@attach blurUp(itemBlurHash(fullItem))} alt={fullItem.Name} class="w-full h-full object-cover" />
           {/if}
@@ -1168,7 +1174,7 @@
 
       <!-- CONTENT (rows) on full app gray — its own focus group per row,
            so D-pad LEFT at the start of a row jumps directly to the sidebar. -->
-      <div class="relative z-10 px-10 pb-16 bg-gray-900 flex flex-col">
+      <div class="relative z-10 px-10 pb-16 bg-gray-900 flex flex-col" style:background-color={tint?.bg}>
 
       <!-- SEASONS / EPISODES -->
       {#if relatedItems.length > 0}
@@ -1184,7 +1190,7 @@
               <button onclick={() => navigateTo(ep.Id)} data-item-id={ep.Id}
                 onfocus={() => { if (ep.Type === 'Episode') focusedEpisode = ep; }}
                 class="shrink-0 scroll-m-4 group flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
-                <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
+                <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
                   {#if getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')}
                     <img src={getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')} {@attach blurUp(itemBlurHash(ep))} alt={ep.Name} loading="lazy"
                       class="w-full h-full object-cover transition-all duration-200 {epSpoiler(ep) ? 'blur-md scale-110' : ''}" />
@@ -1239,7 +1245,7 @@
             {#each extras as ex (ex.Id)}
               <button onclick={() => onPlayVideo?.({ item: ex, audioIndex: -1, subtitleIndex: -1 })}
                 class="shrink-0 w-80 scroll-m-4 group flex flex-col focus:outline-none text-left">
-                <div class="aspect-video w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-transform duration-200">
+                <div class="aspect-video w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
                   {#if getItemImageUrl(ex, 'landscape')}
                     <img src={getItemImageUrl(ex, 'landscape')} {@attach blurUp(itemBlurHash(ex))} alt={ex.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}
@@ -1263,7 +1269,7 @@
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each castMembers as person (person.Id)}
               <button onclick={() => onOpenPerson?.(person)} data-item-id={person.Id} class="shrink-0 w-36 scroll-m-4 group focus:outline-none text-center">
-                <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto group-focus:scale-105 transition-transform duration-200">
+                <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
                   {#if personImageUrl(session.serverUrl, person)}
                     <img src={personImageUrl(session.serverUrl, person)} {@attach blurUp(itemBlurHash(person))} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}
@@ -1287,7 +1293,7 @@
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each collections as col (col.Id)}
               <button onclick={() => onOpenCollection?.(col)} data-item-id={col.Id} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-transform duration-200">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
                   {#if getItemImageUrl(col, 'portrait')}
                     <img src={getItemImageUrl(col, 'portrait')} {@attach blurUp(itemBlurHash(col))} alt={col.Name} class="w-full h-full object-cover" loading="lazy" />
                   {/if}
@@ -1306,7 +1312,7 @@
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each similarItems as si (si.Id)}
               <button onclick={() => navigateTo(si.Id)} data-item-id={si.Id} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-transform duration-200">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
                   {#if getItemImageUrl(si, 'portrait')}
                     <img src={getItemImageUrl(si, 'portrait')} {@attach blurUp(itemBlurHash(si))} alt={si.Name} class="w-full h-full object-cover" loading="lazy" />
                   {/if}
