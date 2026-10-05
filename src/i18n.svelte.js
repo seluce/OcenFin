@@ -1,7 +1,6 @@
-// Runes-native i18n (replaces the earlier Svelte-store variant). `lang` is $state, `i18n.t` a
+// Runes-native i18n. `lang` is $state, `i18n.t` a
 // reactive getter on the translation table — components read `i18n.t.key` or `i18n.lang`
 // and re-render automatically on language change, exactly following the pattern of session.svelte.js.
-// No Svelte store in the project anymore.
 
 // Translations live per language in /locales. en is the reference (complete key list);
 // every other language falls back PER KEY to en in case a string is ever missing there.

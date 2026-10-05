@@ -10,7 +10,7 @@
     artSource = 'watched',       // 'watched' | 'unwatched' | 'random'
     brightness = 0.45,           // art-mode brightness (0.45 dimmed = OLED default)
     userId    = '',
-    onDismiss,                   // callback prop (instead of a 'dismiss' event)
+    onDismiss,                   // callback prop
   } = $props();
 
   let timeString = $state(''), dateString = $state('');
@@ -45,7 +45,7 @@
   }
 
   // ── ART MODE ───────────────────────────────────────────────────────────────
-  let artlist  = [];                          // [{ url, title }] — internal data (not in the template)
+  let artlist  = [];                          // [{ id, url, title, logo }] — internal data (not in the template)
   let slots    = $state([{ url: '', title: '', logo: null }, { url: '', title: '', logo: null }]);  // two crossfade layers
   let front    = $state(0);                   // visible layer
   let artIdx   = 0;
@@ -136,7 +136,7 @@
     if (!artlist.length) return;
     const item = artlist[i % artlist.length];
     const back = front === 0 ? 1 : 0;
-    slots[back] = item;   // deep reactivity: mutation is enough (no more "slots = slots" needed)
+    slots[back] = item;   // deep reactivity: mutation is enough
     front = back;
   }
 

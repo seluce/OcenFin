@@ -1,8 +1,9 @@
 <script>
-  import { tick } from 'svelte';
+  import { tick, onDestroy, untrack } from 'svelte';
   import { i18n } from '../i18n.svelte.js';
   import { itemBlurHash, blurUp, authHeaders, focusOnMount, getItemImageUrl } from '../utils.js';
   import { buildPlayQueue } from '../playback.js';
+  import { WATCHLIST_NAME } from '../watchlist.svelte.js';
   import PosterCard from './PosterCard.svelte';
   import { session } from '../session.svelte.js';
 
@@ -40,6 +41,9 @@
   // Movies/episodes play directly. If the pick lands on a series/season (normal in BoxSets),
   // a random episode is drawn from it (specials/season 0 excluded), because a
   // series itself isn't playable. Uniformly distributed, incl. already watched (comfort rewatch).
+  // Both starts below wait on the server; Back meanwhile must not have the Player pop up afterwards.
+  let alive = true;
+  onDestroy(() => { alive = false; });
   async function playRandom() {
     if (!items.length) return;
     const pick = items[Math.floor(Math.random() * items.length)];
@@ -48,7 +52,7 @@
       // shared specials rule; the random draw ignores its ordering. Was an inline copy of that
       // query — the third one in the codebase.
       const pool = await buildPlayQueue([pick], { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
-      if (!pool.length) return;
+      if (!pool.length || !alive) return;   // left meanwhile — no Player popping up over another view
       onPlayVideo?.({ item: pool[Math.floor(Math.random() * pool.length)], audioIndex: -1, subtitleIndex: -1 });
     } else {
       onPlayVideo?.({ item: pick, audioIndex: -1, subtitleIndex: -1 });
@@ -66,7 +70,7 @@
     let queue = [];
     try { queue = await buildPlayQueue(items, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() }); }
     finally { buildingQueue = false; }
-    if (queue.length) onPlayQueue?.(queue);
+    if (queue.length && alive) onPlayQueue?.(queue);
   }
 
   // Label for an episode: "S1 · E5 · Title"
@@ -74,6 +78,28 @@
     const s = item.ParentIndexNumber, e = item.IndexNumber;
     const code = (s != null && e != null) ? `S${s} · E${e}` : (e != null ? `E${e}` : '');
     return [code, item.Name].filter(Boolean).join(' · ');
+  }
+
+  // What this profile may do with the playlist. Jellyfin: renaming and editing the entries is for
+  // its owner or a share with edit rights, deleting for the owner or an administrator (the item's
+  // CanDelete says exactly that). Edit and Delete used to be offered on every playlist, other
+  // users' shared ones included, and the server's refusal went unseen. Optimistic until known.
+  let canEdit   = $state(true);
+  let canDelete = $state(true);
+  async function loadPlaylistRights(id) {
+    canEdit = canDelete = true;
+    const norm = (v) => String(v || '').replace(/-/g, '').toLowerCase();
+    try {
+      const r = await fetch(`${session.serverUrl}/Items/${id}?UserId=${selectedUser.Id}&Fields=CanDelete`, { headers: getAuthHeaders() });
+      if (!r.ok || id !== loadedId) return;
+      const owner = (await r.json()).CanDelete;
+      if (id !== loadedId || owner !== false) return;   // owner/admin, or unknown → leave everything on
+      canDelete = false;
+      const p = await fetch(`${session.serverUrl}/Playlists/${id}`, { headers: getAuthHeaders() });
+      const shares = p.ok ? ((await p.json()).Shares || []) : [];
+      if (id !== loadedId) return;
+      canEdit = shares.some(sh => sh.CanEdit && norm(sh.UserId) === norm(selectedUser.Id));
+    } catch { /* stays permissive — a refusal is still reported */ }
   }
 
   async function loadCollection() {
@@ -84,7 +110,8 @@
     name      = collection.Name;
     items     = [];
     isLoading = true;
-    playlistEditMode = false; confirmDeletePlaylist = false; renamingPlaylist = false;
+    playlistEditMode = false; confirmDeletePlaylist = false; renamingPlaylist = false; editFailed = false;
+    if (collection.Type === 'Playlist') loadPlaylistRights(myId);
     // Playlists via their own endpoint (reliable + in list order),
     // collections/BoxSets via ParentId.
     const url = collection.Type === 'Playlist'
@@ -117,6 +144,8 @@
     if (toIndex < 0 || toIndex >= items.length) return;
     const item = items[fromIndex];
     if (!item?.PlaylistItemId) return;
+    const before = items;
+    editFailed = false;
     const arr = [...items];
     const [moved] = arr.splice(fromIndex, 1);
     arr.splice(toIndex, 0, moved);
@@ -134,12 +163,22 @@
     try {
       const res = await fetch(`${session.serverUrl}/Playlists/${collection.Id}/Items/${item.PlaylistItemId}/Move/${toIndex}`,
         { method: 'POST', headers: getAuthHeaders() });
-      if (!res.ok) console.warn('[OcenFin] move failed', res.status);
-    } catch (e) { console.warn('[OcenFin] move error', e); }
+      if (!res.ok) { console.warn('[OcenFin] move failed', res.status); editRollback(before); }
+    } catch (e) { console.warn('[OcenFin] move error', e); editRollback(before); }
+  }
+  // A refused or failed change puts the list back as the server still has it, and says so — it used
+  // to stay changed on screen only (another user's playlist answers 403).
+  let editFailed = $state(false);
+  function editRollback(before) {
+    items = before;
+    onChildCountChanged?.(collection.Id, items.length);
+    editFailed = true;
   }
 
   async function removePlaylistItem(item) {
     if (!item?.PlaylistItemId) return;
+    const before = items;
+    editFailed = false;
     const gap = items.findIndex(i => i.PlaylistItemId === item.PlaylistItemId);
     items = items.filter(i => i.PlaylistItemId !== item.PlaylistItemId);
     onChildCountChanged?.(collection.Id, items.length);   // carry the overview tile (ChildCount) along
@@ -154,8 +193,8 @@
     try {
       const res = await fetch(`${session.serverUrl}/Playlists/${collection.Id}/Items?EntryIds=${item.PlaylistItemId}`,
         { method: 'DELETE', headers: getAuthHeaders() });
-      if (!res.ok) console.warn('[OcenFin] remove failed', res.status);
-    } catch (e) { console.warn('[OcenFin] remove error', e); }
+      if (!res.ok) { console.warn('[OcenFin] remove failed', res.status); editRollback(before); }
+    } catch (e) { console.warn('[OcenFin] remove error', e); editRollback(before); }
   }
 
   // Delete the whole playlist (inline confirmation in edit mode).
@@ -163,8 +202,8 @@
     if (collection.Type !== 'Playlist') return;
     try {
       const res = await fetch(`${session.serverUrl}/Items/${collection.Id}`, { method: 'DELETE', headers: getAuthHeaders() });
-      if (!res.ok) { console.warn('[OcenFin] playlist delete failed', res.status); return; }
-    } catch (e) { console.warn('[OcenFin] playlist delete error', e); return; }
+      if (!res.ok) { console.warn('[OcenFin] playlist delete failed', res.status); editFailed = true; endDeleteConfirm(); return; }
+    } catch (e) { console.warn('[OcenFin] playlist delete error', e); editFailed = true; endDeleteConfirm(); return; }
     confirmDeletePlaylist = false;
     playlistEditMode      = false;
     onPlaylistDeleted?.(collection.Id);   // App: remove from the grid, reload the sidebar, navigation
@@ -179,7 +218,7 @@
   async function savePlaylistName() {
     const newName = renameValue.trim();
     if (!newName) { renameError = true; return; }
-    if (newName === name) { renamingPlaylist = false; return; }
+    if (newName === name) { endRename(); return; }
     renameError = false;
     try {
       // Playlist's own update endpoint: uses the user's ownership rights (no admin right needed).
@@ -189,15 +228,31 @@
       if (!res.ok) { console.warn('[OcenFin] rename failed', res.status); renameError = true; return; }
     } catch (e) { console.warn('[OcenFin] rename error', e); renameError = true; return; }
     name = newName;
-    renamingPlaylist = false;
+    endRename();
     onPlaylistRenamed?.(collection.Id, newName);   // App: update the grid tile + sidebar
+  }
+
+  // Each edit sub-state takes the control that has the focus away with it (the input, Save, Cancel,
+  // the whole list), and focus fell to <body> — the next key then opened the sidebar. Closing one
+  // hands the focus to the button that opened it. (§23 had covered remove and reorder only.)
+  function endRename() {
+    renamingPlaylist = false;
+    tick().then(() => editList?.querySelector('[data-rename-btn]')?.focus());
+  }
+  function endDeleteConfirm() {
+    confirmDeletePlaylist = false;
+    tick().then(() => editList?.querySelector('[data-delete-btn]')?.focus());
+  }
+  function endEditMode() {
+    playlistEditMode = false;
+    tick().then(() => editBtn?.focus());
   }
 
   // Back key: first unwind the edit states, then (false) → App navigates back.
   export function handleBackKey() {
-    if (renamingPlaylist)      { renamingPlaylist = false;      return true; }
-    if (confirmDeletePlaylist) { confirmDeletePlaylist = false; return true; }
-    if (playlistEditMode)      { playlistEditMode = false;      return true; }
+    if (renamingPlaylist)      { endRename();        return true; }
+    if (confirmDeletePlaylist) { endDeleteConfirm(); return true; }
+    if (playlistEditMode)      { endEditMode();      return true; }
     return false;
   }
 
@@ -206,9 +261,14 @@
   $effect(() => {
     if (collection && collection.Id !== loadedId) { loadedId = collection.Id; loadCollection(); }
   });
+  // Back takes the focus on mount only when no card is to get it. Read ONCE: as the expression
+  // focusOnMount(!focusItemId) the attachment was rebuilt whenever the prop changed — and building
+  // one runs it, so opening a nested collection (focusItemId → null) put focus on Back first
+  // (CLAUDE.md: never feed {@attach} a value that flips).
+  function focusBackOnMount(node) { if (!untrack(() => focusItemId)) node.focus(); }
 </script>
 
-<div bind:this={scrollEl} class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar">
+<div bind:this={scrollEl} class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar ambient">
 
   <!-- Label under the poster; the card itself is shared (PosterCard). -->
   {#snippet cardCaption(item)}
@@ -221,7 +281,7 @@
     {/if}
   {/snippet}
   <div class="flex items-center gap-6 mb-8">
-    <button onclick={onBack} bind:this={backBtn} {@attach focusOnMount(!focusItemId)}
+    <button onclick={onBack} bind:this={backBtn} {@attach focusBackOnMount}
       class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
       {i18n.t.back}
     </button>
@@ -231,7 +291,7 @@
        the playlist/collection name is (otherwise they'd be pushed out of view). -->
   <div class="flex items-center gap-4 mb-10">
     <svg class="w-10 h-10 shrink-0 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
-    <h1 class="text-4xl font-bold text-white min-w-0 truncate">{name === 'Watchlist' ? i18n.t.watchlist : name}</h1>
+    <h1 class="text-4xl font-bold text-white min-w-0 truncate">{name === WATCHLIST_NAME ? i18n.t.watchlist : name}</h1>
     {#if items.length > 0 && !playlistEditMode}
       <button onclick={playAll}
         class="ml-4 shrink-0 bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold px-6 py-3 rounded-xl
@@ -256,7 +316,7 @@
         {i18n.t.shuffle}
       </button>
     {/if}
-    {#if collection?.Type === 'Playlist'}
+    {#if collection?.Type === 'Playlist' && canEdit}
       <button bind:this={editBtn}
         onclick={() => { playlistEditMode = !playlistEditMode; confirmDeletePlaylist = false; renamingPlaylist = false; }}
         class="shrink-0 px-6 py-3 rounded-xl font-bold focus:outline-none focus:ring-4 focus:ring-white transition-colors
@@ -325,7 +385,7 @@
                 class="px-6 py-3 rounded-lg font-bold bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
                 {i18n.t.save}
               </button>
-              <button onclick={() => renamingPlaylist = false}
+              <button onclick={endRename}
                 class="px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
                 {i18n.t.cancel}
               </button>
@@ -341,24 +401,29 @@
               class="px-6 py-3 rounded-lg font-bold bg-red-700 hover:bg-red-600 focus:bg-red-600 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               {i18n.t.deletePlaylist}
             </button>
-            <button onclick={() => confirmDeletePlaylist = false} {@attach focusOnMount()}
+            <button onclick={endDeleteConfirm} {@attach focusOnMount()}
               class="px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               {i18n.t.cancel}
             </button>
           </div>
         {:else}
           <div class="flex items-center gap-3 flex-wrap">
-            <button onclick={startRename}
+            <button onclick={startRename} data-rename-btn
               class="flex items-center gap-3 px-6 py-3 rounded-lg font-bold bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
               {i18n.t.renamePlaylist}
             </button>
-            <button onclick={() => confirmDeletePlaylist = true}
+            {#if canDelete}
+            <button onclick={() => confirmDeletePlaylist = true} data-delete-btn
               class="flex items-center gap-3 px-6 py-3 rounded-lg font-bold bg-red-900/40 hover:bg-red-900/60 focus:bg-red-900/60 text-red-300 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-red-500 transition-colors">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-7 0v12a1 1 0 001 1h6a1 1 0 001-1V7"/></svg>
               {i18n.t.deletePlaylist}
             </button>
+            {/if}
           </div>
+        {/if}
+        {#if editFailed}
+          <p class="text-red-400 text-sm font-semibold mt-3">{i18n.t.actionFailed}</p>
         {/if}
       </div>
     </div>

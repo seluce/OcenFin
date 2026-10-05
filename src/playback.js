@@ -13,8 +13,8 @@ import { dlog, authHeaders } from './utils.js';
 //  • Direct Play broadly allowed: the B4 decodes HEVC, VP9, AV1, H.264 natively.
 //  • Hi10P (10-bit H.264) is blocked via a CodecProfile → the server transcodes.
 //    (Practically no hardware can decode 10-bit H.264, not even high-end TVs.)
-//  • DTS NOT in Direct Play → the browser often can't decode DTS (otherwise video
-//    plays but there's no sound). The server then does a light audio-only transcode.
+//  • DTS / TrueHD / MP2 in Direct Play only on real webOS: a desktop browser would play the
+//    video without sound, so there the server transcodes the audio (light, audio only).
 //  • Transcode target: HLS (TS/H.264/AAC) — universally playable via hls.js.
 //  • Subtitles: text tracks delivered externally (VTT overlay; ASS via assjs), PGS/VobSub
 //    rendered client-side via libbitsub where possible — burned in only when the prefs force it
@@ -31,7 +31,7 @@ export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false
 
   // Is the app running on the real TV (webOS)? There the media pipeline also decodes DTS, Dolby
   // TrueHD/Atmos and MP2 (European DVB/TS content) → allow them in Direct Play so the server
-  // does NOT transcode unnecessarily. In browser dev (Firefox/Linux) it stays with safely decodable
+  // does NOT transcode unnecessarily. In a desktop browser (dev) it stays with safely decodable
   // codecs (otherwise picture without sound). All additions are purely additive → they can only widen Direct Play.
   const isWebOS = (typeof window !== 'undefined' && !!window.webOSSystem)
                || (typeof navigator !== 'undefined' && /web0s|webos/i.test(navigator.userAgent || ''));
@@ -97,9 +97,8 @@ export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false
   };
 }
 
-// Calls /Items/{id}/PlaybackInfo and returns the server's decision.
-// AutoOpenLiveStream=true ensures that a transcode session, if needed, is
-// opened immediately and a usable TranscodingUrl is returned.
+// Calls /Items/{id}/PlaybackInfo and returns the server's decision (DirectPlay, or a ready
+// TranscodingUrl). AutoOpenLiveStream only matters for live sources, which the app does not play.
 export async function getPlaybackInfo({
   serverUrl, userId, token, itemId,
   audioStreamIndex = null, subtitleStreamIndex = null,
@@ -107,9 +106,12 @@ export async function getPlaybackInfo({
   enableDirectPlay = true, enableDirectStream = true, allowAudioStreamCopy = true,
   burnSubtitles = false, mediaSourceId = null, clientGraphicSubs = false,
 }) {
-  // IMPORTANT: Jellyfin reads AudioStreamIndex/SubtitleStreamIndex and the Enable* flags
-  // from the QUERY STRING (only the DeviceProfile belongs in the body). Previously they were
-  // in the body → the server ignored the chosen audio track.
+  // The same values go in the query string AND the body. Jellyfin 12 marks every one of these query
+  // parameters deprecated and takes the body's value wherever the query leaves one out (the
+  // controller does `param ??= dto.X`), so the body alone would do today. The query stays because a
+  // server once ignored the body's AudioStreamIndex — the chosen audio track played as the default
+  // one. Drop it when a server release removes the deprecated parameters, and check with
+  // urlAudioStreamIndex in the log below that an audio switch still arrives (CODE-HEALTH §39).
   const qs = new URLSearchParams({
     UserId: userId,
     StartTimeTicks: String(startTicks),
@@ -125,7 +127,7 @@ export async function getPlaybackInfo({
   if (subtitleStreamIndex !== null && subtitleStreamIndex !== -1) qs.set('SubtitleStreamIndex', String(subtitleStreamIndex));
   if (mediaSourceId) qs.set('MediaSourceId', mediaSourceId);   // force the chosen version
 
-  // Body: DeviceProfile (required) + the same fields for safety (some versions read them here).
+  // Body: DeviceProfile (required) + the same fields — the form Jellyfin 12 documents.
   const body = {
     UserId: userId,
     DeviceProfile: buildDeviceProfile(maxBitrate, burnSubtitles, clientGraphicSubs),
@@ -154,6 +156,14 @@ export async function getPlaybackInfo({
     throw new Error(`PlaybackInfo HTTP ${res.status}`);
   }
   const data = await res.json();
+  // The server can answer 200 and still refuse: NotAllowed (the profile may not play it),
+  // NoCompatibleStream, RateLimitExceeded. Read as a normal answer this ended as a direct-play attempt
+  // and a generic "playback failed". The Player names the reason instead.
+  if (data.ErrorCode) {
+    const err = new Error(`PlaybackInfo refused: ${data.ErrorCode}`);
+    err.code = data.ErrorCode;
+    throw err;
+  }
   const ms = (mediaSourceId && data.MediaSources?.find(s => s.Id === mediaSourceId)) || data.MediaSources?.[0] || null;
   const vStream = ms?.MediaStreams?.find(s => s.Type === 'Video');
   const aStream = ms?.MediaStreams?.find(s => s.Type === 'Audio' && (audioStreamIndex == null || audioStreamIndex < 0 || s.Index === audioStreamIndex));
@@ -193,7 +203,9 @@ function _pfKey(p) {
   // with the default flags must never satisfy a request that needs a transcode (explicit audio
   // track, burn-in, capped bitrate). Defaults mirror getPlaybackInfo's signature, since the
   // prefetch call site omits the flags.
-  return [p.itemId, p.audioStreamIndex ?? -1, p.subtitleStreamIndex ?? -1, !!p.burnSubtitles,
+  // userId too: a profile switch within the TTL must not hand one profile's PlaybackInfo (its play
+  // session, its user data) to the next.
+  return [p.itemId, p.userId || '', p.audioStreamIndex ?? -1, p.subtitleStreamIndex ?? -1, !!p.burnSubtitles,
           p.mediaSourceId || '', !!p.clientGraphicSubs,
           p.enableDirectPlay ?? true, p.enableDirectStream ?? true, p.allowAudioStreamCopy ?? true,
           p.maxBitrate ?? 120000000].join('|');
@@ -204,6 +216,9 @@ export function prefetchPlaybackInfo(params) {
   const key = _pfKey(params);
   const existing = _pfCache.get(params.itemId);
   if (existing && existing.key === key && Date.now() - existing.ts < _PF_TTL) return;  // already freshly loaded
+  // Entries only leave when a start takes them; a prefetch nobody used (the countdown cancelled, the
+  // player left) stayed for good — days of a running TV. Expired ones go here.
+  for (const [id, e] of _pfCache) if (Date.now() - e.ts >= _PF_TTL) _pfCache.delete(id);
   _pfCache.set(params.itemId, { ts: Date.now(), key, promise: getPlaybackInfo(params).catch(() => null) });
 }
 
@@ -271,20 +286,15 @@ export function assSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, token
   return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.ass?ApiKey=${token}`;
 }
 
-// Returns the raw graphic-subtitle URL for libbitsub. ALWAYS prefers the DeliveryUrl computed by
-// the server (correct format: PGS=.sup, VobSub=.mks from Jellyfin 12.0). Falls back only for PGS to
-// the default .sup endpoint — VobSub WITHOUT a DeliveryUrl isn't retrievable (Jellyfin 12 always sends one).
-export function graphicSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, token }) {
-  if (!stream) return null;
-  if (stream.DeliveryUrl) {
-    const u = stream.DeliveryUrl;
-    if (/^https?:/i.test(u)) return u;
-    return `${serverUrl}${u}${u.includes('ApiKey') ? '' : (u.includes('?') ? '&' : '?') + 'ApiKey=' + token}`;
-  }
-  const codec = (stream.Codec || '').toLowerCase();
-  if (codec === 'pgssub' || codec === 'pgs')
-    return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.sup?ApiKey=${token}`;
-  return null;   // VobSub/DVDSub without a DeliveryUrl → not client-side renderable (burn in)
+// Returns the raw graphic-subtitle URL for libbitsub: the DeliveryUrl the server computes for an
+// External subtitle (PGS=.sup, VobSub=.mks; Jellyfin 12 always sends one). Without it there is
+// nothing to fetch — the generic Stream.sup endpoint it used to fall back to answered 400 — and the
+// caller logs that and shows no subtitle.
+export function graphicSubtitleUrl({ serverUrl, stream, token }) {
+  const u = stream?.DeliveryUrl;
+  if (!u) return null;
+  if (/^https?:/i.test(u)) return u;
+  return `${serverUrl}${u}${u.includes('ApiKey') ? '' : (u.includes('?') ? '&' : '?') + 'ApiKey=' + token}`;
 }
 
 
@@ -294,9 +304,11 @@ export async function buildPlayQueue(items, { serverUrl, userId, headers }) {
   const queue = [];
   for (const it of items || []) {
     if (it.Type === 'Series' || it.Type === 'Season') {
+      // IsMissing=false: a placeholder for an episode the library does not have (a metadata plugin
+      // or the profile's "display missing episodes" creates them) has no file to play.
       const url = `${serverUrl}/Items?UserId=${userId}&ParentId=${it.Id}`
         + `&IncludeItemTypes=Episode${it.Type === 'Series' ? '&Recursive=true' : ''}`
-        + `&SortBy=ParentIndexNumber,IndexNumber&EnableTotalRecordCount=false`;
+        + `&SortBy=ParentIndexNumber,IndexNumber&IsMissing=false&EnableTotalRecordCount=false`;
       try {
         const res  = await fetch(url, { headers });
         // Without this an error response made res.json() throw straight into the catch below, and
@@ -312,4 +324,56 @@ export async function buildPlayQueue(items, { serverUrl, userId, headers }) {
     }
   }
   return queue;
+}
+
+// Where "play" starts on a series or a season when there is no Next Up to follow. Specials stay out,
+// as in buildPlayQueue: sorted by number, season 0 comes FIRST, so a fully watched series with
+// specials used to start at S00E01. A specials season opened on its own still plays its specials.
+const regularFirst = (eps) => eps.find(e => e.ParentIndexNumber !== 0) || eps[0] || null;
+
+// The first episode of a season — with unwatchedOnly the first one not yet watched. A season lists
+// few episodes, so all of them come back and the special check runs here: specials shown inside a
+// season carry season 0 and would otherwise sort ahead of its episode 1.
+export async function firstEpisodeInSeason(seasonId, { serverUrl, userId, headers, unwatchedOnly = false }) {
+  try {
+    const res = await fetch(`${serverUrl}/Items?UserId=${userId}&ParentId=${seasonId}&IncludeItemTypes=Episode`
+      + `${unwatchedOnly ? '&Filters=IsUnplayed' : ''}&IsMissing=false&SortBy=ParentIndexNumber,IndexNumber&EnableTotalRecordCount=false`, { headers });
+    if (!res.ok) { console.warn('firstEpisodeInSeason: HTTP', res.status); return null; }
+    return regularFirst((await res.json()).Items || []);
+  } catch (e) { console.error('firstEpisodeInSeason:', e); return null; }
+}
+
+// The first episode of a series: its first regular season, then that season's first episode. Two
+// light requests instead of listing every episode of a long series only to skip the specials.
+export async function firstEpisodeOfSeries(seriesId, { serverUrl, userId, headers }) {
+  try {
+    const res = await fetch(`${serverUrl}/Shows/${seriesId}/Seasons?UserId=${userId}&IsSpecialSeason=false&IsMissing=false&EnableImages=false`, { headers });
+    if (!res.ok) { console.warn('firstEpisodeOfSeries: HTTP', res.status); return null; }
+    const seasons = ((await res.json()).Items || []).sort((a, b) => (a.IndexNumber ?? 0) - (b.IndexNumber ?? 0));
+    for (const season of seasons) {   // a season can be empty (everything in it missing) — take the next
+      const ep = await firstEpisodeInSeason(season.Id, { serverUrl, userId, headers });
+      if (ep) return ep;
+    }
+    return null;
+  } catch (e) { console.error('firstEpisodeOfSeries:', e); return null; }
+}
+
+// What "play" means for a title: a series → its Next Up, else its first episode; a season → its
+// first unwatched episode, else its first; anything else → itself. One rule for the details page,
+// the home screen's banner, a card's menu and the watchlist's stand-in episode. null when a series
+// or season has nothing to play.
+export async function playableFor(item, { serverUrl, userId, headers }) {
+  const ctx = { serverUrl, userId, headers };
+  if (item?.Type === 'Series') {
+    try {
+      const res = await fetch(`${serverUrl}/Shows/NextUp?SeriesId=${item.Id}&UserId=${userId}&Limit=1&EnableTotalRecordCount=false`, { headers });
+      if (res.ok) { const ep = ((await res.json()).Items || [])[0]; if (ep) return ep; }
+      else console.warn('next up: HTTP', res.status);
+    } catch (e) { console.warn('next up:', e?.message || e); }
+    return firstEpisodeOfSeries(item.Id, ctx);
+  }
+  if (item?.Type === 'Season') {
+    return (await firstEpisodeInSeason(item.Id, { ...ctx, unwatchedOnly: true })) || firstEpisodeInSeason(item.Id, ctx);
+  }
+  return item || null;
 }

@@ -1,13 +1,14 @@
 <script>
-  import { i18n } from '../i18n.svelte.js';
+  import { i18n, LANGUAGES } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
-  import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
-  import { pickDefaultTracks } from '../trackmemory.js';
+  import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
+  import { pickDefaultTracks, rememberChoice } from '../trackmemory.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
-  import { buildPlayQueue } from '../playback.js';
+  import { buildPlayQueue, playableFor } from '../playback.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
+  import SubtitleSearch from './SubtitleSearch.svelte';
 
   let {
     item,
@@ -18,12 +19,25 @@
     detailsBackdrop = true,     // show the hero backdrop on the detail page (own toggle, decoupled from reduceAnimations)
     detailsLogo = false,        // title as a logo graphic instead of text (falls back to text if no logo exists)
     focusItemId = null, focusScrollTop = 0,   // where to land when App brings us back (person page)
-    takeResume = null,          // App: hands back, ONCE, what was on screen when we were left for a collection
-    onClose, onLibChanged, onOpenPerson, onOpenCollection, onPlayVideo,   // callback props (instead of events)
+    takeResume = null,          // App: hands back, ONCE, what was on screen when we were left for a collection, a person page or the player
+    onClose, onLibChanged, onOpenPerson, onOpenCollection, onPlayVideo,   // callback props
   } = $props();
 
   let fullItem     = $state(null);
+  // The title's own colour (poster, else backdrop): page background, the backdrop's fade, the rows'
+  // background and the poster's shadow colour. Set as plain values on exactly those four elements —
+  // as ONE variable on the root, every title change recalculated the style of the whole page
+  // (measured, CODE-HEALTH §47). Solid colours and the existing shadow: no layer, blur or animation.
+  let tint = $derived(blurHashTint(itemBlurHash(fullItem) || itemBlurHash(fullItem, 'Backdrop')));
   let relatedItems = $state([]);
+  // Series/season pages: what Play starts (playableFor — Next Up, else the first episode), fetched
+  // with the page so the button can SAY it ("Play · S2:E2") and the episode row can mark it. Play
+  // then starts exactly that one.
+  let nextToPlay = $state(null);
+  // The episode the row's description panel shows: the one under the focus, else the next one.
+  let focusedEpisode = $state(null);
+  const epCode = (ep) => `S${ep?.ParentIndexNumber ?? '?'}:E${ep?.IndexNumber ?? '?'}`;
+  const epMinutes = (ep) => ep?.RunTimeTicks ? `${Math.round(ep.RunTimeTicks / 600000000)} ${i18n.t.minuteShort}` : '';
   let similarItems = $state([]);
   let collections  = $state([]);   // collections (BoxSets) that contain the title — Jellyfin 12+
   let extras       = $state([]);   // special features (making-ofs, deleted scenes, …)
@@ -104,6 +118,64 @@
     selectedSubtitleIndex = t.subtitle;
   }
 
+  // A track picked here counts like one picked in the Player's menu: it becomes the series' memory.
+  // The Player re-applies that memory on its first setup, and used to overrule this page's choice
+  // with an older one — "subtitles off" remembered, English picked here, played without subtitles.
+  function pickTrack(kind, index) {
+    if (kind === 'audio') selectedAudioIndex = index; else selectedSubtitleIndex = index;
+    rememberChoice(fullItem?.SeriesId, kind, index, getMediaStreams(kind === 'audio' ? 'Audio' : 'Subtitle'), playbackPrefs);
+  }
+
+  // ---- Find subtitles with the server's providers (SubtitleSearch) ---------------------------------
+  // Only for profiles the server lets manage subtitles (admin, or "allow subtitle management") — the
+  // search and the download both answer 403 otherwise.
+  const canSearchSubtitles = $derived(!!(selectedUser?.Policy?.IsAdministrator || selectedUser?.Policy?.EnableSubtitleManagement));
+  let subtitleSearchOpen = $state(false);
+  const subtitleSearchReturn = makeFocusReturn();
+  function openSubtitleSearch() {
+    subtitleSearchReturn.capture(openTrigger || document.activeElement);
+    closeDropdown(false);
+    subtitleSearchOpen = true;
+  }
+  function closeSubtitleSearch() {
+    subtitleSearchOpen = false;
+    // Back where it was opened — unless that was the "Search subtitles" button of a title WITHOUT
+    // subtitles, which has just turned into the dropdown: then the dropdown.
+    const back = document.querySelector('[data-subtitle-trigger]');
+    tick().then(() => {
+      if (subtitleSearchReturn.pending) subtitleSearchReturn.restore();
+      tick().then(() => { if (!document.activeElement || document.activeElement === document.body) back?.isConnected && back.focus(); });
+    });
+  }
+  // The language to search first: the profile's subtitle language, else the app's.
+  const subtitleSearchLang = $derived(LANGUAGES.some(l => l.key === playbackPrefs.subtitleLanguage) ? playbackPrefs.subtitleLanguage : i18n.lang);
+  // The server reads a downloaded subtitle in with a refresh it queues — wait for the new track (a
+  // stream this version did not have before, by content, since indexes of external files can shift)
+  // and pick it. Bounded; false when it is not there yet, and the dialog says it will turn up.
+  async function awaitNewSubtitle() {
+    const id = fullItem?.Id, srcId = selectedMediaSourceId;
+    const key = (st) => `${st.Codec}|${st.Language}|${st.Path || st.DisplayTitle || ''}|${st.IsForced}`;
+    const before = new Set(getMediaStreams('Subtitle').map(key));
+    for (let i = 0; i < 12; i++) {
+      await new Promise(r => setTimeout(r, 1500));
+      if (!alive || fullItem?.Id !== id) return false;
+      try {
+        const r = await fetch(`${session.serverUrl}/Items/${id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
+        if (!r.ok) continue;
+        const d = await r.json();
+        const src = (d.MediaSources || []).find(x => x.Id === srcId) || d.MediaSources?.[0];
+        const added = (src?.MediaStreams || []).find(st => st.Type === 'Subtitle' && !before.has(key(st)));
+        if (!added || !alive || fullItem?.Id !== id) continue;
+        fullItem.MediaSources = d.MediaSources;
+        fullItem.MediaStreams = d.MediaStreams;
+        pickTrack('subtitle', added.Index);
+        dlog('[subtitles] downloaded track on the title after', (i + 1) * 1.5, 's:', added.DisplayTitle || added.Language);
+        return true;
+      } catch { /* next try */ }
+    }
+    return false;
+  }
+
   // On resolution/version change: reset the tracks to the source's default values
   function onSourceChange() {
     const src = fullItem?.MediaSources?.find(s => s.Id === selectedMediaSourceId);
@@ -112,7 +184,7 @@
 
   // ---- Custom dropdowns (resolution/audio/subtitle) -------------------------------------------
   // A native <select> freezes on webOS on the back button → D-pad-capable custom dropdowns.
-  let openDropdown = $state(null);     // 'resolution' | 'audio' | 'subtitle'
+  let openDropdown = $state(null);     // 'resolution' | 'audio' | 'subtitle' | 'kebab'
   let openTrigger  = null;     // trigger button (DOM ref; focus returns there on close)
 
   async function toggleDropdown(key, e) {
@@ -157,15 +229,15 @@
 
   // Share: QR code with a public title link (IMDb/TMDb) — anyone can scan it, no server access needed.
   let showShare = $state(false);
-  let kebabBtnEl = $state();                 // three-dots button (bind:this, always in the DOM)
+  let kebabBtnEl = $state();                 // three-dots button (bind:this)
   const shareFocus = makeFocusReturn();   // focus return after closing the share modal
   // The same return for media info + playlist/collection picker (never open at once): without it
   // focus fell to the body after closing → the navigation caught it (share was correct,
   // the other three weren't). Now it lands back on the three-dots button.
   const menuReturn = makeFocusReturn();
   // May this profile manage collections? Policy.EnableCollectionManagement comes with the
-  // login user. Deliberately hide only on an explicit false: if the field is missing (older server),
-  // the entry stays visible and the 403 fallback in AddToPicker kicks in. Admins have true.
+  // login user. Deliberately hide only on an explicit false: if the field is missing, the entry
+  // stays visible and the 403 fallback in AddToPicker kicks in. Admins have true.
   const canManageCollections = $derived(selectedUser?.Policy?.EnableCollectionManagement !== false);
   // After closing the share modal, put focus back on the three dots.
   $effect(() => { if (!showShare && shareFocus.pending) shareFocus.restore(); });
@@ -216,8 +288,12 @@
 
   const YOUTUBE_APP_ID = 'youtube.leanback.v4';   // LG webOS YouTube app
 
+  // The trailer button, for the way back: the overlay takes the focus and closing it removed the
+  // focused element with nothing to land on, so the next key opened the sidebar.
+  let trailerOpener = null;
   function openTrailer() {
     if (!fullItem?.RemoteTrailers?.length) return;
+    trailerOpener = document.activeElement;
     const url     = fullItem.RemoteTrailers[0].Url;
     const match   = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([^&?\s]{11})/);
     const videoId = match ? match[1] : null;
@@ -252,6 +328,9 @@
 
   function closeTrailer() {
     trailerEmbedUrl = null;
+    const el = trailerOpener;
+    trailerOpener = null;
+    tick().then(() => { if (el?.isConnected) el.focus(); });
   }
 
   const getAuthHeaders = () => authHeaders(session.token);
@@ -263,14 +342,14 @@
   let detailToken = 0;
 
   // Reactive: reloads as soon as the 'item' prop changes. untrack() so the effect reacts ONLY to
-  // item — not to stores/user that loadFullDetails reads synchronously internally.
+  // item — not to session/selectedUser that loadFullDetails reads synchronously internally.
   // A change of `item` means a FRESH entry from App, never internal navigation — so the chain
   // starts over and Back leads back out rather than sideways into the previous visit.
   $effect(() => {
     const id = item?.Id;
     if (!id) return;
     untrack(() => {
-      // Back from a collection opened on this page: App returns what was on screen and the chain
+      // Back from a collection, a person page or the player opened from this page: App returns what was on screen and the chain
       // that led there, so we land on THAT title rather than the entry point. A function, called
       // once — a plain prop would still be lying around for the next, unrelated mount.
       const resume = takeResume?.();
@@ -314,12 +393,19 @@
   onDestroy(stopTheme);
 
   let loadStartedAt = 0;   // for the similar-row timing below
+  // The title could not be loaded: deleted meanwhile (from Continue watching, the watchlist, a
+  // suggestion), no access any more, or the server did not answer. The page used to stay EMPTY —
+  // no message, nothing focusable, the next key opened the sidebar.
+  let loadError = $state(false);
   async function loadFullDetails(itemId) {
     const myToken = ++detailToken;
     loadStartedAt = performance.now();
     isLoading    = true;
+    loadError    = false;
     fullItem     = null;
     relatedItems = [];
+    nextToPlay = null;
+    focusedEpisode = null;
     similarItems = [];
     collections  = [];
     extras = [];
@@ -356,15 +442,19 @@
           loadRelatedItems(fullItem.SeasonId, myToken);
         } else if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
           loadRelatedItems(fullItem.Id, myToken);
+          loadNextToPlay(fullItem, myToken);
         }
+      } else {
+        console.warn('[details] item', itemId, '→ HTTP', res.status);
+        if (myToken === detailToken) loadError = true;
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); if (myToken === detailToken) loadError = true; }
     // Only clear the spinner if we're still current — otherwise an old response kills the new one's.
     finally     { if (myToken === detailToken) isLoading = false; }
   }
 
   // Extras / special features of the opened item (movie, series or season).
-  // NOTE: the endpoint returns a DIRECT array (like /Items/Latest), not { Items }.
+  // NOTE: the endpoint returns a DIRECT array, not { Items }.
   async function loadExtras(itemId, myToken) {
     try {
       const res = await fetch(
@@ -413,37 +503,41 @@
     } catch (e) { console.error(e); }
   }
 
+  async function loadNextToPlay(it, myToken) {
+    try {
+      const ep = await playableFor(it, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+      if (myToken === detailToken) nextToPlay = ep;
+    } catch { /* the button just says "Play"; handlePlay resolves it again */ }
+  }
+
   async function loadRelatedItems(parentId, myToken) {
     try {
       const res = await fetch(
-        `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${parentId}&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName&EnableTotalRecordCount=false`,
+        `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${parentId}&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName&IsMissing=false&EnableTotalRecordCount=false`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) { const d = await res.json(); if (myToken !== detailToken) return; relatedItems = d.Items || []; }
     } catch (e) { console.error(e); }
   }
 
+  // The series/season starts and the random episode wait on the server. Gone or on another title by
+  // the time it answers (Back, a step along the chain, a second press already playing) → nothing
+  // is started: the Player used to pop up over whatever was on screen by then.
+  let alive = true;
+  onDestroy(() => { alive = false; });
+  const stillHere = (id) => alive && fullItem?.Id === id;
+
   async function handlePlay() {
     if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
-      const url = fullItem.Type === 'Series'
-        ? `${session.serverUrl}/Shows/NextUp?SeriesId=${fullItem.Id}&UserId=${selectedUser.Id}&Limit=1&EnableTotalRecordCount=false`
-        : `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Filters=IsNotPlayed&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`;
+      const startedOn = fullItem.Id;
+      // Series: Next Up, and once everything is watched the first episode again. Season: its first
+      // unwatched episode, else its first. Neither lands on a special or a placeholder episode
+      // (playback.js). The season used to ask for "IsNotPlayed", a filter Jellyfin does not have —
+      // it was dropped silently, so a season always started at its episode 1.
       try {
-        const res  = await fetch(url, { headers: getAuthHeaders() });
-        if (!res.ok) { console.warn('play next-up: HTTP', res.status); return; }
-        const data = await res.json();
-        if (data.Items?.length > 0) {
-          onPlayVideo?.({ item: data.Items[0], audioIndex: -1, subtitleIndex: -1 });
-        } else {
-          // Fallback: first episode
-          const fb = await fetch(
-            `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${fullItem.Id}&IncludeItemTypes=Episode&Recursive=true&Limit=1&SortBy=SortName&EnableTotalRecordCount=false`,
-            { headers: getAuthHeaders() }
-          );
-          if (!fb.ok) { console.warn('play first episode: HTTP', fb.status); return; }
-          const fd = await fb.json();
-          if (fd.Items?.length > 0) onPlayVideo?.({ item: fd.Items[0], audioIndex: -1, subtitleIndex: -1 });
-        }
+        // The one the button names, if it is known already; otherwise resolve it now.
+        const ep = nextToPlay || await playableFor(fullItem, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+        if (ep && stillHere(startedOn)) onPlayVideo?.({ item: ep, audioIndex: -1, subtitleIndex: -1 });
       } catch (e) { console.error(e); }
     } else {
       onPlayVideo?.({ item: fullItem, audioIndex: selectedAudioIndex, subtitleIndex: selectedSubtitleIndex, mediaSourceId: selectedMediaSourceId, tracksChosen: true });
@@ -463,8 +557,9 @@
     // Shared expansion (playback.js): all episodes across seasons for a series, this season only
     // for a season, specials excluded — the identical pool the old inline query built; the random
     // draw ignores buildPlayQueue's ordering.
+    const startedOn = fullItem.Id;
     const pool = await buildPlayQueue([fullItem], { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
-    if (!pool.length) return;
+    if (!pool.length || !stillHere(startedOn)) return;
     onPlayVideo?.({ item: pool[Math.floor(Math.random() * pool.length)], audioIndex: -1, subtitleIndex: -1 });
   }
 
@@ -482,10 +577,13 @@
     shown.UserData = { ...shown.UserData, Played: willBePlayed };
     if (carry) item.UserData = { ...item.UserData, Played: willBePlayed };
     try {
-      await fetch(`${session.serverUrl}/UserPlayedItems/${shown.Id}?UserId=${selectedUser.Id}`, {
+      // An error ANSWER is a failure too: it never threw, so the tick stayed although the server
+      // had refused (or no longer knew the title).
+      const res = await fetch(`${session.serverUrl}/UserPlayedItems/${shown.Id}?UserId=${selectedUser.Id}`, {
         method: willBePlayed ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch (e) {
       // Roll back on error
       console.warn('[OcenFin] played-status toggle failed, rolled back:', e);
@@ -501,10 +599,11 @@
     shown.UserData = { ...shown.UserData, IsFavorite: willBeFav };
     if (carry) item.UserData = { ...item.UserData, IsFavorite: willBeFav };
     try {
-      await fetch(`${session.serverUrl}/UserFavoriteItems/${shown.Id}?UserId=${selectedUser.Id}`, {
+      const res = await fetch(`${session.serverUrl}/UserFavoriteItems/${shown.Id}?UserId=${selectedUser.Id}`, {
         method: willBeFav ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);   // see togglePlayed
     } catch (e) {
       console.warn('[OcenFin] favorite toggle failed, rolled back:', e);
       shown.UserData = { ...shown.UserData, IsFavorite: !willBeFav };
@@ -664,14 +763,23 @@
     if (!targetItem?.RunTimeTicks) return "";
     const remainingTicks = targetItem.RunTimeTicks - (targetItem.UserData?.PlaybackPositionTicks || 0);
     const endDate = new Date(Date.now() + remainingTicks / 10000);
-    return `${i18n.t.endsAt} ${endDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`;   // i18n instead of hardcoded German
+    return `${i18n.t.endsAt} ${endDate.toLocaleTimeString(i18n.lang || 'en', { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`;
   }
 </script>
 
-<div class="flex flex-col h-full relative overflow-hidden">
+<div class="flex flex-col h-full relative overflow-hidden" style:background-color={tint?.bg}>
   {#if isLoading}
     <div class="flex-1 flex items-center justify-center">
       <div class="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+
+  {:else if loadError}
+    <div class="flex-1 flex flex-col items-center justify-center gap-6 p-10 text-center" data-focus-group="details-top">
+      <p class="text-2xl text-gray-300 font-semibold max-w-xl">{i18n.t.itemLoadFailed}</p>
+      <button onclick={() => { if (!handleBackKey()) onClose?.(); }} {@attach focusOnMount()}
+        class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-8 py-3 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
+        {i18n.t.back}
+      </button>
     </div>
 
   {:else if fullItem}
@@ -681,10 +789,10 @@
          edge with its ring-4 focus ring clipped. Same value as in Library/Settings. -->
     <div bind:this={scrollEl} class="flex-1 overflow-y-auto hide-scrollbar [scroll-padding-top:4rem]">
 
-      <!-- ════ CINEMATIC HERO BANNER — the backdrop scrolls along, fading into the app gray at bottom/left ════ -->
+      <!-- ════ CINEMATIC HERO BANNER — the backdrop scrolls along, fading into the page colour (title tint, else app gray) at bottom/left ════ -->
       <div class="relative">
         {#if detailsBackdrop && getItemBackdropUrl(fullItem)}
-          <div class="absolute inset-0 z-0 max-h-[95vh] overflow-hidden">
+          <div class="absolute inset-0 z-0 max-h-[95vh] overflow-hidden" style:--color-gray-900={tint?.bg}>
             <img src={getItemBackdropUrl(fullItem)} {@attach blurUp(itemBlurHash(fullItem, 'Backdrop'))} alt="" class="w-full h-full object-cover object-top" />
             <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/60 to-gray-900/20"></div>
             <div class="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/40 to-transparent"></div>
@@ -710,13 +818,20 @@
             <button onclick={() => navigateTo(fullItem.SeasonId)}
               class="hover:text-white focus:text-white focus:outline-none">{fullItem.SeasonName}</button>
           </div>
+        {:else if fullItem.Type === 'Season' && fullItem.SeriesId}
+          <!-- A season page said only "Season 2" — which series, the page did not tell. -->
+          <div class="flex items-center text-xl font-semibold text-gray-400 gap-2">
+            <button onclick={() => navigateTo(fullItem.SeriesId)}
+              class="hover:text-white focus:text-white focus:outline-none">{fullItem.SeriesName}</button>
+          </div>
         {/if}
       </div>
 
       <!-- HERO -->
       <div class="flex gap-12 items-start mb-8">
 
-        <div class="w-64 shrink-0 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800 relative">
+        <div class="w-64 shrink-0 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800 relative"
+          style:--tw-shadow-color={tint?.glow}>
           {#if getItemImageUrl(fullItem)}
             <img src={getItemImageUrl(fullItem)} {@attach blurUp(itemBlurHash(fullItem))} alt={fullItem.Name} class="w-full h-full object-cover" />
           {/if}
@@ -804,21 +919,30 @@
             </div>
           {/if}
 
-          <p class="text-xl text-gray-300 mb-10 line-clamp-4 leading-relaxed">{fullItem.Overview || i18n.t.noDescription}</p>
+          <!-- Nothing rather than "No description available": seasons rarely have one, and the filler
+               line read like an error. -->
+          {#if fullItem.Overview}
+            <p class="text-xl text-gray-300 mb-10 line-clamp-4 leading-relaxed">{fullItem.Overview}</p>
+          {:else}
+            <div class="mb-6"></div>
+          {/if}
 
           <!-- ACTION BUTTONS -->
           <div class="flex items-center gap-4 mb-12">
             <button onclick={handlePlay} {@attach focusUnlessRestoring} data-primary-action
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-2xl px-12 py-4 rounded-xl
-                     focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-3 shadow-lg">
+                     focus:outline-none focus:ring-4 focus:ring-blue-500 flex items-center gap-3 shadow-lg">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
-              {#if fullItem.UserData?.PlaybackPositionTicks > 0}{i18n.t.resumePlay}{:else}{i18n.t.play}{/if}
+              {#if nextToPlay && nextToPlay.Type === 'Episode'}
+                {nextToPlay.UserData?.PlaybackPositionTicks > 0 ? i18n.t.resumePlay : i18n.t.play}
+                <span class="text-xl font-semibold text-gray-600">{epCode(nextToPlay)}</span>
+              {:else if fullItem.UserData?.PlaybackPositionTicks > 0}{i18n.t.resumePlay}{:else}{i18n.t.play}{/if}
             </button>
 
             {#if fullItem.Type === 'Series' || fullItem.Type === 'Season'}
               <button onclick={playRandomEpisode}
                 class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold text-lg px-8 py-4 rounded-xl
-                       focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg flex items-center gap-2">
+                       focus:outline-none focus:ring-4 focus:ring-blue-500 shadow-lg flex items-center gap-2">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
                   <polyline points="16 3 21 3 21 8"/>
                   <line x1="4" y1="20" x2="21" y2="3"/>
@@ -833,7 +957,7 @@
             {#if fullItem.UserData?.PlaybackPositionTicks > 0 && fullItem.Type !== 'Series' && fullItem.Type !== 'Season'}
               <button onclick={playFromBeginning}
                 class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold text-lg px-7 py-4 rounded-xl
-                       focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg flex items-center gap-2">
+                       focus:outline-none focus:ring-4 focus:ring-blue-500 shadow-lg flex items-center gap-2">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"/>
                 </svg>
@@ -844,7 +968,7 @@
             {#if fullItem.RemoteTrailers?.length > 0}
               <button onclick={openTrailer} {@attach hint()} aria-label={i18n.t.trailer}
                 class="p-4 rounded-xl bg-gray-800 text-white hover:bg-gray-700 focus:bg-gray-700
-                       focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg">
+                       focus:outline-none focus:ring-4 focus:ring-blue-500 shadow-lg">
                 <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M4.5 4.5a3 3 0 00-3 3v9a3 3 0 003 3h8.25a3 3 0 003-3v-9a3 3 0 00-3-3H4.5zM19.94 18.75l-2.69-2.69V7.94l2.69-2.69c.944-.945 2.56-.276 2.56 1.06v11.38c0 1.336-1.616 2.005-2.56 1.06z"/>
                 </svg>
@@ -853,7 +977,7 @@
 
             <button onclick={togglePlayed} {@attach hint()}
               aria-label={fullItem.UserData?.Played ? i18n.t.markUnwatched : i18n.t.markWatched}
-              class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg
+              class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 shadow-lg
                      {fullItem.UserData?.Played ? 'bg-green-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
@@ -862,7 +986,7 @@
 
             <button onclick={toggleFavorite} {@attach hint()}
               aria-label={fullItem.UserData?.IsFavorite ? i18n.t.removeFavorite : i18n.t.addFavorite}
-              class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg
+              class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 shadow-lg
                      {fullItem.UserData?.IsFavorite ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
@@ -871,7 +995,7 @@
 
             <button onclick={() => toggleWatchlist(fullItem)} {@attach hint()}
               aria-label={inWatchlist(fullItem.Id) ? i18n.t.removeFromWatchlist : i18n.t.addToWatchlist}
-              class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg
+              class="p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-500 shadow-lg
                      {inWatchlist(fullItem.Id) ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill={inWatchlist(fullItem.Id) ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"/>
@@ -881,7 +1005,7 @@
             {#if fullItem.MediaSources?.length > 0 || fullItem.Type === 'Series' || fullItem.Type === 'Season'}
               <div class="relative" data-dropdown data-focus-trap={openDropdown === 'kebab' || undefined}>
                 <button bind:this={kebabBtnEl} onclick={(e) => toggleDropdown('kebab', e)} {@attach hint()} aria-label={i18n.t.more}
-                  class="p-4 rounded-xl bg-gray-800 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-blue-500 transition-colors shadow-lg">
+                  class="p-4 rounded-xl bg-gray-800 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-blue-500 shadow-lg">
                   <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
                 </button>
                 {#if openDropdown === 'kebab'}
@@ -970,7 +1094,7 @@
                     {#if openDropdown === 'audio'}
                       <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
                         {#each getMediaStreams('Audio') as stream (stream.Index)}
-                          <button onclick={() => { selectedAudioIndex = stream.Index; closeDropdown(); }} data-opt data-active={stream.Index === selectedAudioIndex || undefined}
+                          <button onclick={() => { pickTrack('audio', stream.Index); closeDropdown(); }} data-opt data-active={stream.Index === selectedAudioIndex || undefined}
                             class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedAudioIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                             {audioLabel(stream)}
                           </button>
@@ -995,23 +1119,29 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
                   </svg>
                   <div class="flex-1" data-dropdown data-focus-trap={openDropdown === 'subtitle' || undefined}>
-                    <button onclick={(e) => toggleDropdown('subtitle', e)}
+                    <button onclick={(e) => toggleDropdown('subtitle', e)} data-subtitle-trigger
                       class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
                       <span>{selectedSubtitleIndex === -1 ? i18n.t.subtitleOff : subtitleLabel(getMediaStreams('Subtitle').find(s => s.Index === selectedSubtitleIndex))}</span>
                       <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'subtitle' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                     </button>
                     {#if openDropdown === 'subtitle'}
                       <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
-                        <button onclick={() => { selectedSubtitleIndex = -1; closeDropdown(); }} data-opt data-active={selectedSubtitleIndex === -1 || undefined}
+                        <button onclick={() => { pickTrack('subtitle', -1); closeDropdown(); }} data-opt data-active={selectedSubtitleIndex === -1 || undefined}
                           class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {selectedSubtitleIndex === -1 ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                           {i18n.t.subtitleOff}
                         </button>
                         {#each getMediaStreams('Subtitle') as stream (stream.Index)}
-                          <button onclick={() => { selectedSubtitleIndex = stream.Index; closeDropdown(); }} data-opt data-active={stream.Index === selectedSubtitleIndex || undefined}
+                          <button onclick={() => { pickTrack('subtitle', stream.Index); closeDropdown(); }} data-opt data-active={stream.Index === selectedSubtitleIndex || undefined}
                             class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedSubtitleIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                             {subtitleLabel(stream)}
                           </button>
                         {/each}
+                        {#if canSearchSubtitles}
+                          <button onclick={openSubtitleSearch} data-opt
+                            class="text-left text-sm px-3 py-2 mt-1 rounded border-t border-gray-700/70 text-blue-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white">
+                            {i18n.t.subtitleSearch}
+                          </button>
+                        {/if}
                       </div>
                     {/if}
                   </div>
@@ -1023,6 +1153,13 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
                   </svg>
                   <span class="text-sm font-semibold text-gray-300">{i18n.t.subtitleOff}</span>
+                  <!-- No track at all is exactly when a search helps most. -->
+                  {#if canSearchSubtitles}
+                    <button onclick={openSubtitleSearch}
+                      class="ml-auto text-sm px-4 py-2 rounded border border-gray-600 bg-gray-900 text-blue-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white">
+                      {i18n.t.subtitleSearch}
+                    </button>
+                  {/if}
                 </div>
               {/if}
 
@@ -1035,9 +1172,9 @@
       </div>
       <!-- ════ /HERO-BANNER ════ -->
 
-      <!-- CONTENT (rows) on full app gray — its own focus group per row,
+      <!-- CONTENT (rows) on the page colour — its own focus group per row,
            so D-pad LEFT at the start of a row jumps directly to the sidebar. -->
-      <div class="relative z-10 px-10 pb-16 bg-gray-900 flex flex-col">
+      <div class="relative z-10 px-10 pb-16 bg-gray-900 flex flex-col" style:background-color={tint?.bg}>
 
       <!-- SEASONS / EPISODES -->
       {#if relatedItems.length > 0}
@@ -1051,8 +1188,9 @@
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each relatedItems as ep (ep.Id)}
               <button onclick={() => navigateTo(ep.Id)} data-item-id={ep.Id}
+                onfocus={() => { if (ep.Type === 'Episode') focusedEpisode = ep; }}
                 class="shrink-0 scroll-m-4 group flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
-                <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
+                <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
                   {#if getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')}
                     <img src={getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')} {@attach blurUp(itemBlurHash(ep))} alt={ep.Name} loading="lazy"
                       class="w-full h-full object-cover transition-all duration-200 {epSpoiler(ep) ? 'blur-md scale-110' : ''}" />
@@ -1062,8 +1200,11 @@
                       <div class="h-full bg-blue-500" style="width:{itemProgress(ep)}%"></div>
                     </div>
                   {/if}
+                  {#if ep.Id === nextToPlay?.Id && ep.Type === 'Episode'}
+                    <div class="absolute top-2 left-2 bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-md shadow-md">{i18n.t.nextUp}</div>
+                  {/if}
                   {#if ep.UserData?.Played}
-                    <div class="absolute top-2 right-2 bg-green-500 text-white rounded-full p-1 shadow-md">
+                    <div class="absolute top-2 right-2 bg-green-600/90 text-white rounded-full p-1 shadow-md">
                       <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                         <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
                       </svg>
@@ -1076,6 +1217,23 @@
               </button>
             {/each}
           </div>
+          <!-- The row showed a number and a title only. Underneath now: the episode under the focus —
+               or, until the row is entered, the next one — with its length and description. Fixed
+               height, so the page below does not jump while moving along the row. The description
+               stays hidden for an episode the spoiler protection blurs. -->
+          {#if fullItem.Type !== 'Series'}
+            {@const shown = focusedEpisode || relatedItems.find(e => e.Id === nextToPlay?.Id) || null}
+            <div class="px-2 -mt-2 min-h-[7.5rem] max-w-5xl">
+              {#if shown}
+                <p class="text-xl font-bold text-white">
+                  {epCode(shown)} · {shown.Name}{#if epMinutes(shown)}<span class="text-gray-400 font-medium">{' · '}{epMinutes(shown)}</span>{/if}
+                </p>
+                {#if shown.Overview && !epSpoiler(shown)}
+                  <p class="text-lg text-gray-300 mt-2 line-clamp-3 leading-relaxed">{shown.Overview}</p>
+                {/if}
+              {/if}
+            </div>
+          {/if}
         </div>
       {/if}
 
@@ -1087,7 +1245,7 @@
             {#each extras as ex (ex.Id)}
               <button onclick={() => onPlayVideo?.({ item: ex, audioIndex: -1, subtitleIndex: -1 })}
                 class="shrink-0 w-80 scroll-m-4 group flex flex-col focus:outline-none text-left">
-                <div class="aspect-video w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-transform duration-200">
+                <div class="aspect-video w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
                   {#if getItemImageUrl(ex, 'landscape')}
                     <img src={getItemImageUrl(ex, 'landscape')} {@attach blurUp(itemBlurHash(ex))} alt={ex.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}
@@ -1111,7 +1269,7 @@
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each castMembers as person (person.Id)}
               <button onclick={() => onOpenPerson?.(person)} data-item-id={person.Id} class="shrink-0 w-36 scroll-m-4 group focus:outline-none text-center">
-                <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto group-focus:scale-105 transition-transform duration-200">
+                <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
                   {#if personImageUrl(session.serverUrl, person)}
                     <img src={personImageUrl(session.serverUrl, person)} {@attach blurUp(itemBlurHash(person))} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}
@@ -1135,7 +1293,7 @@
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each collections as col (col.Id)}
               <button onclick={() => onOpenCollection?.(col)} data-item-id={col.Id} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-transform duration-200">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
                   {#if getItemImageUrl(col, 'portrait')}
                     <img src={getItemImageUrl(col, 'portrait')} {@attach blurUp(itemBlurHash(col))} alt={col.Name} class="w-full h-full object-cover" loading="lazy" />
                   {/if}
@@ -1154,7 +1312,7 @@
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each similarItems as si (si.Id)}
               <button onclick={() => navigateTo(si.Id)} data-item-id={si.Id} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 transition-transform duration-200">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
                   {#if getItemImageUrl(si, 'portrait')}
                     <img src={getItemImageUrl(si, 'portrait')} {@attach blurUp(itemBlurHash(si))} alt={si.Name} class="w-full h-full object-cover" loading="lazy" />
                   {/if}
@@ -1294,8 +1452,12 @@
   </div>
 {/if}
 
+{#if subtitleSearchOpen && fullItem}
+  <SubtitleSearch item={fullItem} initialLang={subtitleSearchLang} onClose={closeSubtitleSearch} onDownloaded={awaitNewSubtitle} />
+{/if}
+
 <!-- Add to collection / playlist (shared component) -->
-<AddToPicker mode={pickerMode} item={fullItem} {selectedUser} {getAuthHeaders}
+<AddToPicker mode={pickerMode} item={fullItem} {selectedUser}
   onCreated={() => onLibChanged?.()} onClose={() => pickerMode = null} />
 
 <style>

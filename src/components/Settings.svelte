@@ -3,7 +3,7 @@
   import { startQuickConnect as startQC } from '../quickconnect.js';
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn, uiFade, dropTrapOnOutro } from '../utils.js';
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { APP_VERSION } from '../version.js';
   import { tick, onDestroy, onMount } from 'svelte';
@@ -21,12 +21,12 @@
     publicUsers         = [],      // selectable profiles (public list from the server)
     sharedProfile       = { enabled: false, members: [] },
     sharedTokens        = {},      // own token store for watch together
-    clientAuthHeader    = '',      // auth header without a user reference (Quick Connect Initiate)
+    clientAuthHeader    = '',      // auth header without a user reference — watch together's Quick Connect (own DeviceId, App)
     onSharedToggle       = () => {},
     onSharedSetMember    = async () => 'error',   // (slot, user, pw, presetToken)
-                                                 //   → 'ok'|'needPassword'|'sameUser'|'error'
+                                                 //   → 'ok'|'needPassword'|'sameUser'|'offline'|'error'
     onSharedRemoveMember = () => {},
-    // Callback props (replace the former events)
+    // Callback props
     onToggleSave, onSwitchUser, onLogout, onScreensaverChange, onReduceAnimationsChange,
     onDisplayChange, onReorderingChange, onProfileImageChanged, onPlaybackPrefsChange, onClearCache,
   } = $props();
@@ -118,9 +118,6 @@
     onPlaybackPrefsChange?.({ ...playbackPrefs, themeMusicVolume: Math.max(5, Math.min(100, cur + d)) });
   }
 
-  // Version: YYYYMMDD — adjust here on updates
-  // APP_VERSION now comes centrally from version.js (source: appinfo.json)
-
   let isCurrentUserSaved = $derived(!!(
     selectedUser && selectedServer &&
     savedTokens[selectedServer.id]?.[selectedUser.Id]
@@ -177,7 +174,7 @@
         document.querySelector(`[data-slot-btn="${sharedPickerSlot}"]`)?.focus();
       } else {
         sharedQcCode = null; sharedQcQr = null;
-        sharedError = r === 'sameUser' ? i18n.t.sharedInvalidChoice : i18n.t.errLogin;
+        sharedError = r === 'sameUser' ? i18n.t.sharedInvalidChoice : r === 'offline' ? i18n.t.networkError : i18n.t.errLogin;
       }
     } catch (err) {
       if (err === 'cancelled') return;
@@ -256,6 +253,9 @@
     await commitSharedUser(user, null);         // saved sign-in → no password asked (null = not asked)
   }
   async function commitSharedUser(user, pw) {
+    // One attempt per press: a held OK must not become a row of sign-ins (lockout, see utils.js),
+    // and the dialog's Enter used to bypass the disabled Confirm button altogether.
+    if (sharedBusy || (pw != null && isRepeatedEnter())) return;
     sharedBusy = true;
     const slot = sharedPickerSlot;
     const r = await onSharedSetMember(slot, user, pw);
@@ -267,6 +267,7 @@
     }
     else if (r === 'needPassword')  { sharedPickerUser = user; sharedPw = ''; await openModal('sharedPassword'); }
     else if (r === 'sameUser')      sharedError = i18n.t.sharedInvalidChoice;
+    else if (r === 'offline')       sharedError = i18n.t.networkError;
     else                            sharedError = i18n.t.errLogin;
   }
   // Remove the member + focus onto the "choose profile" button of the same slot that then appears.
@@ -283,7 +284,13 @@
   }
   let currentLangName = $derived((LANGUAGES.find(l => l.key === i18n.lang) || {}).name || 'English');
 
+  // Both fields, and one request per press. Jellyfin reads an empty NEW password as "remove the
+  // password" — and Enter in the first field used to send exactly that. A wrong current password
+  // counts toward the lockout like any failed sign-in, so a held OK must not repeat it either.
+  let pwBusy = false;
   async function changePassword() {
+    if (!newPw || pwBusy || isRepeatedEnter()) return;
+    pwBusy = true;
     pwMessage = '';
     try {
       const res = await fetch(`${session.serverUrl}/Users/Password?UserId=${selectedUser.Id}`, {
@@ -297,6 +304,7 @@
         modalTimeout = setTimeout(closeModal, 2000);
       }
     } catch { pwMessage = i18n.t.networkError; }
+    finally { pwBusy = false; }
   }
 
   async function authorizeQuickConnect() {
@@ -381,7 +389,7 @@
   const capText  = (v) => v === true ? i18n.t.statusYes : v === false ? i18n.t.statusNo : i18n.t.statusUnknown;
   const capClass = (v) => v === true ? 'text-green-400' : v === false ? 'text-gray-400' : 'text-gray-600';
   // Collapsible status groups (focusable headers → the D-pad can move down/scroll).
-  // All collapsed by default: a shorter list, and from each subtitle menu item you reach
+  // All collapsed by default: a shorter list, and from each category on the left you reach
   // the settings cleanly via Right without intervening content.
   let openStatus = $state({ tv: false, runtime: false, components: false });
   const toggleStatus = (k) => { openStatus = { ...openStatus, [k]: !openStatus[k] }; };
@@ -606,6 +614,7 @@
   let sharedSetUp = $derived(sharedProfile.enabled && sharedProfile.members.filter(m => m && m.id).length >= 1);
   let homeToggles = $derived([
     { key: 'hero',            label: i18n.t.displayHero },
+    { key: 'dashboardBackdrop', label: i18n.t.displayBackdropPreview },   // same wording as Library's; the heading tells them apart
     { key: 'libraries',       label: i18n.t.displayLibraries },
     { key: 'nextUp',          label: i18n.t.nextUp },
     { key: 'watchlist',       label: i18n.t.watchlist },
@@ -618,9 +627,12 @@
   let uiToggles = $derived([
     { key: 'showLogo',        label: i18n.t.displayLogo },
     { key: 'clock',           label: i18n.t.displayClock },
+  ]);
+  // Their labels carried "(Library)" / "(Series)" before this group existed; the heading says it now.
+  let libraryToggles = $derived([
     { key: 'episodeCount',    label: i18n.t.displayEpisodeCount },
+    { key: 'letterBar',       label: i18n.t.displayLetterBar },
     { key: 'backdropPreview', label: i18n.t.displayBackdropPreview },
-    { key: 'dashboardBackdrop', label: i18n.t.displayDashboardBackdrop },
   ]);
   let detailToggles = $derived([
     { key: 'detailsBackdrop',   label: i18n.t.displayDetailsBackdrop },
@@ -634,7 +646,6 @@
   // Reset the content scroll position on category switch, so a new category always starts at the
   // top instead of inheriting the previous category's scroll depth.
   $effect(() => { activeCategory; if (contentEl) contentEl.scrollTop = 0; });
-  // Close the "display elements" sub-item as soon as you leave the appearance tab
   // Everything that changes the television itself, the account, or exposes diagnostics is dropped
   // for a restricted profile. What shapes their own viewing — appearance, content, navigation,
   // remote, playback, subtitles — stays, so the profile still feels like theirs.
@@ -659,7 +670,8 @@
   });
 </script>
 
-<div class="flex h-full">
+<!-- ambient on the whole page, not the content column: there it began hard at the category bar's edge -->
+<div class="flex h-full ambient">
 
   <!-- LEFT: category navigation. data-hbar: enter via Left/Right, Up/Down moves
        within; when entering from the right, focus lands on the active category (data-hbar-current). -->
@@ -694,7 +706,7 @@
   <div bind:this={contentEl} data-enter-top class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16 [scroll-padding-top:4rem] [scroll-padding-bottom:4rem]">
     <div class="max-w-4xl flex flex-col gap-10 pb-32">
     <!-- ══════════════════════════════════════════
-         1. APPEARANCE
+         APPEARANCE
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'appearance'}
     <section class="flex flex-col gap-4">
@@ -795,28 +807,27 @@
     {#if activeCategory === 'displayElements'}
     <section class="flex flex-col gap-4">
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{i18n.t.displayElements}</h2>
+      <!-- One row per display toggle. Three groups render the identical control, so it lives here
+           once instead of three times — the switch, its colours and the focus ring stay in step
+           by construction. -->
+      {#snippet toggleRows(list)}
+        {#each list as tg}
+          <button onclick={() => toggleDisplay(tg.key)}
+            class="flex items-center justify-between w-full px-6 py-4 hover:bg-gray-700 focus:bg-gray-700
+                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+            <span class="text-lg text-gray-200">{tg.label}</span>
+            <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
+                        {displaySettings[tg.key] ? 'bg-blue-500' : 'bg-gray-600'}">
+              <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
+                          {displaySettings[tg.key] ? 'translate-x-7' : ''}"></div>
+            </div>
+          </button>
+        {/each}
+      {/snippet}
+
+      <!-- Group: interface (general elements) -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupInterface}</h3>
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
-          <!-- Group: interface (general elements) -->
-          <div class="px-6 pt-4 pb-2">
-            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupInterface}</h3>
-          </div>
-          <!-- One row per display toggle. Three groups render the identical control, so it lives here
-               once instead of three times — the switch, its colours and the focus ring stay in step
-               by construction. -->
-          {#snippet toggleRows(list)}
-            {#each list as tg}
-              <button onclick={() => toggleDisplay(tg.key)}
-                class="flex items-center justify-between w-full px-6 py-4 hover:bg-gray-700 focus:bg-gray-700
-                       focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-                <span class="text-lg text-gray-200">{tg.label}</span>
-                <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
-                            {displaySettings[tg.key] ? 'bg-blue-500' : 'bg-gray-600'}">
-                  <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
-                              {displaySettings[tg.key] ? 'translate-x-7' : ''}"></div>
-                </div>
-              </button>
-            {/each}
-          {/snippet}
 
           {@render toggleRows(uiToggles)}
 
@@ -834,10 +845,18 @@
             </div>
           </div>
 
-          <!-- Group: home (dashboard rows) -->
-          <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
-            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupHome}</h3>
-          </div>
+      </div>
+
+      <!-- Group: library (the grid of a library) -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupLibrary}</h3>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+          {@render toggleRows(libraryToggles)}
+
+      </div>
+
+      <!-- Group: home (dashboard rows) -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupHome}</h3>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
           {@render toggleRows(homeToggles)}
 
           <!-- Number of recommendation rows — only relevant when recommendations are active -->
@@ -856,10 +875,11 @@
             </div>
           {/if}
 
-          <!-- Group: details (detail page of a movie/series) -->
-          <div class="px-6 pt-5 pb-2 border-t border-gray-700/40">
-            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">{i18n.t.groupDetails}</h3>
-          </div>
+      </div>
+
+      <!-- Group: details (detail page of a movie/series) -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupDetails}</h3>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
           {@render toggleRows(detailToggles)}
       </div>
     </section>
@@ -877,7 +897,7 @@
           <div class="flex items-center gap-2 px-3 py-1.5 border-b border-gray-700/40 last:border-b-0 {entry.hidden ? 'opacity-50' : ''}">
             <!-- Lift / move (OK grabs, ▲▼ moves) -->
             <button data-nav-id={entry.id} onclick={() => toggleGrab(entry)} onkeydown={(e) => onNavRowKey(e, entry)}
-              class="flex-1 flex items-center gap-4 p-3 rounded-xl text-left focus:outline-none transition-all
+              class="flex-1 flex items-center gap-4 p-3 rounded-xl text-left focus:outline-none transition-transform
                      {grabbedId === entry.id
                        ? 'bg-blue-600 text-white ring-4 ring-white scale-[1.02] shadow-xl'
                        : 'text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:ring-4 focus:ring-white'}">
@@ -1004,7 +1024,7 @@
     {/if}
 
     <!-- ══════════════════════════════════════════
-         2. OLED PROTECTION
+         OLED PROTECTION
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'oled'}
     <section class="flex flex-col gap-4">
@@ -1096,13 +1116,14 @@
     {/if}
 
     <!-- ══════════════════════════════════════════
-         PLAYBACK — default languages
+         PLAYBACK
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'playback'}
     <section class="flex flex-col gap-4">
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{i18n.t.playback}</h2>
+      <!-- Group: audio track -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.audio}</h3>
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
-
         <!-- Default audio language -->
         <button onclick={() => openModal('audioLang')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
@@ -1128,8 +1149,114 @@
           </div>
         </button>
 
+      </div>
+
+      <!-- Group: series — skipping and moving on -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.series}</h3>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+        <!-- Auto-Skip Intro -->
+        <button onclick={() => togglePlaybackPref('autoSkipIntro')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.autoSkipIntro}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.autoSkipDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.autoSkipIntro ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.autoSkipIntro ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
         <div class="h-px bg-gray-700"></div>
 
+        <!-- Auto-Skip Recap ("previously on …") -->
+        <button onclick={() => togglePlaybackPref('autoSkipRecap')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.autoSkipRecap}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.autoSkipRecapDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.autoSkipRecap ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.autoSkipRecap ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Auto-Skip Outro -->
+        <button onclick={() => togglePlaybackPref('autoSkipCredits')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.autoSkipOutro}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.autoSkipOutroDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.autoSkipCredits ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.autoSkipCredits ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Next episode automatically -->
+        <button onclick={() => togglePlaybackPref('autoPlayNext')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.autoPlayNext}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.autoPlayNextDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.autoPlayNext ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.autoPlayNext ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Still watching? – pause playback after inactivity -->
+        <button onclick={() => togglePlaybackPref('stillWatching')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.stillWatching}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.stillWatchingDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.stillWatching ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.stillWatching ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+        {#if playbackPrefs.stillWatching}
+          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+            <span class="text-2xl text-white font-medium block">{i18n.t.stillWatchingAfter}</span>
+            <div class="flex gap-3 mt-4">
+              {#each [2, 3, 4] as n}
+                <button onclick={() => setStillWatchingEpisodes(n)}
+                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {(playbackPrefs.stillWatchingEpisodes || 3) === n ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                  {n} {i18n.t.episodes}
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+      </div>
+
+      <!-- Group: player — controls and what it shows -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupPlayer}</h3>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
         <!-- Jump distance of the forward/back buttons (stacked + flex-1 so it's reachable via D-pad) -->
         <div class="p-6">
           <span class="text-2xl text-white font-medium block">{i18n.t.seekInterval}</span>
@@ -1164,86 +1291,9 @@
 
         <div class="h-px bg-gray-700"></div>
 
-        <!-- Auto-Skip Intro -->
-        <button onclick={() => togglePlaybackPref('autoSkipIntro')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.autoSkipIntro}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.autoSkipDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.autoSkipIntro ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.autoSkipIntro ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
-
-        <div class="h-px bg-gray-700"></div>
-
-        <!-- Auto-Skip Outro -->
-        <button onclick={() => togglePlaybackPref('autoSkipCredits')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.autoSkipOutro}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.autoSkipOutroDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.autoSkipCredits ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.autoSkipCredits ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
-
-        <!-- Next episode automatically -->
-        <button onclick={() => togglePlaybackPref('autoPlayNext')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.autoPlayNext}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.autoPlayNextDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.autoPlayNext ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.autoPlayNext ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
-
-        <!-- Playback info – unlock the info button in the Player (live details as an overlay) -->
-        <button onclick={() => togglePlaybackPref('showPlaybackInfo')}
-          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.playbackInfo}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.playbackInfoDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.showPlaybackInfo ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.showPlaybackInfo ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
-
-        <!-- Only-this-episode – unlock the sleep button in the Player (stops auto-play after the episode) -->
-        <button onclick={() => togglePlaybackPref('sleepButton')}
-          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.sleepButton}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.sleepButtonDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.sleepButton ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.sleepButton ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
-
         <!-- Preview images while seeking (Trickplay) – opt-out, falls back to chapters/time -->
         <button onclick={() => togglePlaybackPref('trickplay')}
-          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{i18n.t.trickplay}</span>
@@ -1256,38 +1306,45 @@
           </div>
         </button>
 
-        <!-- Still watching? – pause playback after inactivity -->
-        <button onclick={() => togglePlaybackPref('stillWatching')}
-          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
+        <div class="h-px bg-gray-700"></div>
+
+        <!-- Playback info – unlock the info button in the Player (live details as an overlay) -->
+        <button onclick={() => togglePlaybackPref('showPlaybackInfo')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.stillWatching}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.stillWatchingDesc}</span>
+            <span class="text-2xl text-white font-medium block">{i18n.t.playbackInfo}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.playbackInfoDesc}</span>
           </div>
           <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.stillWatching ? 'bg-blue-500' : 'bg-gray-600'}">
+                      {playbackPrefs.showPlaybackInfo ? 'bg-blue-500' : 'bg-gray-600'}">
             <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.stillWatching ? 'translate-x-8' : ''}"></div>
+                        {playbackPrefs.showPlaybackInfo ? 'translate-x-8' : ''}"></div>
           </div>
         </button>
 
-        {#if playbackPrefs.stillWatching}
-          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
-            <span class="text-2xl text-white font-medium block">{i18n.t.stillWatchingAfter}</span>
-            <div class="flex gap-3 mt-4">
-              {#each [2, 3, 4] as n}
-                <button onclick={() => setStillWatchingEpisodes(n)}
-                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                         {(playbackPrefs.stillWatchingEpisodes || 3) === n ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                  {n} {i18n.t.episodes}
-                </button>
-              {/each}
-            </div>
-          </div>
-        {/if}
-
         <div class="h-px bg-gray-700"></div>
 
+        <!-- Only-this-episode – unlock the sleep button in the Player (stops auto-play after the episode) -->
+        <button onclick={() => togglePlaybackPref('sleepButton')}
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.sleepButton}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.sleepButtonDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.sleepButton ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.sleepButton ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+
+      </div>
+
+      <!-- Group: details page — theme music -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupDetails}</h3>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
         <!-- Theme music on the details page (opt-in). Scope + volume only show while enabled. -->
         <button onclick={() => togglePlaybackPref('themeMusic')}
           class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
@@ -1334,64 +1391,72 @@
 
       <!-- Watch together: merge two profiles. Lives under Playback, not under Profile &
            Security: setting it up needs sign-ins, but what it DOES is filter your library — a
-           viewing feature. It sat with the credentials purely because of its plumbing. -->
-      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
-        <button onclick={onSharedToggle}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.sharedWatching}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.sharedWatchingDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {sharedProfile.enabled ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {sharedProfile.enabled ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
-
-        {#if sharedProfile.enabled}
-          <div class="h-px bg-gray-700"></div>
-          <div class="p-6 flex flex-col gap-4">
-            <span class="text-gray-400 text-sm">{i18n.t.sharedWatchingPick}</span>
-            <div class="grid grid-cols-2 gap-4">
-              {#each [0, 1] as slot}
-                {@const m = sharedMembers[slot]}
-                <div class="bg-gray-900/60 border border-gray-700 rounded-xl p-4 flex flex-col items-center justify-center gap-2 min-h-[8rem]">
-                  {#if m}
-                    <span class="text-white font-bold text-lg text-center break-words">{m.name}</span>
-                    {#if sharedTokens[selectedServer?.id]?.[m.id] || savedTokens[selectedServer?.id]?.[m.id]}
-                      <span class="text-green-400 text-xs font-bold">{i18n.t.sharedMemberReady}</span>
-                    {:else}
-                      <span class="text-amber-400 text-xs font-bold">{i18n.t.sharedNeedsLogin}</span>
-                    {/if}
-                    <button data-slot-btn={slot} onclick={() => removeMember(slot)}
-                      class="mt-1 text-red-400 hover:text-red-300 focus:text-red-300 text-sm font-bold
-                             focus:outline-none focus:ring-2 focus:ring-white rounded px-3 py-1.5">
-                      {i18n.t.remove}
-                    </button>
-                  {:else}
-                    <button data-slot-btn={slot} onclick={() => openSharedPicker(slot)}
-                      class="flex flex-col items-center gap-2 text-gray-400 hover:text-white focus:text-white
-                             focus:outline-none focus:ring-4 focus:ring-white rounded-lg px-4 py-3">
-                      <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-                      </svg>
-                      <span class="text-sm font-bold">{i18n.t.selectProfile}</span>
-                    </button>
-                  {/if}
-                </div>
-              {/each}
+           viewing feature. It sat with the credentials purely because of its plumbing.
+           Its own heading like every other group, or it reads as part of the one above it.
+           Not for age-restricted profiles: the members' sign-ins are the members' accounts, past
+           this profile's rating limit (App's sharedReady says the same). -->
+      {#if !restrictedProfile}
+        <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupWatchTogether}</h3>
+        <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+          <button onclick={onSharedToggle}
+            class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+            <div>
+              <span class="text-2xl text-white font-medium block">{i18n.t.sharedWatching}</span>
+              <span class="text-gray-400 mt-1 block text-sm">{i18n.t.sharedWatchingDesc}</span>
             </div>
-          </div>
-        {/if}
-      </div>
+            <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                        {sharedProfile.enabled ? 'bg-blue-500' : 'bg-gray-600'}">
+              <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                          {sharedProfile.enabled ? 'translate-x-8' : ''}"></div>
+            </div>
+          </button>
+
+          {#if sharedProfile.enabled}
+            <div class="h-px bg-gray-700"></div>
+            <div class="p-6 flex flex-col gap-4">
+              <span class="text-gray-400 text-sm">{i18n.t.sharedWatchingPick}</span>
+              <div class="grid grid-cols-2 gap-4">
+                {#each [0, 1] as slot}
+                  {@const m = sharedMembers[slot]}
+                  <div class="bg-gray-900/60 border border-gray-700 rounded-xl p-4 flex flex-col items-center justify-center gap-2 min-h-[8rem]">
+                    {#if m}
+                      <span class="text-white font-bold text-lg text-center break-words">{m.name}</span>
+                      {#if sharedTokens[selectedServer?.id]?.[m.id] || savedTokens[selectedServer?.id]?.[m.id]}
+                        <span class="text-green-400 text-xs font-bold">{i18n.t.sharedMemberReady}</span>
+                      {:else}
+                        <span class="text-amber-400 text-xs font-bold">{i18n.t.sharedNeedsLogin}</span>
+                      {/if}
+                      <button data-slot-btn={slot} onclick={() => removeMember(slot)}
+                        class="mt-1 text-red-400 hover:text-red-300 focus:text-red-300 text-sm font-bold
+                               focus:outline-none focus:ring-2 focus:ring-white rounded px-3 py-1.5">
+                        {i18n.t.remove}
+                      </button>
+                    {:else}
+                      <button data-slot-btn={slot} onclick={() => openSharedPicker(slot)}
+                        class="flex flex-col items-center gap-2 text-gray-400 hover:text-white focus:text-white
+                               focus:outline-none focus:ring-4 focus:ring-white rounded-lg px-4 py-3">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        <span class="text-sm font-bold">{i18n.t.selectProfile}</span>
+                      </button>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        </div>
+      {/if}
     </section>
     {/if}
 
     {#if activeCategory === 'subtitles'}
     <section class="flex flex-col gap-4">
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{i18n.t.subtitles}</h2>
+      <!-- Group: which subtitle -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupSelection}</h3>
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
         <!-- Default subtitle: which track is chosen automatically -->
@@ -1417,9 +1482,15 @@
           </div>
         </button>
 
+      </div>
+
+      <!-- Group: how subtitles are drawn — burned in, or by the TV -->
+      <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupRendering}</h3>
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+
         <!-- Burn in subtitles -->
         <button onclick={() => togglePlaybackPref('burnSubtitles')}
-          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
+          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                  focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{i18n.t.burnSubtitles}</span>
@@ -1432,7 +1503,7 @@
           </div>
         </button>
 
-        <!-- PGS rendering + subtitle size are irrelevant when everything is burned in → then hide them -->
+        <!-- Everything below is irrelevant when everything is burned in → hidden, headings included -->
         {#if !playbackPrefs.burnSubtitles}
           <button onclick={() => togglePlaybackPref('pgsRendering')}
             class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
@@ -1462,81 +1533,87 @@
                           {playbackPrefs.assRendering ? 'translate-x-8' : ''}"></div>
             </div>
           </button>
-
-          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
-            <span class="text-2xl text-white font-medium block">{i18n.t.subtitleSize}</span>
-            <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleSizeDesc}</span>
-            <div class="flex gap-3">
-              {#each [['small', i18n.t.sizeSmall], ['normal', i18n.t.sizeNormal], ['large', i18n.t.sizeLarge]] as [val, label]}
-                <button onclick={() => setSubtitleSize(val)}
-                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                         {playbackPrefs.subtitleSize === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                  {label}
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <!-- VTT font — text subtitles only, deliberately separate from the UI font (appearance).
-               Buttons show themselves in their own font (preview); Tinos = serif, selectable only here. -->
-          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
-            <span class="text-2xl text-white font-medium block">{i18n.t.subtitleFont}</span>
-            <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleFontDesc}</span>
-            <div class="flex gap-3">
-              {#each [['system', i18n.t.fontSystem, ''], ['arimo', 'Arimo', "'Arimo', sans-serif"], ['noto', 'Noto Sans', "'Noto Sans', sans-serif"], ['tinos', 'Tinos', "'Tinos', serif"]] as [val, label, fam]}
-                <button onclick={() => setSubtitlePref('subtitleFont', val)}
-                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                         {(playbackPrefs.subtitleFont || 'system') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}"
-                  style={fam ? `font-family: ${fam}` : ''}>
-                  {label}
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <!-- Text subtitle styling (color/edge/background) — only WebVTT/SRT, not PGS/VobSub -->
-          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
-            <span class="text-2xl text-white font-medium block">{i18n.t.subtitleColor}</span>
-            <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleStyleHint}</span>
-            <div class="flex gap-3">
-              {#each [['white', i18n.t.colorWhite], ['yellow', i18n.t.colorYellow], ['green', i18n.t.colorGreen], ['cyan', i18n.t.colorCyan]] as [val, label]}
-                <button onclick={() => setSubtitlePref('subtitleColor', val)}
-                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                         {(playbackPrefs.subtitleColor || 'white') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                  {label}
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
-            <span class="text-2xl text-white font-medium block mb-4">{i18n.t.subtitleEdge}</span>
-            <div class="flex gap-3">
-              {#each [['none', i18n.t.styleNone], ['shadow', i18n.t.edgeShadow], ['outline', i18n.t.edgeOutline]] as [val, label]}
-                <button onclick={() => setSubtitlePref('subtitleEdge', val)}
-                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                         {(playbackPrefs.subtitleEdge || 'shadow') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                  {label}
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
-            <span class="text-2xl text-white font-medium block mb-4">{i18n.t.subtitleBackground}</span>
-            <div class="flex gap-3">
-              {#each [['none', i18n.t.styleNone], ['semi', i18n.t.bgSemi], ['solid', i18n.t.bgSolid]] as [val, label]}
-                <button onclick={() => setSubtitlePref('subtitleBackground', val)}
-                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                         {(playbackPrefs.subtitleBackground || 'none') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                  {label}
-                </button>
-              {/each}
-            </div>
-          </div>
         {/if}
-
       </div>
+
+      {#if !playbackPrefs.burnSubtitles}
+        <!-- Group: look of text subtitles — gone with burn-in, which draws them into the picture -->
+        <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupAppearance}</h3>
+        <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+
+        <div class="p-6 last:rounded-b-2xl">
+          <span class="text-2xl text-white font-medium block">{i18n.t.subtitleSize}</span>
+          <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleSizeDesc}</span>
+          <div class="flex gap-3">
+            {#each [['small', i18n.t.sizeSmall], ['normal', i18n.t.sizeNormal], ['large', i18n.t.sizeLarge]] as [val, label]}
+              <button onclick={() => setSubtitleSize(val)}
+                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                       {playbackPrefs.subtitleSize === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                {label}
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <!-- VTT font — text subtitles only, deliberately separate from the UI font (appearance).
+             Buttons show themselves in their own font (preview); Tinos = serif, selectable only here. -->
+        <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+          <span class="text-2xl text-white font-medium block">{i18n.t.subtitleFont}</span>
+          <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleFontDesc}</span>
+          <div class="flex gap-3">
+            {#each [['system', i18n.t.fontSystem, ''], ['arimo', 'Arimo', "'Arimo', sans-serif"], ['noto', 'Noto Sans', "'Noto Sans', sans-serif"], ['tinos', 'Tinos', "'Tinos', serif"]] as [val, label, fam]}
+              <button onclick={() => setSubtitlePref('subtitleFont', val)}
+                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                       {(playbackPrefs.subtitleFont || 'system') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}"
+                style={fam ? `font-family: ${fam}` : ''}>
+                {label}
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <!-- Text subtitle styling (color/edge/background) — only WebVTT/SRT, not PGS/VobSub -->
+        <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+          <span class="text-2xl text-white font-medium block">{i18n.t.subtitleColor}</span>
+          <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleStyleHint}</span>
+          <div class="flex gap-3">
+            {#each [['white', i18n.t.colorWhite], ['yellow', i18n.t.colorYellow], ['green', i18n.t.colorGreen], ['cyan', i18n.t.colorCyan]] as [val, label]}
+              <button onclick={() => setSubtitlePref('subtitleColor', val)}
+                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                       {(playbackPrefs.subtitleColor || 'white') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                {label}
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+          <span class="text-2xl text-white font-medium block mb-4">{i18n.t.subtitleEdge}</span>
+          <div class="flex gap-3">
+            {#each [['none', i18n.t.styleNone], ['shadow', i18n.t.edgeShadow], ['outline', i18n.t.edgeOutline]] as [val, label]}
+              <button onclick={() => setSubtitlePref('subtitleEdge', val)}
+                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                       {(playbackPrefs.subtitleEdge || 'shadow') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                {label}
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+          <span class="text-2xl text-white font-medium block mb-4">{i18n.t.subtitleBackground}</span>
+          <div class="flex gap-3">
+            {#each [['none', i18n.t.styleNone], ['semi', i18n.t.bgSemi], ['solid', i18n.t.bgSolid]] as [val, label]}
+              <button onclick={() => setSubtitlePref('subtitleBackground', val)}
+                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                       {(playbackPrefs.subtitleBackground || 'none') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                {label}
+              </button>
+            {/each}
+          </div>
+        </div>
+        </div>
+      {/if}
     </section>
     {/if}
 
@@ -1721,7 +1798,7 @@
     {/if}
 
     <!-- ══════════════════════════════════════════
-         5. ACCOUNT & SERVER
+         ACCOUNT & SERVER
     ══════════════════════════════════════════ -->
     {#if activeCategory === 'account'}
     <section class="flex flex-col gap-4">
@@ -1739,7 +1816,7 @@
       <!-- Clear cache (directly below the server address) -->
       <button onclick={() => onClearCache?.()}
         class="bg-gray-800/80 border border-gray-700 rounded-2xl shadow-xl flex items-center justify-between w-full p-6
-               hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-4 focus:ring-white transition-all text-left">
+               hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-4 focus:ring-white text-left">
         <div>
           <span class="text-xl text-white font-bold block">{i18n.t.clearCache}</span>
           <span class="text-gray-400 mt-1 block text-sm">{i18n.t.clearCacheDesc}</span>
@@ -1754,7 +1831,7 @@
         <button onclick={() => onSwitchUser?.()}
           class="flex flex-col items-center justify-center p-7 bg-gray-800 border border-gray-700 rounded-2xl
                  hover:bg-gray-700 hover:scale-105 focus:scale-105
-                 focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-xl">
+                 focus:outline-none focus:ring-4 focus:ring-white transition-transform shadow-xl">
           <svg class="w-11 h-11 text-white mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7"/>
           </svg>
@@ -1765,7 +1842,7 @@
         <button onclick={() => onLogout?.()}
           class="flex flex-col items-center justify-center p-7 bg-red-900/40 border border-red-800/50 rounded-2xl
                  hover:bg-red-900/70 focus:bg-red-900/70 focus:scale-105
-                 focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-xl group">
+                 focus:outline-none focus:ring-4 focus:ring-white transition-transform shadow-xl group">
           <svg class="w-11 h-11 text-red-400 group-hover:text-red-200 group-focus:text-red-200 mb-3 transition-colors"
             fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -2019,7 +2096,7 @@
 {/if}
 
 <!-- ══════════════════════════════════════════
-     MODAL (language / password / Quick Connect)
+     MODALS (language, password, Quick Connect, pickers, watch together)
 ══════════════════════════════════════════ -->
 {#if activeModal}
   <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8" role="dialog" tabindex="-1"
@@ -2060,9 +2137,10 @@
       {:else if activeModal === 'password'}
         <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.changePassword}</h2>
         <div class="relative">
+          <!-- Enter here moves on to the new password; only that field (or Save) sends the change. -->
           <input type={showCurrentPw ? 'text' : 'password'} bind:value={currentPw} placeholder={i18n.t.currentPassword}
             {@attach tvKeyboard}
-            onkeydown={(e) => e.key === 'Enter' && changePassword()}
+            onkeydown={(e) => e.key === 'Enter' && e.currentTarget.closest('[data-modal]')?.querySelector('[data-new-pw]')?.focus()}
             class="w-full bg-gray-900 text-white text-2xl p-6 pr-20 rounded-xl border border-gray-600
                    focus:outline-none focus:ring-4 focus:ring-blue-500" />
           <button type="button" onclick={() => showCurrentPw = !showCurrentPw}
@@ -2078,7 +2156,7 @@
         </div>
         <div class="relative">
           <input type={showNewPw ? 'text' : 'password'} bind:value={newPw} placeholder={i18n.t.newPassword}
-            {@attach tvKeyboard}
+            {@attach tvKeyboard} data-new-pw
             onkeydown={(e) => e.key === 'Enter' && changePassword()}
             class="w-full bg-gray-900 text-white text-2xl p-6 pr-20 rounded-xl border border-gray-600
                    focus:outline-none focus:ring-4 focus:ring-blue-500" />
@@ -2094,9 +2172,9 @@
           </button>
         </div>
         {#if pwMessage}<p class="text-blue-400 font-bold text-lg">{pwMessage}</p>{/if}
-        <button onclick={changePassword}
+        <button onclick={changePassword} disabled={!newPw}
           class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-2xl py-6 rounded-xl
-                 focus:outline-none focus:ring-4 focus:ring-white mt-2">{i18n.t.save}</button>
+                 focus:outline-none focus:ring-4 focus:ring-white mt-2 disabled:opacity-50">{i18n.t.save}</button>
 
       {:else if activeModal === 'quickConnect'}
         <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.quickConnect}</h2>
@@ -2180,7 +2258,7 @@
 
       <button onclick={closeModal}
         class="w-full bg-transparent hover:bg-gray-700 focus:bg-gray-700 text-gray-400 font-bold text-xl py-4 rounded-xl
-               border border-gray-600 focus:outline-none focus:ring-4 focus:ring-white mt-2">{i18n.t.qcCancel}</button>
+               border border-gray-600 focus:outline-none focus:ring-4 focus:ring-white mt-2">{i18n.t.cancel}</button>
 
     </div>
   </div>

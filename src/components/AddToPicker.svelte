@@ -1,14 +1,16 @@
 <script>
   // Shared dialog: add a title to a collection or playlist.
-  // Used by Details and Player. Controlled via the `mode` prop
-  // (null = closed). Closing reports back to the parent via a 'close' event.
+  // Used by Details, Player and App (card menu). Controlled via the `mode` prop
+  // (null = closed). Closing calls onClose.
   import { i18n } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount, uiFade, dropTrapOnOutro } from '../utils.js';
+  import { isBackKey, focusOnMount, uiFade, dropTrapOnOutro, authHeaders } from '../utils.js';
+  import { WATCHLIST_NAME } from '../watchlist.svelte.js';
   import { session } from '../session.svelte.js';
   import { tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
 
-  let { mode = null, item = null, selectedUser, getAuthHeaders, onCreated, onClose } = $props();
+  let { mode = null, item = null, selectedUser, onCreated, onClose } = $props();
+  const getAuthHeaders = () => authHeaders(session.token);
 
   let items     = $state([]);              // existing collections/playlists
   let loading   = $state(false);
@@ -19,7 +21,7 @@
   let alreadyIn = new SvelteSet();         // reactive set: .add()/.clear() trigger updates
 
   // The fixed-name watchlist playlist is shown with its localized label.
-  const displayName = (t) => t.Name === 'Watchlist' ? i18n.t.watchlist : t.Name;
+  const displayName = (t) => t.Name === WATCHLIST_NAME ? i18n.t.watchlist : t.Name;
   let childrenOf = $state({});             // target ID → contained titles (deep reactivity)
 
   // Load fresh on every open (the parent sets mode from null to a value)
@@ -40,7 +42,7 @@
       );
       // The watchlist has its own dedicated button — offering it here as a target again
       // would be confusing duplication, so it is hidden from the playlist picker.
-      if (res.ok) { const d = await res.json(); if (myToken !== loadListToken) return; items = (d.Items || []).filter(t => m === 'collection' || t.Name !== 'Watchlist'); }
+      if (res.ok) { const d = await res.json(); if (myToken !== loadListToken) return; items = (d.Items || []).filter(t => m === 'collection' || t.Name !== WATCHLIST_NAME); }
     } catch { }
     if (myToken !== loadListToken) return;
     // Fetch the contents of each target → membership (no duplicates) + a preview of what's inside
@@ -144,7 +146,10 @@
       <div class="flex gap-2">
         <input bind:value={newName} placeholder={i18n.t.createNew} maxlength="100"
           class="flex-1 bg-gray-900 text-white text-lg px-4 py-3 rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white placeholder-gray-500"/>
-        <button onclick={createNew} disabled={!newName.trim() || busy}
+        <!-- Not disabled while busy: disabling the FOCUSED button drops the focus to <body>, and on a
+             failed request it stayed there — Back then bypassed this picker and went to App (in the
+             player: playback ended). createNew/addTo ignore a press while busy anyway. -->
+        <button onclick={createNew} disabled={!newName.trim()}
           class="bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold px-6 py-3 rounded-lg focus:outline-none focus:ring-4 focus:ring-white transition-colors">
           {i18n.t.create}
         </button>
@@ -157,7 +162,7 @@
         <div class="flex flex-col gap-1">
           {#each items as target (target.Id)}
             {@const has = alreadyIn.has(target.Id)}
-            <button onclick={() => addTo(target)} disabled={busy || has}
+            <button onclick={() => addTo(target)} disabled={has}
               class="text-left px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white flex items-start gap-3
                      {has ? 'opacity-70 cursor-not-allowed' : 'text-gray-200 hover:bg-gray-700 focus:bg-gray-700'}">
               <svg class="w-5 h-5 shrink-0 mt-1 {has ? 'text-green-500' : 'text-gray-500'}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">

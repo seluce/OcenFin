@@ -2,21 +2,67 @@
 // track choice. Matched by language (robust across episodes where the track order/index differs)
 // and persisted in localStorage. Subtitle "Off" is stored as the string 'off'.
 // Shape: { [seriesId]: { audio: <lang>, subtitle: { lang, forced, sdh } | 'off' } }
+//
+// PER PROFILE (Ferris, 2026-10-01): one key per user, `ocenfin:trackmem:<userId>`. It used to be one
+// key for the whole TV, and since the memory comes first in pickDefaultTracks, one profile's choice
+// for a series overrode the next profile's language settings. App names the profile on every
+// sign-in (setTrackMemoryUser); without one nothing is read or written.
 
 import { LANGUAGES } from './i18n.svelte.js';
+import { CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS } from './utils.js';
 
-const KEY = 'ocenfin:trackmem';
+const LEGACY_KEY = 'ocenfin:trackmem';
+const keyFor = (userId) => `${LEGACY_KEY}:${userId}`;
+let _userId = null;
+
+export function setTrackMemoryUser(userId) {
+  _userId = userId || null;
+  if (!_userId) return;
+  // The device-wide memory from before goes to the first profile that signs in after the update —
+  // most TVs have one main viewer, and dropping it would forget every series at once.
+  try {
+    const legacy = localStorage.getItem(LEGACY_KEY);
+    if (legacy != null) {
+      if (localStorage.getItem(keyFor(_userId)) == null) localStorage.setItem(keyFor(_userId), legacy);
+      localStorage.removeItem(LEGACY_KEY);
+    }
+  } catch {}
+}
 
 function _load() {
-  try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { return {}; }
+  if (!_userId) return {};
+  // A plain object or nothing: valid JSON of another shape (null, an array) would make every
+  // lookup below throw — and take setupPlayback with it for every episode (CODE-HEALTH §15).
+  try {
+    const v = JSON.parse(localStorage.getItem(keyFor(_userId)) || '{}');
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  } catch { return {}; }
 }
 
 // Store the chosen language for one kind ('audio' | 'subtitle') of a series.
 export function rememberTrack(seriesId, kind, value) {
-  if (!seriesId || !value) return;
+  if (!seriesId || !value || !_userId) return;
   const data = _load();
   data[seriesId] = { ...(data[seriesId] || {}), [kind]: value };
-  try { localStorage.setItem(KEY, JSON.stringify(data)); } catch {}
+  try { localStorage.setItem(keyFor(_userId), JSON.stringify(data)); } catch {}
+}
+
+// A track picked BY HAND — in the Player's menu or in Details' dropdowns — becomes the series'
+// memory, as far as the profile wants that (rememberAudioTrack / rememberSubtitleTrack). One place
+// for both, so a choice made on the details page is not overruled by an older one from the Player.
+// streams: the list the index comes from; index -1 is subtitle "Off".
+export function rememberChoice(seriesId, kind, index, streams, prefs = {}) {
+  if (!seriesId) return;
+  if (kind === 'audio') {
+    if (!prefs.rememberAudioTrack) return;
+    const lang = streams.find(s => s.Index === index && s.Type === 'Audio')?.Language;
+    if (lang) rememberTrack(seriesId, 'audio', lang);
+  } else if (prefs.rememberSubtitleTrack) {
+    if (index === -1) { rememberTrack(seriesId, 'subtitle', 'off'); return; }
+    const st = streams.find(s => s.Index === index && s.Type === 'Subtitle');
+    // Language + the flags that distinguish same-language variants (Full vs Forced vs SDH).
+    if (st?.Language) rememberTrack(seriesId, 'subtitle', { lang: st.Language, forced: !!st.IsForced, sdh: !!st.IsHearingImpaired });
+  }
 }
 
 // Retrieve the remembered language for a series+kind, or null if none.
@@ -56,14 +102,15 @@ export function matchRememberedSubtitleIndex(streams, seriesId) {
 //   subtitle: remembered → off → the app's language → in "default" mode a forced track, ideally in
 //             the audio's language → the server's default → none
 // Returns stream indexes; -1 means "none" for subtitles and "the file's default" for audio.
-const GRAPHIC_SUB_CODECS = ['pgssub', 'pgs', 'dvdsub', 'dvbsub', 'vobsub', 'sub'];
-const isGraphicSub = (s) => GRAPHIC_SUB_CODECS.includes((s?.Codec || '').toLowerCase());
+const subCodec = (s) => (s?.Codec || '').toLowerCase();
 
-// May a subtitle be switched on automatically? Text always; a graphic one (PGS, VobSub/DVD) as long
-// as the app renders them itself (libbitsub, Direct Play stays) — Jellyfin 12 delivers both.
+// May a subtitle be switched on automatically? Text always; a graphic one only when the app renders
+// it itself (PGS, VobSub/DVD via libbitsub — Direct Play stays). DVB bitmap subtitles can only be
+// burned in (the server cannot hand them out, see utils.js), which costs Direct Play — so never
+// automatically, only when chosen.
 function subtitleAutoEligible(s, prefs) {
-  if (!isGraphicSub(s)) return true;
-  return prefs.pgsRendering !== false;
+  if (!GRAPHIC_SUB_CODECS.includes(subCodec(s))) return true;
+  return CLIENT_SUB_CODECS.includes(subCodec(s)) && prefs.pgsRendering !== false;
 }
 
 // First stream of that type in the preferred language, or null for 'default' / no match.

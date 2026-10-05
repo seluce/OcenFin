@@ -1,6 +1,5 @@
-// SyncPlay — group playback via Jellyfin's /SyncPlay API.
-// Phase 1: manage groups (list/create/join/leave) via REST + polling.
-// Phase 2 (later): real-time playback synchronization via WebSocket commands.
+// SyncPlay — group playback via Jellyfin's /SyncPlay API: groups (list/create/join/leave) via
+// REST + polling, playback synchronization via the WebSocket's SyncPlayCommand messages.
 
 import { authHeaders, dlog } from './utils.js';
 
@@ -19,7 +18,6 @@ let _clockOffset = 0;        // serverNow - localNow, in ms
 
 /** Server time as best we know it. Use instead of Date.now() for anything SyncPlay compares. */
 export function syncNow() { return Date.now() + _clockOffset; }
-export function syncClockOffset() { return _clockOffset; }
 
 export async function measureClockOffset(serverUrl, token, samples = 4) {
   let best = null;
@@ -108,11 +106,11 @@ export function syncSocketUrl(serverUrl, token, deviceId) {
   return `${base}/socket?ApiKey=${encodeURIComponent(token)}&deviceId=${encodeURIComponent(deviceId)}`;
 }
 
-// ── Phase 2: playback synchronization ────────────────────────────────────────
+// ── Playback synchronization ─────────────────────────────────────────────────
 
-// Configure the group so the server does NOT wait for the buffer handshake of all
-// clients → commands are distributed immediately. (Fine-tuning = phase 2b.)
-export async function setSyncIgnoreWait(serverUrl, token, ignore = true) {
+// Whether the group waits for every member's Buffering/Ready report before a command takes effect.
+// Create/join pass false: the group waits, and the Player sends that handshake.
+export async function setSyncIgnoreWait(serverUrl, token, ignore) {
   try {
     await fetch(`${serverUrl}/SyncPlay/SetIgnoreWait`, {
       method: 'POST', headers: headers(token), body: JSON.stringify({ IgnoreWait: ignore }),
@@ -143,7 +141,7 @@ export async function sendSyncCommand(serverUrl, token, action, positionTicks) {
   } catch { return false; }
 }
 
-// Buffer handshake (phase 2b): "I'm buffering/seeking, NOT ready" → the group waits.
+// Buffer handshake: "I'm buffering/seeking, NOT ready" → the group waits.
 export async function sendSyncBuffering(serverUrl, token, positionTicks, isPlaying, playlistItemId) {
   try {
     await fetch(`${serverUrl}/SyncPlay/Buffering`, {

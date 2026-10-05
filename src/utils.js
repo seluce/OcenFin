@@ -23,7 +23,7 @@ export function dropTrapOnOutro(e) {
 
 // Focus return after closing a modal/overlay: on open remember the trigger, on close
 // jump back to it. capture()/restore() (incl. tick timing) are unified here;
-// WHEN restore() runs is decided by each component via its own reactive statement,
+// WHEN restore() runs is decided by each component via its own $effect or close handler,
 // because the close condition differs (a single bool vs. several menus).
 export function makeFocusReturn() {
   let saved = null;
@@ -94,13 +94,36 @@ export function tvKeyboard(node) {
   };
 }
 
+// Held OK auto-repeats on webOS: the keydown AND the click a button makes of it arrive again and
+// again while the key is down (see longPress below). For a sign-in that is fatal — every failed
+// attempt counts toward Jellyfin's lockout, which DISABLES the account (policy default 3) — and a
+// held OK on a profile tile carries straight on into the password field that opens under it, as
+// an empty attempt nobody made. So everything that sends a password first asks whether the Enter
+// behind it is the first of its press. Tracked on window in the capture phase: before any handler,
+// and before the click a button synthesises from the keydown. The 1 s cut-off is only a safety net
+// should a keyup ever go missing (on-screen keyboard); a repeat arrives far faster than that.
+// App-lifetime, installed once from the root's onMount.
+let _enterDownAt = 0, _enterRepeat = false;
+export function installEnterRepeatGuard() {
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.keyCode !== 13) return;
+    const now = Date.now();
+    _enterRepeat = e.repeat || (_enterDownAt > 0 && now - _enterDownAt < 1000);
+    _enterDownAt = now;
+  }, true);
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'Enter' || e.keyCode === 13) { _enterDownAt = 0; _enterRepeat = false; }
+  }, true);
+}
+export function isRepeatedEnter() { return _enterRepeat; }
+
 // Svelte attachment (factory): detects a "long press" (holding OK, or holding mouse/touch).
 // PROBLEM: Enter on a focused <button> fires a click on webOS IMMEDIATELY — and REPEATEDLY
 // while held down. A timer never gets a chance against that.
 // SOLUTION: suppress the automatic click via preventDefault and drive the action
 // ourselves. The 'longpress' event fires via a timer already WHILE holding (the desired
 // behavior). So that the still-held OK key doesn't immediately trigger the first menu entry,
-// the context menu only "arms" itself after release / a short delay.
+// the context menu only "arms" itself after the key or pointer is released.
 // When the element loses focus (menu opens), the press state is reset.
 export function longPress(duration = 500) {
   return (node) => {
@@ -176,7 +199,7 @@ export function personImageUrl(serverUrl, person) {
 
 // Card image URL for grid items (Library, Favorites, Person, Collection). 'portrait' = 2:3 poster,
 // 'landscape' = 16:9 still (episode Primary, otherwise series Thumb as fallback). Centralized because it was
-// previously duplicated identically across several grids. (Search deliberately uses its own variant with a backdrop fallback.)
+// previously duplicated identically across several grids. (Search and Details use getItemImageUrlWithFallbacks below.)
 // preferThumb=true selects show-level landscape artwork (own/parent/series thumb → backdrop →
 // primary), used by the continue-watching row. The default prefers the item's OWN still first
 // (correct for episode lists, extras, favorites), then the series thumb.
@@ -208,13 +231,6 @@ export function getItemImageUrl(item, format = 'portrait', preferThumb = false) 
   return null;
 }
 
-// Progress 0–100: resume position (movies/episodes) or share of watched episodes
-// (series, via Jellyfin's PlayedPercentage). For progress bars.
-// Card badge "Watched" (top left; top right belongs to the episode-counter opt-in, or in the
-// details strips to the green check there): ONLY a check, ONLY when fully watched.
-// Jellyfin sets Played on series/seasons/collections only once ALL contained titles are watched
-// — exactly the desired semantics. Deliberately NO unwatched counter: it would visually
-// duplicate the episode counter in the top right.
 // Card image with fallbacks — Search and Details need more than the plain getItemImageUrl
 // above: episodes prefer their own Primary in landscape, anything falls back to the backdrop,
 // portrait falls back to the series poster. Deliberately separate from getItemImageUrl (different
@@ -233,8 +249,15 @@ export function getItemImageUrlWithFallbacks(item, format = 'portrait') {
   return null;
 }
 
+// Progress 0–100: resume position (movies/episodes) or share of watched episodes
+// (series, via Jellyfin's PlayedPercentage). For progress bars.
+// Card badge "Watched" (top left; top right belongs to the episode-counter opt-in, or in the
+// details strips to the green check there): ONLY a check, ONLY when fully watched.
+// Jellyfin sets Played on series/seasons/collections only once ALL contained titles are watched
+// — exactly the desired semantics. Deliberately NO unwatched counter: it would visually
+// duplicate the episode counter in the top right.
 export function itemBadge(item) {
-  return item?.UserData?.Played ? { check: true } : null;
+  return !!item?.UserData?.Played;
 }
 export function itemProgress(item) {
   if (item.UserData?.PlaybackPositionTicks && item.RunTimeTicks)
@@ -245,7 +268,7 @@ export function itemProgress(item) {
 
 // Card/grid subtitle: episode → "S1:E2 – Title"; series → year range
 // ("2016 – 2019" / "2024 – today"); otherwise the production year.
-// `todayLabel` = localized "today" ($t.today), since $t isn't available here.
+// `todayLabel` = localized "today" (i18n.t.today), passed in by the caller.
 export function getItemSubtitle(item, todayLabel = '') {
   if (item.Type === 'Episode') {
     const s = item.ParentIndexNumber ?? '?';
@@ -313,6 +336,23 @@ export const NAV_ICON_KEYS = ['dashboard','search','settings','movies','tvshows'
 // Exported so the dashboard's library row filters by the exact same list as the sidebar.
 export const NAV_HIDDEN_TYPES = ['music', 'musicvideos', 'livetv'];
 
+// Bitmap subtitle codecs — ONE list for the app (it was written out seven times, once without
+// dvbsub). PGS and VobSub/DVD the app renders itself (libbitsub, when the profile allows it). DVB
+// bitmap subtitles are always burned in: libbitsub could render them (DvbRenderer), but Jellyfin
+// 12.1 cannot hand them out as a file — MediaStream.IsExtractableSubtitleStream is text, PGS and
+// VobSub only (CODE-HEALTH §50).
+export const PGS_CODECS        = ['pgssub', 'pgs'];
+export const VOBSUB_CODECS     = ['dvdsub', 'vobsub', 'sub'];
+export const CLIENT_SUB_CODECS = [...PGS_CODECS, ...VOBSUB_CODECS];
+export const GRAPHIC_SUB_CODECS = [...CLIENT_SUB_CODECS, 'dvbsub'];
+
+// A library's icon: the profile's own pick for its sidebar entry, else its type's, else a folder.
+// The dashboard's library tiles show the same one when the library has no picture.
+export function libraryIcon(lib, iconOverrides = {}) {
+  const type = (lib?.CollectionType || '').toLowerCase();
+  return NAV_ICON_PALETTE[iconOverrides['lib:' + lib?.Id]] || NAV_ICON_PALETTE[type] || NAV_ICON_PALETTE.folder;
+}
+
 // Builds the full entry list: fixed views (translated, dashboard/settings locked)
 // + one entry per real library (server name, language-independent). `iconOverrides` (per profile,
 // {entryId: paletteKey}) wins over the type default. One source for sidebar and editor.
@@ -321,12 +361,8 @@ export function buildNavEntries(libraries, t, iconOverrides = {}) {
     NAV_ICON_PALETTE[iconOverrides[id]] || NAV_ICON_PALETTE[fallbackKey] || NAV_ICON_PALETTE.folder;
   const libItems = (libraries || [])
     .filter(l => !NAV_HIDDEN_TYPES.includes((l.CollectionType || '').toLowerCase()))
-    .map(l => {
-      const id = 'lib:' + l.Id;
-      const type = (l.CollectionType || '').toLowerCase();
-      return { id, kind: 'library', lib: l, label: l.Name,
-               icon: pick(id, NAV_ICON_PALETTE[type] ? type : 'folder'), locked: false };
-    });
+    .map(l => ({ id: 'lib:' + l.Id, kind: 'library', lib: l, label: l.Name,
+                 icon: libraryIcon(l, iconOverrides), locked: false }));
   return [
     { id: 'dashboard', kind: 'view', target: 'dashboard', label: t.dashboard, icon: pick('dashboard', 'dashboard'), locked: true },
     { id: 'search',    kind: 'view', target: 'search',    label: t.search,    icon: pick('search', 'search'),       locked: false },
@@ -486,6 +522,11 @@ function _pushLog(level, args) {
     if (_logBuffer.length > LOG_BUFFER_MAX) _logBuffer.shift();
   } catch {}
 }
+// The Player's controls fade out while a button keeps the focus — its hint would stay floating over
+// the picture. hideHints() takes every open one down; the next focus shows it again.
+const HIDE_HINTS = 'ocenfin:hidehints';
+export function hideHints() { window.dispatchEvent(new Event(HIDE_HINTS)); }
+
 // Focus/hover hint for icon-only buttons on TV: shows the node's aria-label as a small
 // tooltip above it — on FOCUS (D-pad) and hover (pointer), since a TV rarely hovers.
 // Reuses aria-label so dynamic labels (watched <-> unwatched) stay correct (read at show
@@ -542,7 +583,9 @@ export function hint(delay = 350) {
     node.addEventListener('blur', destroy);
     node.addEventListener('mouseenter', show);
     node.addEventListener('mouseleave', destroy);
+    window.addEventListener(HIDE_HINTS, destroy);
     return () => {
+      window.removeEventListener(HIDE_HINTS, destroy);
       observer.disconnect();
       destroy();
       node.removeEventListener('focus', show);
@@ -762,7 +805,7 @@ export function getTvDeviceInfo() {
 }
 
 // Codec probe via the browser pipeline (canPlayType / MediaSource). NOTE: reflects the
-// browser decoder, NOT necessarily the TV hardware (on old webOS this underestimates HEVC). Hence
+// browser decoder, NOT necessarily the TV hardware. Hence
 // labeled "browser decoder" in the UI. true = playable according to the browser.
 export function probeBrowserCodecs() {
   if (typeof document === 'undefined') return {};
@@ -884,8 +927,34 @@ export function itemBlurHash(item, type = 'Primary') {
   return tag ? (item.ImageBlurHashes[type]?.[tag] || null) : null;
 }
 
+// A title's own colour, for its details page, read from its BlurHash: the hash's first component IS
+// the picture's average colour, so this reads four characters and never touches the image. Only hue
+// and colourfulness are kept — lightness is fixed, so a white or a black poster tints as gently as
+// any other — and a grey picture (too little colour to have a hue) gives none.
+// Returns { bg, glow } — the app's gray-900 with 30 % of that colour in it (same darkness), and a
+// bright, half-transparent version for the poster's shadow — or null. Plain colour values: the page
+// sets them on the few elements that show them, not as a variable all of it would inherit (§47).
+const GRAY_900_AB = [-0.00316, -0.03385];   // Tailwind's gray-900, oklch(21% .034 264.665), as OKLab a/b
+export function blurHashTint(hash) {
+  if (!hash || hash.length < 6) return null;
+  const v = b83(hash.substr(2, 4));
+  const r = sRGBtoLin(v >> 16), g = sRGBtoLin((v >> 8) & 255), b = sRGBtoLin(v & 255);
+  // linear sRGB → OKLab (Björn Ottosson); its lightness is not needed
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const A = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
+  const B = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
+  const chroma = Math.hypot(A, B);
+  if (!(chroma >= 0.03)) return null;
+  const k = Math.min(chroma, 0.12) / chroma, ta = A * k, tb = B * k;   // capped colourfulness, same hue
+  const mix = (g, t) => (0.7 * g + 0.3 * t).toFixed(4);
+  return { bg: `oklab(0.219 ${mix(GRAY_900_AB[0], ta)} ${mix(GRAY_900_AB[1], tb)})`,
+           glow: `oklab(0.6 ${ta.toFixed(4)} ${tb.toFixed(4)} / 0.55)` };
+}
+
 // Svelte attachment (factory): set the decoded BlurHash as the background of an <img> (cached per hash).
-// No update needed anymore — on hash change the attachment re-runs automatically (reactive effect).
+// On a hash change the attachment re-runs automatically (it is a reactive effect).
 const _blurCache = new Map();
 export function blurUp(hash) {
   return (node) => {
@@ -905,9 +974,9 @@ export function blurUp(hash) {
     const cached = _blurCache.get(hash);
     if (cached !== undefined) { apply(cached); return; }
 
-    // First time for this hash: decode OFF the mount path. Measured on the B4, one decode costs
-    // 15-21 ms (worst seen 224 ms) — the cosine tables took care of the maths, but the canvas plus
-    // toDataURL() PNG encode remains, and a page of cards mounts them all in one go. That was half
+    // First time for this hash: decode OFF the mount path. Measured on the B4, one decode cost
+    // 15-21 ms (worst seen 224 ms) while it still went through a canvas and toDataURL() — since
+    // replaced by bmpDataUrl() — and a page of cards mounts them all in one go. That was half
     // a second of blocked main thread per page, which is precisely what an arrow press landed in
     // while scrolling. Deferring costs nothing visually: the placeholder appears a frame or two
     // later, and the real poster is still on its way regardless.

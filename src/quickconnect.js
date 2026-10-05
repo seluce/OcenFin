@@ -1,7 +1,6 @@
 // Quick Connect — a code appears on the TV, someone confirms it on a device that is already signed
 // in, and the server hands back a token for THAT account. Extracted from Login.svelte because the
-// watch-together picker needs the identical flow: copying it would have been the eighth duplicated
-// mechanism this week.
+// watch-together picker needs the identical flow.
 //
 // The important property for watch together: the TV never picks the account. Whoever confirms the
 // code decides which profile is granted, on their own device, without their password ever being
@@ -41,12 +40,17 @@ export function startQuickConnect(serverUrl, clientAuthHeader, onCode) {
 
     (async () => {
       let data;
+      // Bounded: nothing is on screen until the code arrives, so a server that never answers would
+      // leave the button pressed with no reaction at all.
+      const ctrl = new AbortController();
+      const initTimer = setTimeout(() => ctrl.abort(), 10000);
       try {
-        // POST since 10.9; Jellyfin 12.0 removed the old GET form, which now fails outright.
-        const res = await fetch(`${serverUrl}/QuickConnect/Initiate`, { method: 'POST', headers: { 'Authorization': clientAuthHeader } });
+        // POST: Jellyfin 12 removed the GET form, which fails outright.
+        const res = await fetch(`${serverUrl}/QuickConnect/Initiate`, { method: 'POST', headers: { 'Authorization': clientAuthHeader }, signal: ctrl.signal });
         if (!res.ok) return finish(reject, 'qcError');
         data = await res.json();
       } catch { return finish(reject, 'networkError'); }
+      finally { clearTimeout(initTimer); }
       if (settled) return;                                  // cancelled while Initiate was in flight
 
       secret = data.Secret;
@@ -65,7 +69,11 @@ export function startQuickConnect(serverUrl, clientAuthHeader, onCode) {
           const poll = await fetch(`${serverUrl}/QuickConnect/Connect?Secret=${secret}`, {
             headers: { 'Authorization': clientAuthHeader }
           });
-          if (!poll.ok) return;            // code expired or server hiccup — keep polling, don't throw
+          // 404: the server no longer knows the code — it expires after a few minutes, and a restart
+          // forgets it. Polling on would show a dead code forever. 401: Quick Connect was switched
+          // off meanwhile. Anything else is a hiccup — keep polling.
+          if (poll.status === 404 || poll.status === 401) return finish(reject, 'qcError');
+          if (!poll.ok) return;
           const pd = await poll.json();
           if (!pd.Authenticated) return;
           const authRes = await fetch(`${serverUrl}/Users/AuthenticateWithQuickConnect`, {

@@ -2,6 +2,7 @@
   import { i18n } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, buildNavEntries, applyNavConfig } from '../utils.js';
   import { session } from '../session.svelte.js';
+  import AppMark from './AppMark.svelte';
 
   let {
     selectedUser,
@@ -12,7 +13,7 @@
     navHidden = [],            // hidden entries (locked ones stay visible)
     navIcons = {},             // per-entry chosen icons {entryId: paletteKey}
     showLogo = true,           // logo at the top of the sidebar (setting, opt-out)
-    onNavigate, onNavigateLibrary, onSwitchUser, onLogOutServer,   // callback props (instead of events)
+    onNavigate, onNavigateLibrary, onSwitchUser, onLogOutServer,   // callback props
   } = $props();
 
   let isExpanded      = $state(false);
@@ -93,10 +94,7 @@
   <!-- LOGO + NAME (above the profile) — hideable via a setting -->
   {#if showLogo}
   <div class="w-full px-5 mb-5 flex items-center gap-3 select-none">
-    <svg viewBox="0 0 512 512" class="w-11 h-11 shrink-0 drop-shadow">
-      <rect x="0" y="0" width="512" height="512" rx="118" ry="118" fill="var(--color-blue-600, #2563eb)"/>
-      <circle cx="256" cy="256" r="118" fill="none" stroke="#ffffff" stroke-width="64"/>
-    </svg>
+    <AppMark class="w-11 h-11 shrink-0 drop-shadow" />
     <span class="text-2xl font-bold tracking-wide text-white overflow-hidden whitespace-nowrap transition-opacity duration-300
                  {isExpanded ? 'opacity-100' : 'opacity-0'}">OcenFin</span>
   </div>
@@ -109,7 +107,7 @@
     class="group w-full px-5 mb-6 focus:outline-none flex items-center gap-4 relative"
   >
     <div class="w-14 h-14 shrink-0 rounded-full overflow-hidden border-4 border-transparent
-                group-focus:border-blue-500 shadow-md transition-all">
+                group-focus:border-blue-500 shadow-md">
       {#if getAvatarUrl(selectedUser)}
         <img src={getAvatarUrl(selectedUser)} alt={i18n.t.profile} class="w-full h-full object-cover" />
       {:else}
@@ -154,7 +152,7 @@
     </div>
   {/if}
 
-  <!-- NAV BUTTONS — activeNavId is $: reactive, the class is updated correctly -->
+  <!-- NAV BUTTONS -->
   <!-- The active row deliberately has NO box-shadow. It used to carry shadow-lg shadow-blue-600/30,
        which is precisely the case the edge-shadow note above rules out: a BLURRED shadow on an
        element whose width animates is re-rasterized on every frame of the expand on the B4. That

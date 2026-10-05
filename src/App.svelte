@@ -1,8 +1,8 @@
 <script>
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, installConnectionGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
-  import { buildPlayQueue } from './playback.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, makeFocusReturn, installConnectionGuard, installEnterRepeatGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
+  import { buildPlayQueue, playableFor } from './playback.js';
   import { session } from './session.svelte.js';
   import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
   import { APP_VERSION } from './version.js';
@@ -22,6 +22,7 @@
   import Collection  from './components/Collection.svelte';
   import { registerSession, listSyncGroups, createSyncGroup, joinSyncGroup, leaveSyncGroup, syncSocketUrl, setSyncIgnoreWait, measureClockOffset } from './syncplay.js';
   import { suppressTheme } from './thememusic.js';
+  import { setTrackMemoryUser } from './trackmemory.js';
 
   // Lazy-loaded views (Vite code-splitting): loaded only on first open, then cached.
   // Keeps the cold-start bundle small — especially the Player pulls the heavy deps (hls.js, assjs) only on
@@ -51,8 +52,9 @@
 
   // Focus the first usable element in the CONTENT area, outside the hero. The view it belongs to
   // may still be loading, so this retries in the bounded, self-terminating shape used throughout
-  // this file — never an interval. Three callers share it, and they differ only in when to stand
-  // down, which is why `heldByOther` is a parameter: at app start anything already focused wins,
+  // this file — never an interval. Four callers share it, and they differ only in when to stand
+  // down, which is why `heldByOther` is a parameter (required — without it the first attempt
+  // throws and nothing gets focus): at app start anything already focused wins,
   // while a sidebar selection has to take focus OUT of the sidebar and may only stop for focus that
   // has gone somewhere else entirely.
   function focusContent({ why, heldByOther, maxTries = 12, gap = 100, onGiveUp }) {
@@ -93,9 +95,8 @@
   // first content tile is the target.
   //
   // Waiting is unavoidable: one tick in, the dashboard is still loading and its skeletons are plain
-  // <div>s, so nothing there is focusable yet. Bounded retries in the shape of
-  // restoreContextFocus() below — no interval, ends by itself, and cancelled if the phase changes
-  // underneath it. The window is short in practice: the libraries row comes out of the FIRST
+  // <div>s, so nothing there is focusable yet. Bounded retries (focusContent above) — no interval,
+  // ends by itself, and cancelled if the phase changes underneath it. The window is short in practice: the libraries row comes out of the FIRST
   // response round (Views/Resume), the same one that releases the rest of the screen.
   //
   // The hero ([data-hero]) is skipped deliberately: OK on its play button jumps into a rotating
@@ -104,13 +105,13 @@
   // assumption about what the page shows; with every row hidden the hero button is taken after all,
   // and with nothing focusable at all the sidebar entry closes the chain.
   //
-  // Guard unchanged: it only ever acts while nothing holds focus, so it never steals from a modal,
+  // Guard: it only ever acts while nothing holds focus, so it never steals from a modal,
   // the connection-lost retry button or a restore path.
   $effect(() => {
     if (appPhase !== 'app') return;
     return focusContent({
       why: 'start',
-      heldByOther: (a) => !!a && a !== document.body,   // unchanged: at start, anyone else wins
+      heldByOther: (a) => !!a && a !== document.body,   // at start, anyone else wins
       maxTries: 30, gap: 100,                           // ~3 s while the dashboard loads
       onGiveUp: () => {
         dlog('[focus] start → sidebar (no content to focus)');
@@ -123,7 +124,7 @@
   let resumeStale = $state(false);    // after playback: dashboard fetches Resume/NextUp fresh (cache stays otherwise)
   let currentLibrary     = $state(null);  // { Id, Name } — active library (to Library.svelte)
   let libraryReloadKey   = $state(0);     // increment → Library discards its view cache + reloads
-  let libraryFocusFirst  = $state(false); // when opened from the menu, focus the first card
+  let libraryFocusFirst  = $state(false); // set on every explicit open (navigateToLibrary): Library focuses its first card
   let librarySharedOn    = $state(false); // "watch together" active (reported by Library)
   let libraryMounted     = $state(false); // permanently mounted from the first library visit on (state persists)
   let searchMounted      = $state(false); // same for Search — mounted from its first visit on
@@ -145,10 +146,6 @@
   let savedServers      = $state([]);   // [{ id, url, name }]
   let selectedServer    = $state(null); // currently connected server
 
-  // Discovery
-
-  // Manual entry in the add panel
-
   // ============================================================
   // AUTH / USERS
   // ============================================================
@@ -158,10 +155,6 @@
   let serverVersion    = $state('');      // Jellyfin server version (for the status page)
   let savedTokens      = $state({});  // { serverId: { userId: token } } — quick switch (only via the profile switch)
   let sharedTokens     = $state({});  // { serverId: { userId: token } } — watch together, SEPARATE from quick switch
-
-  // Login sub-views
-
-  // Quick Connect (login flow — TV shows the code, phone scans it)
 
   // Device base ID: generated randomly once per installation and kept in localStorage so that
   // the same profile on two TVs does NOT get the same DeviceId (Jellyfin allows only one token per
@@ -204,17 +197,17 @@
   // Base header without user reference — only for Quick Connect, since the user is still unknown at initiate time.
   const CLIENT_AUTH_HEADER =
     `MediaBrowser Client="OcenFin-TV", Device="LG Smart TV", DeviceId="${BASE_DEVICE_ID}", Version="${APP_VERSION}"`;
+  // Watch together's Quick Connect gets a DeviceId of its own. Jellyfin keeps one token per device
+  // AND user and signs the older one out when it issues a new one — with the sign-in's header, a
+  // code confirmed by the TV's current user (refused as "yourself" anyway) ended the LIVE session
+  // whenever that one had come from Quick Connect as well.
+  const SHARED_QC_AUTH_HEADER =
+    `MediaBrowser Client="OcenFin-TV", Device="LG Smart TV", DeviceId="${BASE_DEVICE_ID}-shared", Version="${APP_VERSION}"`;
 
-  // Helpful: which user the current server token points to
-  // Feed the app-wide stores (in parallel to the existing props; components are migrated step by step).
   // Derive session.serverUrl from the selected server — in the pre phase so children
   // (Dashboard etc.) already read the current URL on remount. The token is written imperatively on
-  // login/switch/logout directly into session.token (no feed, no timing lag).
+  // login/switch/logout directly into session.token.
   $effect.pre(() => { session.serverUrl = selectedServer?.url ?? ''; });
-  let isCurrentUserSaved = $derived(!!(
-    selectedUser && selectedServer &&
-    savedTokens[selectedServer.id]?.[selectedUser.Id]
-  ));
 
   // ============================================================
   // ANIMATIONS
@@ -227,11 +220,11 @@
   // existing profiles (their stored prefs are spread over the OTHER copy) — that paste-twice trap
   // fired once already (theme music). Functions, not shared literals: navOrder/navHidden/navIcons
   // must be fresh references on every call.
-  const defaultDisplaySettings = () => ({ clock: true, hero: true, episodeCount: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
-  const defaultPlaybackPrefs   = () => ({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
+  const defaultDisplaySettings = () => ({ clock: true, hero: true, episodeCount: true, letterBar: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
+  const defaultPlaybackPrefs   = () => ({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipRecap: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
   let displaySettings = $state(defaultDisplaySettings());
 
-  // Default audio/subtitle language
+  // Playback and subtitle preferences
   let playbackPrefs = $state(defaultPlaybackPrefs());
 
   // ── Profile-specific settings ───────────────────────────────
@@ -242,12 +235,13 @@
   let activeUserId = $state(null);
 
   // Load (or reset) the user's watchlist whenever the active profile changes.
-  $effect(() => { if (activeUserId) initWatchlist(activeUserId); });
+  // untrack: initWatchlist reads session.token/serverUrl, which made them dependencies — a logout
+  // re-ran it for the old profile with an empty token and a relative URL. Only the profile counts.
+  $effect(() => { const id = activeUserId; if (id) untrack(() => initWatchlist(id)); });
   let prefsReady   = false;   // prevents saving during the initial load
   let applyingPrefs = false;  // prevents saving DURING applyUserPrefs (otherwise a half-finished state)
 
-  // Persist language changes (including from the settings) centrally. Tracks i18n.lang reactively
-  // and replaces the earlier currentLang.subscribe.
+  // Persist language changes (including from the settings) centrally. Tracks i18n.lang reactively.
   $effect(() => {
     const v = i18n.lang;
     if (!prefsReady || applyingPrefs) return;
@@ -256,7 +250,7 @@
   });
 
   // 12h/24h format for both clocks (top right + screensaver).
-  // "auto" follows the language: German → 24h, English → 12h. Overridable.
+  // "auto" follows the language: English → 12h, every other language → 24h. Overridable.
   let use24h = $derived(displaySettings.clockFormat === '24h' ? true
             : displaySettings.clockFormat === '12h' ? false
             : i18n.lang !== 'en');
@@ -273,6 +267,7 @@
   function saveUserPrefs() {
     if (!activeUserId || applyingPrefs) return;
     localStorage.setItem(userPrefsKey(activeUserId), JSON.stringify({
+      serverId: selectedServer?.id,   // which saved server entry wrote this — see forgetServerProfiles
       language: i18n.lang,
       displaySettings,
       playbackPrefs,
@@ -286,6 +281,7 @@
   function applyUserPrefs(userId) {
     applyingPrefs = true;
     activeUserId = userId;
+    setTrackMemoryUser(userId);   // the per-series track memory is per profile too
     const p = loadUserPrefs(userId);
     if (p.language) {
       setLang(p.language);
@@ -361,7 +357,10 @@
     saveUserPrefs();
   }
 
-  let screensaverSettings = $state({ enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45 });
+  // One source for the defaults: the initializer here and the merge on load (onMount) — the same
+  // paste-twice trap as the profile prefs above.
+  const defaultScreensaverSettings = () => ({ enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45 });
+  let screensaverSettings = $state(defaultScreensaverSettings());
   let showScreensaver     = $state(false);
   // Theme music yields to the screensaver: silence while it is up, resume when it goes.
   $effect(() => { suppressTheme(showScreensaver); });
@@ -438,7 +437,7 @@
   let autoPlayStreak = $state(0);           // "still watching?": episodes auto-played in a row without interaction
 
   // Remember position: where was Details opened from (scroll/focus now live in Library.svelte)
-  let detailsOrigin      = $state('dashboard');   // 'dashboard' | 'library' | 'search'
+  let detailsOrigin      = $state('dashboard');   // the view Details was opened from (a viewState value)
   // The card Details was opened from, so Back can hand focus straight back to it. Without this the
   // view returns but nothing is focused: activeElement falls to <body>, and the next D-pad press
   // then runs spatialnav's no-focus path, which picks geometrically from the screen corner and
@@ -448,8 +447,9 @@
   let detailsReturnNth   = 0;
   let detailsReturnScroll = 0;
   // Views that UNMOUNT cannot remember their own focus, so the card to return to is held here and
-  // handed down as a prop. Favourites and Collection focus at the end of their own load, so an
-  // outside call would race them — they take the id and decide themselves. The dashboard has no
+  // handed down as a prop. Favourites, Collection and Person focus at the end of their own load, so
+  // an outside call would race them — they take the id and decide themselves (Details too, on the
+  // way back from a person page). The dashboard has no
   // such logic of its own and is served directly by focusCardAgain().
   let pendingCardFocusId = $state(null);
   let pendingCardScrollTop = $state(0);
@@ -463,7 +463,7 @@
     }
     return 0;
   }
-  // Same three things for a collection/watchlist, whose Back leads somewhere else entirely.
+  // The same for a collection/watchlist, whose Back leads somewhere else entirely.
   let collectionReturnId = null, collectionReturnEl = null, collectionReturnNth = 0, collectionReturnScroll = 0;
   // A person page is reached from the cast list, from search and from favourites — same deal.
   let personReturnId = null, personReturnEl = null, personReturnNth = 0, personReturnScroll = 0;
@@ -471,7 +471,7 @@
 
   // ── Watch together ─────────────────────────────────────────────────────────
   // The logged-in (shared) profile references two other profiles. Their tokens
-  // live in savedTokens (tied to "save token"); here only ID + name are remembered.
+  // live in sharedTokens (jellyfin_shared_tokens_v1); here only ID + name are remembered.
   let sharedProfile     = $state({ enabled: false, members: [] });  // members: [{ id, name }]
   // Set of item IDs watched by AT LEAST ONE member (a union — the loop below adds every member's
   // watched items to one Set). Library hides exactly these, which is the documented behaviour:
@@ -479,7 +479,11 @@
   // The comment used to say "watched by BOTH" — the opposite; do not "fix" the union into an
   // intersection on the strength of a comment.
   let partnersPlayedIds = $state(null);
-  let sharedReady = $derived(sharedProfile.enabled
+  // Not for age-restricted profiles (Ferris, 2026-09-30): the members' tokens are the members'
+  // accounts, so "For you both" would list their whole catalogue past this profile's rating limit.
+  // Settings hides the card; this keeps a setup made before the restriction from running on.
+  let restrictedProfile = $derived(selectedUser?.Policy?.MaxParentalRating != null);
+  let sharedReady = $derived(sharedProfile.enabled && !restrictedProfile
                    && sharedProfile.members.filter(m => m && m.id).length >= 1);
   // Cleanup: option on, but no profile set → turn off again when leaving the settings.
   $effect(() => { if (viewState !== 'settings' && sharedProfile.enabled
@@ -511,7 +515,7 @@
   $effect(() => { if (!sharedSugKey && sharedSuggestions.length) sharedSuggestions = []; });
   $effect(() => { if (viewState === 'dashboard' && sharedSugKey && sharedSugKey !== _loadedSugKey) loadSharedSuggestions(); });
 
-  // ── SyncPlay (group playback) — phase 1: manage groups ─────────────────────
+  // ── SyncPlay (group playback): groups ───────────────────────────────────────
   let showSyncPlay = $state(false);
   let syncMyGroup  = $state(null);    // { GroupId, GroupName, Participants } or null
   let syncGroups   = $state([]);      // available groups (excluding my own)
@@ -519,13 +523,13 @@
   let syncPollTimer = null;
   let syncJoined   = $state(false);   // is THIS session in a group? (authoritative, not the profile name)
   let syncMyGroupId = $state(null);   // GroupId of my own group (set from the socket GroupJoined or on join)
-  // Phase 2: received playback commands + current group queue state (passed on to the Player)
+  // Received playback commands + current group queue state (passed on to the Player)
   let syncCommand = $state(null);   // last SyncPlayCommand { ...Data, _seq }
   let syncCmdSeq  = $state(0);
   let syncQueue   = $state(null);   // { itemId, playlistItemId, positionTicks, isPlaying }
 
-  // Admin remote control (Jellyfin dashboard): Playstate/GeneralCommand over the same WebSocket.
-  let remoteCommand = $state(null);   // { command, seekTicks?, args?, _seq } → to the Player
+  // Admin remote control (Jellyfin dashboard): Playstate commands (+ DisplayMessage) over the same WebSocket.
+  let remoteCommand = $state(null);   // { command, seekTicks?, _seq } → to the Player
   let remoteCmdSeq  = $state(0);
   let remoteMessage = $state(null);   // { header, text } – admin message as an overlay
   let remoteMessageTimer = null;
@@ -571,6 +575,7 @@
   }
   function closeSyncPlay() {
     showSyncPlay = false;
+    syncError = '';
     if (syncPollTimer) { clearInterval(syncPollTimer); syncPollTimer = null; }
     const el = syncReturnEl;
     syncReturnEl = null;
@@ -585,11 +590,19 @@
   function manageReconnect(lost) {
     if (lost && session.serverUrl) {
       if (reconnectTimer) return;
+      // One probe at a time, each bounded: a host that silently drops packets lets a request hang
+      // until the connect timeout, and a new one every 5 s piled up for the whole outage.
+      let probing = false;
       reconnectTimer = setInterval(async () => {
+        if (probing) return;
+        probing = true;
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 4500);
         try {
-          const r = await fetch(`${session.serverUrl}/System/Info/Public`, { cache: 'no-store' });
+          const r = await fetch(`${session.serverUrl}/System/Info/Public`, { cache: 'no-store', signal: ctrl.signal });
           if (r.ok) session.connectionLost = false;
         } catch { /* keep trying */ }
+        finally { clearTimeout(t); probing = false; }
       }, 5000);
     } else if (reconnectTimer) {
       clearInterval(reconnectTimer); reconnectTimer = null;
@@ -608,10 +621,31 @@
   }
   // Reliably put focus on the button when the banner appears (it mounts due to a
   // background event; focusOnMount didn't catch it there — tick() after the flush wins).
-  $effect(() => { if (session.connectionLost) tick().then(() => retryBtnEl?.focus()); });
-  async function syncCreate() { await createSyncGroup(session.serverUrl, session.token, selectedUser?.Name || 'OcenFin'); syncJoined = true; measureClockOffset(session.serverUrl, session.token); await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
-  async function syncJoin(groupId) { await joinSyncGroup(session.serverUrl, session.token, groupId); syncJoined = true; syncMyGroupId = groupId; measureClockOffset(session.serverUrl, session.token); await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh(); }
-  async function syncLeave() { await leaveSyncGroup(session.serverUrl, session.token); syncJoined = false; syncMyGroupId = null; syncQueue = null; _lastSyncQueueItem = null; await syncRefresh(); }
+  // …and give it back when the banner goes. It closes by itself once the server answers (a Wi-Fi
+  // blip, the TV waking up), and its buttons took the focus with them: the next key opened the
+  // sidebar instead of continuing where you were.
+  const bannerFocus = makeFocusReturn();
+  let _bannerUp = false;
+  $effect(() => {
+    const up = session.connectionLost && !initializing;
+    if (up && !_bannerUp) { _bannerUp = true; bannerFocus.capture(); tick().then(() => retryBtnEl?.focus()); }
+    else if (!up && _bannerUp) { _bannerUp = false; bannerFocus.restore(); }
+  });
+  // Create/join can be refused — SyncPlay switched off for this profile on the server is the usual
+  // reason (403). The result used to be ignored: the dialog did nothing, and syncJoined claimed a group.
+  let syncError = $state('');
+  async function syncCreate() {
+    syncError = '';
+    if (!(await createSyncGroup(session.serverUrl, session.token, selectedUser?.Name || 'OcenFin'))) { syncError = i18n.t.syncPlayFailed; return; }
+    syncJoined = true; measureClockOffset(session.serverUrl, session.token); await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh();
+  }
+  async function syncJoin(groupId) {
+    syncError = '';
+    if (!(await joinSyncGroup(session.serverUrl, session.token, groupId))) { syncError = i18n.t.syncPlayFailed; return; }
+    syncJoined = true; syncMyGroupId = groupId; measureClockOffset(session.serverUrl, session.token); await setSyncIgnoreWait(session.serverUrl, session.token, false); await syncRefresh();
+  }
+  // syncCommand goes with the group: a Player mounted later must not find the old group's last command.
+  async function syncLeave() { await leaveSyncGroup(session.serverUrl, session.token); syncJoined = false; syncMyGroupId = null; syncQueue = null; syncCommand = null; _lastSyncQueueItem = null; await syncRefresh(); }
 
   // Auto-load: open the item the group is playing programmatically in the Player (jumps to the group position via Ready→Unpause).
   async function openItemInPlayer(itemId) {
@@ -623,22 +657,42 @@
     try {
       const res = await fetch(`${session.serverUrl}/Items/${itemId}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
       if (res.ok) {
-        currentDetailItem   = await res.json();
-        activeAudioIndex    = -1;
-        activeSubtitleIndex = -1;
-        activeMediaSourceId = null;
-        activePickTracks    = true;
-        playReturnDetails   = null;   // started from outside, not from a title page
-        viewState = 'player';
+        playFromOutside(await res.json());
         dlog('[SyncPlay] auto-load →', currentDetailItem?.Name);
       }
     } catch {}
     _syncOpeningId = null;
   }
 
-  // ── SyncPlay WebSocket (Phase 2) ───────────────────────────────────────────
-  // Real-time channel: group updates (join/leave) and – from step 2 on –
-  // playback commands (Play/Pause/Seek). Connects after login, keeps itself
+  // A title the group (SyncPlay) or the server's "play" puts on screen. Nobody chose it on a title
+  // page, so the way back is the view that was open — set up like a fresh trip. It used to leave the
+  // origin alone, and Back from the title page the player ends on applied the origin of some EARLIER
+  // trip: a collection left long ago, a library instead of the dashboard. On a title page it is
+  // startPlayback's own case (that page is kept whole, chain included); while a title already plays,
+  // only the title changes and the way back stays what it was.
+  function playFromOutside(item) {
+    if (viewState === 'player') {
+      currentDetailItem   = item;
+      activeAudioIndex    = -1;
+      activeSubtitleIndex = -1;
+      activeMediaSourceId = null;
+      activePickTracks    = true;
+      return;
+    }
+    if (viewState !== 'details') {
+      beginChainIfRoot();
+      detailsOrigin       = viewState;
+      detailsReturnId     = null;
+      detailsReturnEl     = document.activeElement;
+      detailsReturnNth    = 0;
+      detailsReturnScroll = scrollTopOf(detailsReturnEl);
+    }
+    startPlayback({ item, audioIndex: -1, subtitleIndex: -1 });
+  }
+
+  // ── SyncPlay WebSocket ─────────────────────────────────────────────────────
+  // Real-time channel: group updates (join/leave) and playback commands
+  // (Unpause/Pause/Seek/Stop). Connects after login, keeps itself
   // open via KeepAlive and reconnects automatically on drop.
   let syncSocket = null;
   let syncSocketWanted = false;
@@ -687,7 +741,7 @@
       const type = msg.Data?.Type;
       // Anchor my own membership authoritatively on the socket (GroupId), not on the name.
       if (type === 'GroupJoined') { syncJoined = true; syncMyGroupId = msg.Data?.GroupId || syncMyGroupId; measureClockOffset(session.serverUrl, session.token); syncRefresh(); }
-      else if (['GroupLeft', 'NotInGroup', 'GroupDoesNotExist'].includes(type)) { syncJoined = false; syncMyGroupId = null; syncQueue = null; syncRefresh(); }
+      else if (['GroupLeft', 'NotInGroup', 'GroupDoesNotExist'].includes(type)) { syncJoined = false; syncMyGroupId = null; syncQueue = null; syncCommand = null; syncRefresh(); }
       else if (['UserJoined', 'UserLeft'].includes(type)) syncRefresh();
       else if (type === 'PlayQueue') {
         // Current group queue state (which item, which position) → passed on to the Player.
@@ -705,7 +759,7 @@
         }
       }
     } else if (msg.MessageType === 'SyncPlayCommand') {
-      // Playback command (Play/Pause/Seek) → to the Player; _seq serves the Player as a dedupe marker.
+      // Playback command (Unpause/Pause/Seek/Stop) → to the Player; _seq serves the Player as a dedupe marker.
       syncCommand = { ...msg.Data, _seq: ++syncCmdSeq };
       dlog('[SyncPlay] command received', syncCommand.Command, syncCommand.PositionTicks);
     } else if (msg.MessageType === 'Playstate') {
@@ -715,13 +769,12 @@
       if (cmd) { remoteCommand = { command: cmd, seekTicks: msg.Data?.SeekPositionTicks ?? null, _seq: ++remoteCmdSeq }; }
     } else if (msg.MessageType === 'GeneralCommand') {
       const name = msg.Data?.Name;
+      // Only DisplayMessage: it is the one GeneralCommand the session advertises (registerSession),
+      // so the dashboard offers no other — volume in particular stays the TV's own business.
       if (name === 'DisplayMessage') {
         const a = msg.Data?.Arguments || {};
         showRemoteMessage(a.Header, a.Text, parseInt(a.TimeoutMs, 10) || 0);
-      } else if (name) {
-        // Volume/mute etc. → pass on to the Player.
-        remoteCommand = { command: name, args: msg.Data?.Arguments || {}, _seq: ++remoteCmdSeq };
-      }
+      } else if (name) dlog('[remote] GeneralCommand not supported:', name);
     } else if (msg.MessageType === 'Play') {
       // Admin "Play on this device" → open the first item.
       const itemId = msg.Data?.ItemIds?.[0];
@@ -734,7 +787,12 @@
     connectSyncSocket();                        // open the SyncPlay real-time channel
   } });
 
-  let showExitConfirm = $state(false);   // confirmation dialog "Exit app?" (back on the dashboard)
+  let showExitConfirm = $state(false);   // confirmation dialog "Exit app?" (Back on the dashboard or the server list)
+  // Cancel took the dialog's buttons away with nothing to land on, so the next key opened the
+  // sidebar instead of returning to the tile Back was pressed on.
+  const exitFocus = makeFocusReturn();
+  function openExitConfirm()  { exitFocus.capture(); showExitConfirm = true; }
+  function closeExitConfirm() { showExitConfirm = false; exitFocus.restore(); }
   let librarySorts = $state({});   // remembered sort per library (saved in the profile)
   let apiCache = { dashboard: null };   // dashboard only now; the library cache lives in Library.svelte
 
@@ -851,38 +909,9 @@
   // LIFECYCLE
   // ============================================================
 
-  onMount(async () => {
-    migrateOldData();
-    savedServers        = loadSavedServers();
-    savedTokens         = loadSavedTokens();
-    sharedTokens        = loadSharedTokens();
-    screensaverSettings = { enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45, ...loadScreensaverSettings() };
-    // timeout drives setTimeout: a non-numeric value makes that NaN, which fires IMMEDIATELY and
-    // then again on every reschedule — a screensaver flashing over the whole interface, hard to
-    // escape with a remote. Clamped rather than merely defaulted, so an absurd stored number
-    // cannot disable it either. brightness likewise, since it reaches CSS.
-    screensaverSettings.timeout    = asNumber(screensaverSettings.timeout, 90, 10, 3600);
-    screensaverSettings.brightness = asNumber(screensaverSettings.brightness, 0.45, 0, 1);
-    setDebug(localStorage.getItem('ocenfin_debug') === '1');   // device-wide diagnostic logging (opt-in)
-
-    // Device language for pre-login screens (server/user selection): last chosen language →
-    // otherwise device language → otherwise English. Validated against existing translations.
-    // Profile-specific settings are only loaded on login via applyUserPrefs.
-    setLang(detectUiLang());
-    prefsReady = true;   // from now on changes are persisted
-
-    // Global back key (webOS remote)
-    window.addEventListener('keydown', handleGlobalBack);
-    // D-pad navigation (group focus model) — active everywhere. The Player is its
-    // own focus group; its slider handles Left/Right itself.
-    createFocusManager(() => !navReordering);
-    // Boot milestone: the shell is wired up (listeners, focus manager, connection guard). The
-    // second milestone follows below when the splash actually goes away.
-    perfMark('boot shell');
-    // Long-session sampler. App-lifetime by design like the listeners above — the root never
-    // unmounts — and it bails out immediately while debug is off, so it costs one timer.
-    startPerfSampler();
-    // Session died server-side (see session.svelte.js). Drop the token that just proved invalid —
+  // Top level on purpose: inside onMount's async callback an effect only works while no await
+  // precedes it.
+  // Session died server-side (see session.svelte.js). Drop the token that just proved invalid —
   // otherwise auto-login reuses it on the next start, collects another 401 and bounces straight
   // back here — then run the normal profile teardown. No banner on purpose: the profile picker
   // says it better than any message could. Token revoked → the profile is still listed and you
@@ -903,19 +932,52 @@
       // the saved token and force a password re-entry on the TV remote. Re-check the same token
       // once; only tear down if it is genuinely rejected again.
       const stillValid = await validateToken(session.token, session.serverUrl);
-      if (!stillValid && appPhase === 'app') {
+      if (stillValid === false && appPhase === 'app') {   // null = no verdict (network) → stay
         const sid = selectedServer?.id, uid = selectedUser?.Id;
         if (sid && uid && savedTokens[sid]?.[uid]) { delete savedTokens[sid][uid]; persistSavedTokens(); }
         dlog('[auth] server rejected our token (confirmed) — returning to the profile selection');
         handleSwitchUser();
       } else {
-        dlog('[auth] 401 was transient — token still valid, staying put');
+        dlog('[auth] 401 not confirmed —', stillValid === null ? 'server unreachable, no verdict' : 'token still valid', '— staying put');
       }
       _authTeardownRunning = false;
     })();
   });
 
-  // Monitor network status (banner on connection loss). The offline/online events cover the
+  onMount(async () => {
+    migrateOldData();
+    savedServers        = loadSavedServers();
+    savedTokens         = loadSavedTokens();
+    sharedTokens        = loadSharedTokens();
+    screensaverSettings = { ...defaultScreensaverSettings(), ...loadScreensaverSettings() };
+    // timeout drives setTimeout: a non-numeric value makes that NaN, which fires IMMEDIATELY and
+    // then again on every reschedule — a screensaver flashing over the whole interface, hard to
+    // escape with a remote. Clamped rather than merely defaulted, so an absurd stored number
+    // cannot disable it either. brightness likewise, since it reaches CSS.
+    screensaverSettings.timeout    = asNumber(screensaverSettings.timeout, 90, 10, 3600);
+    screensaverSettings.brightness = asNumber(screensaverSettings.brightness, 0.45, 0, 1);
+    setDebug(localStorage.getItem('ocenfin_debug') === '1');   // device-wide diagnostic logging (opt-in)
+
+    // Device language for pre-login screens (server/user selection): last chosen language →
+    // otherwise device language → otherwise English. Validated against existing translations.
+    // Profile-specific settings are only loaded on login via applyUserPrefs.
+    setLang(detectUiLang());
+    prefsReady = true;   // from now on changes are persisted
+
+    // Global back key (webOS remote)
+    window.addEventListener('keydown', handleGlobalBack);
+    // Held OK must never turn into a series of sign-in attempts (see utils.js).
+    installEnterRepeatGuard();
+    // D-pad navigation (group focus model) — active everywhere. The Player is its
+    // own focus group; its slider handles Left/Right itself.
+    createFocusManager(() => !navReordering);
+    // Boot milestone: the shell is wired up (listeners, focus manager, connection guard). The
+    // second milestone follows below when the splash actually goes away.
+    perfMark('boot shell');
+    // Long-session sampler. App-lifetime by design like the listeners above — the root never
+    // unmounts — and it bails out immediately while debug is off, so it costs one timer.
+    startPerfSampler();
+    // Monitor network status (banner on connection loss). The offline/online events cover the
     // OS network state; the connection guard additionally catches "server unreachable while the
     // network is up" (NAS reboot etc.) by watching server fetches for network-level failures.
     installConnectionGuard();
@@ -926,10 +988,10 @@
     // On some builds/appinfo configs (handlesRelaunch:true) the app then stays stuck in the
     // background and appears not to start — so we explicitly bring it to the
     // foreground. Harmless if webOS handles it itself anyway.
+    // webOSSystem only: PalmSystem is its pre-webOS-6 name, and webOS 25 is the target.
     const toForeground = () => {
-      dlog('[Lifecycle] webOSRelaunch → activate');
-      try { window.PalmSystem?.activate?.(); } catch (e) { console.warn('[Lifecycle] activate failed:', e); }
-      try { window.webOSSystem?.activate?.(); } catch { /* not present */ }
+      dlog('[Lifecycle] webOSRelaunch → activate', typeof window.webOSSystem?.activate === 'function' ? '(webOSSystem)' : '(NOT AVAILABLE)');
+      try { window.webOSSystem?.activate?.(); } catch (e) { console.warn('[Lifecycle] activate failed:', e); }
     };
     document.addEventListener('webOSRelaunch', toForeground, true);
 
@@ -975,7 +1037,24 @@
             selectedServer = server;
             session.token    = saved.token;
 
-            if (await validateToken(saved.token, server.url)) {
+            // No verdict (Wi-Fi not up yet after standby, NAS still waking): ask again for a few
+            // seconds under the splash. Bounded by elapsed time rather than by tries, so a host that
+            // swallows packets — each attempt hanging until the connect timeout — is not waited out
+            // several times over.
+            const tValidate = Date.now();
+            let valid = await validateToken(saved.token, server.url);
+            while (valid === null && Date.now() - tValidate < 6000) {
+              await new Promise(r => setTimeout(r, 1500));
+              valid = await validateToken(saved.token, server.url);
+            }
+            if (valid === null) {
+              // Only a REJECTION may cost the saved session. Kept, so the next start signs in by
+              // itself again; until then the profile selection of this server.
+              dlog('[restore] server unreachable → user screen, saved session kept');
+              appPhase = 'users';
+              return;
+            }
+            if (valid) {
               const res = await fetch(`${server.url}/Users/${saved.userId}`, {
                 headers: getAuthHeaders()
               });
@@ -1016,7 +1095,38 @@
   // components/Login.svelte (lazy-loaded)
   // ============================================================
 
+  // A removed server's profiles leave their settings, search history and track memory behind, under
+  // keys nothing can reach any more — they go with the server (Ferris, 2026-09-30). Which profiles:
+  // those this entry holds a token for, and those whose settings were last saved through it. The
+  // same Jellyfin server can be saved twice (LAN and remote address) with the same user IDs, so a
+  // profile that another entry still holds a token for, or whose settings were last saved through
+  // another entry, keeps its data. Settings from before the tag existed count as this entry's.
+  function forgetServerProfiles(id) {
+    const tagOf = (uid) => loadUserPrefs(uid).serverId;
+    const uids = new Set([...Object.keys(savedTokens[id] || {}), ...Object.keys(sharedTokens[id] || {})]);
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k?.startsWith('user_prefs_') && tagOf(k.slice('user_prefs_'.length)) === id) uids.add(k.slice('user_prefs_'.length));
+      }
+    } catch { /* storage unavailable — nothing to tidy */ }
+    let n = 0;
+    for (const uid of uids) {
+      const tag = tagOf(uid);
+      if (tag && tag !== id) continue;
+      if (savedServers.some(s => s.id !== id && (savedTokens[s.id]?.[uid] || sharedTokens[s.id]?.[uid]))) continue;
+      try {
+        localStorage.removeItem(userPrefsKey(uid));
+        localStorage.removeItem(`search_history_${uid}`);
+        localStorage.removeItem(`ocenfin:trackmem:${uid}`);
+        n++;
+      } catch {}
+    }
+    dlog('[Server] removed — forgot the local data of', n, 'profile(s)');
+  }
+
   function removeServer(id) {
+    forgetServerProfiles(id);   // first: it reads the token stores this function empties
     // Capture before deleting: the URL to send the revocations to, and every token this server
     // holds in either store. Nothing else can be keeping them — the server entry itself is going.
     const baseUrl = savedServers.find(s => s.id === id)?.url;
@@ -1065,7 +1175,7 @@
 
   // Set a profile as a member. Uses a valid saved token; otherwise it
   // authenticates once with pw. NO session switch — the shared profile stays active.
-  // Returns: 'ok' | 'needPassword' | 'error'
+  // Returns: 'ok' | 'needPassword' | 'sameUser' | 'offline' | 'error'
   // presetToken: already authenticated elsewhere (Quick Connect), so no credentials are needed —
   // the token IS the proof. Everything after the acquisition is shared with the password path.
   async function setSharedMember(slot, user, pw = null, presetToken = null) {
@@ -1074,12 +1184,32 @@
     // With Quick Connect the account is only known AFTER confirmation — whoever approves the code
     // decides it — so the "not yourself, not the other slot" rule cannot be enforced by filtering
     // the list beforehand and has to be checked here.
-    if (user.Id && (user.Id === selectedUser?.Id || user.Id === sharedProfile.members[slot === 0 ? 1 : 0]?.id)) {
+    const otherId = sharedProfile.members[slot === 0 ? 1 : 0]?.id;
+    if (user.Id && (user.Id === selectedUser?.Id || user.Id === otherId)) {
+      if (presetToken) {
+        // A Quick Connect token for someone who cannot take this slot must not linger as a live
+        // device on the server. One exception: the other slot's member, whose OWN token the server
+        // may just have signed out (same watch-together device, same user) — then the new one
+        // takes its place rather than leaving that slot broken.
+        const held = user.Id === otherId ? sharedTokens[sid]?.[user.Id] : null;
+        if (held && (await validateToken(held)) === false) {
+          sharedTokens[sid][user.Id] = presetToken;
+          sharedTokens = { ...sharedTokens };
+          persistSharedTokens();
+        } else {
+          revokeToken(session.serverUrl, presetToken);
+        }
+      }
       return 'sameUser';
     }
     // Reuse an existing token (own store or self-enabled quick switch).
     let token = presetToken || (user.Id ? (sharedTokens[sid]?.[user.Id] || savedTokens[sid]?.[user.Id]) : null);
-    if (token && !(await validateToken(token))) token = null;   // expired → re-authenticate
+    if (token) {
+      const valid = await validateToken(token);
+      // No verdict: neither trust a token that could not be checked nor ask for a password over it.
+      if (valid === null) return 'offline';
+      if (valid === false) token = null;   // expired → re-authenticate
+    }
     if (!token) {
       // pw null = nobody has been asked yet → ask first. An empty password is NEVER tried unasked:
       // every failed attempt counts toward the lockout, and that DISABLES the account (policy
@@ -1175,6 +1305,7 @@
   let _partnersSeq = 0;   // supersede guard: only the LATEST library switch may publish its result
   async function loadPartnersPlayedIds(libraryId) {
     const seq = ++_partnersSeq;
+    const myCache = partnersPlayedCache;   // this session's — a profile switch replaces the object
     partnersPlayedIds = null;
     if (!librarySharedOn || !sharedReady || !libraryId) return;
     const hit = partnersPlayedCache[libraryId];
@@ -1206,7 +1337,14 @@
         );
         if (!res.ok) {
           console.warn('[Shared] query failed for', m.name, '· HTTP', res.status);
-          if (res.status === 401 || res.status === 403) warnSharedMember(m);   // that member's token died
+          // A 401 is ALSO what a member gets for a library their account may not open — with a token
+          // that is perfectly fine, and "sign in again" then asked for something that cannot help.
+          // Only a token the server rejects outright needs signing in; otherwise that member simply
+          // has nothing in this library to hide.
+          if (res.status === 401 || res.status === 403) {
+            if ((await validateToken(token)) === false) warnSharedMember(m);   // that member's token died
+            else dlog('[Shared]', m.name, 'has no access to this library — nothing to hide for them');
+          }
           return;
         }
         let n = 0;
@@ -1219,7 +1357,7 @@
       } catch (e) { console.warn('[Shared] error for', m.name, e); }
     }));
     dlog('[Shared] library filter scanned in', Date.now() - tAll, 'ms (members in parallel)');
-    partnersPlayedCache[libraryId] = { ids, at: Date.now() };   // cache stays valid for ITS library
+    myCache[libraryId] = { ids, at: Date.now() };   // cache stays valid for ITS library
     if (seq !== _partnersSeq) return;   // library switched while fetching → don't publish stale IDs
     partnersPlayedIds = ids;
   }
@@ -1237,6 +1375,10 @@
   async function loadSharedSuggestions() {
     if (!sharedSugKey) { sharedSuggestions = []; return; }
     _loadedSugKey = sharedSugKey;   // claim the key in advance → no double fetch
+    // Two of the slowest requests in the app run below. What they bring belongs to THIS profile and
+    // these members: after a profile switch (or a member change) it is dropped, and the partner
+    // cache it fills is the one of this session — applyUserPrefs gives the next one a fresh object.
+    const myKey = sharedSugKey, myUser = activeUserId, myCache = partnersPlayedCache;
     // map + Promise.all rather than a loop: the members are fetched side by side, but the ORDER
     // survives, and memberData[0] supplying the suggestion pool depends on that.
     const memberData = (await Promise.all(sharedProfile.members.map(async (m) => {
@@ -1266,6 +1408,7 @@
         return { items, genreCount, watched };
       } catch { return null; }
     }))).filter(Boolean);
+    if (_loadedSugKey !== myKey || activeUserId !== myUser) return;   // superseded meanwhile
     if (!memberData.length) { sharedSuggestions = []; return; }
 
     // Genre weights: genres that ALL members have watched (product of the counts → "both like it").
@@ -1288,7 +1431,7 @@
     memberData.forEach(d => d.watched.forEach(id => exclude.add(id)));
     // Exactly what the library filter needs — see PARTNERS_ALL_KEY. Handing it over here spares it
     // a full catalogue request per member and per library.
-    partnersPlayedCache[PARTNERS_ALL_KEY] = { ids: exclude, at: Date.now() };
+    myCache[PARTNERS_ALL_KEY] = { ids: exclude, at: Date.now() };
 
     sharedSuggestions = memberData[0].items
       .filter(it => !exclude.has(it.Id))
@@ -1303,12 +1446,17 @@
   // baseUrl can be passed explicitly: on auto-login the reactive session.serverUrl ($:) is not yet
   // updated (Svelte flushes reactivity only after the synchronous block), so
   // `${session.serverUrl}` would point to '' there → relative fetch to the app origin instead of the server.
+  // Three answers, not two: true = valid, false = the server REJECTED it (401/403), null = no verdict
+  // (unreachable, or the server erred). Callers delete tokens and tear sessions down only on false —
+  // a Wi-Fi that is not up yet after standby, or a NAS still waking, used to count as "rejected" and
+  // cost the saved sign-in.
   async function validateToken(token, baseUrl = session.serverUrl) {
     try {
       const res = await fetch(`${baseUrl}/Users/Me`, { headers: authHeaders(token) });
       if (!res.ok) dlog('[auth] token validation failed — HTTP', res.status);
-      return res.ok;
-    } catch (e) { dlog('[auth] token validation — network error:', e?.message || e); return false; }
+      if (res.ok) return true;
+      return (res.status === 401 || res.status === 403) ? false : null;
+    } catch (e) { dlog('[auth] token validation — network error:', e?.message || e); return null; }
   }
 
   function finishLogin(user, token) {
@@ -1372,6 +1520,14 @@
     disconnectSyncSocket();              // close the SyncPlay socket
     closeSyncPlay(); syncMyGroup = null; syncGroups = []; syncQueue = null; syncCommand = null; _lastSyncQueueItem = null; syncJoined = false; syncMyGroupId = null;   // reset group state
     remoteCommand = null; dismissRemoteMessage();   // discard admin remote control/message
+    // Overlays and watch-together results of the old profile. None of these is tied to the app
+    // phase: a context menu or picker stayed open over the profile selection (its trap included,
+    // its actions now without a token), and "For you both" showed the old profile's row on the next
+    // one's dashboard until that one's own scan replaced it.
+    contextItem = null; contextPickerMode = null; contextPickerItem = null;
+    showExitConfirm = false; exitFocus.cancel();
+    sharedSuggestions = []; _loadedSugKey = null;
+    _partnersSeq++; partnersPlayedIds = null;   // an in-flight library scan must not publish
     viewState = 'dashboard';
     apiCache.dashboard = null;   // clear cache (property mutation instead of reassignment → shared reference stays)
     navLibraries = [];
@@ -1421,6 +1577,17 @@
 
   function handleGlobalBack(e) {
     if (!isBackKey(e)) return;   // Escape / Backspace (except in inputs) / remote 461
+    if (initializing) return;    // splash: nothing on screen to go back from yet
+    // Confirmation dialog open → Back cancels it (instead of closing) — in every phase that asks
+    if (showExitConfirm) { closeExitConfirm(); e.preventDefault(); return; }
+    if (appPhase === 'servers') {
+      // The first screen: Back closes what is open there (the add-server panel, a connect error),
+      // otherwise asks before leaving like the dashboard does. It used to do nothing at all — with
+      // disableBackHistoryAPI webOS leaves Back entirely to the app.
+      e.preventDefault();
+      if (!loginRef?.handleBackKey()) openExitConfirm();
+      return;
+    }
     if (appPhase === 'users') {
       e.preventDefault();
       // Sub-dialogs (password/manual/QC) are closed by the Login component itself;
@@ -1429,8 +1596,6 @@
       return;
     }
     if (appPhase !== 'app') return;
-    // Confirmation dialog open → Back cancels it (instead of closing)
-    if (showExitConfirm) { showExitConfirm = false; e.preventDefault(); return; }
     // Close open overlays first (applies to remote Back too)
     if (showSyncPlay)   { closeSyncPlay();         e.preventDefault(); return; }
     if (contextItem)    { contextItem = null;     e.preventDefault(); return; }
@@ -1444,7 +1609,7 @@
     else if (viewState === 'settings') { backToDashboard('settings');  e.preventDefault(); }
     else if (viewState === 'search')   { backToDashboard('search');    e.preventDefault(); }
     else if (viewState === 'favorites') { backToDashboard('favorites'); e.preventDefault(); }
-    else if (viewState === 'dashboard') { showExitConfirm = true;      e.preventDefault(); }
+    else if (viewState === 'dashboard') { openExitConfirm();           e.preventDefault(); }
   }
 
   // Closes the app on webOS (platformBack at the root); window.close as a fallback.
@@ -1457,8 +1622,6 @@
   // EPISODE NAVIGATION
   // ============================================================
 
-  // The Player now sends the full episode object via dispatch('next/prev', episodeItem).
-  // No separate API call needed anymore — just set currentDetailItem.
   // The Player sends { episode, resetStreak }. resetStreak=true → the user was awake (manual/interaction),
   // counter to 0; otherwise increment (for the "still watching?" sleep protection).
   // Next/previous title. An episode of the SAME series goes on the way the first one started: tracks
@@ -1473,14 +1636,15 @@
   }
 
   function handleNextEpisode(detail) {
-    const episodeItem = detail?.episode ?? detail;   // robustness: also accepts a bare episode object
+    const episodeItem = detail?.episode;
     if (!episodeItem) return;
     autoPlayStreak = detail?.resetStreak ? 0 : autoPlayStreak + 1;
     activeMediaSourceId = null;   // new episode → its own default version, not the previous one's
     carryOrPickTracks(episodeItem);
     currentDetailItem = episodeItem;
-    syncQueueIndex(episodeItem);
-    // viewState stays 'player' — {#key currentDetailItem.Id} in the template forces a remount
+    playerRun++;
+    syncQueueIndex(episodeItem, +1);
+    // viewState stays 'player' — the {#key} on id + playerRun in the template forces a remount
   }
 
   function handlePrevEpisode(episodeItem) {
@@ -1489,14 +1653,14 @@
     activeMediaSourceId = null;
     carryOrPickTracks(episodeItem);
     currentDetailItem = episodeItem;
-    syncQueueIndex(episodeItem);
+    playerRun++;
+    syncQueueIndex(episodeItem, -1);
   }
 
   // ── Person view (filmography) ───────────────────────────────
   let currentPerson      = $state(null);       // seed person for the person view (Person.svelte loads itself)
   let personReturnView   = $state('search');   // where "Back" leads
 
-  // Collections (BoxSets) — own grid view, mirrored from the person view
   // Collections/playlists — own view (Collection.svelte loads itself).
   let currentCollection    = $state(null);          // seed BoxSet/playlist
   let collectionReturnView = $state('dashboard');   // where "Back" leads
@@ -1640,7 +1804,10 @@
       dashboardReloadKey++;
     }
     if (collectionStack.length) { popCollectionLevel(false); }   // its card is gone → first one
-    else if (collectionReturnView === 'library' && playlistsLibGone) { currentLibrary = null; viewState = 'dashboard'; }
+    else if (collectionReturnView === 'library' && playlistsLibGone) {
+      currentLibrary = null; viewState = 'dashboard';
+      focusContent({ why: 'playlist deleted, playlists library gone', heldByOther: heldOutsideSidebar });
+    }
     else {
       // Back onto the title page it was opened from — but its card is gone, so onto the page itself.
       if (collectionReturnView === 'details' && collectionReturnDetails) {
@@ -1650,6 +1817,11 @@
       collectionReturnDetails = null;
       viewState = collectionReturnView;
       restoreCollectionTrip();
+      // The two views that restore nothing of their own on this way back — focus was left on
+      // nothing and the next key opened the sidebar. The card is gone: the Library takes the one
+      // that moved into its place (restoreView keeps the position), the dashboard its first card.
+      if (viewState === 'library') libraryRef?.restoreView();
+      else if (viewState === 'dashboard') focusCardAgain(id, null, '(playlist deleted)');
     }
   }
 
@@ -1787,14 +1959,6 @@
     contextReturnNth = cardOrdinal(contextReturnEl, contextReturnId);
     contextItem = item;
   }
-  // Put focus back on a card that may not exist yet, because the view it belongs to can still be
-  // reloading. Three routes, in order: the live element (instant where the view stayed mounted, e.g.
-  // the dashboard after a context action), the item's data-item-id once its card is back, and only
-  // then the first card in the view rather than losing focus altogether.
-  //
-  // Every attempt stands down if something else holds focus by then, so a poll running over half a
-  // second can never fight a user who has already navigated on. Bounded and self-terminating — the
-  // shape to copy for anything that must focus an element which does not exist yet (see CLAUDE.md).
   // The same title can sit in SEVERAL rows at once — "Continue watching" and the watchlist show it
   // together, and the two card snippets are reused across eight rows. data-item-id is therefore not
   // unique, and querySelector would always hand back the topmost row. So remember WHICH occurrence
@@ -1806,6 +1970,14 @@
     return i < 0 ? 0 : i;
   }
 
+  // Put focus back on a card that may not exist yet, because the view it belongs to can still be
+  // reloading. Three routes, in order: the live element (instant where the view stayed mounted, e.g.
+  // the dashboard after a context action), the item's data-item-id once its card is back, and only
+  // then the first card in the view rather than losing focus altogether.
+  //
+  // Every attempt stands down if something else holds focus by then, so a poll running over half a
+  // second can never fight a user who has already navigated on. Bounded and self-terminating — the
+  // shape to copy for anything that must focus an element which does not exist yet (see CLAUDE.md).
   function focusCardAgain(id, el, why = '', nth = 0) {
     let tries = 0;
     const attempt = () => {
@@ -1861,10 +2033,44 @@
       libraryRef.removeItem(contextItem.Id);
     }
   }
+  // Play a card's title straight away — the home screen banner's Play and a card menu's Play/Resume.
+  // A series or season plays its next episode (playableFor, the details page's rule). The way back
+  // is the card, set up like a trip into Details from it: after the player comes the title page of
+  // what played, and Back from there lands on the card (or, from a title page, on that page).
+  async function playFromCard(item, el, nth = 0) {
+    const from = viewState, user = activeUserId;
+    const target = await playableFor(item, { serverUrl: session.serverUrl, userId: activeUserId, headers: getAuthHeaders() });
+    if (!target || viewState !== from || activeUserId !== user) return;   // moved on while it resolved
+    if (from !== 'details') {
+      beginChainIfRoot();
+      detailsOrigin       = from;
+      detailsReturnId     = item.Id;
+      detailsReturnEl     = el;
+      detailsReturnNth    = nth;
+      detailsReturnScroll = scrollTopOf(el);
+      if (from === 'library') libraryRef?.rememberSpot(item, el);
+    }
+    startPlayback({ item: target, audioIndex: -1, subtitleIndex: -1 });
+  }
+  function contextPlay(item) {
+    const el = contextReturnEl, nth = contextReturnNth;   // the card, not the menu's button
+    contextReturnId = null; contextReturnEl = null;       // playback takes over the focus
+    contextItem = null;
+    playFromCard(item, el, nth);
+  }
+
   function contextOpenDetails(item) {
+    // The card the menu was opened on is the way back — not the menu's own button, which
+    // showItemDetails() would find focused (occurrence 0: Back landed on the FIRST copy of the title,
+    // in Continue watching rather than the watchlist row it came from). The Library keeps its own
+    // memory and has to be told as well, or it restored the card of an earlier visit.
+    const el = contextReturnEl, nth = contextReturnNth;
     contextReturnId = null; contextReturnEl = null;   // Details takes over the focus
     contextItem = null;
-    showItemDetails(item);
+    if (viewState === 'library') libraryRef?.rememberSpot(item, el);
+    showItemDetails(item);   // a playlist or collection opens as one instead — same correction there
+    if (el && viewState === 'details')    { detailsReturnEl = el; detailsReturnNth = nth; detailsReturnScroll = scrollTopOf(el); }
+    if (el && viewState === 'collection') { collectionReturnEl = el; collectionReturnNth = nth; collectionReturnScroll = scrollTopOf(el); }
   }
   // "Add to playlist" from the context menu → open AddToPicker (the focus-return ID stays
   // and only takes effect once the picker is also closed).
@@ -1877,19 +2083,19 @@
     contextReturnId = null; contextReturnEl = null;   // playback takes over the focus
     contextItem = null;
     if (!item?.Id) return;
-    detailsOrigin = viewState;
+    const from = viewState, user = activeUserId;
     try {
       const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300`, { headers: getAuthHeaders() });
       if (!res.ok) { console.warn('play playlist: HTTP', res.status); return; }
       const data  = await res.json();
       const queue = await buildPlayQueue(data.Items || [], { serverUrl: session.serverUrl, userId: activeUserId, headers: getAuthHeaders() });
+      // Moved on while the queue was built (another view, another profile) → do not start.
+      if (viewState !== from || activeUserId !== user) return;
+      detailsOrigin = from;
       if (queue.length) { playQueue = { items: queue, index: 0 }; startPlayback({ item: queue[0], audioIndex: -1, subtitleIndex: -1 }); }
     } catch (e) { console.error('play playlist:', e); }
   }
 
-  // Back from Details/Player → to the origin, restore the library position
-  // Starts playback of an item — used by Details (Play/From-start/Random-episode)
-  // and Collection (random playback). One source instead of two inline copies.
   // "Play all" (collection/playlist): an ordered playback queue. Lives only while the
   // Player is open — it's cleared on leaving so later normal playbacks
   // don't accidentally advance.
@@ -1898,13 +2104,25 @@
   let queuePrev = $derived(playQueue && playQueue.index > 0 ? playQueue.items[playQueue.index - 1] : null);
   $effect(() => { if (viewState !== 'player' && playQueue) playQueue = null; });
 
-  // Carry the queue pointer along on title change in the Player (covers both next AND prev)
-  function syncQueueIndex(playedItem) {
+  // Carry the queue pointer along on title change in the Player (covers both next AND prev). The
+  // neighbour in the direction of travel first: a playlist may hold a title twice, and findIndex
+  // jumped back to its FIRST occurrence — [X, Y, X] then looped Y → X → Y for good.
+  function syncQueueIndex(playedItem, step = 0) {
     if (!playQueue || !playedItem) return;
-    const qi = playQueue.items.findIndex(x => x.Id === playedItem.Id);
+    const near = playQueue.index + step;
+    const qi = step && playQueue.items[near]?.Id === playedItem.Id
+      ? near : playQueue.items.findIndex(x => x.Id === playedItem.Id);
     if (qi >= 0) playQueue = { ...playQueue, index: qi };
   }
+  // Counts every next/previous inside the Player, so the SAME title twice in a row (a playlist can
+  // hold one twice) still remounts it: keyed on the id alone nothing changed, and the Player stayed
+  // in its handing-off state with every key but Back dead.
+  let playerRun = $state(0);
   function startPlayback(p) {
+    // Already playing: a second press of a series' Play (its Next Up request was still running) came
+    // here again — and on the way through set playReturnDetails to null, since the view was no longer
+    // the title page. Back from the player then lost the page it was started from.
+    if (viewState === 'player') return;
     // Starting playback by hand is a deliberate action → the "still watching?" counter starts over.
     // Without this a stale streak from an earlier series session would carry into the new one and
     // could trigger the prompt far too early. Auto-advance never comes through here (it goes via
@@ -1959,7 +2177,7 @@
     resumeStale = true;
   }
 
-  async function returnFromDetails() {
+  function returnFromDetails() {
     const backId = detailsReturnId, backEl = detailsReturnEl, backNth = detailsReturnNth;
     const backScroll = detailsReturnScroll;
     detailsReturnId = null; detailsReturnEl = null; detailsReturnNth = 0; detailsReturnScroll = 0;
@@ -1978,11 +2196,10 @@
       // still be listed in the overview until you switched views. Increment the key → Favorites reloads.
       favReloadKey++;
     }
-    // The dashboard is the ONLY origin that establishes no focus of its own when it comes back, so
-    // it is the only one handed the card here. Every other view already owns this (see CLAUDE.md):
-    // Library restores scroll AND focus in restoreView() above, Search focuses its input on mount,
-    // and Favourites, Collection and Person each focus at the end of their own load. Calling this
-    // for them would either be inert or fight their own logic.
+    // Each origin gets back its card in its own way (see CLAUDE.md): Library and Search restore
+    // themselves (restoreView), Favourites/Collection/Person take the card as a prop and focus it at
+    // the end of their own load, and the dashboard — the only view with no focus logic of its own —
+    // is focused directly. Calling into the others would either be inert or fight their logic.
     // Unlike those, the dashboard remounts from scratch, so focusing the card also brings its
     // scroll position back — the browser scrolls a focused element into view.
     if (detailsOrigin === 'search') searchRef?.restoreView();
@@ -2069,7 +2286,7 @@
 
   /* TV scaling (10-foot UI): raises the rem-based base size so text and
      spacing look larger from couch distance. Standard browsers are 16px; 20px = +25%.
-     Adjust further if needed, if still too small/large on the TV. */
+     The baseline before the appearance effect applies uiSize (small/medium/large) inline. */
   :global(html) { font-size: 20px; }
 
   /* Accent color themes: in Tailwind v4 all blue utilities use CSS variables.
@@ -2117,7 +2334,7 @@
     animation-duration:  0ms !important;
   }
   /* backdrop-blur is the most expensive GPU effect — disable it under "reduce
-     animations" so older/weaker TVs stay smooth. */
+     animations" so the TV stays smooth. */
   :global([data-reduce-motion="1"] .backdrop-blur-sm),
   :global([data-reduce-motion="1"] .backdrop-blur-md),
   :global([data-reduce-motion="1"] .backdrop-blur-lg) {
@@ -2159,7 +2376,7 @@
           class="bg-white text-red-700 font-bold px-5 py-2 rounded-lg focus:outline-none focus:ring-4 focus:ring-white/70 hover:bg-gray-100 transition-colors">
           {i18n.t.retry}
         </button>
-        <button onclick={() => { session.connectionLost = false; handleLogout(); }}
+        <button onclick={() => { bannerFocus.cancel(); session.connectionLost = false; handleLogout(); }}
           class="bg-red-800 text-white font-bold px-5 py-2 rounded-lg focus:outline-none focus:ring-4 focus:ring-white/70 hover:bg-red-900 transition-colors">
           {i18n.t.switchServer}
         </button>
@@ -2176,7 +2393,7 @@
           <p class="text-gray-400 mt-2">{i18n.t.exitMessage}</p>
         </div>
         <div class="flex gap-3">
-          <button onclick={() => showExitConfirm = false} {@attach focusOnMount()}
+          <button onclick={closeExitConfirm} {@attach focusOnMount()}
             class="flex-1 bg-gray-700 text-white font-bold py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-600 transition-colors">
             {i18n.t.cancel}
           </button>
@@ -2280,6 +2497,8 @@
             onOpenDetails={(item) => showItemDetails(item)}
             onOpenCollection={(col) => openCollection(col)}
             onOpenContext={(item) => openContextMenu(item)}
+            onPlay={(item, el) => playFromCard(item, el, cardOrdinal(el, item.Id))}
+            navIcons={displaySettings.navIcons}
           />
           {/key}
 
@@ -2293,7 +2512,7 @@
             {serverVersion}
             libraries={navLibraries}
             publicUsers={users} {sharedProfile} {sharedTokens}
-            clientAuthHeader={CLIENT_AUTH_HEADER}
+            clientAuthHeader={SHARED_QC_AUTH_HEADER}
             onSharedToggle={toggleSharedEnabled}
             onSharedSetMember={setSharedMember}
             onSharedRemoveMember={removeSharedMember}
@@ -2388,7 +2607,7 @@
          the end of a video / on back). Entering stays instant so playback isn't delayed.
          uiFade honours "reduce animations" (duration 0). -->
     <div out:uiFade={{ duration: 150 }} class="absolute inset-0 z-[100] bg-black w-full h-full">
-      {#key currentDetailItem.Id}
+      {#key `${currentDetailItem.Id}:${playerRun}`}
         {#await lazyPlayer() then Player}
         <Player
           item={currentDetailItem}
@@ -2428,6 +2647,7 @@
       group={syncMyGroup}
       groups={syncGroups}
       loading={syncLoading}
+      error={syncError}
       onCreate={syncCreate}
       onJoin={(groupId) => syncJoin(groupId)}
       onLeave={syncLeave}
@@ -2445,6 +2665,7 @@
       onClose={() => contextItem = null}
       onChanged={onContextChanged}
       onOpenDetails={contextOpenDetails}
+      onPlay={contextPlay}
       onAddToList={contextAddToList}
       onAddToCollection={contextAddToCollection}
       onPlayAll={contextPlayPlaylist}
@@ -2453,7 +2674,7 @@
   {/if}
 
   <!-- AddToPicker for the context menu (focus returns to the card after closing) -->
-  <AddToPicker mode={contextPickerMode} item={contextPickerItem} {selectedUser} {getAuthHeaders}
+  <AddToPicker mode={contextPickerMode} item={contextPickerItem} {selectedUser}
     onCreated={refreshLibraries} onClose={() => contextPickerMode = null} />
 
   <!-- CLOCK — top right in the app views. In the Player NOT this overlay: the Player brings

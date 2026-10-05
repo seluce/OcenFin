@@ -12,12 +12,13 @@
   // (startup / quick switch / shared profile) and finishLogin.
   // This component reports results via narrow callbacks.
   // ============================================================
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { startQuickConnect as startQC } from '../quickconnect.js';
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { i18n } from '../i18n.svelte.js';
   import { session } from '../session.svelte.js';
-  import { focusOnMount, tvKeyboard, dlog } from '../utils.js';
+  import { focusOnMount, tvKeyboard, dlog, isRepeatedEnter, AVATAR_COLORS } from '../utils.js';
+  import AppMark from './AppMark.svelte';
 
   let {
     phase = $bindable('servers'), // 'servers' | 'users' — App controls the entry point (startup/profile switch/logout)
@@ -27,7 +28,7 @@
     clientAuthHeader = '',        // auth header without a user reference (Quick Connect Initiate)
     authHeaderFor,                // (name) => auth header with a user-specific DeviceId
     getStoredToken,               // (serverId, userId) => token | undefined (quick switch)
-    onValidateToken,              // (token) => Promise<boolean>
+    onValidateToken,              // (token) => Promise<true | false | null> — null: no verdict (unreachable)
     onServerConnected,            // (server) => void — App sets selectedServer
     onFetchUsers,                 // () => Promise<void> — fills users (App state)
     onSaveServer,                 // (server) => void — append + persist
@@ -58,11 +59,23 @@
   let qcSession = null;   // { promise, cancel } from quickconnect.js — the flow itself lives there
 
   // Entry directly on the profile choice (profile switch or expired auto-login token):
-  // users can be empty then → load once.
-  $effect(() => { if (phase === 'users' && server && users.length === 0) onFetchUsers?.(); });
+  // users can be empty then → load ONCE per visit. A server that hides every profile answers []
+  // — a new array each time, which re-ran this effect and hammered /Users/Public for as long as the
+  // screen stood (the latch App's Settings effect already had for the same reason). The latch is
+  // re-armed while the server is unreachable, so the list loads once it answers again — the start
+  // lands here when the saved session could not be checked (App: restore).
+  let usersFetchTried = false;
+  $effect(() => {
+    if (phase !== 'users' || !server || session.connectionLost) { usersFetchTried = false; return; }
+    if (users.length === 0 && !usersFetchTried) { usersFetchTried = true; onFetchUsers?.(); }
+  });
 
   // QC polling never outlives the view (login success or switch unmounts the component)
   onDestroy(() => qcSession?.cancel());
+  // …nor the server it was started on. Login stays MOUNTED from the profiles back to the server
+  // list (Back, "choose another server", a logout from App), so an attempt still waiting for its
+  // code kept running there and showed that code on the NEXT server's profile screen.
+  $effect(() => { if (phase === 'servers') untrack(cancelQuickConnect); });
 
   // There is no sidebar in this phase to catch a lost focus, so both places where an element
   // disappears under the focus hand it on explicitly.
@@ -96,15 +109,32 @@
   }
 
   /** Back key, called by App.handleGlobalBack (pattern like Collection.handleBackKey):
-   *  true = consumed here (sub-dialog closed), false = App goes to the server selection. */
+   *  true = consumed here (sub-dialog closed), false = App goes to the server selection — or, on
+   *  the server list itself, asks whether to leave the app. */
   export function handleBackKey() {
-    if (showPasswordForm || showManualLogin || qcCode) {
+    if (phase === 'servers') {
+      if (serverConnectError) { backToServerList(); return true; }
+      if (showAddServer) { showAddServer = false; tick().then(() => addServerBtn?.focus()); return true; }
+      return false;
+    }
+    // qcSession as well as qcCode: while Initiate is still in flight there is no code on screen yet,
+    // and Back has to end that attempt too, not leave it running behind the server list.
+    if (showPasswordForm || showManualLogin || qcCode || qcSession) {
       if (showPasswordForm) closePasswordForm();   // back onto the profile it belonged to
       showManualLogin = false;
-      if (qcCode) cancelQuickConnect();
+      if (qcCode || qcSession) cancelQuickConnect();
       return true;
     }
     return false;
+  }
+
+  // The connect error's "back to the servers" took its own button away and left focus nowhere —
+  // there is no sidebar in this phase to catch it. Land on the server that failed.
+  function backToServerList() {
+    const id = pendingServer?.id;
+    serverConnectError = '';
+    pendingServer = null;
+    tick().then(() => (serverListEl?.querySelector(`[data-server-id="${id}"]`) || addServerBtn)?.focus());
   }
 
   // ============================================================
@@ -317,11 +347,21 @@
   // SIGN-IN
   // ============================================================
 
+  // A stable colour per profile name for tiles without a picture (same hash idea as deviceIdHash in App).
+  function initialColor(name) {
+    let h = 5381; const s = String(name || '');
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+    return AVATAR_COLORS[h % AVATAR_COLORS.length];
+  }
+
+  let signingIn = false;   // one sign-in at a time — a held OK clicks a tile or button repeatedly
+
   /** Profile clicked — quick sign-in via a saved token if available, otherwise the password form.
    *  Jellyfin 12 no longer says which profiles have a password (UserDto.HasPassword is obsolete and
    *  always true), so a profile without one confirms the form empty — never tried unasked, since a
    *  failed attempt counts toward the lockout. */
   async function handleUserClick(user) {
+    if (signingIn) return;
     loginError      = '';
     password        = '';
     pendingUser     = user;
@@ -329,8 +369,16 @@
 
     const storedToken = getStoredToken?.(server?.id, user.Id);
     if (storedToken) {
-      if (await onValidateToken?.(storedToken)) {
+      signingIn = true;
+      const valid = await onValidateToken?.(storedToken);
+      signingIn = false;
+      if (valid) {
         onDone?.(user, storedToken);
+        return;
+      } else if (valid === null) {
+        // No verdict — the server did not answer. A password form now would only invite an attempt
+        // that cannot succeed; the saved sign-in is tried again on the next press.
+        loginError = i18n.t.errOffline;
         return;
       } else {
         // Token rejected: do NOT delete the entry — it represents the user's wish to save.
@@ -344,6 +392,11 @@
   }
 
   async function authenticateUser(username, pw) {
+    // Every failed attempt counts toward the lockout that DISABLES the account: one request at a
+    // time, and only on the first Enter of a press — never on the auto-repeat of a held OK, which
+    // otherwise also runs on from a profile tile into this form's field as an empty attempt.
+    if (signingIn || isRepeatedEnter()) return;
+    signingIn = true;
     loginError = '';
     try {
       const res = await fetch(`${session.serverUrl}/Users/AuthenticateByName`, {
@@ -360,6 +413,7 @@
         loginError = i18n.t.errLogin;
       }
     } catch { loginError = i18n.t.errOffline; }
+    finally { signingIn = false; }
   }
 
   // Quick Connect — code on the TV, confirmed on a phone that is already signed in. The flow
@@ -370,15 +424,22 @@
     loginError = '';
     showPasswordForm = false;
     showManualLogin  = false;
-    qcSession = startQC(session.serverUrl, clientAuthHeader, ({ code, qrSvg }) => { qcCode = code; qcQrSvg = qrSvg; });
+    const mine = qcSession = startQC(session.serverUrl, clientAuthHeader, ({ code, qrSvg }) => { qcCode = code; qcQrSvg = qrSvg; });
     try {
-      const { user, token } = await qcSession.promise;
+      const { user, token } = await mine.promise;
       qcCode = qcQrSvg = null;
+      // Like the password path: a profile whose saved sign-in had expired gets the fresh token, or
+      // the password form would come back on every switch while "save password" stays on.
+      onTokenRefreshed?.(server?.id, user.Id, token);
       onDone?.(user, token);
     } catch (err) {
       if (err === 'cancelled') return;          // the user backed out — not an error to report
       qcCode = qcQrSvg = null;
       loginError = err === 'networkError' ? i18n.t.networkError : i18n.t.qcError;
+    } finally {
+      // Over: forget it, or Back would take one more press to "cancel" a finished attempt. Only if
+      // it is still ours — a second press has already put a new one in its place.
+      if (qcSession === mine) qcSession = null;
     }
   }
 
@@ -396,9 +457,12 @@
   <div class="h-full flex items-center justify-center p-8">
     <div class="w-full max-w-2xl flex flex-col gap-6">
 
-      <div class="text-center mb-2">
-        <h1 class="text-4xl font-bold text-blue-500 mb-1">{i18n.t.title}</h1>
-        <p class="text-gray-400">{i18n.t.serverSelectPrompt}</p>
+      <!-- The app's mark rather than a blue word: the first screen of a fresh install is where the
+           logo belongs most. -->
+      <div class="text-center mb-2 flex flex-col items-center">
+        <AppMark class="w-20 h-20 mb-4 drop-shadow-xl" />
+        <h1 class="text-4xl font-bold text-white mb-2">{i18n.t.title}</h1>
+        <p class="text-gray-400 text-lg">{i18n.t.serverSelectPrompt}</p>
       </div>
 
       <!-- Saved servers + error message: own focus group -->
@@ -412,6 +476,7 @@
             <div class="flex items-center gap-3">
               <button
                 onclick={() => connectToServer(server)}
+                data-server-id={server.id}
                 {@attach focusOnMount(i === 0)}
                 class="flex-1 flex items-center justify-between p-5 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700
                        border border-gray-600 hover:border-blue-500 focus:border-blue-500
@@ -464,7 +529,7 @@
               {i18n.t.serverRetry}
             </button>
             <button
-              onclick={() => { serverConnectError = ''; pendingServer = null; }}
+              onclick={backToServerList}
               class="flex-1 bg-transparent border border-gray-600 hover:bg-gray-800 focus:bg-gray-800 text-gray-300 font-bold py-3 rounded-lg
                      focus:outline-none focus:ring-2 focus:ring-white transition-colors"
             >
@@ -499,7 +564,7 @@
         <svg class="w-6 h-6 transition-transform {showAddServer ? 'rotate-45' : ''}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
         </svg>
-        {showAddServer ? i18n.t.qcCancel : i18n.t.addServer}
+        {showAddServer ? i18n.t.cancel : i18n.t.addServer}
       </button>
 
       {#if showAddServer}
@@ -552,7 +617,7 @@
             <div class="flex-1 h-px bg-gray-700"></div>
           </div>
 
-          <!-- Manuelle URL -->
+          <!-- Manual URL -->
           <div class="flex gap-3">
             <!-- tvKeyboard here and nowhere else in this view: on the way to the OK button you pass
                  THROUGH this field, and a bare input opens the on-screen keyboard the moment focus
@@ -593,8 +658,8 @@
 
       <!-- Server name as context -->
       {#if server}
-        <p class="text-gray-500 text-lg font-medium tracking-wide">
-          {server.name} · <span class="text-gray-600">{server.url}</span>
+        <p class="text-gray-400 text-xl font-medium tracking-wide">
+          {server.name} · <span class="text-gray-500">{server.url}</span>
         </p>
       {/if}
 
@@ -606,7 +671,7 @@
           <button onclick={cancelQuickConnect} {@attach focusOnMount()}
             class="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-4 rounded-xl
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">
-            {i18n.t.qcCancel}
+            {i18n.t.cancel}
           </button>
         </div>
 
@@ -646,11 +711,13 @@
       {:else if showManualLogin}
         <div class="bg-gray-800 p-10 rounded-2xl shadow-xl max-w-xl w-full text-center border border-gray-700">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.manualLogin}</h2>
+          <!-- Enter in the name moves on to the password. It used to sign in straight away, i.e. try
+               the still empty password — an attempt toward the lockout that nobody asked for. -->
           <input
             type="text"
             bind:value={manualUsername}
             placeholder={i18n.t.username}
-            onkeydown={(e) => e.key === 'Enter' && authenticateUser(manualUsername, manualPassword)}
+            onkeydown={(e) => e.key === 'Enter' && e.currentTarget.parentElement?.querySelector('[data-manual-pw]')?.focus()}
             class="w-full bg-gray-900 text-white text-xl p-5 rounded-xl mb-4 border border-gray-600
                    focus:outline-none focus:ring-4 focus:ring-blue-500"
             {@attach focusOnMount()}
@@ -659,6 +726,7 @@
             type="password"
             bind:value={manualPassword}
             placeholder={i18n.t.password}
+            data-manual-pw
             onkeydown={(e) => e.key === 'Enter' && authenticateUser(manualUsername, manualPassword)}
             class="w-full bg-gray-900 text-white text-xl p-5 rounded-xl mb-6 border border-gray-600
                    focus:outline-none focus:ring-4 focus:ring-blue-500"
@@ -686,11 +754,13 @@
             {#each users as user, i (user.Id)}
               <button onclick={() => handleUserClick(user)} data-user-id={user.Id}
                 {@attach focusOnMount(i === 0)} class="flex flex-col items-center group focus:outline-none">
-                <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 shadow-xl transition-transform duration-200">
+                <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow shadow-xl transition-transform duration-200">
                   {#if user.PrimaryImageTag}
                     <img src="{session.serverUrl}/UserImage?UserId={user.Id}&tag={user.PrimaryImageTag}&format=webp" alt={user.Name} class="w-full h-full object-cover"/>
                   {:else}
-                    <div class="w-full h-full bg-gray-700 flex items-center justify-center">
+                    <!-- No picture: the initial on a colour of its own per name (the avatar palette),
+                         so several such profiles are told apart at a glance from the sofa. -->
+                    <div class="w-full h-full flex items-center justify-center" style="background-color: {initialColor(user.Name)}">
                       <span class="text-6xl font-bold">{user.Name.charAt(0)}</span>
                     </div>
                   {/if}
@@ -704,7 +774,7 @@
         <!-- Divider -->
         <div class="flex items-center gap-4 w-full max-w-xl mt-4">
           <div class="flex-1 h-px bg-gray-800"></div>
-          <span class="text-gray-600 text-sm">{i18n.t.or}</span>
+          <span class="text-gray-500 text-base">{i18n.t.or}</span>
           <div class="flex-1 h-px bg-gray-800"></div>
         </div>
 
@@ -738,7 +808,8 @@
         <!-- Choose a different server -->
         <button
           onclick={onSwitchServer}
-          class="text-gray-600 hover:text-gray-400 focus:text-gray-400 focus:outline-none text-sm font-medium mt-2"
+          class="text-gray-400 hover:text-white focus:text-white focus:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-white
+                 text-lg font-medium mt-2 px-5 py-2 rounded-lg transition-colors"
         >
           ← {i18n.t.switchServer}
         </button>

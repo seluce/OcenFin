@@ -5,7 +5,13 @@
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
   import { onMount, onDestroy, untrack } from 'svelte';
 
-  let { item, userId, selectedUser, onChanged, onOpenDetails, onAddToList, onAddToCollection, onPlayAll, onClose } = $props();
+  let { item, userId, selectedUser, onChanged, onOpenDetails, onPlay, onAddToList, onAddToCollection, onPlayAll, onClose } = $props();
+
+  // Play is the menu's first entry for anything that can be watched — the most common thing to do
+  // with a card, and it was only reachable through the details page. A series or season plays its
+  // next episode (App: playFromCard). "Resume" when the title itself has a resume point.
+  const PLAYABLE = ['Movie', 'Episode', 'Series', 'Season', 'Video', 'MusicVideo'];
+  const canPlay = PLAYABLE.includes(untrack(() => item?.Type));   // read once — it feeds {@attach}
 
   // Local (optimistic) states — toggled immediately on click so the
   // label/icons in the menu show the change directly. Initialized from the item.
@@ -32,21 +38,30 @@
   function headers() {
     return authHeaders(session.token);
   }
+  // true when the server took it. Each action below changes the card optimistically and puts it
+  // back when not — an error ANSWER (403, 404, 500) never threw, so the card kept a state the
+  // server had refused.
   async function call(method, path) {
     try {
-      await fetch(`${session.serverUrl}${path}`, { method, headers: headers() });
+      const res = await fetch(`${session.serverUrl}${path}`, { method, headers: headers() });
+      if (!res.ok) console.warn('context action failed: HTTP', res.status, path);
+      return res.ok;
     } catch (e) {
       console.error('context action failed', e);
+      return false;
     }
   }
 
   async function toggleWatched() {
     if (!armed) return;
-    const next = !played;
+    const next = !played, hadResume = hasResume;
     played = next;                         // toggle optimistically
     if (next) hasResume = false;           // marked as watched → no more resume
     if (item.UserData) item.UserData.Played = next;
-    await call(next ? 'POST' : 'DELETE', `/UserPlayedItems/${item.Id}?UserId=${userId}`);
+    if (!(await call(next ? 'POST' : 'DELETE', `/UserPlayedItems/${item.Id}?UserId=${userId}`))) {
+      played = !next; hasResume = hadResume;
+      if (item.UserData) item.UserData.Played = !next;
+    }
     onChanged?.();                   // reload only AFTER the server write (otherwise a race: reload reads stale data)
   }
   async function toggleFavorite() {
@@ -54,22 +69,30 @@
     const next = !favorite;
     favorite = next;
     if (item.UserData) item.UserData.IsFavorite = next;
-    await call(next ? 'POST' : 'DELETE', `/UserFavoriteItems/${item.Id}?UserId=${userId}`);
+    if (!(await call(next ? 'POST' : 'DELETE', `/UserFavoriteItems/${item.Id}?UserId=${userId}`))) {
+      favorite = !next;
+      if (item.UserData) item.UserData.IsFavorite = !next;
+    }
     onChanged?.();
   }
   async function resetProgress() {
     if (!armed) return;
+    const was = { hasResume, played, data: item.UserData ? { ...item.UserData } : null };
     hasResume = false; played = false;     // out of "Continue Watching"
     if (item.UserData) { item.UserData.Played = false; item.UserData.PlaybackPositionTicks = 0; }
-    await call('DELETE', `/UserPlayedItems/${item.Id}?UserId=${userId}`);
+    if (!(await call('DELETE', `/UserPlayedItems/${item.Id}?UserId=${userId}`))) {
+      hasResume = was.hasResume; played = was.played;
+      if (was.data) Object.assign(item.UserData, was.data);
+    }
     onChanged?.();
   }
   function openDetails() { if (!armed) return; onOpenDetails?.(item); onClose?.(); }
   function playAll()     { if (!armed) return; onPlayAll?.(item); onClose?.(); }
+  function play()        { if (!armed) return; onPlay?.(item); }
   function addToList()   { if (!armed) return; onAddToList?.(item); onClose?.(); }
   function addToCollection() { if (!armed) return; onAddToCollection?.(item); onClose?.(); }
   // Show collection only if the profile has the right (like in Details/Player). Hide only on an explicit
-  // false → missing field/older server: visible + 403 fallback in AddToPicker.
+  // false → a missing field stays visible, with the 403 fallback in AddToPicker.
   const canManageCollections = $derived(selectedUser?.Policy?.EnableCollectionManagement !== false);
 
   function handleKeyDown(e) {
@@ -113,9 +136,17 @@
           {i18n.t.openDetails}
         </button>
       {:else}
-      <button onclick={toggleWatched} {@attach focusOnMount()}
+      {#if canPlay}
+        <button onclick={play} {@attach focusOnMount()}
+          class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
+                 hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
+          <svg class="w-6 h-6 shrink-0 text-gray-400" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          {hasResume ? i18n.t.resumePlay : i18n.t.play}
+        </button>
+      {/if}
+      <button onclick={toggleWatched} {@attach focusOnMount(!canPlay)}
         class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-               hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
+               hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
         <svg class="w-6 h-6 shrink-0 {played ? 'text-green-400' : 'text-gray-400'}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
         </svg>
@@ -124,7 +155,7 @@
 
       <button onclick={toggleFavorite}
         class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-               hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
+               hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
         <svg class="w-6 h-6 shrink-0 {favorite ? 'text-red-500' : 'text-gray-400'}" fill={favorite ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"/>
         </svg>
@@ -133,7 +164,7 @@
 
       <button onclick={() => toggleWatchlist(item)}
         class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-               hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
+               hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
         <svg class="w-6 h-6 shrink-0 {inWatchlist(item.Id) ? 'text-blue-400' : 'text-gray-400'}" fill={inWatchlist(item.Id) ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"/>
         </svg>
@@ -143,7 +174,7 @@
       {#if hasResume}
         <button onclick={resetProgress}
           class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-                 hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
+                 hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
           <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
           </svg>
@@ -153,7 +184,7 @@
 
       <button onclick={addToList}
         class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-               hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
+               hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
         <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h10.5M3.75 12h10.5M3.75 17.25h6M18 14.25v6M15 17.25h6"/>
         </svg>
@@ -163,7 +194,7 @@
       {#if canManageCollections}
         <button onclick={addToCollection}
           class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-                 hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
+                 hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
           <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 10.5v6m3-3H9m4.06-7.19l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"/>
           </svg>
@@ -173,7 +204,7 @@
 
       <button onclick={openDetails}
         class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-               hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors disabled:opacity-50">
+               hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
         <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/>
         </svg>

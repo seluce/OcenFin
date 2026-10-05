@@ -4,6 +4,7 @@
   // scroll, its own view cache, backdrop preview). App only coordinates navigation/details/sort
   // persistence and passes things in via props/callbacks (pattern like Collection/Favorites).
   import { tick } from 'svelte';
+  import WatchedBadge from './WatchedBadge.svelte';
   import { session } from '../session.svelte.js';
   import { i18n } from '../i18n.svelte.js';
   import { itemProgress, itemBadge, getItemSubtitle, getItemImageUrl, blurUp, itemBlurHash, longPress,
@@ -14,13 +15,13 @@
     library = null,            // { Id, Name } — which library to show (from App)
     reloadKey = 0,             // increment → discard the view cache + reload
     focusFirstOnLoad = false,  // opened from the menu OR a dashboard tile: focus the first card
-                               // (not "Random"). Both entry points mean the same thing — the
+                               // (not "Surprise me"). Both entry points mean the same thing — the
                                // dashboard one passed false until 2026-08-25, so it came up blank.
     sharedReady = false,       // App level: shared profile active? (shows the "watch together" toggle)
     partnerPlayedIds = null,   // IDs watched by AT LEAST ONE member — a union, see App.svelte.
                                // Filtering them out leaves what is new to both. (App loads, Library filters.)
     librarySorts = {},         // remembered sort per library
-    displaySettings = {},      // backdropPreview, episodeCount
+    displaySettings = {},      // backdropPreview, episodeCount, letterBar
     onOpenDetails,             // (item) => void
     onContextMenu,             // (item) => void
     onSortPersist,             // (libId, sort) => void — App saves into the profile
@@ -106,7 +107,6 @@
                   || selectedAudioLangs.length > 0 || selectedSubtitleLangs.length > 0);
 
   // ── Sorting ─────────────────────────────────────────────────
-  let showSortMenu = $state(false);
   let currentSort  = $state({ by: 'SortName', order: 'Ascending' });
   const sortOptions = [
     { by: 'SortName',        order: 'Ascending',  key: 'sortName' },
@@ -115,9 +115,12 @@
     { by: 'CommunityRating', order: 'Descending', key: 'sortRating' },
     { by: 'Random',          order: 'Ascending',  key: 'sortRandom' },
   ];
-  let showLetterBar = $derived(currentSort.by === 'SortName');
-  const sortFilterFocus = makeFocusReturn();   // trigger button for focus return after closing
-  $effect(() => { if (!showSortMenu && !showFilterMenu && sortFilterFocus.pending) sortFilterFocus.restore(); });
+  // Only with name sorting, and only if the profile has not switched it off (Settings → Content).
+  // Hiding it needs nothing else: other sorts hide it already, and a letter picked earlier only set
+  // where the list started — it keeps loading upwards and downwards as usual.
+  let showLetterBar = $derived(currentSort.by === 'SortName' && displaySettings.letterBar !== false);
+  const filterFocus = makeFocusReturn();   // trigger button for focus return after closing
+  $effect(() => { if (!showFilterMenu && filterFocus.pending) filterFocus.restore(); });
 
   // ── Watch together ──────────────────────────────────────────
   let sharedWatchMode = $state(false);
@@ -157,7 +160,9 @@
   async function loadGenres(libraryId) {
     try {
       const res = await fetch(`${session.serverUrl}/Genres?ParentId=${libraryId}&UserId=${selectedUser.Id}&EnableTotalRecordCount=false`, authOpts());
-      if (res.ok) { const d = await res.json(); availableGenres = d.Items || []; }
+      // Same guard as loadLanguages: after a quick A → B switch, A's genres arrived last and filled
+      // B's filter menu.
+      if (res.ok) { const d = await res.json(); if (currentLibraryId === libraryId) availableGenres = d.Items || []; }
     } catch { }
   }
 
@@ -203,7 +208,9 @@
     const f = [];
     if (activeFilters.isFavorite)  f.push('IsFavorite');
     if (activeFilters.isPlayed)    f.push('IsPlayed');
-    if (activeFilters.isNotPlayed) f.push('IsNotPlayed');
+    // IsUnplayed — this used to send "IsNotPlayed", which Jellyfin does not know and drops without a
+    // word: the "unwatched" chip never filtered anything.
+    if (activeFilters.isNotPlayed) f.push('IsUnplayed');
     if (f.length) q += `&Filters=${f.join(',')}`;
     for (const g of selectedGenres) q += `&Genres=${encodeURIComponent(g)}`;
     if (selectedFsk.length) {
@@ -261,7 +268,7 @@
   let filterMenuSnapshot = '';
   const filterStateKey = () => JSON.stringify([activeFilters, selectedGenres, selectedFsk, selectedAudioLangs, selectedSubtitleLangs]);
   function openFilterMenu(e) {
-    sortFilterFocus.capture(e.currentTarget);
+    filterFocus.capture(e.currentTarget);
     filterMenuSnapshot = filterStateKey();
     showFilterMenu = true;
   }
@@ -276,7 +283,6 @@
     } else {
       currentSort = { by: option.by, order: option.order };
     }
-    showSortMenu = false;
     if (currentSort.by !== 'SortName') { currentLetter = ''; activeLetter = '#'; }
     if (currentLibraryId) onSortPersist?.(currentLibraryId, { ...currentSort });
     loadLibraryItems({ Id: currentLibraryId, Name: currentLibraryName }, null);
@@ -347,7 +353,7 @@
     if (myToken !== loadToken) return;   // a newer request arrived during the count query
     firstLoadedIndex = startIndex;
 
-    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${lib.Id}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
+    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${lib.Id}&Fields=PrimaryImageAspectRatio,SortName,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
     url += getFilterQuery();
 
     try {
@@ -393,7 +399,7 @@
     isFetchingMore = true;
     const myToken = loadToken;   // belongs to the CURRENT list — don't append anymore after a reload
     const start = firstLoadedIndex + currentItems.length;
-    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}&EnableTotalRecordCount=false`;
+    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,SortName,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}&EnableTotalRecordCount=false`;
     url += getFilterQuery();
     try {
       const res = await fetch(url, authOpts());
@@ -429,7 +435,7 @@
     const myToken = loadToken;   // belongs to the CURRENT list — don't prepend anymore after a reload
     const newStart = Math.max(0, firstLoadedIndex - libraryItemLimit);
     const count    = firstLoadedIndex - newStart;
-    const url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}&EnableTotalRecordCount=false`;
+    const url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,SortName,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}&EnableTotalRecordCount=false`;
     try {
       const res = await fetch(url, authOpts());
       if (res.ok && myToken === loadToken) {
@@ -449,6 +455,7 @@
 
   async function playRandomItem() {
     if (!currentLibraryId) return;
+    const libId = currentLibraryId, from = document.activeElement;
     try {
       const res = await fetch(
         `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}` +
@@ -457,7 +464,9 @@
       );
       if (res.ok) {
         const data = await res.json();
-        if (data.Items?.length) onOpenDetails?.(data.Items[0]);
+        // Still this library (the draw is a request away)? Then back from the title comes back to
+        // the "Surprise me" button — it used to restore whatever card had been opened LAST, or nothing.
+        if (data.Items?.length && currentLibraryId === libId) { rememberSpot(null, from); onOpenDetails?.(data.Items[0]); }
       }
     } catch { }
   }
@@ -511,6 +520,8 @@
       if (item) {
         // ?? '' rather than a bare [0]: this runs on every scroll settle, and a title without a
         // usable name would throw inside the timeout on each one.
+        // SortName (requested in Fields — the server leaves it out otherwise): the letter queries go
+        // by it, so "The Matrix" lives under M, and the bar has to agree.
         const char = ((item.SortName || item.Name || '')[0] ?? '').toUpperCase();
         activeLetter = /[A-Z]/.test(char) ? char : '#';
       }
@@ -521,16 +532,24 @@
   let savedScroll  = 0;
   let lastFocusedId = null;
   let lastFocusedIdx = -1;
+  let lastFocusedEl = null;   // a control rather than a card ("Surprise me") — restoreView's last resort
   function openDetails(item) {
+    rememberSpot(item);
+    onOpenDetails?.(item);
+  }
+  // Where Back from Details returns to. Every way into Details from this view has to set it — the
+  // grid card here, "Surprise me", and App's context menu "Details" (exported) — or restoreView() lands
+  // on the card of an EARLIER visit, possibly at that position in another library, or on nothing.
+  export function rememberSpot(item, el = null) {
     savedScroll   = libraryScrollContainer?.scrollTop || 0;
-    lastFocusedId = item.Id;
+    lastFocusedId = item?.Id ?? null;
+    lastFocusedEl = el;
     // The POSITION in the rendered grid as well, because the card may not be there on the way back:
     // App removes an item that no longer matches an active status filter (favourite taken off in
     // Details), and it does so while restoreView() is already suspended on its tick — so the card
     // is reliably gone by the time the id is looked up. Position is what survives that.
-    lastFocusedIdx = [...(libraryGrid?.querySelectorAll('[data-item-id]') || [])]
-      .findIndex(el => el.getAttribute('data-item-id') === item.Id);
-    onOpenDetails?.(item);
+    lastFocusedIdx = item ? [...(libraryGrid?.querySelectorAll('[data-item-id]') || [])]
+      .findIndex(c => c.getAttribute('data-item-id') === item.Id) : -1;
   }
 
   // ── Callable from App via bind:this ─────────────────────────
@@ -549,6 +568,8 @@
         dlog('[focus] library restore · card gone, took position', lastFocusedIdx, 'of', cards.length);
       }
       if (btn) btn.focus();
+    } else if (lastFocusedEl?.isConnected) {
+      lastFocusedEl.focus();
     }
   }
   export function removeItem(id) {
@@ -635,33 +656,26 @@
 
     <div class="flex justify-between items-center gap-6 mb-10 pr-6">
       <!-- min-w-0 + truncate on the name, shrink-0 on the count and the actions: a very long library
-           name would otherwise push "random / sort / filter" out of view and make them unreachable. -->
+           name would otherwise push "Surprise me / Filter / Watch together" out of view and make them unreachable. -->
       <h1 class="text-4xl font-bold text-white min-w-0 flex items-baseline gap-2">
         <span class="truncate">{currentLibraryName}</span>
         <span class="text-xl text-gray-500 font-normal shrink-0">({totalLibraryItems})</span>
       </h1>
       <div class="flex items-center gap-3 shrink-0">
+        <!-- "Surprise me", not "Shuffle": this opens ONE random title, and the sort row below has a
+             "Random" ORDER — in German both read "Zufällig", side by side. -->
         <button onclick={playRandomItem}
           class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
-                 focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105"
-          title={i18n.t.shuffle}>
+                 focus:outline-none focus:ring-4 focus:ring-white transition-transform shadow-lg border border-gray-700 focus:scale-105"
+          title={i18n.t.surpriseMe}>
           <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M4 4h4l12 16h4M4 20h4l3-4m4-9l2-3h3M20 4v4m0 12v-4"/>
           </svg>
-          {i18n.t.shuffle}
-        </button>
-        <button onclick={(e) => { sortFilterFocus.capture(e.currentTarget); showSortMenu = true; }}
-          class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
-                 focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105"
-          title={i18n.t.sortBy}>
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M3 4h13M3 8h9M3 12h5m4 4l4 4m0 0l4-4m-4 4V8"/>
-          </svg>
-          {i18n.t.sortBy}
+          {i18n.t.surpriseMe}
         </button>
         <button onclick={openFilterMenu}
           class="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 px-6 py-3 rounded-xl text-white font-bold
-                 focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border border-gray-700 focus:scale-105">
+                 focus:outline-none focus:ring-4 focus:ring-white transition-transform shadow-lg border border-gray-700 focus:scale-105">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
           </svg>
@@ -670,7 +684,7 @@
         </button>
         {#if sharedReady}
           <button onclick={toggleSharedWatch}
-            class="flex items-center gap-3 px-6 py-3 rounded-xl font-bold focus:outline-none focus:ring-4 focus:ring-white transition-all shadow-lg border focus:scale-105
+            class="flex items-center gap-3 px-6 py-3 rounded-xl font-bold focus:outline-none focus:ring-4 focus:ring-white transition-transform shadow-lg border focus:scale-105
                    {sharedWatchMode ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-800 hover:bg-gray-700 border-gray-700 text-white'}"
             title={i18n.t.watchTogether}>
             <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -682,7 +696,9 @@
       </div>
     </div>
 
-    <!-- Quick-filter chips: favorites + sorting -->
+    <!-- Quick-filter chips: favorites + sorting. The ONE place to sort — a "Sort" button with a dialog
+         of the very same options sat above it; pressing the active chip again flips the direction,
+         and its arrow shows which way (hence "Name", no longer "Name (A-Z)" under a Z→A arrow). -->
     <div class="flex gap-3 mb-6 px-2 py-3 overflow-x-auto hide-scrollbar">
       <button onclick={() => toggleFilter('isFavorite')}
         class="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm whitespace-nowrap
@@ -731,7 +747,7 @@
                  invalidate paint on every interpolation step, re-rasterizing the card incl. its
                  shadow-xl per frame (B4). With transform-only the card rasterizes once and the
                  scale runs purely on the compositor; the focus border switches instantly. -->
-            <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl relative">
+            <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
               {#if item.Type === 'Playlist' && item.ChildCount === 0}
                 <div class="w-full h-full flex items-center justify-center text-gray-600">
                   <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
@@ -745,9 +761,7 @@
                 </div>
               {/if}
               {#if badge}
-                <div class="absolute top-2 left-2 z-10 min-w-[1.6rem] h-[1.6rem] px-1.5 rounded-full flex items-center justify-center bg-blue-600/90 text-white text-xs font-bold shadow-md pointer-events-none">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-                </div>
+                <WatchedBadge />
               {/if}
               {#if itemProgress(item) > 0}
                 <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
@@ -763,7 +777,7 @@
         {/each}
         <!-- Load-more skeleton: fills the freeing grid area with placeholders (same tiles as
              the initial skeleton) so that when scrolling down fast you don't get "stuck" on the last
-             card until the next 50 items are there. -->
+             card until the next page is there. -->
         {#if isFetchingMore}
           {#each Array(12).fill(0) as _}
             <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg animate-pulse"></div>
@@ -806,7 +820,7 @@
         onfocus={() => showJumpLetter(letter)}
         data-hbar-current={activeLetter === letter ? '' : null}
         class="w-10 h-10 flex items-center justify-center rounded-full text-sm font-bold drop-shadow
-               focus:outline-none focus:ring-4 focus:ring-white transition-all transform focus:scale-125
+               focus:outline-none focus:ring-4 focus:ring-white transition-transform transform focus:scale-125
                {activeLetter === letter ? 'text-white bg-blue-600 shadow-lg scale-110' : 'text-gray-300/80 hover:text-white hover:bg-white/10'}"
       >{letter}</button>
     {/each}
@@ -814,47 +828,6 @@
   {/if}
 </div>
 
-<!-- SORT MENU -->
-{#if showSortMenu}
-  <div data-focus-trap role="dialog" tabindex="-1" transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
-    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showSortMenu = false; } }}>
-    <div class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full max-w-xl flex flex-col gap-4 shadow-2xl">
-      <div class="flex justify-between items-center mb-2">
-        <h2 class="text-4xl text-white font-bold">{i18n.t.sortBy}</h2>
-        <button onclick={() => showSortMenu = false} {@attach focusOnMount()} aria-label={i18n.t.close}
-          class="text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
-          <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-          </svg>
-        </button>
-      </div>
-      {#each sortOptions as opt}
-        <button onclick={() => setSort(opt)}
-          class="w-full text-left p-5 text-xl font-bold rounded-xl transition-colors flex items-center justify-between
-                 focus:outline-none focus:ring-4 focus:ring-white
-                 {currentSort.by === opt.by ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-200 hover:bg-blue-600 focus:bg-blue-600'}">
-          <span>{i18n.t[opt.key]}</span>
-          {#if currentSort.by === opt.by}
-            {#if opt.by === 'Random'}
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-            {:else}
-              <span class="flex items-center gap-1 text-sm">
-                {currentSort.order === 'Ascending' ? i18n.t.sortAsc : i18n.t.sortDesc}
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  {#if currentSort.order === 'Ascending'}
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/>
-                  {:else}
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                  {/if}
-                </svg>
-              </span>
-            {/if}
-          {/if}
-        </button>
-      {/each}
-    </div>
-  </div>
-{/if}
 
 <!-- FILTER MENU -->
 {#if showFilterMenu}

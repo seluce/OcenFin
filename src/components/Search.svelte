@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { personImageUrl, authHeaders, blurUp, itemBlurHash, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
+  import { personImageUrl, authHeaders, blurUp, itemBlurHash, getItemImageUrlWithFallbacks as getItemImageUrl, asArray } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick } from 'svelte';
 
@@ -34,6 +34,7 @@
     clearTimeout(searchTimeout);
     query = ''; results = []; people = []; isLoading = false;
     savedScroll = 0; lastFocusedId = null; focusResults = false;
+    personHasTitles.clear();
     searchToken++;                 // any response still in flight is discarded
     tick().then(() => searchInput?.focus());
   }
@@ -47,12 +48,14 @@
   let searchHistory  = $state([]);
   const MAX_HISTORY  = 8;
 
-  // FIX: only a single onMount — loads the history AND focuses the input field
+  // Loads the history and focuses the input field (one onMount for both).
   onMount(() => {
     if (searchInput) searchInput.focus();
     try {
       const hist = localStorage.getItem(`search_history_${selectedUser.Id}`);
-      if (hist) searchHistory = JSON.parse(hist);
+      // Strings in an array, or nothing (CODE-HEALTH §15): valid JSON of another shape broke
+      // saveToHistory (.filter on a non-array) and the history list.
+      if (hist) searchHistory = asArray(JSON.parse(hist)).filter(t => typeof t === 'string');
     } catch { }
   });
 
@@ -99,7 +102,10 @@
   // results. Without it an earlier, slow response can overwrite a later one —
   // you'd then see hits for the second-to-last search term.
   let searchToken = 0;
-  const personHasTitles = new Map();   // personId → boolean; lives only as long as this view is mounted
+  // personId → boolean. Search stays mounted for the whole session, so this is emptied on every fresh
+  // open from the menu (reset) — otherwise it grew for days, and a "no titles" answer was never
+  // asked again even after the library gained some.
+  const personHasTitles = new Map();
 
   function onSearchInput() {
     clearTimeout(searchTimeout);
@@ -168,7 +174,7 @@
 
 </script>
 
-<div class="p-10 pt-16 h-full flex flex-col">
+<div class="p-10 pt-16 h-full flex flex-col ambient">
 
   <!-- SEARCH FIELD — the field's chrome (background, rounding, border) sits on the WRAPPER, so the
        clear button can be a real sibling of the input and still look like it is inside the field.
@@ -246,7 +252,7 @@
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each series as s (s.Id)}
               <button onclick={() => leaveTo(onOpenDetails, s)} data-item-id={s.Id} class="shrink-0 w-48 scroll-m-4 group focus:outline-none text-left">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl">
                   {#if getItemImageUrl(s, 'portrait')}<img src={getItemImageUrl(s, 'portrait')} {@attach blurUp(itemBlurHash(s))} alt={s.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
@@ -265,7 +271,7 @@
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each movies as m (m.Id)}
               <button onclick={() => leaveTo(onOpenDetails, m)} data-item-id={m.Id} class="shrink-0 w-48 scroll-m-4 group focus:outline-none text-left">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl">
                   {#if getItemImageUrl(m, 'portrait')}<img src={getItemImageUrl(m, 'portrait')} {@attach blurUp(itemBlurHash(m))} alt={m.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
@@ -284,7 +290,7 @@
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each episodes as ep (ep.Id)}
               <button onclick={() => leaveTo(onOpenDetails, ep)} data-item-id={ep.Id} class="shrink-0 w-80 scroll-m-4 group focus:outline-none text-left">
-                <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl">
+                <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl">
                   {#if getItemImageUrl(ep, 'landscape')}<img src={getItemImageUrl(ep, 'landscape')} {@attach blurUp(itemBlurHash(ep))} alt={ep.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
@@ -306,7 +312,7 @@
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each people as p (p.Id)}
               <button onclick={() => leaveTo(onOpenPerson, p)} data-item-id={p.Id} class="shrink-0 w-40 scroll-m-4 group focus:outline-none text-center">
-                <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 transition-transform duration-200 shadow-xl mx-auto">
+                <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl mx-auto">
                   {#if personImageUrl(session.serverUrl, p)}
                     <img src={personImageUrl(session.serverUrl, p)} {@attach blurUp(itemBlurHash(p))} alt={p.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}

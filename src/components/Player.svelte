@@ -1,7 +1,7 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro, getItemImageUrl } from '../utils.js';
-  import { rememberTrack, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks } from '../trackmemory.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS } from '../utils.js';
+  import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks } from '../trackmemory.js';
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady, syncNow } from '../syncplay.js';
@@ -15,12 +15,12 @@
 
   let {
     item,
-    selectedAudioIndex = $bindable(),
-    selectedSubtitleIndex = $bindable(),
+    selectedAudioIndex,
+    selectedSubtitleIndex,
     mediaSourceId = null,   // chosen version (FullHD/4K); null = server default
     pickTracks = false,     // App: nobody chose tracks for this title → pick them by the shared rule
     selectedUser,
-    playbackPrefs = { autoSkipIntro: false, autoSkipCredits: false },
+    playbackPrefs = { autoSkipIntro: false, autoSkipRecap: false, autoSkipCredits: false },
     use24h = true,   // time format (from the setting) for the clock in the Player
     showClock = true, // show the clock in the Player (follows the display setting)
     showChapters = false, // chapter markers on the bar (opt-in)
@@ -39,7 +39,7 @@
   } = $props();
 
   // May this profile manage collections? (Policy.EnableCollectionManagement comes with the login user.
-  //  Only hide on an explicit false → older server/missing field: visible + 403 fallback.)
+  //  Only hide on an explicit false → a missing field stays visible, with the 403 fallback.)
   const canManageCollections = $derived(selectedUser?.Policy?.EnableCollectionManagement !== false);
 
   let videoElement;
@@ -75,7 +75,7 @@
   // this derived stays live for the whole film and used to rebuild a Date plus a fresh
   // Intl.DateTimeFormat (toLocaleTimeString with options) ~4×/s. The formatter is cached per
   // language/format; the ≤59 s bucketing error is well inside an estimate that drifts anyway.
-  let endTimeFmt   = $derived(new Intl.DateTimeFormat(i18n.lang === 'de' ? 'de-DE' : 'en-US',
+  let endTimeFmt   = $derived(new Intl.DateTimeFormat(i18n.lang || 'en',
     { hour: '2-digit', minute: '2-digit', hour12: !use24h }));
   let remainingMin = $derived(duration ? Math.floor(Math.max(0, duration - currentTime) / 60) : 0);
   let rightTimeLabel = $derived.by(() => {
@@ -89,7 +89,7 @@
   let clockNow = $state('');
   let clockTimer;
   function updateClock() {
-    clockNow = new Date().toLocaleTimeString(i18n.lang === 'de' ? 'de-DE' : 'en-US',
+    clockNow = new Date().toLocaleTimeString(i18n.lang || 'en',
       { hour: '2-digit', minute: '2-digit', hour12: !use24h });
   }
   $effect(() => { i18n.lang; use24h; updateClock(); });
@@ -97,6 +97,7 @@
   // Loading animation + error state
   let isBuffering = $state(true);
   let playbackError = $state(false);     // shows an error message instead of an endless spinner
+  let playbackRefusal = $state(null);    // the server's ErrorCode when it refused outright (setupPlayback)
   let bufferWatchdog = null;
 
   // If playback REALLY hangs (a stall without an 'error' event), show an error.
@@ -162,6 +163,7 @@
       console.warn('[OcenFin] Direct Play failed → forcing transcode fallback');
       clearBufferWatchdog();
       isBuffering = true; playbackError = false;
+      resumeFromHere();   // a failure at 1:10:00 restarted the transcode at 0:00
       setupPlayback(selectedAudioIndex, selectedSubtitleIndex, true);
       return;
     }
@@ -170,12 +172,21 @@
     playbackError = true;
     flushProgress();          // also save the position on a playback error
   }
+  // The rebuilt stream continues where playback stood, not at the resume point the Player opened with.
+  function resumeFromHere() {
+    startTicks    = Math.round(livePosition() * 10000000);
+    resumeApplied = false;
+  }
+  // Retry builds the stream anew, exactly like a track switch. It used to call load() on the element,
+  // which cannot revive a stopped hls.js — and the error page nearly always shows on a transcode,
+  // because a Direct Play failure goes to the fallback first — so Retry spun until the watchdog
+  // fired again. A stream already on the fallback stays a transcode.
   function retryPlayback() {
     playbackError = false;
+    playbackRefusal = null;
     isBuffering = true;
-    resumeApplied = false;          // on retry, jump back to the position if needed
-    sourceLive = false;             // load() empties the element too — see positionTicks()
-    if (videoElement) { videoElement.load(); videoElement.play(); }
+    resumeFromHere();
+    setupPlayback(selectedAudioIndex, selectedSubtitleIndex, triedTranscodeFallback);
     armBufferWatchdog();
   }
 
@@ -218,11 +229,22 @@
     }
   }
 
-  // ── SyncPlay engine (phase 2a): send local actions + apply received commands ──
+  // ── SyncPlay engine: send local actions + apply received commands ──
   let syncReady        = false;   // send only after a real playback start (prevents sending on the resume seek/autostart)
   let syncQueueSet     = false;   // SetNewQueue for this item already sent/confirmed?
   let syncSuppressUntil = 0;      // briefly suppress outgoing sends while a received command takes effect
-  let _appliedSyncSeq  = 0;       // last applied command (dedupe)
+  // Last applied command (dedupe). App keeps the group's LAST command around, and starting from 0 this
+  // Player applied it again on mount — an Unpause at 31:00 from the previous episode started the next
+  // one at 31:00 (and, through SetNewQueue's position, the whole group with it), also long after the
+  // group was left. A command emitted only moments ago — it arrived while this Player was still
+  // loading — is still applied.
+  const SYNC_CMD_FRESH_MS = 5000;
+  let _appliedSyncSeq  = untrack(() => {
+    const c = syncCommand;
+    if (!c) return 0;
+    const at = new Date(c.EmittedAt || c.When || 0).getTime();
+    return Number.isFinite(at) && syncNow() - at < SYNC_CMD_FRESH_MS ? 0 : c._seq;
+  });
   let _expectSeekEcho  = false;   // the next 'seeked' comes from a received command → don't send it back (robust even on a slow seek)
   let _groupWantsPaused = false;  // the group last commanded pause → undo unwanted auto-play (transcode restart)
   let _userPlayIntent  = 0;       // timestamp of a real user play action (backstop)
@@ -277,7 +299,16 @@
     sendSyncReady(session.serverUrl, session.token, posTicks(), true, syncQueue.playlistItemId);
   }
 
-  // Apply a received group command (with a rough time reference via "When"; fine sync = phase 2b).
+  // The group jumped INTO an intro or recap: someone chose to watch it. This TV's auto-skip must not
+  // jump out again — the skip's own seek fell inside the echo window and was never sent on, so this
+  // TV sat at the segment's end while everyone else played it.
+  function groupSeekedTo(pos) {
+    const i = introData?.Introduction;
+    if (i?.Valid && pos >= (i.ShowSkipPromptAt ?? 0) && pos <= (i.HideSkipPromptAt ?? 0)) introAutoSkipped = true;
+    if (recapSegment && pos >= recapSegment.start && pos < recapSegment.end) recapAutoSkipped = true;
+  }
+
+  // Apply a received group command at its "When" time (server clock, see syncNow below).
   function applySyncCommand(cmd) {
     if (!cmd || cmd._seq === _appliedSyncSeq || !videoElement) return;
     _appliedSyncSeq = cmd._seq;
@@ -298,14 +329,15 @@
     syncSuppressUntil = Date.now() + delay + 600;   // local clock: only ever compared to Date.now()
     dlog('[SyncPlay] ← apply', command, 'pos', Math.round(pos), 'in', delay, 'ms');
     if (command === 'Seek') {
+      groupSeekedTo(pos);
       _expectSeekEcho = true; videoElement.currentTime = pos; currentTime = pos;
     } else if (command === 'Pause') {
       _groupWantsPaused = true;
-      if (Math.abs(videoElement.currentTime - pos) > 1) { _expectSeekEcho = true; videoElement.currentTime = pos; currentTime = pos; }
+      if (Math.abs(videoElement.currentTime - pos) > 1) { groupSeekedTo(pos); _expectSeekEcho = true; videoElement.currentTime = pos; currentTime = pos; }
       videoElement.pause();
     } else if (command === 'Unpause') {
       _groupWantsPaused = false;
-      if (Math.abs(videoElement.currentTime - pos) > 1) { _expectSeekEcho = true; videoElement.currentTime = pos; }
+      if (Math.abs(videoElement.currentTime - pos) > 1) { groupSeekedTo(pos); _expectSeekEcho = true; videoElement.currentTime = pos; }
       setTimeout(() => videoElement?.play().catch(() => {}), delay);
     } else if (command === 'Stop') {
       _groupWantsPaused = true;
@@ -337,12 +369,6 @@
     else if (cmd === 'fastforward') skip(seekStep);
     else if (cmd === 'nexttrack') { if (nextEpisode) goToNextEpisode(true); }
     else if (cmd === 'previoustrack') { goToPrevEpisode(); }
-    // Volume/mute (GeneralCommand)
-    else if (cmd === 'setvolume' && videoElement) { const v = parseInt(c.args?.Volume, 10); if (!isNaN(v)) videoElement.volume = Math.max(0, Math.min(1, v / 100)); }
-    else if (cmd === 'volumeup'   && videoElement) videoElement.volume = Math.min(1, videoElement.volume + 0.1);
-    else if (cmd === 'volumedown' && videoElement) videoElement.volume = Math.max(0, videoElement.volume - 0.1);
-    else if ((cmd === 'mute' || cmd === 'unmute' || cmd === 'togglemute') && videoElement)
-      videoElement.muted = cmd === 'mute' ? true : cmd === 'unmute' ? false : !videoElement.muted;
   }
   let settingsTab   = $state('audio');     // 'audio' | 'subtitle' — which section is shown in the panel
   let controlsTimeout;
@@ -364,7 +390,11 @@
   // So: remember the last position seen while a source was attached, and let positionTicks() decide
   // which of the two to trust. sourceLive is false from just before every teardown until the next
   // source has announced its metadata.
-  let lastPosition = 0;        // seconds
+  // Seeded with the resume point, not 0: until the first loadedmetadata there is no live position,
+  // and the 'play' event (attachSource calls play() before the metadata) flushes a Progress report
+  // right then. With 0 that report wiped the server's resume point on every resumed start, and Back
+  // during the spinner sent Stopped at 0 — the title lost its place and left Continue watching.
+  let lastPosition = startTicks / 10000000;   // seconds
   let sourceLive   = false;
 
   // Moving on FROM the outro means the episode is finished — even though the player deliberately
@@ -387,13 +417,18 @@
     const ticks = item?.RunTimeTicks || 0;          // the element may already be emptied
     return ticks > 0 ? ticks / 10000000 : 0;
   }
+  // Where playback stands, in seconds: the element while a source is live, otherwise the last
+  // position seen (the resume point before the first metadata). Everything that rebuilds the stream
+  // starts from here — a track switch, the transcode fallback, Retry.
+  function livePosition() {
+    return sourceLive ? (videoElement?.currentTime ?? lastPosition) : lastPosition;
+  }
   function positionTicks() {
     if (finishedAtOutro) {
       const runtime = runtimeSeconds();
       if (runtime > 0) return Math.round(runtime * 10000000);
     }
-    const live = sourceLive ? (videoElement?.currentTime ?? lastPosition) : lastPosition;
-    return Math.round(live * 10000000);
+    return Math.round(livePosition() * 10000000);
   }
   let resumeApplied = false;   // execute the resume jump only once
   let playSessionId = crypto.randomUUID();  // replaced by PlaybackInfo
@@ -430,17 +465,11 @@
     return (mediaSourceId && sources?.find(s => s.Id === mediaSourceId)?.MediaStreams) || null;
   }
   // The media source a picked start chooses from: the chosen version, else the FIRST — exactly what
-  // getPlaybackInfo() then plays, and what Details preselects. Not "the item's own": 12.x sorts that
-  // one first anyway, but 10.x sorts by resolution only, and there the tracks would have come from a
-  // different file than the one playing. List items carry no MediaSources → fetched once.
+  // getPlaybackInfo() then plays, and what Details preselects. List items carry no MediaSources →
+  // fetched once.
   async function sourceForPick() {
     let sources = item?.MediaSources;
-    if (!sources?.length && item?.Id) {
-      try {
-        const r = await fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
-        if (r.ok) sources = (await r.json()).MediaSources;
-      } catch {}
-    }
+    if (!sources?.length && item?.Id) sources = (await fetchFullItem())?.MediaSources;
     if (!sources?.length) return null;
     return (mediaSourceId && sources.find(s => s.Id === mediaSourceId)) || sources[0];
   }
@@ -519,7 +548,7 @@
   // ============================================================
 
   // Fetches the server's decision and attaches the matching source to the <video>.
-  // On errors: fall back to the old Direct Play logic (behavior as before).
+  // PlaybackInfo failed without a reason → try the file as a static stream.
   // Supersede guard, same idea as subtitleFetchToken: setupPlayback awaits two round trips, and
   // it can be re-entered before the first finishes — the transcode fallback, a hard audio or
   // subtitle switch, a SyncPlay or admin command. Without this the older call could finish last
@@ -560,10 +589,8 @@
         }
       }
       if (!titleStreams.length && item?.Id) {
-        try {
-          const r = await fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
-          if (r.ok) { const full = await r.json(); if (full?.MediaStreams?.length) titleStreams = full.MediaStreams; }
-        } catch {}
+        const full = await fetchFullItem();
+        if (full?.MediaStreams?.length) titleStreams = full.MediaStreams;
       }
       // Apply the per-series remembered track language ONCE, on the first setup (mount). Matched by
       // language so it's robust across episodes (track order/index may differ). A later manual switch
@@ -595,9 +622,9 @@
       const subStreams = allStreams;
       const subStream  = subtitleIndex !== -1 ? subStreams.find(s => s.Index === subtitleIndex && s.Type === 'Subtitle') : null;
       const subCodec    = (subStream?.Codec || '').toLowerCase();
-      const isPgsSub    = ['pgssub', 'pgs'].includes(subCodec);
-      const isVobSub    = ['dvdsub', 'vobsub', 'sub'].includes(subCodec);          // DVD/VobSub → .mks from 12.0
-      const isGraphicSub = isPgsSub || isVobSub || ['dvbsub'].includes(subCodec);
+      const isPgsSub    = PGS_CODECS.includes(subCodec);
+      const isVobSub    = VOBSUB_CODECS.includes(subCodec);          // DVD/VobSub → .mks from 12.0
+      const isGraphicSub = GRAPHIC_SUB_CODECS.includes(subCodec);
       // libbitsub renders PGS and VobSub client-side (when enabled); anything else graphic, or with
       // client rendering off, has to be burned in.
       const graphicClientRender = clientGraphicRender && (isPgsSub || isVobSub);
@@ -638,6 +665,15 @@
       await attachSource(resolved.url, resolved.isHls);
       applySubtitleOverlay(subtitleIndex, ms);
     } catch (e) {
+      if (mySetup !== setupToken) return;
+      // A refusal with a reason (getPlaybackInfo): the server said no — a direct-play attempt would be
+      // refused just the same. Show why.
+      if (e?.code) {
+        console.warn('[OcenFin] PlaybackInfo refused:', e.code);
+        playbackRefusal = e.code;
+        isBuffering = false; playbackError = true;
+        return;
+      }
       console.error('PlaybackInfo failed, falling back to Direct Play:', e);
       playMethod = 'DirectPlay';
       const url = `${session.serverUrl}/Videos/${item.Id}/stream?static=true&ApiKey=${session.token}` +
@@ -710,8 +746,9 @@
     // immediately, so an adjustment lands while paused too: currentTime stays put, the cue moves.
     if (graphicRenderer) graphicRenderer.timeOffset = -subtitleOffset;
   }
+  // In the app's language: "+0,5 s" in German, "+0.5 s" in English (it used to force the comma).
   function formatOffset(s) {
-    return (s > 0 ? '+' : '') + s.toFixed(1).replace('.', ',') + ' s';
+    return s.toLocaleString(i18n.lang || 'en', { minimumFractionDigits: 1, maximumFractionDigits: 1, signDisplay: 'exceptZero' }) + ' s';
   }
   let subtitleFetchToken = 0;      // ignores responses from a superseded switch
   let graphicRenderer = $state(null);      // libbitsub instance for the currently visible graphic-subtitle overlay
@@ -726,7 +763,7 @@
   let clientAssRender = $derived(playbackPrefs.assRendering && !playbackPrefs.burnSubtitles);
 
   // Text subtitle styling (ONLY for the .subtitle-box overlay = WebVTT/SRT). PGS/VobSub are bitmaps
-  // (only scalable), ASS brings its own styling. Defaults = previous behavior.
+  // (only scalable), ASS brings its own styling.
   let subColor = $derived(({ white:'#ffffff', yellow:'#ffe14d', green:'#6dff6d', cyan:'#66e0ff' })[playbackPrefs.subtitleColor || 'white'] || '#ffffff');
   let subEdgeCss = $derived((playbackPrefs.subtitleEdge === 'outline')
         ? '-webkit-text-stroke:0.35vh #000;paint-order:stroke fill;text-shadow:0 0 3px rgba(0,0,0,.55);'
@@ -749,7 +786,7 @@
   // otherwise black despite the color choice. Setting it explicitly forces the chosen color (a no-op on desktop anyway).
   let subStyle = $derived(`color:${subColor};-webkit-text-fill-color:${subColor};${subFontCss}${subEdgeCss}${subBgCss}`);
 
-  // Subtitle size → libbitsub scaling (variant B: applies to PGS AND VobSub, not just VTT).
+  // Subtitle size → libbitsub scaling (applies to PGS AND VobSub, not just VTT).
   function graphicSubScale() {
     const s = playbackPrefs.subtitleSize || 'normal';
     return s === 'small' ? 0.85 : s === 'large' ? 1.25 : 1.0;
@@ -759,18 +796,22 @@
     const m = (url.split('?')[0] || '').match(/\.(\w+)$/);
     if (m) return `track.${m[1].toLowerCase()}`;
     const codec = (stream?.Codec || '').toLowerCase();
-    return ['dvdsub', 'vobsub', 'sub'].includes(codec) ? 'track.mks' : 'track.sup';
+    return VOBSUB_CODECS.includes(codec) ? 'track.mks' : 'track.sup';
   }
 
   // Apply subtitle – routes by codec: PGS/VobSub → libbitsub overlay, text → VTT overlay.
+  // The offset belongs to the TRACK: reset when another one is chosen, kept when the same track is
+  // set up again — an audio switch or the transcode fallback rebuilds the overlay too, and used to
+  // throw away a sync the user had just dialled in. The renderers take it over on creation.
+  let offsetTrack = null;
   function applySubtitleOverlay(index, ms) {
     subtitleFetchToken++;   // invalidate in-flight VTT fetches (otherwise a text overlay next to graphic/ASS)
-    subtitleOffset = 0;     // new track switch → reset the offset (content-specific)
+    if (index !== offsetTrack) { subtitleOffset = 0; offsetTrack = index; }
     if (index === -1 || !ms) { disposeGraphic(); clearAss(); subtitleCues = []; return; }
     const stream = (ms.MediaStreams || []).find(s => s.Index === index && s.Type === 'Subtitle');
     const codec  = (stream?.Codec || '').toLowerCase();
-    const isPgs = ['pgssub', 'pgs'].includes(codec);
-    const isVob = ['dvdsub', 'vobsub', 'sub'].includes(codec);
+    const isPgs = PGS_CODECS.includes(codec);
+    const isVob = VOBSUB_CODECS.includes(codec);
     const isAss = ['ass', 'ssa'].includes(codec);
     if (stream && clientGraphicRender && (isPgs || isVob)) {
       clearAss();
@@ -819,6 +860,7 @@
       ensureVideoFrameCallback();               // webOS: rVFC polyfill active BEFORE assjs reads it
       disposeAss();                            // no setTrack → remove the old overlay, rebuild fresh
       assRenderer = new ASS(content, videoElement, { container: assContainer });
+      if (subtitleOffset) assRenderer.delay = subtitleOffset;   // kept across a rebuild (applySubtitleOverlay)
       assActive = true;
       // assjs drives its render loop via requestAnimationFrame, started by the video's 'play'/'playing'
       // event. On a track switch in the MIDDLE of playback the video is already running → it fires
@@ -874,8 +916,8 @@
   }
   function applyGraphicSubtitle(stream, ms) {
     if (!videoElement) return;
-    const url = graphicSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
-    if (!url) { disposeGraphic(); dlog('[OcenFin] image subtitle not available (server does not provide it externally):', stream.Index); return; }
+    const url = graphicSubtitleUrl({ serverUrl: session.serverUrl, stream, token: session.token });
+    if (!url) { disposeGraphic(); dlog('[OcenFin] image subtitle not available (no DeliveryUrl from the server):', stream.Index); return; }
     // TV-friendly: STRICTLY SEQUENTIAL. Fully destroy the old renderer before creating the new one,
     // so only one decoder is ever alive. A short gap on a manual switch is acceptable.
     disposeGraphic();
@@ -884,6 +926,7 @@
     // Prefetched while the menu entry was focused → hand the bytes over directly (a blob: URL is
     // local and instant), otherwise fall back to the network URL.
     let firstCuesLogged = false;   // per switch → the progress event fires many times
+    let mine = null;               // this switch's renderer — see onError
     const cached = subBlobs.get(stream.Index);
     if (cached) graphicObjectUrl = URL.createObjectURL(cached);
     const opts = {
@@ -901,7 +944,7 @@
       // NOTE: our rVFC polyfill would also satisfy the check, but it is installed in the ASS path
       // only — relying on that call order to keep graphic subtitles alive would be fragile.
       frameAwareSync: false,
-      // REQUIRES libbitsub >= 1.11.0 (running 1.12.0). Up to 1.10.2 the worker never came up: its inline glue
+      // REQUIRES libbitsub >= 1.11.0. Up to 1.10.2 the worker never came up: its inline glue
       // instantiated the WASM with a single `__wbindgen_placeholder__` import while the shipped module
       // needs 10 from './libbitsub_bg.js', the resulting LinkError was swallowed, and the first parse
       // then failed with "reading 'PgsParser'" of null — so every cue was decoded on the main thread,
@@ -909,7 +952,9 @@
       // and takes the glue URL from the main thread (bundled builds hash the asset names, so deriving
       // it from the wasm URL doesn't work). Don't downgrade below 1.11.0 — the fallback is silent.
       onWarning: (w) => dlog('[OcenFin] libbitsub notice:', w?.code || w?.message || w, w?.details),
-      onError: (e) => { console.warn('[OcenFin] libbitsub error:', e?.code || '', e?.message || e); disposeGraphic(); },
+      // Only ITS renderer: a superseded one whose streaming load fails late (dispose does not abort
+      // it) used to dispose whichever renderer was current — the track just switched to.
+      onError: (e) => { console.warn('[OcenFin] libbitsub error:', e?.code || '', e?.message || e); if (!mine || graphicRenderer === mine) disposeGraphic(); },
       onEvent: (ev) => {
         // renderer-change → GRAPHICS backend, only ever 'webgpu' | 'webgl2' | 'canvas2d' (webgl2 on the
         // B4, WebGPU is unavailable there). worker-state.fallback → decoding moved to the main thread.
@@ -929,9 +974,10 @@
     };
     try {
       // The codec is known → pick the explicit renderer (no format auto-detection needed).
-      graphicRenderer = ['pgssub', 'pgs'].includes(codec)
+      mine = graphicRenderer = PGS_CODECS.includes(codec)
         ? new PgsRenderer(opts)
         : new VobSubRenderer({ ...opts, fileName: graphicSubFileName(url, stream) });   // VobSub/DVD: .mks container
+      if (subtitleOffset) graphicRenderer.timeOffset = -subtitleOffset;   // kept across a rebuild, sign as in adjustSubtitleOffset
       dlog('[OcenFin] image subtitle via libbitsub:', stream.Index, stream.Codec);
     } catch (e) { dlog('[OcenFin] libbitsub renderer error:', e?.message); disposeGraphic(); }
   }
@@ -955,14 +1001,14 @@
     if (!menuStream || !ms || prefetchedSubs.has(menuStream.Index)) return;
     // Resolve the stream from currentMediaSource, exactly like applySubtitleOverlay does: only THOSE
     // objects carry the server-computed DeliveryUrl. The menu's copies come from MediaStreams and
-    // lack it, which would fall back to the generic .sup endpoint — rejected with 400 here.
+    // lack it, and without it there is nothing to fetch.
     const stream = (ms.MediaStreams || []).find(x => x.Index === menuStream.Index && x.Type === 'Subtitle');
     if (!stream) return;
     const codec = (stream.Codec || '').toLowerCase();
-    const isGraphic = ['pgssub', 'pgs', 'dvdsub', 'vobsub', 'sub'].includes(codec);
+    const isGraphic = CLIENT_SUB_CODECS.includes(codec);   // what libbitsub can render
     const isAss     = ['ass', 'ssa'].includes(codec);
     const url = (isGraphic && clientGraphicRender)
-      ? graphicSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token })
+      ? graphicSubtitleUrl({ serverUrl: session.serverUrl, stream, token: session.token })
       : (isAss && clientAssRender)
         ? assSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token })
         : null;
@@ -1038,7 +1084,7 @@
     const stream = (ms.MediaStreams || []).find(s => s.Index === index && s.Type === 'Subtitle');
     if (!stream) return;
     const method = (stream.DeliveryMethod || '').toLowerCase();
-    const graphic = ['pgssub', 'dvdsub', 'pgs', 'dvbsub', 'vobsub', 'sub'].includes((stream.Codec || '').toLowerCase());
+    const graphic = GRAPHIC_SUB_CODECS.includes((stream.Codec || '').toLowerCase());
     if (method === 'encode' || graphic) return;   // burned in or graphic subtitle → no VTT overlay
 
     const url = externalSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
@@ -1056,11 +1102,21 @@
 
   // Intro Skipper / Media Segments
   let introData = $state(null);
-  let segmentsChecked = $state(false);     // plugin APIs queried → chapter fallback may kick in
+  // "Previously on …": a Recap media segment, { start, end } in seconds. Kept apart from introData on
+  // purpose — introData being set is what switches the chapter fallback for intro/credits off, and a
+  // server that marks only recaps must not take that fallback away.
+  let recapSegment = $state(null);
+  let segmentsChecked = $state(false);     // media segments queried → chapter fallback may kick in
   let chapterFallbackDone = false;
   let showSkipIntro = $derived(introData?.Introduction?.Valid
     && currentTime >= (introData.Introduction.ShowSkipPromptAt ?? 0)
     && currentTime <= (introData.Introduction.HideSkipPromptAt ?? 0));
+
+  // `<` rather than `<=`: after the skip the position sits exactly on the end, and the button must go.
+  let showSkipRecap = $derived(!!recapSegment && currentTime >= recapSegment.start && currentTime < recapSegment.end);
+  // ONE skip button for both: a recap usually runs straight into the intro, and one button that just
+  // changes its label keeps the focus where it is instead of dropping and re-grabbing it.
+  let activeSkip = $derived(showSkipRecap ? 'recap' : showSkipIntro ? 'intro' : null);
 
   // Outro/credits (media-segments/plugin data) — trigger for auto-skip & auto-play countdown
   let showSkipCredits = $derived(introData?.Credits?.Valid
@@ -1089,7 +1145,7 @@
   const OUTRO_FALLBACK  = 45;     // without chapter/segment data: show the "next episode" card in the last X s
   const STILL_WATCHING_TIMEOUT = 120;  // "still watching?": closes the Player after X s without a reaction (relieve the NAS)
 
-  // Chapter fallback for intro/credits: kicks in reactively once the plugin APIs returned nothing
+  // Chapter fallback for intro/credits: kicks in reactively once the media segments returned nothing
   // AND the chapters are loaded (only clearly named chapters, otherwise no prompt).
   $effect(() => { if (segmentsChecked && !chapterFallbackDone && introData === null && chapters.length) {
     chapterFallbackDone = true;
@@ -1106,7 +1162,7 @@
     showSkipCredits || (duration - currentTime) <= OUTRO_FALLBACK
   ));
   // An interactive overlay is open → OK should trigger its focused button, not pause.
-  let overlayActive = $derived(showSkipIntro || showStillWatching || (outroPromptActive && !!nextEpisode));
+  let overlayActive = $derived(!!activeSkip || showStillWatching || (outroPromptActive && !!nextEpisode));
   // Exactly then ONE outro decision prompt is visible (timer OR manual) → trap focus there.
   let outroPromptShowing = $derived(!showStillWatching && !!nextEpisode && (nextCountdown !== null || (outroPromptActive && !outroDismissed)));
   // !showStillWatching is essential: when the countdown expires it sets nextCountdown back to null,
@@ -1219,13 +1275,18 @@
     return junk ? `${i18n.t.chapter} ${idx + 1}` : raw;
   });
 
-  // Auto-skip (depends on the setting + installed intro-skipper plugin).
+  // Auto-skip (depends on the setting + intro/outro data: media segments, else named chapters).
   // Flags prevent repeated jumping; reset on episode change via the {#key} remount.
   let introAutoSkipped   = false;
+  let recapAutoSkipped   = false;
   let creditsAutoSkipped = false;
   $effect(() => { if (playbackPrefs.autoSkipIntro && showSkipIntro && !introAutoSkipped && videoElement) {
     introAutoSkipped = true;
     skipIntro();
+  } });
+  $effect(() => { if (playbackPrefs.autoSkipRecap && showSkipRecap && !recapAutoSkipped && videoElement) {
+    recapAutoSkipped = true;
+    skipRecap();
   } });
   $effect(() => { if (playbackPrefs.autoSkipCredits && !stopAfterThis && showSkipCredits && !creditsAutoSkipped && nextEpisode && !showStillWatching) {
     creditsAutoSkipped = true;
@@ -1275,7 +1336,7 @@
     if (mins) {
       parts.push(`${mins} ${i18n.t.minShort}`);
       const end = new Date(Date.now() + mins * 60000);
-      parts.push(`${i18n.t.endsAt} ${end.toLocaleTimeString(i18n.lang === 'de' ? 'de-DE' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`);
+      parts.push(`${i18n.t.endsAt} ${end.toLocaleTimeString(i18n.lang || 'en', { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`);
     }
     return parts.join(' · ');
   });
@@ -1340,14 +1401,22 @@
     // PlaybackInfo decides Direct Play vs. transcode; sets the source + HLS if needed.
     // Resume (startTicks) happens client-side after 'loadedmetadata' (seekToResume).
     await setupPlayback(selectedAudioIndex, selectedSubtitleIndex);
+    // Gone meanwhile (Back during the spinner, zapping to the next episode): onDestroy has already
+    // run, so going on would report Playing AFTER Stopped — a ghost "now playing" on the server — and
+    // start two intervals nothing ever clears, each holding this dead instance for days.
+    if (destroyed) return;
 
     await reportPlaybackStart();
+    if (destroyed) return;
     progressTimer = setInterval(reportPlaybackProgress, 10000);
     updateClock();
     clockTimer = setInterval(updateClock, 15000);
   });
 
+  let destroyed = false;
   onDestroy(() => {
+    destroyed = true;
+    setupToken++;   // a setupPlayback still waiting on PlaybackInfo stands down instead of attaching
     window.removeEventListener('keydown', markInteraction);
     window.removeEventListener('pointermove', markInteraction);
     window.removeEventListener('click', markInteraction);
@@ -1374,14 +1443,23 @@
 
   const getAuthHeaders = () => authHeaders(session.token);
 
+  // ONE /Items/{id} request per Player: fetchMediaSources (chapters, track lists, trickplay), the
+  // picked start's source (sourceForPick) and the title-streams fallback read the same answer — a
+  // start from a card used to fetch it twice, up to three times. The Player is remounted per title
+  // ({#key} in App), so the answer stays valid for this instance; a failed request is not kept, so a
+  // later caller tries again.
+  let _fullItemP = null;
+  function fetchFullItem() {
+    _fullItemP ??= fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() })
+      .then(r => (r.ok ? r.json() : null)).catch(() => null)
+      .then(d => { if (!d) _fullItemP = null; return d; });
+    return _fullItemP;
+  }
+
   async function fetchMediaSources() {
     try {
-      const res = await fetch(
-        `${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`,
-        { headers: getAuthHeaders() }
-      );
-      if (res.ok) {
-        const data = await res.json();
+      const data = await fetchFullItem();
+      if (data) {
         chapters = data.Chapters || [];
         // Track list only for the selection UI (audio/subtitle). The actual
         // delivery (track vs. burned in) is decided by PlaybackInfo in setupPlayback.
@@ -1395,19 +1473,24 @@
   async function fetchIntroTimestamps() {
     if (item.Type !== 'Episode') return;
     // 1) Media Segments API (the Intro Skipper plugin and the server's own detection deliver via this).
-    //    Query without a type filter and filter ourselves — more robust against server/version differences.
+    //    Query without a type filter and filter ourselves — the Recap segment is read from the same answer.
     try {
       const res = await fetch(`${session.serverUrl}/MediaSegments/${item.Id}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const segs = (await res.json()).Items || [];
         dlog('[OcenFin] media segments:', segs.map(s => s.Type));
+        const recap = segs.find(s => s.Type === 'Recap');
+        if (recap && recap.EndTicks > recap.StartTicks) {
+          recapSegment = { start: recap.StartTicks / 10000000, end: recap.EndTicks / 10000000 };
+          dlog('[OcenFin] media segments → recap', Math.round(recapSegment.start), '–', Math.round(recapSegment.end), 's');
+        }
         const d = segs.length ? segmentsToIntroData(segs) : null;
         if (d) {
           dlog('[OcenFin] media segments → intro', d.Introduction.Valid, '| outro', d.Credits.Valid);
           introData = d; return;
         }
       } else {
-        dlog('[OcenFin] media segments HTTP', res.status);   // e.g. 404 = endpoint missing, 401 = auth
+        dlog('[OcenFin] media segments HTTP', res.status);   // e.g. 404 = item not found, 401 = auth
       }
     } catch (e) { dlog('[OcenFin] media segments error:', e?.message); }
     // 2) No segments → chapter fallback (kicks in reactively once chapters are loaded). The old
@@ -1425,26 +1508,36 @@
     if (!intro && !outro) return null;
     const mk = (s) => s ? {
       Valid: true,
-      IntroStart: s.StartTicks / T, IntroEnd: s.EndTicks / T,
+      IntroEnd: s.EndTicks / T,
       ShowSkipPromptAt: s.StartTicks / T, HideSkipPromptAt: s.EndTicks / T,
     } : { Valid: false };
     return { Introduction: mk(intro), Credits: mk(outro) };
   }
 
   // Fallback from named chapters — only unambiguous hits, otherwise null (no false prompt).
+  // Whole words, and each in its part of the runtime. The credits match used to be a bare substring,
+  // first hit after chapter 0: "Opening Credits" after a cold open, or a scene called "Sending…",
+  // counted as the credits — the outro prompt then stood from there to the end, the countdown moved
+  // on to the next episode and marked this one watched. The credits are the LAST matching chapter
+  // in the second half, never one that names the opening; the intro is the first match in the
+  // first third. Without a runtime the position checks stand aside.
+  const INTRO_CHAPTER   = /\b(intro(duction)?|opening|vorspann|main titles?|titelsequenz)\b/;
+  const CREDITS_CHAPTER = /\b(credits|end ?credits|abspann|ending|outro)\b/;
   function chaptersToIntroData(chs) {
     const T = 10000000;
     const list = chs.map(c => ({ name: (c.Name || '').toLowerCase(), start: c.StartPositionTicks / T }));
-    const introIdx   = list.findIndex(c => /intro|opening|vorspann|main title|titelsequenz/.test(c.name));
-    const creditsIdx = list.findIndex((c, i) => i > 0 && /credit|abspann|ending|outro/.test(c.name));
+    const runtime = (item?.RunTimeTicks || 0) / T;
+    const introIdx = list.findIndex(c => INTRO_CHAPTER.test(c.name) && (!runtime || c.start <= runtime / 3));
+    const creditsIdx = list.findLastIndex((c, i) => i > 0 && CREDITS_CHAPTER.test(c.name)
+      && !INTRO_CHAPTER.test(c.name) && (!runtime || c.start >= runtime / 2));
     const intro = introIdx >= 0 ? {
-      Valid: true, IntroStart: list[introIdx].start,
+      Valid: true,
       IntroEnd: list[introIdx + 1]?.start ?? list[introIdx].start + 90,
       ShowSkipPromptAt: list[introIdx].start,
       HideSkipPromptAt: list[introIdx + 1]?.start ?? list[introIdx].start + 90,
     } : { Valid: false };
     const credits = creditsIdx >= 0 ? {
-      Valid: true, IntroStart: list[creditsIdx].start, IntroEnd: list[creditsIdx].start + 60,
+      Valid: true, IntroEnd: list[creditsIdx].start + 60,
       ShowSkipPromptAt: list[creditsIdx].start, HideSkipPromptAt: Infinity,
     } : { Valid: false };
     return (intro.Valid || credits.Valid) ? { Introduction: intro, Credits: credits } : null;
@@ -1455,7 +1548,9 @@
     if (item.Type !== 'Episode' || !item.SeriesId) return;
     try {
       const res = await fetch(
-        `${session.serverUrl}/Shows/${item.SeriesId}/Episodes?UserId=${selectedUser.Id}`,
+        // IsMissing=false: with "display missing episodes" on in the Jellyfin profile the list holds
+        // placeholders without a file, and Next / auto-play landed on the error page.
+        `${session.serverUrl}/Shows/${item.SeriesId}/Episodes?UserId=${selectedUser.Id}&IsMissing=false`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
@@ -1552,31 +1647,15 @@
     showSettings = false;
     resetControlsTimeout();
 
-    // Remember the chosen track language per series (matched by language across episodes). Subtitle
-    // "Off" (-1) is stored as 'off'. Applied on the next episode's first setup in setupPlayback.
-    if (item?.SeriesId) {
-      if (type === 'audio') {
-        if (playbackPrefs.rememberAudioTrack) {
-          const lang = mediaStreams.find(s => s.Index === index && s.Type === 'Audio')?.Language;
-          if (lang) rememberTrack(item.SeriesId, 'audio', lang);
-        }
-      } else if (playbackPrefs.rememberSubtitleTrack) {
-        if (index === -1) {
-          rememberTrack(item.SeriesId, 'subtitle', 'off');
-        } else {
-          const st = mediaStreams.find(s => s.Index === index && s.Type === 'Subtitle');
-          // Store language + the flags that distinguish same-language variants (Full vs Forced vs SDH).
-          if (st?.Language) rememberTrack(item.SeriesId, 'subtitle', { lang: st.Language, forced: !!st.IsForced, sdh: !!st.IsHearingImpaired });
-        }
-      }
-    }
+    // Remember the chosen track language per series (matched by language across episodes). Applied
+    // on the next episode's first setup in setupPlayback.
+    rememberChoice(item?.SeriesId, type, index, mediaStreams, playbackPrefs);
 
     if (type === 'subtitle') {
       const oldStream = mediaStreams.find(s => s.Index === selectedSubtitleIndex && s.Type === 'Subtitle');
       const newStream = mediaStreams.find(s => s.Index === index && s.Type === 'Subtitle');
       // A soft switch is possible when the subtitle doesn't need to be burned in: "Off", or
       // a text subtitle (whether delivered externally or embedded → we fetch it as VTT).
-      const graphicCodecs = ['pgssub', 'dvdsub', 'pgs', 'dvbsub', 'vobsub', 'sub'];
       // Delivery (track vs. burned in) is decided by PlaybackInfo, so it lives on
       // currentMediaSource.MediaStreams — the item's track list (mediaStreams) NEVER carries
       // DeliveryMethod (see fetchMediaSources). Check the real source, not the UI copy.
@@ -1587,9 +1666,8 @@
         if (!s) return false;
         if (deliveredEncoded(idx)) return false;                                    // burned in → reload
         const codec = (s.Codec || '').toLowerCase();
-        if (['pgssub', 'pgs'].includes(codec)) return clientGraphicRender;          // PGS: client-side → soft, otherwise burned in
-        if (['dvdsub', 'vobsub', 'sub'].includes(codec)) return clientGraphicRender;                // VobSub: likewise (.mks)
-        if (graphicCodecs.includes(codec)) return false;                            // other graphic → not as VTT
+        if (CLIENT_SUB_CODECS.includes(codec)) return clientGraphicRender;          // PGS/VobSub: client-side → soft, otherwise burned in
+        if (GRAPHIC_SUB_CODECS.includes(codec)) return false;                       // DVB bitmap → burned in, never soft
         // Text target: with burn-in enabled the profile marks every text subtitle Encode, so
         // switching TO one always needs the reload — the delivery check above only knows about
         // the track the current source was set up with.
@@ -1619,7 +1697,9 @@
 
     // Hard reload (fallback): an audio switch or burned-in subtitles require a new
     // server stream. Save the position → seekToResume restores it after the rebuild.
-    const savedPosition = videoElement?.currentTime ?? 0;
+    // Not the element's currentTime alone: while a source is still loading it reads 0, and a switch
+    // made during the spinner restarted the title at 0:00. Same rule as positionTicks().
+    const savedPosition = livePosition();
     startTicks    = Math.round(savedPosition * 10000000);
     resumeApplied = false;
     await setupPlayback(selectedAudioIndex, selectedSubtitleIndex);
@@ -1636,6 +1716,18 @@
     videoElement.currentTime = introData.Introduction.IntroEnd;
     // On skip do NOT show the controls — you want to keep watching directly. Put focus on the
     // Player, since the skip button vanishes shortly → keypresses keep working.
+    playerContainer?.focus();
+  }
+  // Same as skipIntro, for the recap — except when the intro follows right away. Then the button
+  // stays mounted and only changes its label, and it must KEEP the focus: handed to the container,
+  // "Skip intro" stood there unfocused and OK did nothing (the pause shortcut stands down while an
+  // overlay is up). The test is showSkipIntro's own condition, at the position the skip lands on.
+  function skipRecap() {
+    if (!videoElement || !recapSegment) return;
+    const to = recapSegment.end;
+    videoElement.currentTime = to;
+    const intro = introData?.Introduction;
+    if (intro?.Valid && to >= (intro.ShowSkipPromptAt ?? 0) && to <= (intro.HideSkipPromptAt ?? 0)) return;
     playerContainer?.focus();
   }
 
@@ -1682,14 +1774,17 @@
   }
 
   async function toggleFavorite() {
-    isFavorite = !isFavorite;
+    const next = !isFavorite;
+    isFavorite = next;
     resetControlsTimeout();
+    // Rolled back when the server refuses or cannot be reached — the heart used to stay as set.
     try {
-      await fetch(`${session.serverUrl}/UserFavoriteItems/${item.Id}?UserId=${selectedUser.Id}`, {
-        method: isFavorite ? "POST" : "DELETE",
+      const res = await fetch(`${session.serverUrl}/UserFavoriteItems/${item.Id}?UserId=${selectedUser.Id}`, {
+        method: next ? "POST" : "DELETE",
         headers: getAuthHeaders()
       });
-    } catch { }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (e) { console.warn('[OcenFin] favorite toggle failed, rolled back:', e?.message || e); isFavorite = !next; }
   }
 
   // ============================================================
@@ -1748,6 +1843,9 @@
   // Cannot loop: showControls is already true here, so writing it again is not a change, and the
   // timeout's own showControls = false makes this condition false rather than re-entering.
   $effect(() => { if (isPlaying && showControls) resetControlsTimeout(); });
+  // The icon buttons name themselves on focus (hint). The HUD fades out with focus still on one of
+  // them, which would leave its label floating over the picture — take it down with the HUD.
+  $effect(() => { if (!showControls) hideHints(); });
 
   function togglePlay() {
     if (isPlaying) { _groupWantsPaused = inSyncGroup; videoElement.pause(); }
@@ -1799,7 +1897,7 @@
     resetControlsTimeout();
   }
 
-  // Focus after closing the panel/switching tracks back onto the triggering button (subtitle/audio/gear),
+  // Focus after closing the panel/switching tracks back onto the triggering button (subtitle/audio),
   // so a VISIBLE control is focused — not the invisible container. With no usable opener (e.g.
   // a colour key opened the panel while the HUD was hidden) land on play/pause while the HUD is
   // up — focusing the invisible container would leave no focus ring and a dead OK (the Enter
@@ -1818,8 +1916,8 @@
   // in App.svelte — still works. That was the "OK stops working mid-episode" bug.
   // Also drops the trap in the fading subtree: during the ~150 ms fade it still counts as visible
   // (isVisible checks pointer-events, not opacity), so onFocusIn would drag the focus back in.
-  // True from the moment we ask App for another episode until this instance is gone. {#key item.Id}
-  // replaces the whole Player, and the NEW instance focuses its own container on mount — pulling
+  // True from the moment we ask App for another episode until this instance is gone. App's {#key}
+  // (per title and start) replaces the whole Player, and the NEW instance focuses its own container on mount — pulling
   // the focus into THIS dying one would recreate the very bug, so only the trap is dropped then.
   let handingOff = false;
 
@@ -1830,7 +1928,7 @@
     if (root && root.contains(document.activeElement)) playerContainer?.focus();
   }
 
-  // FIX: auto-focus the settings panel for the webOS D-pad
+  // Opens/closes the track panel: focus goes to its first entry, and back to the opener on close.
   async function toggleSettings() {
     if (!showSettings) {
       // Remember the opening button (if it's outside the panel)
@@ -1848,7 +1946,7 @@
     } else {
       resetControlsTimeout();
       await tick();
-      // Focus back onto the triggering button (audio/subtitle/gear), otherwise onto the Player
+      // Focus back onto the triggering button (audio/subtitle), otherwise onto the Player
       restoreControlFocus();
       controlOpener = null;
     }
@@ -1872,7 +1970,7 @@
   // ONLY freely assignable keys in the app: it stays at these four keys — no free remapping of
   // arbitrary keys, ever. A remapping UI for the whole remote would collide with the D-pad, the
   // number keys and the channel rocker, all of which already carry fixed meanings here.
-  // Both spellings are matched, exactly like the number keys above: webOS reports the colour keys
+  // Both spellings are matched, exactly like the number keys in handleKeyDown: webOS reports the colour keys
   // as keyCode 403–406 AND as e.key "ColorF0Red" … "ColorF3Blue", and which one arrives has varied
   // between firmware levels. Reading both means a firmware that only sends one of them still works.
   const REMOTE_COLOR_KEYCODES = { 403: 'remoteColorRed', 404: 'remoteColorGreen', 405: 'remoteColorYellow', 406: 'remoteColorBlue' };
@@ -1887,8 +1985,8 @@
   // exactly the track the user had, instead of guessing a "first" one. A plain let, not $state:
   // only the key handler reads it and it must not cause a re-render. The instance is replaced via
   // {#key} on an episode change, so it resets per playback by construction. The effect catches
-  // every path that turns a subtitle on: the panel, the remembered per-series track applied during
-  // setup, and a SyncPlay/remote-driven switch.
+  // every path that turns a subtitle on: the panel, the colour-key toggle and the remembered
+  // per-series track applied during setup.
   let lastOnSubtitleIndex = -1;
   $effect(() => { if (selectedSubtitleIndex !== -1) lastOnSubtitleIndex = selectedSubtitleIndex; });
 
@@ -2077,8 +2175,7 @@
   bind:this={playerContainer}
   data-focus-trap
   tabindex="0"
-  class="w-full h-screen bg-black relative overflow-hidden flex items-center justify-center cursor-none focus:outline-none subs-{playbackPrefs.subtitleSize || 'normal'}"
-  onmousemove={resetControlsTimeout}
+  class="w-full h-screen bg-black relative overflow-hidden flex items-center justify-center cursor-none focus:outline-none"
   onpointermove={resetControlsTimeout}
   onkeydown={handleKeyDown}
 >
@@ -2140,7 +2237,10 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m0 3.75h.008M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
         </svg>
         <p class="text-white text-2xl font-bold">{i18n.t.playbackError}</p>
-        <p class="text-gray-400">{i18n.t.playbackErrorHint}</p>
+        <p class="text-gray-400">{playbackRefusal === 'NotAllowed' ? i18n.t.playbackNotAllowed
+          : playbackRefusal === 'NoCompatibleStream' ? i18n.t.playbackNoStream
+          : playbackRefusal === 'RateLimitExceeded' ? i18n.t.playbackRateLimit
+          : i18n.t.playbackErrorHint}</p>
         <div class="flex gap-4 mt-2">
           <button onclick={retryPlayback} {@attach focusOnMount()}
             class="bg-white text-black font-bold px-6 py-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
@@ -2201,7 +2301,7 @@
     </div>
   {/if}
 
-  <!-- MAIN OVERLAY — clicking the empty picture area (|self, not on buttons) pauses/plays -->
+  <!-- MAIN OVERLAY — clicking the empty picture area (the overlay itself, not its buttons) pauses/plays -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/50 flex flex-col justify-between p-10 transition-opacity duration-500 z-50
@@ -2223,7 +2323,7 @@
       </div>
       <div class="flex items-center gap-4 shrink-0">
         <button onclick={(e) => { e.stopPropagation(); controlOpener = e.currentTarget; onSyncplay?.(); }}
-          aria-label={i18n.t.syncPlay} title={i18n.t.syncPlay}
+          aria-label={i18n.t.syncPlay} title={i18n.t.syncPlay} {@attach hint()}
           class="text-white/90 hover:text-blue-300 focus:text-white focus:bg-blue-600 rounded-lg p-2
                  focus:outline-none focus:ring-2 focus:ring-white transition-colors">
           <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -2275,7 +2375,9 @@
             </div>
           {/if}
           {#if showChapters && duration > 0 && chapters.length > 1}
-            {#each chapters as ch (ch.StartPositionTicks)}
+            <!-- Keyed by position in the list: two chapters at the same timestamp (common in rips) made
+                 StartPositionTicks a duplicate key, and Svelte aborts the render on one. -->
+            {#each chapters as ch, i (i)}
               <div class="absolute top-1/2 -translate-y-1/2 w-0.5 h-3 bg-white/60 rounded-full pointer-events-none"
                    style="left: {(ch.StartPositionTicks / 10000000 / duration) * 100}%"></div>
             {/each}
@@ -2302,7 +2404,7 @@
           <button onclick={goToPrevEpisode}
             disabled={!prevEpisode}
             class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none disabled:opacity-30"
-            title={i18n.t.prevEpisode}>
+            title={i18n.t.prevEpisode} aria-label={i18n.t.prevEpisode} {@attach hint()}>
             <!-- |◄ : bar on the left + triangle points LEFT -->
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/>
@@ -2312,7 +2414,7 @@
           <!-- Chapter back — only when enabled AND chapter markers exist.
                Icon deliberately DIFFERENT from the episode skip: chevron onto a dot (= chapter marker). -->
           {#if hasChapterNav}
-            <button onclick={chapterPrev} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={i18n.t.chapterPrev}>
+            <button onclick={chapterPrev} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={i18n.t.chapterPrev} aria-label={i18n.t.chapterPrev} {@attach hint()}>
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 7l-5 5 5 5"/>
                 <circle cx="8" cy="12" r="1.6" fill="currentColor" stroke="none"/>
@@ -2320,7 +2422,8 @@
             </button>
           {/if}
 
-          <button onclick={() => skip(-seekStep)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none" title="-{seekStep}s">
+          <button onclick={() => skip(-seekStep)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none"
+            title={i18n.t.rewindBy.replace('{n}', seekStep)} aria-label={i18n.t.rewindBy.replace('{n}', seekStep)} {@attach hint()}>
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.334 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z"/>
             </svg>
@@ -2335,7 +2438,8 @@
             {/if}
           </button>
 
-          <button onclick={() => skip(seekStep)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none" title="+{seekStep}s">
+          <button onclick={() => skip(seekStep)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none"
+            title={i18n.t.forwardBy.replace('{n}', seekStep)} aria-label={i18n.t.forwardBy.replace('{n}', seekStep)} {@attach hint()}>
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M11.934 12.8a1 1 0 000-1.6l-5.334-4A1 1 0 005 8v8a1 1 0 001.6.8l5.334-4zM19.934 12.8a1 1 0 000-1.6l-5.334-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.334-4z"/>
             </svg>
@@ -2344,7 +2448,7 @@
           <!-- Chapter forward — only when enabled AND chapter markers exist.
                Icon deliberately DIFFERENT from the episode skip: chevron onto a dot (= chapter marker). -->
           {#if hasChapterNav}
-            <button onclick={chapterNext} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={i18n.t.chapterNext}>
+            <button onclick={chapterNext} class="p-2.5 text-gray-500 hover:text-white focus:text-white focus:outline-none" title={i18n.t.chapterNext} aria-label={i18n.t.chapterNext} {@attach hint()}>
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 7l5 5-5 5"/>
                 <circle cx="16" cy="12" r="1.6" fill="currentColor" stroke="none"/>
@@ -2356,7 +2460,7 @@
           <button onclick={() => goToNextEpisode(true)}
             disabled={!nextByIndex}
             class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none disabled:opacity-30"
-            title={i18n.t.nextEpisode}>
+            title={i18n.t.nextEpisode} aria-label={i18n.t.nextEpisode} {@attach hint()}>
             <!-- ►| : triangle points RIGHT + bar on the right -->
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M16 6h2v12h-2zm-10 0l9 6-9 6V6z"/>
@@ -2369,7 +2473,7 @@
           <!-- ONLY THIS EPISODE — one-shot sleep switch (opt-in), first of the right group.
                Only visible when enabled AND an auto-advance is active (otherwise pointless). -->
           {#if playbackPrefs.sleepButton && autoAdvanceOn}
-            <button onclick={(e) => { e.stopPropagation(); toggleStopAfter(); }} title={i18n.t.stopAfterEpisode} aria-label={i18n.t.stopAfterEpisode}
+            <button onclick={(e) => { e.stopPropagation(); toggleStopAfter(); }} title={i18n.t.stopAfterEpisode} aria-label={i18n.t.stopAfterEpisode} {@attach hint()}
               class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                      {stopAfterThis ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -2378,7 +2482,7 @@
             </button>
           {/if}
           <!-- Favorite -->
-          <button onclick={toggleFavorite} aria-label={isFavorite ? i18n.t.removeFavorite : i18n.t.addFavorite}
+          <button onclick={toggleFavorite} aria-label={isFavorite ? i18n.t.removeFavorite : i18n.t.addFavorite} {@attach hint()}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors {isFavorite ? 'text-red-500' : 'text-gray-400 hover:text-white focus:text-white'}">
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
@@ -2386,21 +2490,21 @@
           </button>
 
           <!-- Add to playlist -->
-          <button onclick={(e) => { e.stopPropagation(); openPicker('playlist'); }} title={i18n.t.addToPlaylist} aria-label={i18n.t.addToPlaylist}
+          <button onclick={(e) => { e.stopPropagation(); openPicker('playlist'); }} title={i18n.t.addToPlaylist} aria-label={i18n.t.addToPlaylist} {@attach hint()}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors text-gray-400 hover:text-white focus:text-white">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h13M3 12h9m-9 6h9m4-3v6m3-3h-6"/></svg>
           </button>
 
           {#if canManageCollections}
           <!-- Add to collection -->
-          <button onclick={(e) => { e.stopPropagation(); openPicker('collection'); }} title={i18n.t.addToCollection} aria-label={i18n.t.addToCollection}
+          <button onclick={(e) => { e.stopPropagation(); openPicker('collection'); }} title={i18n.t.addToCollection} aria-label={i18n.t.addToCollection} {@attach hint()}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors text-gray-400 hover:text-white focus:text-white">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
           </button>
           {/if}
 
           <!-- AUDIO — icon only (replaces the gear) -->
-          <button onclick={(e) => { e.stopPropagation(); openSettings('audio'); }} title={i18n.t.audio} aria-label={i18n.t.audio}
+          <button onclick={(e) => { e.stopPropagation(); openSettings('audio'); }} title={i18n.t.audio} aria-label={i18n.t.audio} {@attach hint()}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                    {showSettings && settingsTab === 'audio' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -2409,7 +2513,7 @@
           </button>
 
           <!-- SUBTITLES — icon only -->
-          <button onclick={(e) => { e.stopPropagation(); openSettings('subtitle'); }} title={i18n.t.subtitles} aria-label={i18n.t.subtitles}
+          <button onclick={(e) => { e.stopPropagation(); openSettings('subtitle'); }} title={i18n.t.subtitles} aria-label={i18n.t.subtitles} {@attach hint()}
             class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                    {showSettings && settingsTab === 'subtitle' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -2420,7 +2524,7 @@
 
           <!-- PLAYBACK INFO — only when enabled in the settings -->
           {#if playbackPrefs.showPlaybackInfo}
-            <button onclick={(e) => { e.stopPropagation(); toggleInfoOverlay(); }} title={i18n.t.playbackInfo} aria-label={i18n.t.playbackInfo}
+            <button onclick={(e) => { e.stopPropagation(); toggleInfoOverlay(); }} title={i18n.t.playbackInfo} aria-label={i18n.t.playbackInfo} {@attach hint()}
               class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                      {showInfoOverlay ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -2485,10 +2589,10 @@
             <div class="mt-3 pt-3 border-t border-gray-700/60 flex items-center justify-between gap-3 px-1">
               <span class="text-sm text-gray-300 font-medium">{i18n.t.subtitleOffset}</span>
               <div class="flex items-center gap-2">
-                <button onclick={() => adjustSubtitleOffset(-0.5)} aria-label="-0,5 s"
+                <button onclick={() => adjustSubtitleOffset(-0.5)} aria-label={formatOffset(-0.5)}
                   class="w-9 h-9 rounded-lg bg-gray-800 text-white text-xl font-bold leading-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white hover:bg-gray-700 focus:bg-gray-700 transition-colors">−</button>
                 <span class="text-sm font-mono text-white w-16 text-center tabular-nums">{formatOffset(subtitleOffset)}</span>
-                <button onclick={() => adjustSubtitleOffset(0.5)} aria-label="+0,5 s"
+                <button onclick={() => adjustSubtitleOffset(0.5)} aria-label={formatOffset(0.5)}
                   class="w-9 h-9 rounded-lg bg-gray-800 text-white text-xl font-bold leading-none focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white hover:bg-gray-700 focus:bg-gray-700 transition-colors">+</button>
               </div>
             </div>
@@ -2512,19 +2616,19 @@
   {/if}
 
 
-  <!-- SKIP INTRO — bottom left -->
-  {#if showSkipIntro}
+  <!-- SKIP RECAP / INTRO — bottom left, one button for both (see activeSkip) -->
+  {#if activeSkip}
     <div transition:uiFade onoutrostart={releaseOverlay} class="absolute bottom-44 left-12 z-[70]">
-      <button onclick={skipIntro} {@attach focusOnMount()}
+      <button onclick={() => (activeSkip === 'recap' ? skipRecap() : skipIntro())} {@attach focusOnMount()}
         class="bg-black/85 border-2 border-white text-white font-bold text-2xl
                px-10 py-5 rounded-xl flex items-center gap-4 shadow-2xl
                hover:bg-white hover:text-black focus:bg-white focus:text-black
-               focus:outline-none transition-colors duration-200">
+               focus:outline-none">
         <!-- Double arrow right for "skip" -->
         <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
           <path d="M5.59 7.41L10.18 12l-4.59 4.59L7 18l6-6-6-6zM16 6h2v12h-2z"/>
         </svg>
-        {i18n.t.skipIntro}
+        {activeSkip === 'recap' ? i18n.t.skipRecap : i18n.t.skipIntro}
       </button>
     </div>
   {/if}
@@ -2631,7 +2735,7 @@
 </div>
 
 <!-- Add to collection / playlist (shared component) -->
-<AddToPicker mode={pickerMode} {item} {selectedUser} {getAuthHeaders}
+<AddToPicker mode={pickerMode} {item} {selectedUser}
   onCreated={() => onLibChanged?.()}
   onClose={async () => { pickerMode = null; if (wasPlayingBeforePicker) videoElement?.play().catch(() => {}); wasPlayingBeforePicker = false; await tick(); if (controlOpener && document.contains(controlOpener)) controlOpener.focus(); else playerContainer?.focus(); controlOpener = null; }} />
 
@@ -2679,15 +2783,10 @@
     box-shadow: 0 0 0 5px var(--color-blue-500, #3b82f6), 0 0 16px 3px rgba(59,130,246,.55);
   }
 
-  /* Subtitle size (scales the native VTT cues; vh for TV distance) */
-  :global(.subs-small video::cue)  { font-size: 2.6vh; }
-  :global(.subs-normal video::cue) { font-size: 3.4vh; }
-  :global(.subs-large video::cue)  { font-size: 4.8vh; }
-
-  /* Our own subtitle overlay renderer (external VTT) — no box, just a strong shadow */
+  /* Our own subtitle overlay renderer (external VTT): layout and size only — colour, edge and
+     background come from subStyle (the subtitle prefs). */
   .subtitle-box {
-    white-space: pre-line; text-align: center; color: #fff; font-weight: 600; line-height: 1.35;
-    text-shadow: 0 1px 2px #000, 0 2px 8px rgba(0,0,0,.95), 0 0 4px rgba(0,0,0,.9);
+    white-space: pre-line; text-align: center; font-weight: 600; line-height: 1.35;
     max-width: 100%;
   }
   .sub-small  { font-size: 2.6vh; }

@@ -1,6 +1,7 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, itemBadge, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, NAV_HIDDEN_TYPES, getItemImageUrl } from '../utils.js';
+  import { itemProgress, itemBadge, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, NAV_HIDDEN_TYPES, getItemImageUrl, libraryIcon } from '../utils.js';
+  import WatchedBadge from './WatchedBadge.svelte';
   import { session } from '../session.svelte.js';
   import { watchlist, refreshWatchlist } from '../watchlist.svelte.js';
   import { onMount, onDestroy } from 'svelte';
@@ -24,6 +25,8 @@
     resumeStale = false,        // App: playback happened since the last dashboard visit → fetch Resume/NextUp fresh
     onResumeRefreshed,          // () => void — App resets the flag
     onLibrariesLoaded, onOpenCollection, onOpenContext, onOpenDetails, onOpenLibrary,   // callback props
+    onPlay,                     // (item, el) => void — the banner's Play: App plays it straight away
+    navIcons = {},              // the profile's sidebar icon picks — a library tile without a picture shows the same
   } = $props();
 
   let isLoading        = $state(false);
@@ -59,7 +62,7 @@
       }
     }
     return out.slice(0, ROW_LIMIT);   // uniform row length, like the other dashboard rows
-  });   // "Recently Watched" (history)
+  });
   let recommendations  = $state([]);   // [{ seedTitle, items }] — "Because you watched X"
   let collections      = $state([]);   // BoxSets ("Collections")
 
@@ -81,8 +84,14 @@
 
   const skeletons = Array(6).fill(0);
 
+  // The loads below run on after this instance is gone (Back into a library before the hero chain is
+  // through, a profile switch). `alive` stops them arming a hero timer nothing would clear, and
+  // `myCache` — the cache object THIS instance fills — keeps their late results out of whatever
+  // apiCache.dashboard holds by then: after a profile switch that is the NEXT profile's cache.
+  let alive = true;
+  let myCache = null;
   onMount(() => { loadDashboardData(); });
-  onDestroy(() => { clearInterval(heroTimer); clearTimeout(previewTimer); clearTimeout(clearTimer); });
+  onDestroy(() => { alive = false; clearInterval(heroTimer); clearTimeout(previewTimer); clearTimeout(clearTimer); });
 
   // ── Backdrop preview (like in the Library): 700 ms after focusing a card, fade in its backdrop
   //    behind the dashboard; remove it again on leaving. Opt-out via dashboardBackdrop. ──
@@ -99,38 +108,71 @@
       else if (pTag) previewBackdrop = `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${pTag}&maxWidth=1280&quality=70&format=webp`;
     }, 700);
   }
-  // Focus leaves a card: stop the fade-in timer and clear the backdrop with a short delay.
-  // If another card focus follows immediately (card→card), previewItem cancels the clearing → no
-  // flicker. If focus goes to the hero, the library tiles or the navigation, the clearing stands
-  // → no backdrop behind the hero anymore (see the screenshot problem).
-  // Couple the backdrop opacity to the hero visibility: at the very top (hero visible) off → no
-  // conflict with the hero image; on scrolling down it fades in as soon as the hero leaves the
-  // picture. This way Continue Watching/Up Next get the backdrop too, just only on scrolling.
-  let bgOpacity = $state(0);
-  function heroScrollFade(node) {
-    let sc = node.parentElement;   // find the scrolling ancestor (App main area)
-    while (sc && !(/(auto|scroll)/.test(getComputedStyle(sc).overflowY) && sc.scrollHeight > sc.clientHeight + 4)) sc = sc.parentElement;
-    if (!sc) { bgOpacity = 1; return; }
+
+  // ── The banner: whole or not at all (CODE-HEALTH §49) ──
+  // The banner and the focused card's backdrop never share the screen. Two states only:
+  //  • top  — the banner fully visible (focus in it, or in a row that fits below it whole): it
+  //           rotates, no backdrop;
+  //  • rows — the banner fully scrolled away: the focused card's backdrop fades in.
+  // spatialnav scrolls "nearest", so one step from the libraries into Continue watching moved the
+  // page by half a banner — the banner's lower half on top, the card's backdrop already half faded
+  // in below it: two pictures with a hard edge between. After every focus change the position is
+  // settled into one of the two states; a microtask, so it runs after spatialnav's scrollIntoView
+  // (still inside its key handler) and before the frame is drawn — no visible double step.
+  let bgOpacity = $state(1);
+  let heroFull = true;       // plain: read by the rotation timer — the banner only turns while whole
+  let handoff = null;        // the attachment's update(), for the effect below
+  function heroHandoff(node) {
+    let sc = node.parentElement;   // the App's main area scrolls the dashboard
+    while (sc && !/(auto|scroll)/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement;
+    if (!sc) return;
+    // The banner's bottom edge in the scroller's content coordinates; 0 = no banner on screen.
+    // Read from the DOM, not from props: the attachment must not track a rune (CLAUDE.md).
+    const heroBottom = () => {
+      const h = node.querySelector('[data-hero]');
+      return h ? h.getBoundingClientRect().bottom - sc.getBoundingClientRect().top + sc.scrollTop : 0;
+    };
     let raf = 0;
     const update = () => {
       raf = 0;
-      if (!showHero || !heroItems.length) { bgOpacity = 1; return; }   // no hero → no conflict, show fully
-      const heroH = sc.clientHeight * 0.44;   // corresponds to the hero height (h-[44vh])
-      bgOpacity = Math.min(1, Math.max(0, sc.scrollTop / heroH));
+      const hb = heroBottom();
+      heroFull = sc.scrollTop <= 2;
+      bgOpacity = !hb || sc.scrollTop >= hb - 2 ? 1 : 0;   // no banner → nothing to share the screen with
+    };
+    const settle = () => {
+      const el = document.activeElement, hb = heroBottom();
+      if (!hb || !el || !node.contains(el)) return;
+      const top = sc.getBoundingClientRect().top;
+      // fits below the whole banner? (24 px: the focused card's zoom and glow)
+      if (el.getBoundingClientRect().bottom - top + sc.scrollTop + 24 <= sc.clientHeight) {
+        if (sc.scrollTop) sc.scrollTop = 0;
+      } else if (sc.scrollTop < hb) sc.scrollTop = hb;
     };
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
-    sc.addEventListener("scroll", onScroll, { passive: true });
-    update();   // initial value immediately
-    return () => { sc.removeEventListener("scroll", onScroll); if (raf) cancelAnimationFrame(raf); };
+    const onFocusIn = () => queueMicrotask(settle);
+    sc.addEventListener('scroll', onScroll, { passive: true });
+    node.addEventListener('focusin', onFocusIn);
+    handoff = update;
+    update();
+    return () => {
+      sc.removeEventListener('scroll', onScroll); node.removeEventListener('focusin', onFocusIn);
+      if (raf) cancelAnimationFrame(raf);
+      handoff = null;
+    };
   }
+  // The banner appears (data loaded) or goes (setting) without a scroll — recompute.
+  const heroShown = $derived(showHero && !!heroCurrent);
+  $effect(() => { heroShown; handoff?.(); });
 
+  // Focus leaves a card: stop the fade-in timer and clear the backdrop with a short delay.
+  // If another card focus follows immediately (card→card), previewItem cancels the clearing → no
+  // flicker. If focus goes to the hero, the library tiles or the navigation, the clearing stands.
   function cancelPreview() {
     clearTimeout(previewTimer);
     clearTimeout(clearTimer);
     clearTimer = setTimeout(() => { previewBackdrop = ""; }, 150);
   }
 
-  // Build the featured list from the newest movies/series with a backdrop + start the rotation
   // Preloads the image of the next hero item → seamless switch without popping in.
   function preloadHero(index) {
     const next = heroItems[index];
@@ -146,17 +188,36 @@
     return inProgress;
   }
 
+  // Back from a title opened in the hero should find that title in the hero again; the rotation
+  // otherwise starts over at the first slide (heroIndex 0) and the slide that was opened is gone.
+  function openFromHero() {
+    if (myCache) myCache.heroIndex = heroIndex;
+    onOpenDetails?.(heroCurrent);
+  }
+  // The banner's Play really plays — it used to open the details page under a "Play" label. A series
+  // starts its next episode (App: playFromCard).
+  function playFromHero(e) {
+    if (myCache) myCache.heroIndex = heroIndex;
+    onPlay?.(heroCurrent, e.currentTarget);
+  }
+  // The banner holds still while you stand on its buttons: it moved on every 8 s, so OK could land on
+  // the next title while you were still reading the previous one.
+  let heroHasFocus = false;
+
   // Start the rotation for the already-set heroItems (shared by "For You" and the fallback).
   function startHeroRotation() {
-    heroIndex = 0;
+    if (!alive) return;
+    heroIndex = (myCache?.heroIndex ?? 0) % Math.max(heroItems.length, 1);
+    if (myCache) myCache.heroIndex = 0;   // once — a later visit starts at the beginning again
     prevHeroIndex = -1;
     heroBuilt = true;
     heroLoading = false;   // hero is ready → skeleton gone
     clearInterval(heroTimer);
-    if (apiCache.dashboard) apiCache.dashboard.heroItems = heroItems;   // cache-proof: switching dashboards doesn't reload
+    if (myCache) myCache.heroItems = heroItems;   // cache-proof: switching dashboards doesn't reload
     if (!reduceAnimations && heroItems.length > 1) {
       preloadHero(1);   // preload the next image
       heroTimer = setInterval(() => {
+        if (heroHasFocus || !heroFull) return;   // held while you are on it, and while it is not whole
         prevHeroIndex = heroIndex;
         heroIndex = (heroIndex + 1) % heroItems.length;
         preloadHero((heroIndex + 1) % heroItems.length);
@@ -193,12 +254,11 @@
   const FIELDS = "PrimaryImageAspectRatio,Overview,BackdropImageTags";
   const ROW_LIMIT = 12;   // uniform row length: rows are teasers, the catalog is the library
   const HERO_MIN = 3;     // use the "For You" pool only from this many usable titles on, otherwise new-additions fallback
-                          // (exceptions deliberate: hero = 5-item rotation, collections = curated, uncapped)
+                          // (exceptions deliberate: hero = 5-item rotation, collections = curated, their own cap)
 
   // Clean NextUp of titles already in "Continue Watching" (by episode or series ID).
   function filterNextUp(raw) {
-    const inProgress = new Set();
-    continueWatching.forEach(i => { inProgress.add(i.Id); if (i.SeriesId) inProgress.add(i.SeriesId); });
+    const inProgress = heroInProgressSet();
     return raw.filter(i => !inProgress.has(i.Id) && !inProgress.has(i.SeriesId));
   }
 
@@ -206,6 +266,7 @@
   // instant display from the cache stays, but the one row that actually changed is
   // correct again (progress/new title). No full reload, the hero stays put (no reshuffle).
   async function refreshResume() {
+    const cache = myCache;
     try {
       const uId  = selectedUser.Id;
       const opts = { headers: getAuthHeaders() };
@@ -213,17 +274,21 @@
         fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
         fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
       ]);
-      continueWatching = (await rRes.json()).Items || [];
-      const dNext = await rNext.json();
-      nextUp = filterNextUp(Array.isArray(dNext) ? dNext : (dNext.Items || []));
-      if (apiCache.dashboard) { apiCache.dashboard.continueWatching = continueWatching; apiCache.dashboard.nextUp = nextUp; }
+      // An error answer must not empty the rows — it parsed as "no items" and went into the cache.
+      if (!rRes.ok || !rNext.ok) { console.warn('dashboard refresh: HTTP', rRes.status, rNext.status); return; }
+      const resume = (await rRes.json()).Items || [];
+      const dNext  = await rNext.json();
+      if (!alive) return;
+      continueWatching = resume;
+      nextUp = filterNextUp(dNext.Items || []);
+      if (cache) { cache.continueWatching = continueWatching; cache.nextUp = nextUp; }
       onResumeRefreshed?.();
     } catch { /* the flag stays set → the next dashboard visit tries again */ }
   }
 
   // Recommendations: seeds from recently watched items, then /Items/{id}/Similar.
   // Best practice: shown right in the dashboard, no separate tab.
-  async function loadRecommendations(uId, opts, fields) {
+  async function loadRecommendations(uId, opts, fields, cache) {
     try {
       // Fetch recently played movies/series as the hook
       const res = await fetch(
@@ -243,13 +308,15 @@
           .then(r => r.json()).then(d => d.Items || []).catch(() => [])
       ));
       const rows = [];
-      picked.forEach((seed, i) => { if (results[i].length >= 4) rows.push({ seedTitle: seed.Name, items: results[i] }); });
+      // seedId is the row's key: two recently watched titles can share a name (a remake, a film and
+      // a series called "Fargo"), and a duplicate key makes Svelte abort the whole render.
+      picked.forEach((seed, i) => { if (results[i].length >= 4) rows.push({ seedId: seed.Id, seedTitle: seed.Name, items: results[i] }); });
       recommendations = rows;
-      if (apiCache.dashboard) apiCache.dashboard.recommendations = rows;
+      cache.recommendations = rows;
     } catch { /* recommendations are optional */ }
   }
 
-  // "For You" hero (variant A): derives the most frequent genres from recently watched and pulls
+  // "For You" hero: derives the most frequent genres from recently watched and pulls
   // UNWATCHED, well-rated titles with a backdrop from them — instead of "newest additions, random".
   // Returns the candidate pool (rating-sorted). Empty = no signal / error → the caller
   // falls back to the previous new-additions logic so the hero never looks empty.
@@ -296,14 +363,29 @@
     heroBuilt = false;   // rebuild per load
     // Cache hit: load from cache immediately, no network
     if (apiCache.dashboard) {
-      ({ libraries, continueWatching, nextUp, latestMovies, latestSeries, recentlyWatched, recommendations } = apiCache.dashboard);
-      recentlyWatched = recentlyWatched || [];
-      recommendations = recommendations || [];
-      collections     = apiCache.dashboard.collections || [];
-      // Cache hit: take the previously built "For You" selection directly (instant, no network);
-      // only if none is cached, build the new-additions fallback.
-      if (apiCache.dashboard.heroItems?.length) { heroItems = apiCache.dashboard.heroItems; startHeroRotation(); }
-      else buildHero();
+      const cache = myCache = apiCache.dashboard;
+      const rowsFromCache = () => {
+        ({ libraries, continueWatching, nextUp, latestMovies, latestSeries, recentlyWatched, recommendations } = cache);
+        recentlyWatched = recentlyWatched || [];
+        recommendations = recommendations || [];
+        collections     = cache.collections || [];
+      };
+      // Take the previously built "For You" selection directly (instant, no network); only if
+      // none is cached, build the new-additions fallback.
+      const heroFromCache = () => {
+        if (cache.heroItems?.length) { heroItems = cache.heroItems; startHeroRotation(); }
+        else buildHero();
+      };
+      rowsFromCache();
+      heroFromCache();
+      // Back before the load behind this cache had finished: its later rows land in the cache, not
+      // here — Up next, the recent rows and the hero stayed missing until the next remount. Take
+      // them over once that load is through; a hero already rotating is left alone.
+      if (cache.loading) cache.loading.then(() => {
+        if (!alive || apiCache.dashboard !== cache) return;
+        rowsFromCache();
+        if (!heroItems.length) heroFromCache();
+      });
       if (resumeStale) refreshResume();   // background refresh, the UI is already up from the cache
       return;
     }
@@ -330,7 +412,8 @@
         .catch(() => { heroForYouPending = false; if (!heroBuilt) buildHero(); });
       // Derive recommendations ("Because you watched X") from recently watched — independent of
       // Views/Resume, so it also goes out before the await.
-      loadRecommendations(uId, opts, fields);
+      const cache = myCache = { libraries: [], continueWatching: [], nextUp: [], latestMovies: [], latestSeries: [], recentlyWatched: [], recommendations: [], collections: [], heroItems: [] };
+      const pRecs = loadRecommendations(uId, opts, fields, cache);
       const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
       // Both "recently added" rows ask by DateCreated rather than through /Items/Latest. Measured
       // against a real library, that endpoint answers in 504 ms for Movie but 9951 ms for Series —
@@ -356,28 +439,40 @@
       // collapsed to one entry each (buffer for a good mix).
       const pHistory      = fetch(`${session.serverUrl}/Items?UserId=${uId}&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}&EnableTotalRecordCount=false`, opts);
       // Collections (BoxSets)
-      const pCollections  = fetch(`${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=50&EnableTotalRecordCount=false`, opts);
+      const pCollections  = fetch(`${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio,ChildCount&Limit=50&EnableTotalRecordCount=false`, opts);
 
       // Priority: Views + Resume → release the UI immediately
       const [resViews, resResume] = await Promise.all([pViews, pResume]);
+      // An answer, but an error: the server IS reachable, so no "server unreachable" banner (a 401
+      // made json() throw into the catch below and raised exactly that), and nothing is cached — the
+      // next visit loads again. A revoked token is App's to handle (session.authLost).
+      if (!resViews.ok || !resResume.ok) {
+        console.warn('dashboard: HTTP', resViews.status, resResume.status);
+        isLoading = false; heroLoading = false;
+        return;
+      }
       // Hide the same collection types as the sidebar (music / live TV — unsupported views).
       libraries        = ((await resViews.json()).Items || []).filter(l => !NAV_HIDDEN_TYPES.includes((l.CollectionType || '').toLowerCase()));
       continueWatching = (await resResume.json()).Items || [];
       isLoading        = false;
       session.connectionLost = false;   // server reachable
 
-      // Fill the cache early → sidebar navigation works immediately
-      apiCache.dashboard = { libraries, continueWatching, nextUp: [], latestMovies: [], latestSeries: [], recentlyWatched: [], recommendations: [], collections: [], heroItems: [] };
+      // Fill the cache early → sidebar navigation works immediately. Only while this instance is
+      // still the dashboard on screen — after a profile switch the cache belongs to the next one.
+      cache.libraries = libraries; cache.continueWatching = continueWatching;
+      if (alive) apiCache.dashboard = cache;
 
       // Load collections independently
-      pCollections.then(r => r.json()).then(d => {
-        collections = (Array.isArray(d) ? d : (d.Items || [])).filter(c => c.ChildCount !== 0);
-        apiCache.dashboard.collections = collections;
+      const pCols = pCollections.then(r => r.json()).then(d => {
+        // ChildCount only comes when asked for (Fields above) — without it this filter saw undefined
+        // and let a collection through that is empty for this profile (e.g. by its age limit).
+        collections = (d.Items || []).filter(c => c.ChildCount !== 0);
+        cache.collections = collections;
       }).catch(() => {});
 
 
       // Load history + collapse by series
-      pHistory.then(r => r.json()).then(async d => {
+      const pHist = pHistory.then(r => r.json()).then(async d => {
         let items = dedupeHistory(d.Items || []).slice(0, ROW_LIMIT);   // uniform row length; capping BEFORE the enrichment saves series lookups
         // Show series with a real year range like in the library ("2016 – 2019" / "2024 – today"):
         // load the real series info (year/status/EndDate) once for all series entries.
@@ -397,39 +492,38 @@
           } catch { /* enrichment optional — if it fails, only the title remains */ }
         }
         recentlyWatched = items;
-        apiCache.dashboard.recentlyWatched = recentlyWatched;
+        cache.recentlyWatched = recentlyWatched;
       }).catch(() => {});
 
-      // Update secondary sections independently — the fastest comes first
-      // FIX: removed `|| d` (d would be the response object, not an array)
-      // FIX: .catch(() => {}) so a single error doesn't block everything
-      // /Items/Latest returns a DIRECT array (not { Items: [...] })!
-      // Other endpoints return { Items, TotalRecordCount }. Handle both cases.
-      pNextUp.then(r => r.json()).then(d => {
-        const raw = Array.isArray(d) ? d : (d.Items || []);
+      // Update secondary sections independently — the fastest comes first; each has its own
+      // .catch so a single error doesn't block the rest.
+      const pNext = pNextUp.then(r => r.json()).then(d => {
+        const raw = d.Items || [];
         // Exclude in-progress titles (already in "Continue Watching") — like the Jellyfin app.
         nextUp = filterNextUp(raw);
-        apiCache.dashboard.nextUp = nextUp;
+        cache.nextUp = nextUp;
       }).catch(() => {});
 
       // Process the latest fetches INDEPENDENTLY: each row fills immediately, and the hero is
       // built as soon as the FIRST usable data is there — not only when the slower
       // of the two fetches returns (that was the actual skeleton bottleneck).
-      const pm = pLatestMovies.then(r => r.json()).catch(() => []);
-      const ps = pLatestSeries.then(r => r.json()).catch(() => []);
-      pm.then(d => {
-        latestMovies = Array.isArray(d) ? d : (d.Items || []);
-        apiCache.dashboard.latestMovies = latestMovies;
+      const pm = pLatestMovies.then(r => r.json()).catch(() => ({}));
+      const ps = pLatestSeries.then(r => r.json()).catch(() => ({}));
+      const pmDone = pm.then(d => {
+        latestMovies = d.Items || [];
+        cache.latestMovies = latestMovies;
         buildHero();
       });
-      ps.then(d => {
-        latestSeries = Array.isArray(d) ? d : (d.Items || []);
-        apiCache.dashboard.latestSeries = latestSeries;
+      const psDone = ps.then(d => {
+        latestSeries = d.Items || [];
+        cache.latestSeries = latestSeries;
         buildHero();
       });
       // Safety net: end the skeleton only once Latest AND "For You" have decided
       // (otherwise the placeholder would vanish while the For-You fetch is still running → gap/jump).
       Promise.all([pm, ps, pHeroForYou]).then(() => { heroLoading = false; });
+      // Everything that still fills this cache — a dashboard mounted before it is done takes over.
+      cache.loading = Promise.allSettled([pmDone, psDone, pHeroForYou, pNext, pHist, pRecs, pCols]).then(() => { cache.loading = null; });
 
     } catch (err) {
       console.error("Dashboard load failed:", err);
@@ -472,15 +566,6 @@
     return out;
   }
 
-  // History cards uniformly portrait: episodes use the series poster
-  function getHistoryImageUrl(item) {
-    if (item.Type === 'Episode' && item.SeriesId && item.SeriesPrimaryImageTag)
-      return `${session.serverUrl}/Items/${item.SeriesId}/Images/Primary?tag=${item.SeriesPrimaryImageTag}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
-    if (item.ImageTags?.Primary)
-      return `${session.serverUrl}/Items/${item.Id}/Images/Primary?tag=${item.ImageTags.Primary}&fillHeight=400&fillWidth=266&quality=80&format=webp`;
-    return null;
-  }
-
   function getItemTitle(item) {
     return (item.Type === 'Episode' && item.SeriesName) ? item.SeriesName : item.Name;
   }
@@ -508,12 +593,13 @@
     return null;
   }</script>
 
-<div class="relative">
+<div class="relative" {@attach heroHandoff}>
   <!-- Dashboard backdrop: backdrop of the focused title, pinned to the top of the viewport
        (sticky, not absolute — the dashboard scrolls in the App container). -mb-[100vh] cancels its
-       own height again, so the content sits above it instead of sliding underneath. -->
+       own height again, so the content sits above it instead of sliding underneath. Shown only
+       while the banner is fully away (heroHandoff); the fade is opacity, run by the compositor. -->
   {#if dashboardBackdrop && previewBackdrop}
-    <div {@attach heroScrollFade} style="opacity:{bgOpacity}" class="sticky top-0 h-screen w-full -mb-[100vh] z-0 pointer-events-none overflow-hidden">
+    <div style="opacity:{bgOpacity}" class="sticky top-0 h-screen w-full -mb-[100vh] z-0 pointer-events-none overflow-hidden transition-opacity duration-300">
       {#key previewBackdrop}
         <img src={previewBackdrop} alt="" class="w-full h-full object-cover object-top preview-fade" />
       {/key}
@@ -534,16 +620,14 @@
       onfocus={() => previewItem(item)} onblur={cancelPreview}
       class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
-                  border-4 border-transparent group-focus:border-white group-focus:scale-105
+                  border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow
                   transition-transform duration-200 shadow-xl relative">
         {#if img}
           <img src={img} {@attach blurUp(itemBlurHash(item, 'Backdrop'))} alt={item.Name}
             class="w-full h-full object-cover" loading="lazy" />
         {/if}
         {#if badge}
-          <div class="absolute top-2 left-2 z-10 min-w-[1.6rem] h-[1.6rem] px-1.5 rounded-full flex items-center justify-center bg-blue-600/90 text-white text-xs font-bold shadow-md pointer-events-none">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-          </div>
+          <WatchedBadge />
         {/if}
         {#if prog > 0}
           <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
@@ -573,16 +657,14 @@
       onfocus={() => previewItem(item)} onblur={cancelPreview}
       class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                  border-4 border-transparent group-focus:border-white group-focus:scale-105
+                  border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow
                   transition-transform duration-200 shadow-xl">
         {#if img}
           <img src={img} {@attach blurUp(blur)} alt={item.Name}
             class="w-full h-full object-cover" loading="lazy" />
         {/if}
         {#if badge}
-          <div class="absolute top-2 left-2 z-10 min-w-[1.6rem] h-[1.6rem] px-1.5 rounded-full flex items-center justify-center bg-blue-600/90 text-white text-xs font-bold shadow-md pointer-events-none">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-          </div>
+          <WatchedBadge />
         {/if}
         {#if prog > 0}
           <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
@@ -601,10 +683,12 @@
 
   {#snippet collectionCard(col)}
     {@const img = getItemImageUrl(col)}
-    <button onclick={() => onOpenCollection?.(col)} onfocus={() => previewItem(col)} onblur={cancelPreview}
+    <!-- data-item-id: Back from the collection returns to this card (focusCardAgain). The row comes
+         from the cache on the way back, so it is there in time. -->
+    <button onclick={() => onOpenCollection?.(col)} onfocus={() => previewItem(col)} onblur={cancelPreview} data-item-id={col.Id}
       class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                  border-4 border-transparent group-focus:border-white group-focus:scale-105
+                  border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow
                   transition-transform duration-200 shadow-xl">
         {#if img}
           <img src={img} {@attach blurUp(itemBlurHash(col))} alt={col.Name}
@@ -696,12 +780,22 @@
           {#if heroCurrent.Overview}
             <p class="text-gray-300 text-lg line-clamp-2 max-w-2xl drop-shadow">{heroCurrent.Overview}</p>
           {/if}
-          <div class="flex items-center gap-4 mt-2">
-            <button onclick={() => onOpenDetails?.(heroCurrent)} data-scroll-top
+          <div class="flex items-center gap-4 mt-2" onfocusin={() => heroHasFocus = true} onfocusout={() => heroHasFocus = false}>
+            <!-- data-item-id + the remembered slide (heroIndex): back from the title or the player, the
+                 hero shows it again and its two buttons are the FIRST elements carrying its id, so
+                 focusCardAgain lands on the one that was pressed (occurrence 0 or 1) — it used to pick
+                 the same title in "Recently added", deep down the page. -->
+            <button onclick={playFromHero} data-scroll-top data-item-id={heroCurrent?.Id}
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-lg px-8 py-3 rounded-xl
-                     focus:outline-none focus:ring-4 focus:ring-blue-500 transition-all flex items-center gap-2 shadow-lg">
+                     focus:outline-none focus:ring-4 focus:ring-blue-500 flex items-center gap-2 shadow-lg">
               <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
-              {i18n.t.play}
+              {(heroCurrent?.UserData?.PlaybackPositionTicks || 0) > 0 ? i18n.t.resumePlay : i18n.t.play}
+            </button>
+            <button onclick={openFromHero} data-item-id={heroCurrent?.Id}
+              class="bg-gray-800/80 hover:bg-gray-700 focus:bg-gray-700 text-white font-bold text-lg px-7 py-3 rounded-xl
+                     focus:outline-none focus:ring-4 focus:ring-white flex items-center gap-2 shadow-lg">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
+              {i18n.t.moreInfo}
             </button>
             <!-- Dot indicators — only when it also rotates (with reduced motion: a static hero without dots) -->
             {#if !reduceAnimations && heroItems.length > 1}
@@ -730,13 +824,17 @@
             <button onclick={() => onOpenLibrary?.(library)} data-item-id={library.Id}
               class="shrink-0 scroll-mt-24 scroll-mx-4 group flex flex-col items-center focus:outline-none">
               <div class="w-64 h-36 bg-gray-800 rounded-xl flex items-center justify-center
-                          border-4 border-transparent group-focus:border-white group-focus:scale-105 group-hover:border-gray-400
+                          border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow group-hover:border-gray-400
                           transition-transform duration-200 shadow-lg overflow-hidden">
                 {#if getItemImageUrl(library)}
                   <img src={getItemImageUrl(library)} {@attach blurUp(itemBlurHash(library))} alt={library.Name}
                     class="w-full h-full object-cover opacity-80 group-focus:opacity-100" loading="lazy" />
                 {:else}
-                  <span class="text-2xl text-gray-500 font-bold">{library.Name}</span>
+                  <!-- No picture: the library's icon (as in the sidebar), not its name — the name is
+                       already written right under the tile. -->
+                  <svg class="w-14 h-14 text-gray-500 group-focus:text-gray-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d={libraryIcon(library, navIcons)}/>
+                  </svg>
                 {/if}
               </div>
               <!-- block + w-64 (= tile width) + truncate: without a width bound a long library name
@@ -790,7 +888,7 @@
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.recentlyWatched}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
           {#each recentlyWatched as item (item.Id)}
-            {@render portraitCard(item, getHistoryImageUrl(item), itemBlurHash(item))}
+            {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}   <!-- episodes arrive as their series (dedupeHistory) -->
           {/each}
         </div>
       </div>
@@ -808,8 +906,8 @@
       </div>
     {/if}
 
-    <!-- RECOMMENDATIONS: "Because you watched X" — personalized, hence near the top -->
-    {#each (showRecommendations ? recommendations.slice(0, recommendationRows) : []) as rec (rec.seedTitle)}
+    <!-- RECOMMENDATIONS: "Because you watched X" — personalized -->
+    {#each (showRecommendations ? recommendations.slice(0, recommendationRows) : []) as rec (rec.seedId ?? rec.seedTitle)}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">

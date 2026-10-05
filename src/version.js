@@ -1,9 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // SINGLE version source: public/appinfo.json (the webOS manifest requires this file in the
-// package root anyway). Since Vite (from v8) forbids importing assets from public/, the version
-// is NO LONGER imported here, but read at BUILD TIME from public/appinfo.json in vite.config.js
-// and injected as the global constant __APP_VERSION__. The settings display and Jellyfin auth header
-// still read exclusively from here — so for a release, still ONLY the "version" in appinfo.json counts.
+// package root anyway). Vite forbids importing assets from public/, so vite.config.js reads it at
+// BUILD TIME and injects the global constant __APP_VERSION__. The settings display and the Jellyfin
+// auth header read it exclusively from here — for a release, ONLY the "version" in appinfo.json counts.
 //
 // webOS expects the version without leading zeros (e.g. 2026.6.28). For display + Jellyfin we
 // normalize month/day to two digits: 2026.6.28 → 2026.06.28. (Assumption: schema year.month.day.)

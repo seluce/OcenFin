@@ -3,6 +3,74 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## 2026.10.04
+
+### Added
+
+- **Skip Recap.** A "Skip Recap" button like "Skip Intro", optionally automatic; it needs a server
+  that marks recaps, such as the Intro Skipper plugin.
+- **Play straight from the home screen.** The banner's Play button starts the title right away, and
+  a card's menu now begins with Play or Resume.
+- **Series and season pages show what comes next.** Play names the episode it starts, and the
+  episode you move onto shows its length and description below the row.
+- **Find subtitles from the TV.** "Search subtitles…" on a title's page downloads a subtitle from
+  the server's providers and selects it, for profiles allowed to manage subtitles.
+- **Labelled player buttons.** Every button in the player shows its name when you move onto it.
+- **The A–Z bar can be switched off.** You find it under Settings → Content → Library.
+
+### Changed
+
+- **Settings are grouped.** Each group sits in its own card with a heading, and the subtitle options
+  explain themselves in plain words.
+- **Less grey.** The selected card glows softly in your accent colour, a title's page takes on a
+  hint of its poster's colour, and quieter pages carry a faint glow.
+- **Banner and backdrop no longer overlap on the home screen.** One step into the rows moves the
+  banner away completely, and the selected title's picture fades in.
+- **The library sorts from one row of buttons.** Pressing the active sort again flips its direction;
+  the separate Sort button is gone.
+- **Track memory per profile.** Each profile now remembers its own audio and subtitle choice for
+  every series.
+- **Removing a server cleans up after it.** Its profiles' settings and search history are removed
+  from the TV as well.
+- **Watch together is hidden on age-restricted profiles.** Such profiles keep to their own titles.
+- **A cleaner look.** "Watched" is green on every card, the random-title button is called "Surprise
+  me", and the sign-in screens show the app's logo and a colour per profile.
+- **Snappier buttons.** A button's highlight appears the moment you reach it; only the slight zoom
+  is still animated.
+- **DVB picture subtitles are no longer switched on automatically.** The server can only burn them
+  into the picture, which costs direct playback, so you choose them yourself.
+
+### Fixed
+
+- **Signing in no longer wastes login attempts.** Enter after the user name or a held OK button no
+  longer sends empty or repeated passwords, which could lock an account.
+- **Standby no longer signs you out.** A server that is not reachable yet after waking the TV is
+  simply waited for.
+- **Back works on the server list.** Quick Connect also stops when you leave it or its code expires.
+- **The right episode plays.** The "Unwatched" filter works, a season starts at its first unwatched
+  episode, and a fully watched series at episode 1 instead of a special.
+- **Playback keeps your place.** That now holds after Back while a title is still loading and after
+  a playback error.
+- **The track you pick on a title's page is the one that plays.**
+- **Skipping and subtitles in the player.** Skip Intro works right after Skip Recap, the subtitle
+  delay survives an audio switch, and end credits are recognised more reliably.
+- **SyncPlay.** The next episode starts at its beginning, the TV stays with the group, and a group
+  that cannot be created or joined says so.
+- **Back returns to where you were.** That includes "Surprise me", a card's menu, the banner and
+  collections, and dialogs no longer leave nothing selected.
+- **The server saying no is handled.** Refused changes undo themselves, a removed title shows a
+  message, and the watchlist recovers if its playlist was deleted elsewhere.
+- **A steadier home screen.** It copes with two recommendations of the same name, fills in rows
+  after you left it early, and carries nothing over to the next profile.
+- **Smaller fixes.** Theme music stops with the screensaver, a double press on Play keeps the way
+  back, the A–Z bar marks the right letter, and times follow your language.
+
+### Internal
+
+- **Updated build tools.** Vite 8.3.1 and its Svelte plugin 7.3.1, both patch releases.
+- **Old code and comments cleaned up.** A start from the home screen now also asks the server once
+  instead of twice.
+
 ## 2026.09.27
 
 **This release needs Jellyfin Server 12.0 or newer.** On an older server, stay on 2026.09.22.
@@ -10,428 +78,211 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 ### Added
 
 - **Rewind and fast-forward from another device.** When the TV is controlled from Jellyfin on a
-  phone or in the browser, those two buttons now work as well. They jump by the same step as the
-  player's own buttons.
-- **"Included in" on the details page.** A film or series that belongs to a collection now shows it
-  in its own row, and the collection opens with one click. Back leads to the same page, even if
-  you had moved on to another title from there.
-- **Filter a library by audio and subtitle language.** The filter menu lists the languages your
-  titles actually have, named in the app's language, so you can show only what has German audio or
-  English subtitles, for example. A series counts as soon as one of its episodes has the language.
+  phone or in the browser, both buttons now work, using the player's own step.
+- **"Included in" on the details page.** A title that belongs to a collection shows it in its own
+  row, one click away.
+- **Filter a library by audio and subtitle language.** The filter lists the languages your titles
+  actually have, for example to show only films with German audio.
 
 ### Changed
 
-- **Back from a suggestion returns to it.** Opening a title under "More like this" and pressing Back
-  used to land at the top of the page, because that row loaded too late on older servers. With
-  Jellyfin 12 it is there in time, so Back returns to the card you picked, as everywhere else.
-- **The setting "Auto-pick forced DVD subtitles" is gone.** It only ever applied to servers that
-  could not hand DVD subtitles to the app; Jellyfin 12 always can, so the app picks them like any
-  other subtitle. The status page no longer lists that server capability either.
-- **Your audio and subtitle language apply to every start.** They only took effect when a title was
-  started from its details page. A series' play button, play all, shuffle, extras and a start from
-  another device played the file's own default track and no subtitles. They now choose tracks the
-  same way the details page does, including a language set in your Jellyfin profile such as the
-  original language. The episodes of a series still carry on with the tracks the first one started
-  with.
+- **Back from a suggestion returns to it.** With Jellyfin 12 the "More like this" row loads in time,
+  so Back lands on the card you picked.
+- **The setting "Auto-pick forced DVD subtitles" is gone.** Jellyfin 12 always delivers DVD
+  subtitles, so they are picked like any other.
+- **Your audio and subtitle language apply to every start.** A series' Play button, play all,
+  shuffle, extras and starts from another device now choose tracks like the details page does.
 
 ### Fixed
 
-- **Quick Connect works again.** On Jellyfin 12, signing in with a code, and adding a watch-together
-  profile the same way, failed straight away: the server no longer accepts the old way of asking for
-  a code. Approving another device with a code under Settings failed on every server version, because
-  the code was sent where the server does not look for it.
-- **The preview pictures while seeking match the version you are watching.** For a title in several
-  versions they always came from the first one, so with a different cut they drifted away from the
-  scene.
-- **The player's audio and subtitle choices follow the version you are watching.** For a title in
-  several versions with different tracks, the player went by the first version's tracks even while
-  another one was playing. A chosen track could then come out as a different one, or the server
-  converted the film without need.
-- **Back no longer bounces between two pages.** Opening a cast member from a film you had reached
-  through that same person, then pressing Back, switched between the film and the person page for
-  good, leaving the menu as the only way out. Back now retraces every step. The same goes for a
-  collection opened again from one of its own films.
-- **After playback, Back retraces your steps.** Stopping a title you had reached through another
-  details page lost the way back to that one, and after a series' play button or an extra, Back
-  skipped the page you had started from. Watching on from an episode's page, you now come back to
-  the last episode you watched.
-- **A profile without a password can be added to watch together.** On Jellyfin 12 the password
-  prompt came back every time it was confirmed empty, so such a profile could only be added by code
-  or with its password saved.
-- **People in your favourites are listed alphabetically.** The server ignores the sort order the app
-  asked for there, so they came in no particular order.
-- **Back from a cast member's page returns to the title you came from.** If you had moved on to
-  another title on the details page first, Back used to land on the first one, and the steps in
-  between were gone.
+- **Quick Connect works again.** Signing in with a code failed on Jellyfin 12, and approving another
+  device from the settings failed on every server.
+- **Titles in several versions behave.** Seek previews and audio and subtitle choices now follow the
+  version you are actually watching.
+- **Back retraces your steps.** It no longer bounces between a film and a cast member or collection,
+  and after playback or a cast member's page it returns to the page you came from.
+- **A profile without a password can be added to watch together.** On Jellyfin 12 its password
+  prompt kept coming back.
+- **People in your favourites are sorted alphabetically.** The server ignored the requested order,
+  so they appeared at random.
 
 ### Internal
 
-- Requests use Jellyfin's current addresses instead of the older per-profile ones, which Jellyfin 12
-  no longer documents and may drop in a later version.
-- New playlists, the watchlist included, are created the way Jellyfin 12 documents (still private),
-  and parameters the server ignores are no longer sent.
-- Code kept only for servers before 12 is gone: the version check for DVD subtitles and the
-  request to an old intro plugin interface that Jellyfin 12 no longer has.
+- **Current Jellyfin addresses.** Requests no longer use the older per-profile routes, which
+  Jellyfin 12 no longer documents.
+- **Playlists are created the documented way.** They stay private, and parameters the server ignores
+  are no longer sent.
+- **Code for servers before 12 is gone.** That includes the DVD subtitle version check and an old
+  intro plugin interface.
 
 ## 2026.09.22
 
 ### Changed
 
-- **The countdown to the next episode runs smoothly.** Its bar moved in visible steps, because it was
-  redrawn from a timer that competes with the video for the same thread — right at the end of an
-  episode, where the player is busiest. The bar is now handed to the graphics side and drawn there in
-  one go, so it keeps running evenly even while the picture is being decoded. It still pauses with
-  the video, holds while buffering, follows along when you skip forwards or back, and keeps running
-  with "Reduce animations" switched on, since it shows time rather than decoration.
-- **A profile with an age restriction can save its password again.** The settings of such a profile
-  hid all sign-in options, including the one that lets it be picked without typing the password on
-  the remote. That one is back, because it only concerns that profile itself. Changing the password
-  and authorising another device by code stay hidden.
+- **The countdown to the next episode runs smoothly.** Its bar is now drawn by the graphics side, so
+  it no longer stutters while the picture decodes, with "Reduce animations" on as well.
+- **Age-restricted profiles can save their password again.** They can be picked without typing it on
+  the remote; the other sign-in options stay hidden.
 
 ### Fixed
 
-- **Episodes count as watched again, and keep their place.** When one episode ran into the next, the
-  app told the server you had stopped at the very beginning of the one you had just finished — so it
-  stayed marked unwatched in the episode list. The same went for leaving a title early: its position
-  was cleared instead of saved, and it dropped out of "Continue watching". Both only affected titles
-  the server was converting on the fly, which is why it looked as though it depended on how you
-  started playback. An episode you watched through to its credits also counts as watched now, even
-  when the app moves on to the next one before the picture has quite ended — short episodes with
-  long credits used to fall just short of the mark. Skipping ahead with the channel keys still
-  doesn't mark anything, since that is not finishing it.
-- **The player controls hide again after you return from the home screen.** Minimising OcenFin mid-film
-  and coming back could leave the control bar on screen for good — it only disappeared once you
-  pressed some button. It needed a narrow coincidence, which is why it happened so rarely: the bar
-  had to be showing when you left, so that the timer meant to hide it ran out while playback was
-  paused in the background, where it does nothing by design.
+- **Episodes count as watched again and keep their place.** Converted titles were saved at the wrong
+  position, and short episodes with long credits fell just short of "watched".
+- **The player controls hide again after you return from the home screen.** Coming back mid-film
+  could leave the control bar on screen until you pressed a key.
 
 ### Internal
 
-- hls.js 1.7.1 → 1.7.3 (1.7.2 never shipped in a release). One fix across the two matters here: a
-  seek landing in a gap at the very end of a stream could collapse the reported duration, which is
-  exactly what the end-of-episode logic reads. The rest is for features this app does not use — the
-  audio and subtitle track fixes in 1.7.3 included, since tracks are chosen by the server and
-  subtitles are drawn by the app itself.
-- Svelte 5.57.0 → 5.57.1 and Vite 8.2.2 → 8.3.0, both patch-level build tooling; the build still
-  ends at 0 warnings.
-- Waking from the screensaver now writes one diagnostic line behind the debug switch: how long it
-  ran, what was playing and what held focus. Chasing a rare report that the first press after a long
-  screensaver does not always resume playback.
+- **hls.js 1.7.3.** It fixes a rare wrong duration after seeking to the very end of a stream.
+- **Svelte 5.57.1 and Vite 8.3.0.** Both are patch releases of the build tools.
+- **A diagnostic line when waking from the screensaver.** It sits behind the debug switch and helps
+  chase a rare resume problem.
 
 ## 2026.08.31
 
 ### Fixed
 
-- **The very first start puts you on "add server".** With nothing saved yet the sign-in screen came
-  up with nothing focused — and that screen has no menu to fall back on.
-- **The watchlist no longer reports an error into the log when the server answers oddly.** A reverse
-  proxy replying with an error page under a success code made one background refresh fail loudly
-  instead of quietly; it is optional either way and re-syncs on the next load.
+- **The very first start puts you on "add server".** It used to open with nothing selected.
+- **The watchlist stays quiet when the server answers oddly.** A proxy's error page no longer shows
+  up as an error, and the list syncs again on the next load.
 
 ### Internal
 
-- The page now declares the language it is actually showing, instead of always English.
-- The poster card of collections, favourites and a cast member's filmography was written out three
-  times, byte for byte; it is one component now, with each view keeping its own caption. The three
-  toggle rows in the settings likewise became one. No visible change — 2.5 kB less JavaScript, and
-  the rule that every card carries the id the focus restore needs is now structural.
-- Svelte 5.56.10 → 5.57.0. Nothing in the app had to change and there was nothing new to adopt; the
-  build still ends at 0 warnings. It brings slightly smaller generated code and fixes to nested
-  transitions and outro handling, which the focus-trapped dialogs here rely on.
+- **The page declares its actual language.** It used to claim English whatever was shown.
+- **One poster card for collections, favourites and cast pages.** It replaces three identical
+  copies; nothing changes on screen.
+- **Svelte 5.57.0.** It brings fixes to transitions that the app's dialogs rely on.
 
 ## 2026.08.27
 
 ### Fixed
 
-- **Back from a cast member's page returns you where you were with the remote's Back key too.** The
-  on-screen button already did; the remote's own key only changed the view, so the search came back
-  with nothing focused.
-- **Opening a title from a cast member's page no longer strands you.** Back used to alternate
-  between that title and the cast member forever — the page you started from could not be reached
-  again, and the menu was the only way out.
-- **A cast member's page remembers where you were.** Opening one of their titles and coming back
-  returns to it at the position you left, rather than to the Back button at the top. Opening a
-  person fresh starts on their first title.
-- **A collection or watchlist opens on its first title** instead of on the Back button, the way
-  favourites already did. An empty one still starts on Back.
-- **A collection inside a collection steps back one level at a time.** You return to the collection
-  you went into, at the position you left it, and the last step back takes you where the chain
-  started.
-- **Opening a library from the home screen lands on its first title**, the way the menu entry
-  already did — including a library you were just in.
-- **Going back to the home screen from a library, search, favourites or the settings puts you back
-  on the page.** All four returned with nothing focused. A library returns you to the tile you
-  opened it from, the other three to the first row.
-- **Choosing the settings from the menu moves you into them**, instead of leaving focus on the menu
-  entry with the bar open over the page.
-- **Picking a term from the search history moves you into the results.** The list of past searches
-  disappears together with the button you just pressed, which left nothing focused. Emptying the
-  history now lands in the search field.
-- **Editing a playlist keeps the remote working.** Removing an entry lands on the one that moved up
-  into the gap, so several deletions work from the same spot, and an entry moved to the very top or
-  bottom hands focus to the opposite arrow instead of the one that just greyed out.
-- **Leaving a title returns you into a filtered library properly.** Taking the favourite off inside
-  a title correctly dropped it from a favourites-filtered list but left focus nowhere; it now lands
-  on the title that moved up into the gap.
-- **The remote keeps working after a playback error.** Choosing "try again" resumed playback but
-  left OK and the arrow keys dead, with Back the only way out of the title.
-- **After watching, a title page puts you back on its play button**, rather than on the cast member
-  you reached it through.
-- **Theme music follows the title you are actually looking at.** Jumping through "more like this"
-  kept the previous title's theme playing. It now changes with the page, or falls silent when the
-  new title has none. Stepping to a season or an episode of the same series still keeps it running.
-- **Marking a title watched or a favourite applies to the title you are on.** Reached through "more
-  like this", the tick or the heart was also written onto the title you had originally opened, so
-  the wrong card showed as watched or the wrong film appeared in favourites. The server always got
-  the right one.
-- **Choosing a symbol for a menu entry returns focus to that entry**, instead of leaving the
-  settings with nothing focused.
-- **Lists in the settings open on the setting you actually have.** The language, font, theme and
-  seek-step choosers started at the top of the list.
-- **Removing a saved server keeps the remote working.** Focus moves to the next server down, or to
-  "add server" once the list is empty. That ✕ also called itself "Back to Selection"; it says
-  "Remove" now.
-- **Leaving the password entry returns you to the profile you picked**, instead of to the first one
-  in the row.
-- **Typing a server address by hand no longer opens the on-screen keyboard unasked.** Passing over
-  the field on the way to its OK button was enough to bring it up; it now opens on OK. Entering a
-  password is unchanged.
-- **The word "or" on the profile screen was German in every language.** It is translated now.
+- **Cast member pages keep your place.** Opening one of their titles and coming back returns to the
+  same spot, Back no longer bounces between the two, and the remote's Back key works like the
+  button.
+- **Collections and watchlists open on their first title.** A collection inside a collection also
+  steps back one level at a time.
+- **Libraries and the home screen keep you on the page.** A library opened from the home screen
+  starts on its first title, and going back returns you to its tile or to the first row.
+- **Opening the settings or a search result moves you into it.** Focus no longer stays on the menu
+  or on a button that just disappeared.
+- **Editing a playlist keeps the remote working.** Deleting or moving entries leaves focus on a
+  sensible neighbour.
+- **Filtered libraries and playback errors no longer strand you.** Leaving a title lands on the one
+  that moved up, and "try again" after an error keeps the remote working.
+- **After watching, a title page puts you back on its Play button.** You no longer land on the cast
+  member you came through.
+- **Theme music follows the title you are looking at.** It changes or falls silent as you move
+  through "More like this".
+- **Watched and favourite marks apply to the title you are on.** They were also written onto the
+  title you had originally opened.
+- **Settings lists open on your current choice.** Choosing a menu symbol also keeps focus on its
+  entry.
+- **Small sign-in fixes.** Removing a server keeps the remote working, leaving the password entry
+  returns to your profile, and the on-screen keyboard no longer opens unasked.
 
 ## 2026.08.25
 
 ### Added
 
-- **Connecting prefers HTTPS, and fills in the rest.** Type as little as `192.168.1.100` or
-  `jellyfin.example.com` — the app works out the scheme and the port for you, trying the encrypted
-  connection first. It looks in the places Jellyfin actually lives: port 8920 for HTTPS and 8096 for
-  HTTP, and for a domain name port 443 first, since that is usually where a reverse proxy sits.
-  Anything you do type wins — give a port and it is used as-is, write `http://` on purpose and that
-  is respected.
-- **A server found by the automatic search is upgraded to HTTPS if it offers it.** The search itself
-  still scans over HTTP so it stays quick; the server you actually pick is then asked once whether
-  it also answers encrypted, and is saved that way if it does.
-- **Settings are trimmed down on a profile with an age restriction.** Screen saver, account and
-  server, diagnostics, and the sign-in credentials are hidden, while everything that shapes
-  watching — appearance, content, navigation, remote, playback, subtitles — and the profile picture
-  stay. Note this tidies the interface rather than locking anything: it holds only as far as the
-  other profiles have passwords.
-- **Servers reached over unencrypted HTTP are marked** with a small amber **HTTP** badge in the
-  server list and in the settings — a reminder that on that connection your password and access
-  token travel the network in the clear. See the FAQ on certificates for what to do about it.
+- **Connecting prefers HTTPS and fills in the rest.** Type just an address such as `192.168.1.100`;
+  the app finds scheme and port, trying the encrypted connection first.
+- **Servers found by the automatic search use HTTPS when they offer it.** The search stays quick and
+  only checks the server you pick.
+- **Fewer settings on age-restricted profiles.** Screensaver, account, diagnostics and sign-in
+  options are hidden; this tidies the interface rather than locking anything.
+- **Unencrypted servers are marked.** An amber HTTP badge reminds you that passwords travel the
+  network in the clear.
 
 ### Changed
 
-- **Going back from a title to the home screen returns you to where you were.** Libraries already
-  did this; the home screen did not — it came back scrolled to the top with nothing focused, so the
-  next press of the remote opened the menu instead of moving within the page. It now returns to the
-  card you opened — the exact one, even when the same title is showing in several rows at once, for
-  instance in Continue watching and on the watchlist. If you navigate on in the meantime, your own
-  focus is kept.
-- **Back inside a title's page steps back one level.** Opening a season from a series, an episode
-  from a season, or another title from "more like this" and pressing Back left the page altogether
-  and dropped you on the home screen or in the library. It now returns to the page you came from,
-  and only leaves once there is nothing left to step back to — with the remote's Back key and the
-  on-screen button alike, landing on the season, episode or cast member you had selected, and at the
-  place on the page you left rather than back at the top. Coming back from a suggested title starts
-  at the top of the page, since that row is fetched late and would otherwise pull you down to it
-  after the fact.
-- **Search keeps its results while you look at one of them.** Opening a title or a person from the
-  search results and coming back used to leave an empty field: the query, the results and how far
-  you had scrolled were all thrown away, and finding the next result meant searching again. It now
-  returns to the list exactly where you left it. Opening Search from the menu still starts blank, as
-  a search screen should. And once something is typed, a small **✕** appears at the right of the
-  field to empty it in one press — no more holding Backspace on the remote to get rid of a long
-  entry. Reach it by pressing Right past the end of the text.
-- **The same is now true for favourites, collections and watchlists.** Favourites always jumped back
-  to the very first entry, and a collection or watchlist put you on its Back button instead of on
-  the title you had just looked at. Opening a watchlist and leaving it again also lost the spot
-  entirely. All three now return you to where you were — including how far you had scrolled, and
-  including favourite people. If that entry is gone in the meantime, the first one takes over.
-- **The app now opens on your first library instead of on the menu.** Starting the app used to put
-  focus on the menu entry you were on, which unfolded the sidebar over the artwork before you had
-  done anything. Focus now lands on the first tile of "My media"; hide that row and it moves to the
-  first row you do show. The menu stays closed and is one press of Left away, as everywhere else.
-  It still waits for the home screen and never takes focus away from you: press a key while it is
-  loading and your own focus is kept, and a home screen with nothing to focus falls back to the
-  menu as before.
-- **"Recently added series" no longer arrives ten seconds late.** The row was fetched through an
-  endpoint that takes the server about ten seconds to answer for series, while the identical request
-  for movies came back in half a second. Asking for the same thing a simpler way returns the same
-  titles in about a fifth of a second, so the row is now there with the rest of the page — and the
-  movies row is built the same way, so both are quick and both mean the same thing.
-- **The home screen's featured banner appears sooner.** Its two requests waited for the home
-  screen's first answers although they never needed them, which put the banner three server round
-  trips away on a cold start where the rest of the page needed one. They now go out immediately,
-  behind the two requests that release the rest of the screen. One round trip gone.
-- **Opening the sidebar is a little smoother.** The highlight behind the current entry cast a soft
-  glow, and because the bar changes width as it opens, the TV had to redraw that blur on every
-  single frame of the animation. The glow is gone; the entry is now flat blue. Nothing else about
-  the sidebar changed.
-- **Watch together asks the server far less.** Two scans were running over the same data: the
-  dashboard read each partner's whole catalogue for its suggestions, and every library you opened
-  read it again to know what to hide. The suggestion scan already covers every library, so the
-  filter now takes what it needs from that instead of asking again — with two partners and three
-  libraries, six requests become two. Partners are also fetched side by side rather than one after
-  the other, which roughly halves the wait before a library appears filtered. What you see is
-  unchanged.
+- **Back returns you to where you were.** On the home screen you land on the card you opened, and
+  inside a title's page Back steps back one level at a time.
+- **Search, favourites, collections and watchlists keep their place.** Coming back from a title
+  finds them as you left them, and search got a ✕ to clear the field.
+- **The app opens on your first library.** The sidebar stays closed until you need it.
+- **The home screen loads faster.** "Recently added series" no longer arrives seconds late, and the
+  featured banner appears sooner.
+- **Opening the sidebar is smoother.** The current entry no longer carries a glow that had to be
+  redrawn on every frame.
+- **Watch together asks the server far less.** It reuses data it already has and fetches both
+  partners at once.
 
 ### Fixed
 
-- **The shareable diagnostic log no longer contains the access token.** Stream and subtitle URLs
-  embed it as a query parameter, and the player logged such URLs — so sharing the log through the
-  QR code on the status page handed out the server address plus a valid token. Log lines are now
-  masked before they enter the buffer; the browser console keeps full URLs for development.
-- **A trailer from booby-trapped metadata can no longer run code.** A title's trailer link comes
-  from external sources (TMDb, NFO files); a crafted one could previously reach the video frame and,
-  in the worst case, run in the app's context with access to your stored login. Trailers are now
-  restricted to genuine YouTube embeds and ordinary video links.
-- **Fewer accidental sign-outs.** A single network hiccup or a feature your account isn't permitted
-  to use (such as SyncPlay) could log you out and make you re-enter your password on the remote. The
-  app now confirms the session is really gone before signing out, and no longer treats "not allowed"
-  as "signed out".
-- **Removing a server or signing out now really ends the access.** Until now only the local copy of
-  the login was thrown away — on the Jellyfin side it stayed valid, and the TV kept showing up under
-  Dashboard → Devices as a working entry forever. The app now tells the server the login is
-  finished with. Logins you deliberately kept ("remember me", and the linked watch-together
-  profiles) are left alone, so those keep working as before.
-- **Removing a server now clears all of its saved tokens**, including the ones kept for watch
-  together; leftovers from very old versions are cleaned up too. **Quick Connect** no longer leaves
-  a login code active in the background after a successful sign-in.
-- **Watch together can now be set up with Quick Connect.** Instead of typing the other person's
-  password on the TV, the TV shows a code and they confirm it on their own phone — their password
-  never leaves their device, and they decide for themselves. It also reaches hidden profiles, since
-  no profile list is involved.
-- **Hidden profiles can now be added to watch together.** They never show up in the profile list,
-  so there was no way to pick them — the sign-in screen has had a manual entry for that case all
-  along, and the picker now offers it too. Name and password, checked by the server as usual.
-- **The password prompt now appears whenever the server asks for one**, instead of relying on what
-  the profile list reported. A profile with a password could previously end up showing a generic
-  sign-in error with no way to enter it.
-- **Watch together says something when a profile needs signing in again.** If one of the two linked
-  profiles lost its sign-in, the filter quietly carried on with the other one alone and showed more
-  titles than it should have. It now tells you once which profile needs attention.
-
-- **Group playback keeps in step even when the TV's clock is off.** Every SyncPlay instruction
-  carries the server's time, and the app compared it against the television's own clock — so a set
-  running a few seconds fast or slow paused and resumed that much early or late, with the whole
-  group drifting apart. The difference between the two clocks is now measured and accounted for.
-- **Turning on title logos no longer makes the details page jump around.** A logo's height depends
-  on its shape — a wide wordmark is short, a stacked emblem tall — so the description and play
-  buttons used to sit somewhere different on every title. The title area now keeps a steady height.
-- **A damaged settings file can no longer stop the app from starting.** If stored settings ended up
-  in an unexpected form — a half-written value after a power cut, a leftover from a much older
-  version — the app could fail on startup or flash the screensaver continuously, with no way to
-  clear it from the TV. Such values are now recognised and replaced with their defaults.
-- **Destructive buttons no longer flare up when focus passes over them.** Sign out, clearing the
-  log and leaving a group turned the most saturated red in the palette the moment they were
-  focused — and on the remote, focus crosses a button on the way somewhere else rather than out of
-  intent. They now carry their red quietly and all the time, so you can see what a button does
-  before landing on it. White text on them went from 4.8:1 to 13.8:1 in the process.
-- **Scrolling a large library asks the server for less.** The queries that fetch the next and the
-  previous page still had the server count the whole library each time, although nothing used that
-  number — the same needless work that was cleaned up elsewhere in the last release, missed in the
-  two hottest queries. The dashboard's series lookup had it too.
-- **Small text is easier to read from the sofa.** The faint grey used for details under posters —
-  year, season, "today" — and throughout the status page fell below the accepted contrast minimum,
-  which is felt most at the smallest interface size. It is brighter now, while still clearly
-  secondary to the title above it.
+- **The shareable diagnostic log no longer contains your access token.** Lines are masked before
+  they are stored.
+- **A crafted trailer link can no longer run code.** Trailers are limited to YouTube embeds and
+  ordinary video links.
+- **Fewer accidental sign-outs.** A network hiccup or a feature your account may not use no longer
+  signs you out.
+- **Signing out really ends the access.** Removing a server or signing out now also ends the login
+  on the server and clears all of that server's saved tokens.
+- **Watch together without typing someone else's password.** It can now be set up with Quick Connect
+  and can include hidden profiles.
+- **The password prompt appears whenever the server asks for one.** You no longer get a generic
+  sign-in error instead.
+- **Watch together tells you when a profile needs signing in again.** It no longer quietly filters
+  with only one of the two.
+- **Group playback keeps in step when the TV's clock is off.** The difference to the server's clock
+  is now measured and accounted for.
+- **Title logos no longer make the details page jump.** The title area keeps a steady height.
+- **A damaged settings file can no longer stop the app from starting.** Broken values fall back to
+  their defaults.
+- **Easier to read.** Destructive buttons stay calmly red instead of flaring up, and small grey text
+  under posters is brighter.
+- **Scrolling a large library asks the server for less.** The server no longer counts the whole
+  library for every page.
 
 ### Internal
 
-- The seven structural refactors deferred in `CODE-HEALTH.md` §10 are done: one source for the
-  profile-pref defaults, one previous-episode path, one option-picker modal, shared series
-  expansion, shared card-image helper, shared auth header, shared remembered-track matcher.
-  No behavior change intended.
+- **Shared code instead of copies.** Seven pieces that existed several times now live in one place;
+  nothing changes on screen.
 
 ## 2026.08.22
 
 ### Added
 
-- **Settings → Remote** — a new category collecting every remote-control shortcut in one place, so
-  they are discoverable instead of hidden.
-  - **Number-key jump** and **channel-rocker zapping** can be switched off there. Both stay on by
-    default; switched off, the key passes through untouched instead of being swallowed. The channel
-    rocker is the easiest key to hit by accident, so the switch doubles as protection against that.
-  - **The four colour buttons** can now be assigned. They start out unassigned, and each one can be
-    pointed at a single action: previous/next chapter, subtitles on/off, the subtitle menu, the
-    audio menu, previous/next episode, or play/pause. They only do anything during playback. A key
-    bound to one of the two menus closes it again on a second press, and switches straight over if
-    the other menu is showing.
-- **Subtitles on/off** remembers the track that was running, so switching them back on restores the
-  same one instead of opening a menu. With nothing to restore it opens the subtitle tab.
-- **Theme music on the details page** — opening a title softly fades in its theme song, limitable to
-  movies or shows, with its own volume. This was announced with 2026.08.20, but that build shipped
-  an outdated main component and the feature never actually ran. It works from this release on.
+- **Settings → Remote.** Number-key jump and channel zapping can be switched off there, and each of
+  the four colour buttons can get an action.
+- **Subtitles on/off restores the track you had.** It no longer opens a menu when there is something
+  to restore.
+- **Theme music on the details page.** A title's theme song fades in, for movies, shows or both, at
+  its own volume.
 
 ### Changed
 
-- **Much smoother scrolling in large libraries.** Preparing a poster's blurred placeholder was by
-  far the most expensive thing the app did: measured on an LG B4 at 15–21 ms per poster and
-  occasionally over half a second, all of it blocking, and all of it while a page of cards was
-  appearing. It now takes under 2 ms. Nothing looks different — the placeholders are identical,
-  pixel for pixel.
-- **Faster D-pad navigation**, most noticeably deep inside a large library. Every arrow press used
-  to measure the same on-screen elements up to four times over, and to run a style check across
-  every candidate on screen although the geometry only ever picks one. Each element is now measured
-  once, and the check applies to the chosen element. Measured on an LG B4 deep in a large library,
-  the average time spent before focus moves dropped from roughly 19 ms to 4 ms. Nothing about how
-  focus moves has changed — only the work done before it moves.
-- **Less background work during playback and scrolling.** With external subtitles the whole cue list
-  was searched from the start several times per second, the "ends at" clock rebuilt a date formatter
-  just as often for a value that changes once a minute, and the A-Z indicator re-measured every card
-  above the screen after each scroll. All three now do a fraction of that work.
+- **Much smoother scrolling in large libraries.** Poster placeholders are now prepared many times
+  faster, without any visible difference.
+- **Faster D-pad navigation.** The difference is most noticeable deep inside a large library.
+- **Less background work during playback and scrolling.** Subtitles, the "ends at" time and the A–Z
+  indicator do a fraction of their former work.
 
 ### Fixed
 
-- **Libraries could stop loading after their first 50 titles**, with no spinner and no way to
-  continue except jumping ahead with the A-Z bar. A page request could overlap the initial load,
-  come back holding only titles already on screen, and be read as "the library ends here" — which
-  capped the view for the rest of the session. Which library it hit came down to timing, so it
-  looked like it affected only movies, or only shows, and swapped after a restart.
-- **A session that stopped being valid left the app running against nothing** — empty rows, posters
-  falling back to placeholders, playback failing — with no way back to signing in short of a
-  restart. That happens when the device is revoked in the Jellyfin dashboard, the password changes,
-  the account is deleted or the server is restored from a backup. It now returns to the profile
-  picker and forgets the stale token.
-- **Watchlist:** if creating the playlist failed on the very first bookmark, the button stayed stuck
-  showing "saved" and could not be used again until a restart.
-- **Collections:** opening a collection from inside another collection made the Back button do
-  nothing — the only way out was the sidebar.
-- **Settings:** on a server that hides its public user list, opening Settings started an endless
-  stream of requests.
-- **Screensaver:** on the server and profile selection screens neither OcenFin's nor the TV's
-  screensaver ran, so a bright static screen could stay on an OLED panel indefinitely.
-- **Subtitles:** switching them off while a burned-in subtitle was playing left it in the picture
-  while the interface already showed "Off". Switching back on did not work either.
-- **Auto-play:** an explicitly chosen audio track could be lost when the next episode started by
-  itself — the episode then played the file's default language.
-- **Auto-play:** jumping to another chapter during the outro countdown no longer lets the next
-  episode start anyway. The jump cancels the countdown, same as a number-key jump.
-- **Previous episode:** pressing it in the last moment of the outro countdown could land on the
-  *next* episode instead.
-- **Playback** could attach an outdated stream when its setup was restarted mid-load — by the
-  transcode fallback, a track switch, or a command from the Jellyfin dashboard.
-- **Player:** closing the audio or subtitle panel could leave no visible focus and an unresponsive
-  OK button for a few seconds.
-- **Watch together:** switching library while partner data was still loading could filter the new
-  library against the previous library's watched titles.
-- **Server errors no longer pass unnoticed.** Twelve requests parsed their response without checking
-  whether it succeeded, so a failure made the feature do nothing at all — a dashboard row that never
-  appeared, a button that did nothing, search results missing their people.
-- **Server load:** eight list queries asked the server for a total count that was never used.
+- **Libraries no longer stop after 50 titles.** The next pages always arrive now.
+- **An expired session returns you to the profile picker.** The app no longer keeps running against
+  nothing.
+- **Watchlist, collections and settings.** A stuck "saved" button, a dead Back button in nested
+  collections and an endless request loop are fixed.
+- **The screensaver also runs on the server and profile screens.** OLED panels are protected there
+  too.
+- **Burned-in subtitles switch off and on properly.** The picture no longer keeps them after "Off".
+- **Auto-play keeps your audio track.** It also respects a chapter jump during the countdown, and
+  Previous no longer lands on the next episode.
+- **Playback no longer attaches an outdated stream.** That could happen when its setup restarted
+  mid-load.
+- **The player panels leave focus where you can see it.** OK works again right after closing them.
+- **Watch together no longer mixes up libraries.** Switching while partner data loaded could filter
+  against the wrong library.
+- **Server errors no longer pass unnoticed.** List queries also stopped making the server count the
+  whole library.
 
 ### Internal
 
-- The new settings and all their options are translated into all eight languages.
-- `CODE-HEALTH.md` §10–§12 record the work behind this release: an eight-angle review pass with each
-  finding verified individually, a performance pass driven by measurements from the TV, and an
-  edge-case audit of failure paths and boundary values. They also record what was deliberately left
-  alone, and which plausible explanations were measured and disproved.
-- Diagnostics behind the existing debug switch: boot milestones, D-pad timing, placeholder decode
-  timing, heap and DOM size for long sessions, and library paging. All inert while debug is off, and
-  reported through the log buffer the settings page already shares by QR code. Most of the fixes
-  above were found with them rather than guessed at.
+- **All new settings are translated into all eight languages.**
+- **Review, performance and edge-case passes.** Diagnostics behind the debug switch helped find most
+  of the fixes above.
 
 ---
 
