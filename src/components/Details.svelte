@@ -9,6 +9,7 @@
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
   import SubtitleSearch from './SubtitleSearch.svelte';
+  import CardStatus from './CardStatus.svelte';
 
   let {
     item,
@@ -1203,13 +1204,7 @@
                   {#if ep.Id === nextToPlay?.Id && ep.Type === 'Episode'}
                     <div class="absolute top-2 left-2 bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-md shadow-md">{i18n.t.nextUp}</div>
                   {/if}
-                  {#if ep.UserData?.Played}
-                    <div class="absolute top-2 right-2 bg-green-600/90 text-white rounded-full p-1 shadow-md">
-                      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-                      </svg>
-                    </div>
-                  {/if}
+                  <CardStatus item={ep} />
                 </div>
                 <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full">
                   {#if ep.IndexNumber && ep.Type !== 'Season'}{ep.IndexNumber}.&nbsp;{/if}{ep.Name}

@@ -251,17 +251,13 @@ export function getItemImageUrlWithFallbacks(item, format = 'portrait') {
 
 // Progress 0–100: resume position (movies/episodes) or share of watched episodes
 // (series, via Jellyfin's PlayedPercentage). For progress bars.
-// Card badge "Watched" (top left; top right belongs to the episode-counter opt-in, or in the
-// details strips to the green check there): ONLY a check, ONLY when fully watched.
-// Jellyfin sets Played on series/seasons/collections only once ALL contained titles are watched
-// — exactly the desired semantics. Deliberately NO unwatched counter: it would visually
-// duplicate the episode counter in the top right.
-export function itemBadge(item) {
-  return !!item?.UserData?.Played;
-}
+// A watched title shows the tick (CardStatus), not a full bar: Jellyfin reports a watched series or
+// season as PlayedPercentage 100, which drew a full bar under the tick. A started position still
+// shows — a watched film being watched again keeps its bar.
 export function itemProgress(item) {
   if (item.UserData?.PlaybackPositionTicks && item.RunTimeTicks)
     return (item.UserData.PlaybackPositionTicks / item.RunTimeTicks) * 100;
+  if (item.UserData?.Played) return 0;
   if (item.UserData?.PlayedPercentage) return item.UserData.PlayedPercentage;
   return 0;
 }

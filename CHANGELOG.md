@@ -3,6 +3,15 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## [Unreleased]
+
+### Changed
+
+- **One corner for a card's status.** Top right now shows the time or episodes left, or a green tick
+  once you have seen it all, instead of a tick, a count and a full bar at once.
+- **"Episode count" is now "Unwatched episodes".** Series in the library show how many episodes are
+  still left instead of their total.
+
 ## 2026.10.04
 
 ### Added
