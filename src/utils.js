@@ -757,7 +757,7 @@ export function runtimeVersions() {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
   const m = ua.match(/Chrom(?:e|ium)\/(\d+(?:\.\d+)*)/);
   const dep = (name) => (deps?.[name] || '').replace(/^[\^~]/, '');
-  return { chromium: m ? m[1] : '', hls: dep('hls.js'), libbitsub: dep('libbitsub'), assjs: dep('assjs') };
+  return { chromium: m ? m[1] : '', hls: dep('hls.js'), libbitsub: dep('libbitsub'), jassub: dep('jassub') };
 }
 
 // --- TV capabilities ---------------------------------------------------------------------------

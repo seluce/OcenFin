@@ -16,7 +16,7 @@ import { dlog, authHeaders } from './utils.js';
 //  • DTS / TrueHD / MP2 in Direct Play only on real webOS: a desktop browser would play the
 //    video without sound, so there the server transcodes the audio (light, audio only).
 //  • Transcode target: HLS (TS/H.264/AAC) — universally playable via hls.js.
-//  • Subtitles: text tracks delivered externally (VTT overlay; ASS via assjs), PGS/VobSub
+//  • Subtitles: text tracks delivered externally (VTT overlay; ASS via libass/JASSUB), PGS/VobSub
 //    rendered client-side via libbitsub where possible — burned in only when the prefs force it
 //    (see textSub/graphicSub below).
 export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false, clientGraphicSubs = false) {
@@ -283,7 +283,7 @@ export function externalSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, 
   return `${serverUrl}/Videos/${itemId}/${mediaSourceId}/Subtitles/${stream.Index}/0/Stream.vtt?ApiKey=${token}`;
 }
 
-// Returns the original ASS/SSA URL for assjs (client-side rendering with full styling).
+// Returns the original ASS/SSA URL for libass (client-side rendering with full styling).
 // Deliberately ALWAYS Stream.ass: delivers the original format including styles instead of the VTT
 // conversion, which discards positioning/typesetting (SSA is converted to ASS by the server).
 export function assSubtitleUrl({ serverUrl, itemId, mediaSourceId, stream, token }) {

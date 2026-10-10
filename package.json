@@ -16,8 +16,8 @@
     "vite": "^8.3.4"
   },
   "dependencies": {
-    "assjs": "^0.1.10",
     "hls.js": "^1.7.3",
+    "jassub": "^2.5.18",
     "libbitsub": "^1.13.0",
     "uqr": "^0.1.3"
   }

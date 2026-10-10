@@ -10,6 +10,8 @@ empty.
 
 ### Changed
 
+- **ASS subtitles look exactly as made.** "ASS/SSA in their original look" now draws them with libass,
+  the reference renderer, using the fonts inside the file; switching between ASS tracks is instant.
 - **One corner for a card's status.** Top right now shows the time or episodes left, or a green tick
   once you have seen it all, instead of a tick, a count and a full bar at once.
 - **"Episode count" is now "Unwatched episodes".** Series in the library show how many episodes are

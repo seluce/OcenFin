@@ -1519,7 +1519,7 @@
             </div>
           </button>
 
-          <!-- ASS/SSA with original layout (assjs) — off: plain text overlay, both Direct Play -->
+          <!-- ASS/SSA in their original look (libass via JASSUB) — off: plain text overlay, both Direct Play -->
           <button onclick={() => togglePlaybackPref('assRendering')}
             class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
                    focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
@@ -2005,8 +2005,8 @@
             </div>
             <div class="h-px bg-gray-700/70"></div>
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusAssjs}</span>
-              <span class="text-white font-mono text-sm">{envVersions.assjs || '—'}</span>
+              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusJassub}</span>
+              <span class="text-white font-mono text-sm">{envVersions.jassub || '—'}</span>
             </div>
           </div>
         {/if}

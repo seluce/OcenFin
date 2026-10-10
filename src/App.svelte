@@ -25,7 +25,7 @@
   import { setTrackMemoryUser } from './trackmemory.js';
 
   // Lazy-loaded views (Vite code-splitting): loaded only on first open, then cached.
-  // Keeps the cold-start bundle small — especially the Player pulls the heavy deps (hls.js, assjs) only on
+  // Keeps the cold-start bundle small — especially the Player pulls the heavy deps (hls.js, libbitsub, JASSUB) only on
   // first playback instead of loading them on every app start.
   let _settingsP, _playerP, _syncP;
   const lazySettings = () => (_settingsP ??= import('./components/Settings.svelte').then(m => m.default));
@@ -2226,55 +2226,12 @@
 />
 
 <style>
-  /* ── ASS subtitle fonts ──────────────────────────────────────────────────────
-     assjs uses the browser fonts. ASS scripts almost always give the Windows names
-     (Arial / Times New Roman / Courier New), which aren't installed on the TV →
-     system fallback. We register metrically compatible open replacement fonts UNDER
-     exactly these names: Arimo→Arial, Tinos→Times New Roman, Cousine→Courier New. This way
-     assjs picks them up automatically without changing anything in the ASS script.
-     The files (Latin woff2, 4 styles each) live in src/fonts/ and are bundled by Vite
-     (base/path-correct, hashed). The UI itself uses none of these names,
-     so no side effect. font-display: swap → the first line may briefly be in the fallback,
-     cached afterwards. @font-face is emitted globally by Svelte anyway (not scoped). */
-  @font-face { font-family: 'Arial'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/arimo-regular.woff2') format('woff2'); }
-  @font-face { font-family: 'Arial'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/arimo-bold.woff2') format('woff2'); }
-  @font-face { font-family: 'Arial'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/arimo-italic.woff2') format('woff2'); }
-  @font-face { font-family: 'Arial'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/arimo-bolditalic.woff2') format('woff2'); }
-  @font-face { font-family: 'Times New Roman'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/tinos-regular.woff2') format('woff2'); }
-  @font-face { font-family: 'Times New Roman'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/tinos-bold.woff2') format('woff2'); }
-  @font-face { font-family: 'Times New Roman'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/tinos-italic.woff2') format('woff2'); }
-  @font-face { font-family: 'Times New Roman'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/tinos-bolditalic.woff2') format('woff2'); }
-  @font-face { font-family: 'Courier New'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/cousine-regular.woff2') format('woff2'); }
-  @font-face { font-family: 'Courier New'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/cousine-bold.woff2') format('woff2'); }
-  @font-face { font-family: 'Courier New'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/cousine-italic.woff2') format('woff2'); }
-  @font-face { font-family: 'Courier New'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/cousine-bolditalic.woff2') format('woff2'); }
-
-  /* ── Other common fansub fonts (Tahoma / Verdana / Trebuchet MS) ──────────────
-     For these there are NO metrically compatible clones like above. Instead a
-     shared "pot": ONE neutral, modern sans (Noto Sans, latin + latin-ext,
-     4 styles each) is registered under all three Windows names. Only visually
-     similar, NOT metric-accurate — sufficient in practice for dialogue/signs.
-     Noto is narrower than Tahoma/Verdana, but consistent with the rest of the font
-     pipeline (gwfh, latin+latin-ext). The same 4 files for all three names →
-     no extra storage per name. */
-  @font-face { font-family: 'Tahoma'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/notosans-regular.woff2') format('woff2'); }
-  @font-face { font-family: 'Tahoma'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bold.woff2') format('woff2'); }
-  @font-face { font-family: 'Tahoma'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/notosans-italic.woff2') format('woff2'); }
-  @font-face { font-family: 'Tahoma'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bolditalic.woff2') format('woff2'); }
-  @font-face { font-family: 'Verdana'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/notosans-regular.woff2') format('woff2'); }
-  @font-face { font-family: 'Verdana'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bold.woff2') format('woff2'); }
-  @font-face { font-family: 'Verdana'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/notosans-italic.woff2') format('woff2'); }
-  @font-face { font-family: 'Verdana'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bolditalic.woff2') format('woff2'); }
-  @font-face { font-family: 'Trebuchet MS'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/notosans-regular.woff2') format('woff2'); }
-  @font-face { font-family: 'Trebuchet MS'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bold.woff2') format('woff2'); }
-  @font-face { font-family: 'Trebuchet MS'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/notosans-italic.woff2') format('woff2'); }
-  @font-face { font-family: 'Trebuchet MS'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/notosans-bolditalic.woff2') format('woff2'); }
-
   /* ── UI/VTT fonts (Settings → Appearance / → Subtitles) ───────────────────────
-     The same files as above, just registered under their REAL names so
-     UI and VTT subtitles can reference them cleanly ('Arimo' instead of going
-     through the 'Arial' alias). Tinos (serif) selectable for VTT only. No extra
-     storage — WOFF2 is loaded only once per file. */
+     Arimo and Noto Sans for the interface, plus Tinos (serif) for text subtitles; files in
+     src/fonts/ (Latin woff2, 4 styles each), bundled by Vite. ASS subtitles do not use them:
+     libass takes the fonts inside the file, else its own Liberation Sans (CODE-HEALTH §57).
+     They used to be registered a second time under Windows names (Arial, Times New Roman, …)
+     for assjs, which read browser fonts — gone with assjs, and Cousine (Courier New) with them. */
   @font-face { font-family: 'Arimo'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/arimo-regular.woff2') format('woff2'); }
   @font-face { font-family: 'Arimo'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/arimo-bold.woff2') format('woff2'); }
   @font-face { font-family: 'Arimo'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/arimo-italic.woff2') format('woff2'); }
