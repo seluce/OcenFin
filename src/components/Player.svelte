@@ -849,6 +849,15 @@
     // response would set its track AFTER the newer one and win: switching ASS → PGS would end up
     // showing both renderers at once, and ASS → off would bring the subtitle back.
     if (myToken !== subtitleFetchToken) return;
+    const fonts = assFontUrls(ms);
+    if (!fonts.length && assNeedsSystemFonts(content)) {
+      // libass has only its Liberation Sans here, and that has no glyphs for this script — it would
+      // draw boxes. The text overlay goes through the TV's own fonts, which cover it.
+      dlog('[OcenFin] ASS in a script without a font in the file → text overlay:', stream.Index);
+      disposeAss();
+      applyExternalSubtitleIfNeeded(stream.Index, ms);
+      return;
+    }
     ensureVideoFrameCallback();               // webOS: a rVFC that fires, BEFORE JASSUB reads it
     try {
       if (assRenderer && assSourceId === ms.Id) {
@@ -859,13 +868,14 @@
         await inst.ready;
         await inst.renderer.setTrack(content);
         if (assRenderer !== inst || myToken !== subtitleFetchToken) return;
+        inst.timeOffset = -subtitleOffset;   // the offset belongs to the track: applySubtitleOverlay reset it
         if (videoElement.paused) inst.resize(true).catch(() => {});
         assActive = true;
         dlog('[OcenFin] ASS track swapped in libass:', stream.Index, Math.round(performance.now() - t0) + ' ms');
         return;
       }
       disposeAss();
-      if (await startLibass(content, stream, ms, myToken)) return;
+      if (await startLibass(content, stream, ms, fonts, myToken)) return;
     } catch (e) {
       console.warn('[OcenFin] libass error:', e?.message || e);
       disposeAss();
@@ -874,20 +884,35 @@
   }
   const FONT_TYPES = ['font/ttf', 'font/otf', 'font/sfnt', 'font/woff', 'font/woff2', 'application/x-truetype-font',
     'application/vnd.ms-opentype', 'application/x-font-ttf', 'application/x-font-otf', 'application/font-sfnt'];
+  // The file's fonts, as URLs: MKV attachments with a font type or extension.
+  function assFontUrls(ms) {
+    return (ms.MediaAttachments || [])
+      .filter(a => FONT_TYPES.includes((a.MimeType || '').toLowerCase()) || /\.(ttf|otf|ttc|woff2?)$/i.test(a.FileName || ''))
+      .map(a => {
+        const u = a.DeliveryUrl || `/Videos/${item.Id}/${ms.Id}/Attachments/${a.Index}`;
+        return /^https?:/i.test(u) ? u : `${session.serverUrl}${u}${u.includes('?') ? '&' : '?'}ApiKey=${session.token}`;
+      });
+  }
+  // Does the dialogue use a script JASSUB's Liberation Sans cannot draw? Measured (CODE-HEALTH §58):
+  // Latin, Greek, Cyrillic and Hebrew come out right; Arabic, Indic, Thai, CJK and Hangul as boxes.
+  // Only the text of Dialogue lines counts — a Japanese title in [Script Info] or a speaker name
+  // must not push an English track off libass.
+  const SCRIPTS_WITHOUT_FONT = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u0900-\u0DFF\u0E00-\u0EFF\u1000-\u109F\u1100-\u11FF\u1780-\u17FF\u3040-\u30FF\u3100-\u312F\u3130-\u318F\u3400-\u4DBF\u4E00-\u9FFF\uA960-\uA97F\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/;
+  function assNeedsSystemFonts(content) {
+    const dialogue = /^Dialogue:(?:[^,]*,){9}(.*)$/gm;
+    for (let m; (m = dialogue.exec(content));) {
+      if (SCRIPTS_WITHOUT_FONT.test(m[1].replace(/\{[^}]*\}/g, ''))) return true;
+    }
+    return false;
+  }
   // Starts JASSUB for this media source. true = started or superseded (nothing more to do),
   // false = it could not start → the caller falls back to the text overlay.
-  async function startLibass(content, stream, ms, myToken) {
+  async function startLibass(content, stream, ms, fonts, myToken) {
     const t0 = performance.now();
     let inst = null;
     try {
       const { default: JASSUB } = await import('jassub');   // ~2 MB WASM, fetched with the first ASS track
       if (myToken !== subtitleFetchToken) return true;
-      const fonts = (ms.MediaAttachments || [])
-        .filter(a => FONT_TYPES.includes((a.MimeType || '').toLowerCase()) || /\.(ttf|otf|ttc|woff2?)$/i.test(a.FileName || ''))
-        .map(a => {
-          const u = a.DeliveryUrl || `/Videos/${item.Id}/${ms.Id}/Attachments/${a.Index}`;
-          return /^https?:/i.test(u) ? u : `${session.serverUrl}${u}${u.includes('?') ? '&' : '?'}ApiKey=${session.token}`;
-        });
       const debug = perfEnabled();
       inst = assRenderer = new JASSUB({
         video: videoElement, subContent: content, fonts,
@@ -1489,6 +1514,7 @@
     clearBufferWatchdog();
     sourceLive = false;   // the destroy below empties the element — see positionTicks()
     if (hls) { try { hls.destroy(); } catch {} hls = null; }
+    subtitleFetchToken++;   // a subtitle still loading (JASSUB's first start takes ~1 s) stands down
     disposeGraphic();
     disposeAss();
     reportPlaybackStopped(true);
