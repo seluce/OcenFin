@@ -5,12 +5,20 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ## [Unreleased]
 
+**This release needs Jellyfin Server 12.2 or newer.** On 12.0 or 12.1 it runs, but DVD subtitles stay
+empty.
+
 ### Changed
 
 - **One corner for a card's status.** Top right now shows the time or episodes left, or a green tick
   once you have seen it all, instead of a tick, a count and a full bar at once.
 - **"Episode count" is now "Unwatched episodes".** Series in the library show how many episodes are
   still left instead of their total.
+
+### Fixed
+
+- **DVD subtitles show up.** They used to stay empty; the TV now draws them itself, just like
+  Blu-ray subtitles.
 
 ### Internal
 

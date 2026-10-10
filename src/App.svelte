@@ -1487,7 +1487,7 @@
     }
   }
 
-  // The server version, for the status page and the log. OcenFin targets Jellyfin 12+, so nothing
+  // The server version, for the status page and the log. OcenFin targets Jellyfin 12.2+, so nothing
   // is switched on it any more (the VobSub gate that used to hang off it is gone, CODE-HEALTH §38).
   async function detectServerCapabilities() {
     serverVersion = '';

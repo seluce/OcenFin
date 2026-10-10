@@ -335,7 +335,7 @@ export const NAV_HIDDEN_TYPES = ['music', 'musicvideos', 'livetv'];
 // Bitmap subtitle codecs — ONE list for the app (it was written out seven times, once without
 // dvbsub). PGS and VobSub/DVD the app renders itself (libbitsub, when the profile allows it). DVB
 // bitmap subtitles are always burned in: libbitsub could render them (DvbRenderer), but Jellyfin
-// 12.1 cannot hand them out as a file — MediaStream.IsExtractableSubtitleStream is text, PGS and
+// (12.2) cannot hand them out as a file — MediaStream.IsExtractableSubtitleStream is text, PGS and
 // VobSub only (CODE-HEALTH §50).
 export const PGS_CODECS        = ['pgssub', 'pgs'];
 export const VOBSUB_CODECS     = ['dvdsub', 'vobsub', 'sub'];

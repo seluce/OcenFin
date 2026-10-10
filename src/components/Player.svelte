@@ -623,7 +623,7 @@
       const subStream  = subtitleIndex !== -1 ? subStreams.find(s => s.Index === subtitleIndex && s.Type === 'Subtitle') : null;
       const subCodec    = (subStream?.Codec || '').toLowerCase();
       const isPgsSub    = PGS_CODECS.includes(subCodec);
-      const isVobSub    = VOBSUB_CODECS.includes(subCodec);          // DVD/VobSub → .mks from 12.0
+      const isVobSub    = VOBSUB_CODECS.includes(subCodec);          // DVD/VobSub → raw .mks from 12.2
       const isGraphicSub = GRAPHIC_SUB_CODECS.includes(subCodec);
       // libbitsub renders PGS and VobSub client-side (when enabled); anything else graphic, or with
       // client rendering off, has to be burned in.
@@ -790,13 +790,6 @@
   function graphicSubScale() {
     const s = playbackPrefs.subtitleSize || 'normal';
     return s === 'small' ? 0.85 : s === 'large' ? 1.25 : 1.0;
-  }
-  // Filename hint so libbitsub recognizes the format (PGS=.sup, VobSub=.mks via DeliveryUrl).
-  function graphicSubFileName(url, stream) {
-    const m = (url.split('?')[0] || '').match(/\.(\w+)$/);
-    if (m) return `track.${m[1].toLowerCase()}`;
-    const codec = (stream?.Codec || '').toLowerCase();
-    return VOBSUB_CODECS.includes(codec) ? 'track.mks' : 'track.sup';
   }
 
   // Apply subtitle – routes by codec: PGS/VobSub → libbitsub overlay, text → VTT overlay.
@@ -980,7 +973,10 @@
       // The codec is known → pick the explicit renderer (no format auto-detection needed).
       mine = graphicRenderer = PGS_CODECS.includes(codec)
         ? new PgsRenderer(opts)
-        : new VobSubRenderer({ ...opts, fileName: graphicSubFileName(url, stream) });   // VobSub/DVD: .mks container
+        // VobSub is ALWAYS the server's extracted .mks (the profile's Container sees to that). Loading
+        // from a URL, libbitsub tells .mks from an .idx/.sub pair by this name alone — and the
+        // DeliveryUrl ends in ".dvdsub", which once sent it looking for an .idx ("MISSING_INPUT").
+        : new VobSubRenderer({ ...opts, fileName: 'track.mks' });
       if (subtitleOffset) graphicRenderer.timeOffset = -subtitleOffset;   // kept across a rebuild, sign as in adjustSubtitleOffset
       dlog('[OcenFin] image subtitle via libbitsub:', stream.Index, stream.Codec);
     } catch (e) { dlog('[OcenFin] libbitsub renderer error:', e?.message); disposeGraphic(); }
@@ -1026,10 +1022,13 @@
     // unhandled rejection would surface in the console on webOS. Needs libbitsub >= 1.11.0.
     if (isGraphic) warmup().catch(() => {});
     prefetchedSubs.add(stream.Index);
+    // The time is the gauge for dropping this prefetch: 12.2 serves graphic tracks straight from the
+    // extraction cache (jellyfin#18168) instead of through the encoder — CODE-HEALTH §39, item 2.
+    const t0 = performance.now();
     fetch(url)
       .then(r => r.ok ? r.blob() : Promise.reject(new Error('HTTP ' + r.status)))
-      .then(b => subBlobs.set(stream.Index, b))
-      .catch(() => prefetchedSubs.delete(stream.Index));   // failed → allow a retry
+      .then(b => { subBlobs.set(stream.Index, b); dlog('[OcenFin] subtitle prefetch:', stream.Index, codec, Math.round(b.size / 1024) + ' kB in ' + Math.round(performance.now() - t0) + ' ms'); })
+      .catch((e) => { prefetchedSubs.delete(stream.Index); dlog('[OcenFin] subtitle prefetch failed:', stream.Index, codec, e?.message); });   // failed → allow a retry
   }
   // Apply a size change at runtime live to the running renderer.
   $effect(() => { if (graphicRenderer && (playbackPrefs.subtitleSize || 'normal')) {

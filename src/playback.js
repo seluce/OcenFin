@@ -26,7 +26,8 @@ export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false
   const textSub = burnSubtitles ? 'Encode' : 'External';
   // Graphic subtitles are rendered client-side via libbitsub (when enabled) → deliver as
   // External → no transcode, Direct Play stays. Otherwise burn in. PGS comes as .sup, VobSub/DVD as
-  // an .mks container (Jellyfin 12, PR #16552).
+  // the .mks the server extracts (Jellyfin 12, PR #16552) — served as a raw file since 12.2
+  // (jellyfin#18168), which is why 12.2 is the minimum.
   const graphicSub = clientGraphicSubs ? 'External' : 'Encode';
 
   // Is the app running on the real TV (webOS)? There the media pipeline also decodes DTS, Dolby
@@ -90,8 +91,12 @@ export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false
       { Format: 'ass',      Method: textSub },   // styled: External → overlay without styling, Encode → burned in with styling
       { Format: 'ssa',      Method: textSub },
       { Format: 'pgssub',   Method: graphicSub }, // Blu-ray graphic subtitles → libbitsub renders client-side (External) or burn in
-      { Format: 'dvdsub',   Method: graphicSub }, // DVD/VobSub → the same, delivered as .mks
-      { Format: 'vobsub',   Method: graphicSub },
+      // DVD/VobSub → the same, delivered as .mks. `Container: 'mks'` is the server's contract for it
+      // (StreamBuilder.IsVobSubMksDeliveryProfile, as in jellyfin-web): only an embedded track or an
+      // .mks file goes External; an .idx/.sub pair, which the server cannot hand over raw, is burned in
+      // instead of arriving as a request that fails.
+      { Format: 'dvdsub',   Method: graphicSub, Container: 'mks' },
+      { Format: 'vobsub',   Method: graphicSub, Container: 'mks' },
       { Format: 'pgs',      Method: graphicSub },
     ],
   };
