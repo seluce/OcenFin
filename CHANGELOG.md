@@ -16,6 +16,7 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 - **Updated picture-subtitle library.** libbitsub 1.13.0 also stops a subtitle download that is no
   longer needed when you switch tracks.
+- **Updated build tools.** Svelte 5.57.2 and Vite 8.3.4, both patch releases with bug fixes only.
 
 ## 2026.10.04
 

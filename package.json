@@ -11,9 +11,9 @@
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tailwindcss/vite": "^4.3.3",
-    "svelte": "^5.57.1",
+    "svelte": "^5.57.2",
     "tailwindcss": "^4.3.3",
-    "vite": "^8.3.1"
+    "vite": "^8.3.4"
   },
   "dependencies": {
     "assjs": "^0.1.10",
