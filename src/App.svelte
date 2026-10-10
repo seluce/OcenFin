@@ -984,11 +984,11 @@
     window.addEventListener('offline', () => session.connectionLost = true);
     window.addEventListener('online',  () => session.connectionLost = false);
 
-    // webOS lifecycle: returning to the (suspended) app via Home fires webOSRelaunch.
-    // On some builds/appinfo configs (handlesRelaunch:true) the app then stays stuck in the
-    // background and appears not to start — so we explicitly bring it to the
-    // foreground. Harmless if webOS handles it itself anyway.
-    // webOSSystem only: PalmSystem is its pre-webOS-6 name, and webOS 25 is the target.
+    // webOS lifecycle: launching the already running app again (its icon, Recents, a launch call)
+    // fires webOSRelaunch. With handlesRelaunch: true in appinfo.json the app stays in the
+    // background until it calls activate() itself — LG's documented contract, not a quirk.
+    // webOSSystem only: PalmSystem is its old name (webOSSystem exists since webOS 5, and LG
+    // recommends it from there on), and webOS 25 is the target.
     const toForeground = () => {
       dlog('[Lifecycle] webOSRelaunch → activate', typeof window.webOSSystem?.activate === 'function' ? '(webOSSystem)' : '(NOT AVAILABLE)');
       try { window.webOSSystem?.activate?.(); } catch (e) { console.warn('[Lifecycle] activate failed:', e); }
@@ -999,6 +999,8 @@
     // otherwise two screensavers would stack and you'd have to press twice. webOS asks via
     // the Luna API before showing; we answer with ack:false (= please don't show, we
     // protect the OLED ourselves). If OcenFin's screensaver is off, we allow webOS (ack:true).
+    // Not in LG's public reference — the same veto Kodi and RetroArch use. The documented
+    // appinfo option (screenSaverProperties) only stretches the timeout to 30 min, no veto.
     if (window.webOS?.service?.request) {
       window.webOS.service.request('luna://com.webos.service.tvpower', {
         method: 'power/registerScreenSaverRequest',
@@ -1612,10 +1614,12 @@
     else if (viewState === 'dashboard') { openExitConfirm();           e.preventDefault(); }
   }
 
-  // Closes the app on webOS (platformBack at the root); window.close as a fallback.
+  // Closes the app — only ever after OUR exit dialog. LG's Back-button guide: an app with its own
+  // exit popup uses window.close(); platformBack() shows the SYSTEM's "exit?" popup on webOS 6+
+  // (on 5 and lower it opened Home), so calling it here would ask a second time.
   function exitApp() {
-    try { window.webOSSystem?.platformBack?.(); } catch {}
-    try { window.close(); } catch {}
+    dlog('[Lifecycle] exit → window.close()');
+    window.close();
   }
 
   // ============================================================
