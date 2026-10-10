@@ -937,10 +937,13 @@
       // requestVideoFrameCallback and picks cues by the presented frame's mediaTime instead of
       // video.currentTime. On webOS that is fatal — see ensureVideoFrameCallback() above: rVFC is
       // reported as present but never fires. libbitsub only feature-detects it (a typeof check in
-      // supportsFrameAwareSync) and has no watchdog for a callback that never arrives, so the
-      // loop would stall after the first frame and the subtitle would freeze on
-      // screen. Forcing it off restores the 1.11 behaviour exactly (requestAnimationFrame +
-      // currentTime). No loss either: PGS cues last seconds, so frame-exact selection buys nothing.
+      // supportsFrameAwareSync); up to 1.12 the loop then stalled after the first frame and the
+      // subtitle froze on screen. 1.13.0 added a watchdog that falls back to requestAnimationFrame,
+      // but only after ~1 s of advancing playback WITHOUT a callback, and per renderer — i.e. on
+      // every track switch and every episode. Measured with a dead rVFC (CODE-HEALTH §52): the first
+      // cue came 0.7 s late, then on time. Forcing it off keeps the 1.11 behaviour exactly
+      // (requestAnimationFrame + currentTime). No loss either: PGS cues last seconds, so frame-exact
+      // selection buys nothing.
       // NOTE: our rVFC polyfill would also satisfy the check, but it is installed in the ASS path
       // only — relying on that call order to keep graphic subtitles alive would be fragile.
       frameAwareSync: false,
@@ -952,8 +955,9 @@
       // and takes the glue URL from the main thread (bundled builds hash the asset names, so deriving
       // it from the wasm URL doesn't work). Don't downgrade below 1.11.0 — the fallback is silent.
       onWarning: (w) => dlog('[OcenFin] libbitsub notice:', w?.code || w?.message || w, w?.details),
-      // Only ITS renderer: a superseded one whose streaming load fails late (dispose does not abort
-      // it) used to dispose whichever renderer was current — the track just switched to.
+      // Only ITS renderer: a superseded one whose streaming load failed late used to dispose whichever
+      // renderer was current — the track just switched to. Since 1.13.0 dispose() aborts that
+      // download and a disposed renderer reports nothing; the check stays as the cheap backstop.
       onError: (e) => { console.warn('[OcenFin] libbitsub error:', e?.code || '', e?.message || e); if (!mine || graphicRenderer === mine) disposeGraphic(); },
       onEvent: (ev) => {
         // renderer-change → GRAPHICS backend, only ever 'webgpu' | 'webgl2' | 'canvas2d' (webgl2 on the

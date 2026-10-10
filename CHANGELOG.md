@@ -12,6 +12,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **"Episode count" is now "Unwatched episodes".** Series in the library show how many episodes are
   still left instead of their total.
 
+### Internal
+
+- **Updated picture-subtitle library.** libbitsub 1.13.0 also stops a subtitle download that is no
+  longer needed when you switch tracks.
+
 ## 2026.10.04
 
 ### Added
