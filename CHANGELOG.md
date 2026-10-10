@@ -29,6 +29,8 @@ empty.
 - **Updated build tools.** Svelte 5.57.2 and Vite 8.3.4, both patch releases with bug fixes only.
 - **Current webOS calls.** Leaving the app uses LG's documented way for apps with their own exit
   question, and a launcher setting that webOS ignores is gone.
+- **License notes in the README.** It now lists every component the app ships, from hls.js to the
+  subtitle libraries and fonts, together with its license.
 
 ## 2026.10.04
 

@@ -74,3 +74,29 @@ I have gathered a few more common questions into an FAQ and addressed them in th
 </p>
 
 > **Note:** The images in the screenshots are just examples and demos. They do not show any real content.
+
+---
+
+## License & Third-Party Components
+
+OcenFin itself is released under the [MIT License](LICENSE). The app ships the following open-source components unchanged, each under its own license:
+
+| Component | Used for | License |
+| :--- | :--- | :--- |
+| [Svelte](https://github.com/sveltejs/svelte) | the app's runtime | MIT |
+| [Tailwind CSS](https://github.com/tailwindlabs/tailwindcss) | the generated styles | MIT |
+| [hls.js](https://github.com/video-dev/hls.js) | streaming when the server transcodes | Apache-2.0 |
+| [libbitsub](https://github.com/altqx/libbitsub) | PGS and DVD (VobSub) subtitles | MIT |
+| [JASSUB](https://github.com/ThaUnknown/jassub) | ASS/SSA subtitles, built from the libraries below | MIT |
+| ↳ [libass](https://github.com/libass/libass) | drawing the subtitles | ISC |
+| ↳ [FreeType](https://freetype.org) | rendering fonts | FreeType License (FTL) |
+| ↳ [HarfBuzz](https://github.com/harfbuzz/harfbuzz) | shaping text | MIT |
+| ↳ [FriBidi](https://github.com/fribidi/fribidi) | right-to-left text | LGPL-2.1-or-later |
+| ↳ [Brotli](https://github.com/google/brotli) | compressed fonts | MIT |
+| [uqr](https://github.com/unjs/uqr) | QR codes | MIT |
+| Arimo, Tinos, Noto Sans, Liberation Sans (in JASSUB) | fonts | SIL Open Font License 1.1 |
+| webOSTV.js | TV features | provided by LG Electronics for webOS TV apps |
+
+Portions of this software are copyright © The FreeType Project ([freetype.org](https://freetype.org)). All rights reserved.
+
+JASSUB's libraries are compiled into one WebAssembly file, which the app keeps as a separate file. Its source and build are public in the [JASSUB repository](https://github.com/ThaUnknown/jassub), so it can be rebuilt and replaced, as the LGPL of FriBidi asks. Small parts of the Emscripten runtime inside it are under the MIT, Zlib, BSL-1.0 and NTP licenses.
