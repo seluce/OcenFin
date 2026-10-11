@@ -266,7 +266,8 @@ export default {
     displayElements: "Inhoud",
     displayClock: "Klok",
     displayHero: "Uitgelichte banner",
-    displayEpisodeCount: "Aantal afleveringen",
+    displayEpisodeCount: "Afleveringen te gaan",
+    episodesLeft: "te gaan",
     displayLetterBar: "A–Z-balk",
     displayLibraries: "Rij met bibliotheken",
     displayHistory: "Rij onlangs bekeken",
@@ -397,7 +398,7 @@ export default {
     statusChromium: "Chromium / WebView",
     statusHls: "hls.js",
     statusLibbitsub: "libbitsub",
-    statusAssjs: "assjs",
+    statusJassub: "JASSUB",
     statusYes: "Ja",
     statusNo: "Nee",
 

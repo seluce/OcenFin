@@ -266,7 +266,8 @@ export default {
     displayElements: "Contenuti",
     displayClock: "Orologio",
     displayHero: "Banner in evidenza",
-    displayEpisodeCount: "Numero di episodi",
+    displayEpisodeCount: "Episodi da vedere",
+    episodesLeft: "da vedere",
     displayLetterBar: "Barra A–Z",
     displayLibraries: "Riga delle librerie",
     displayHistory: "Riga visti di recente",
@@ -397,7 +398,7 @@ export default {
     statusChromium: "Chromium / WebView",
     statusHls: "hls.js",
     statusLibbitsub: "libbitsub",
-    statusAssjs: "assjs",
+    statusJassub: "JASSUB",
     statusYes: "Sì",
     statusNo: "No",
 

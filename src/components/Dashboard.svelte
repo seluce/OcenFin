@@ -1,7 +1,7 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, itemBadge, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, NAV_HIDDEN_TYPES, getItemImageUrl, libraryIcon } from '../utils.js';
-  import WatchedBadge from './WatchedBadge.svelte';
+  import { itemProgress, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, NAV_HIDDEN_TYPES, getItemImageUrl, libraryIcon } from '../utils.js';
+  import CardStatus from './CardStatus.svelte';
   import { session } from '../session.svelte.js';
   import { watchlist, refreshWatchlist } from '../watchlist.svelte.js';
   import { onMount, onDestroy } from 'svelte';
@@ -486,7 +486,7 @@
             items = items.map(i => {
               const s = i.Type === 'Series' ? info.get(i.Id) : null;
               // Take the REAL series' UserData along: the pseudo-entries from dedupeHistory have
-              // none — without it the watched badge stays blind for fully watched series.
+              // none — without it the watched tick stays blind for fully watched series.
               return s ? { ...i, ProductionYear: s.ProductionYear, Status: s.Status, EndDate: s.EndDate, UserData: s.UserData } : i;
             });
           } catch { /* enrichment optional — if it fails, only the title remains */ }
@@ -613,7 +613,6 @@
   {#snippet landscapeCard(item)}
     {@const img = getItemImageUrl(item, 'landscape', true)}
     {@const prog = itemProgress(item)}
-    {@const badge = itemBadge(item)}
     {@const rem = getRemainingMinutes(item)}
     {@const sub = getItemSubtitle(item, i18n.t.today)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
@@ -626,17 +625,10 @@
           <img src={img} {@attach blurUp(itemBlurHash(item, 'Backdrop'))} alt={item.Name}
             class="w-full h-full object-cover" loading="lazy" />
         {/if}
-        {#if badge}
-          <WatchedBadge />
-        {/if}
+        <CardStatus {item} remaining={rem} />
         {#if prog > 0}
           <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
             <div class="h-full bg-blue-500" style="width:{prog}%"></div>
-          </div>
-        {/if}
-        {#if rem}
-          <div class="absolute top-2 right-2 bg-black/80 text-white text-xs font-bold px-2 py-1 rounded-md">
-            {rem} {i18n.t.mins} {i18n.t.remaining}
           </div>
         {/if}
       </div>
@@ -651,7 +643,6 @@
 
   {#snippet portraitCard(item, img, blur)}
     {@const prog = itemProgress(item)}
-    {@const badge = itemBadge(item)}
     {@const sub = getItemSubtitle(item, i18n.t.today)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
       onfocus={() => previewItem(item)} onblur={cancelPreview}
@@ -663,9 +654,7 @@
           <img src={img} {@attach blurUp(blur)} alt={item.Name}
             class="w-full h-full object-cover" loading="lazy" />
         {/if}
-        {#if badge}
-          <WatchedBadge />
-        {/if}
+        <CardStatus {item} />
         {#if prog > 0}
           <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
             <div class="h-full bg-blue-500" style="width:{prog}%"></div>

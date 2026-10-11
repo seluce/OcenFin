@@ -266,7 +266,8 @@ export default {
     displayElements: "Content",
     displayClock: "Clock",
     displayHero: "Featured Banner",
-    displayEpisodeCount: "Episode Count",
+    displayEpisodeCount: "Unwatched episodes",
+    episodesLeft: "left",
     displayLetterBar: "A–Z Bar",
     displayLibraries: "Libraries Row",
     displayHistory: "Recently Watched Row",
@@ -397,7 +398,7 @@ export default {
     statusChromium: "Chromium / WebView",
     statusHls: "hls.js",
     statusLibbitsub: "libbitsub",
-    statusAssjs: "assjs",
+    statusJassub: "JASSUB",
     statusYes: "Yes",
     statusNo: "No",
 

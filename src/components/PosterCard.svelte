@@ -12,20 +12,17 @@
   //
   // `caption` is a snippet so each view keeps its own labelling. It renders INSIDE the button, so
   // `group-focus:` in those spans still refers to this card.
-  import { itemProgress, itemBadge, itemBlurHash, blurUp, longPress, getItemImageUrl } from '../utils.js';
-  import WatchedBadge from './WatchedBadge.svelte';
+  import { itemProgress, itemBlurHash, blurUp, longPress, getItemImageUrl } from '../utils.js';
+  import CardStatus from './CardStatus.svelte';
 
   let { item, onOpenDetails, onContextMenu, caption } = $props();
-  let badge = $derived(itemBadge(item));
 </script>
 
 <button onclick={() => onOpenDetails(item)} data-item-id={item.Id}
   {@attach longPress()} onlongpress={() => onContextMenu(item)}
   class="group focus:outline-none text-left scroll-my-4">
   <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
-    {#if badge}
-      <WatchedBadge />
-    {/if}
+    <CardStatus {item} />
     {#if getItemImageUrl(item)}
       <img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
     {/if}

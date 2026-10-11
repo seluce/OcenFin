@@ -19,7 +19,7 @@
 * **Shared Profile:** If you use a shared profile, you can link two personal profiles to it. It hides movies or series that one of you has already seen. This makes it easy to find something new to watch together.
 * **Custom Avatars:** Create your own profile picture directly on the TV. You can use your recently watched shows or movies as a background. Or you can choose an SVG icon with a custom background. No need to upload images.
 * **WebSockets & SyncPlay:** Full WebSocket support for remote commands from the Jellyfin server and SyncPlay features to watch together.
-* **Direct Play Focus:** I use `libbitsub`, `assjs`, and `hls.js` to support many formats. This helps to run Direct Play on the TV and avoid transcoding on the server, even for complex subtitles like VobSub and DVDSub.
+* **Direct Play Focus:** I use `libbitsub`, `JASSUB` (libass), and `hls.js` to support many formats. This helps to run Direct Play on the TV and avoid transcoding on the server, even for complex subtitles like VobSub and DVDSub.
 * **Multi-Language:** The app supports English, German, Spanish, French, Italian, Dutch, Portuguese, and Polish.
 
 ---
@@ -30,7 +30,7 @@ You can install OcenFin via an `.ipk` file. **No root is required.**
 
 First, download the `.ipk` file for your TV from the Releases page:
 * **Modern:** This version is exclusively tested and fully functional on **webOS 25 or newer**. Older webOS versions are not supported.
-* **Server:** OcenFin needs **Jellyfin Server 12.0 or newer**. If your server is older than 12.0, use **OcenFin 2026.09.22** from the Releases page — the last release that supports Jellyfin 10.10 and 10.11 — until you update the server.
+* **Server:** OcenFin needs **Jellyfin Server 12.2 or newer**. On 12.0 or 12.1 it runs, but DVD subtitles stay empty, so update the server. If your server is older than 12.0, use **OcenFin 2026.09.22** from the Releases page — the last release that supports Jellyfin 10.10 and 10.11 — until you update the server.
 
 1. **Prepare the TV:** Install the official "Developer Mode" app from the LG Content Store on your TV and enable it.
 2. **Sideload from PC:** To install the app from your computer to the TV, I highly recommend using **[dev-manager-desktop](https://github.com/webosbrew/dev-manager-desktop)**. It provides a very easy-to-use graphical interface.
@@ -74,3 +74,29 @@ I have gathered a few more common questions into an FAQ and addressed them in th
 </p>
 
 > **Note:** The images in the screenshots are just examples and demos. They do not show any real content.
+
+---
+
+## License & Third-Party Components
+
+OcenFin itself is released under the [MIT License](LICENSE). The app ships the following open-source components unchanged, each under its own license:
+
+| Component | Used for | License |
+| :--- | :--- | :--- |
+| [Svelte](https://github.com/sveltejs/svelte) | the app's runtime | MIT |
+| [Tailwind CSS](https://github.com/tailwindlabs/tailwindcss) | the generated styles | MIT |
+| [hls.js](https://github.com/video-dev/hls.js) | streaming when the server transcodes | Apache-2.0 |
+| [libbitsub](https://github.com/altqx/libbitsub) | PGS and DVD (VobSub) subtitles | MIT |
+| [JASSUB](https://github.com/ThaUnknown/jassub) | ASS/SSA subtitles, built from the libraries below | MIT |
+| ↳ [libass](https://github.com/libass/libass) | drawing the subtitles | ISC |
+| ↳ [FreeType](https://freetype.org) | rendering fonts | FreeType License (FTL) |
+| ↳ [HarfBuzz](https://github.com/harfbuzz/harfbuzz) | shaping text | MIT |
+| ↳ [FriBidi](https://github.com/fribidi/fribidi) | right-to-left text | LGPL-2.1-or-later |
+| ↳ [Brotli](https://github.com/google/brotli) | compressed fonts | MIT |
+| [uqr](https://github.com/unjs/uqr) | QR codes | MIT |
+| Arimo, Tinos, Noto Sans, Liberation Sans (in JASSUB) | fonts | SIL Open Font License 1.1 |
+| webOSTV.js | TV features | provided by LG Electronics for webOS TV apps |
+
+Portions of this software are copyright © The FreeType Project ([freetype.org](https://freetype.org)). All rights reserved.
+
+JASSUB's libraries are compiled into one WebAssembly file, which the app keeps as a separate file. Its source and build are public in the [JASSUB repository](https://github.com/ThaUnknown/jassub), so it can be rebuilt and replaced, as the LGPL of FriBidi asks. Small parts of the Emscripten runtime inside it are under the MIT, Zlib, BSL-1.0 and NTP licenses.

@@ -1,6 +1,6 @@
 {
   "id": "com.ocenfin.app",
-  "version": "2026.10.4",
+  "version": "2026.10.11",
   "vendor": "seluce",
   "type": "web",
   "main": "index.html",
@@ -9,7 +9,6 @@
   "icon": "icon.png",
   "largeIcon": "largeIcon.png",
   "splashBackground": "splash.png",
-  "bgColor": "#111827",
   "iconColor": "#3B82F6",
   "disableBackHistoryAPI": true,
   "handlesRelaunch": true,

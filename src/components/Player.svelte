@@ -1,15 +1,11 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount, authHeaders, dlog, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS } from '../utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS } from '../utils.js';
   import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks } from '../trackmemory.js';
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady, syncNow } from '../syncplay.js';
   import { PgsRenderer, VobSubRenderer, initWasm, warmup } from 'libbitsub';
-  // ASS/SSA with original layout via assjs — a lean DOM/CSS renderer (no WASM/worker). Syncs
-  // to the <video> (only time + dimensions, NO pixels → no cross-origin taint, no crossorigin on the <video>).
-  // The browser handles the font fallback. Covers almost all ASS tags (rest: VTT fallback via the toggle).
-  import ASS from 'assjs';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
 
@@ -623,7 +619,7 @@
       const subStream  = subtitleIndex !== -1 ? subStreams.find(s => s.Index === subtitleIndex && s.Type === 'Subtitle') : null;
       const subCodec    = (subStream?.Codec || '').toLowerCase();
       const isPgsSub    = PGS_CODECS.includes(subCodec);
-      const isVobSub    = VOBSUB_CODECS.includes(subCodec);          // DVD/VobSub → .mks from 12.0
+      const isVobSub    = VOBSUB_CODECS.includes(subCodec);          // DVD/VobSub → raw .mks from 12.2
       const isGraphicSub = GRAPHIC_SUB_CODECS.includes(subCodec);
       // libbitsub renders PGS and VobSub client-side (when enabled); anything else graphic, or with
       // client rendering off, has to be burned in.
@@ -728,18 +724,19 @@
   // and webOS renders native cues unreliably anyway. This way we have full control.
   let subtitleCues = $state([]);           // [{ start, end, text }] in seconds
   // Subtitle offset: applies to ALL THREE render paths — our own text overlay (VTT/SRT/ASS-to-VTT),
-  // ASS via assjs, and graphic tracks (PGS/VobSub) via libbitsub. Each shifts natively, so no
-  // overlay is ever rebuilt. assjs does it through its `delay` property. That property exists
-  // since 0.1.0, but its handling was corrected in 0.1.6 (floating point) and 0.1.8 (delay is now
-  // honoured in the allocate step) — so 0.1.8 is the sensible minimum for reliable behaviour.
+  // ASS via libass (JASSUB), and graphic tracks (PGS/VobSub) via libbitsub. Each shifts natively, so
+  // no overlay is ever rebuilt: JASSUB and libbitsub read their timeOffset on every frame.
   // + = subtitles later (delayed), − = earlier. Reset per track/title; deliberately NOT saved
   // (it's content-specific).
   let subtitleOffset = $state(0);
   function adjustSubtitleOffset(delta) {
     subtitleOffset = Math.round(Math.max(-10, Math.min(10, subtitleOffset + delta)) * 10) / 10;
-    // Same unit (seconds) and sign convention as the text overlay: assjs renders at
-    // currentTime − delay. Its setter re-syncs right away → no rebuild of the overlay needed.
-    if (assRenderer) assRenderer.delay = subtitleOffset;
+    // libass draws at mediaTime + timeOffset → the sign is inverted against ours, as with libbitsub
+    // below. Paused, desktop's native rVFC asks for no frame, so repaint once (webOS's stand-in keeps asking).
+    if (assRenderer) {
+      assRenderer.timeOffset = -subtitleOffset;
+      if (videoElement?.paused) assRenderer.resize(true).catch(() => {});
+    }
     // libbitsub looks its cues up at mediaTime + timeOffset, so the SIGN IS INVERTED against our
     // convention. It was a public field up to 1.11.0 and is a getter/setter pair from 1.12.0; the
     // plain assignment is valid either way. The 1.12 setter drops the cached frame and re-renders
@@ -756,10 +753,10 @@
   let loadSettleTimer  = null;             // debounces the progressive 'loaded' events into one line
   // Render graphic subtitles client-side? Only if enabled AND not everything is burned in anyway.
   let clientGraphicRender = $derived(playbackPrefs.pgsRendering && !playbackPrefs.burnSubtitles);
-  // Render ASS/SSA with original layout (assjs)? Off → plain text overlay, both Direct Play.
-  let assRenderer = null;
-  let assActive   = $state(false);  // ASS overlay live → the offset control applies (assjs delay)
-  let assContainer = $state(null);  // host <div>; assjs injects its DOM overlay here (over the video)
+  // Render ASS/SSA in their original look (libass)? Off → plain text overlay, both Direct Play.
+  let assRenderer = null;           // JASSUB instance — see applyAssSubtitle
+  let assSourceId = null;           // the media source it was built for: its attachments are the fonts
+  let assActive   = $state(false);  // ASS overlay live → the offset control applies
   let clientAssRender = $derived(playbackPrefs.assRendering && !playbackPrefs.burnSubtitles);
 
   // Text subtitle styling (ONLY for the .subtitle-box overlay = WebVTT/SRT). PGS/VobSub are bitmaps
@@ -791,13 +788,6 @@
     const s = playbackPrefs.subtitleSize || 'normal';
     return s === 'small' ? 0.85 : s === 'large' ? 1.25 : 1.0;
   }
-  // Filename hint so libbitsub recognizes the format (PGS=.sup, VobSub=.mks via DeliveryUrl).
-  function graphicSubFileName(url, stream) {
-    const m = (url.split('?')[0] || '').match(/\.(\w+)$/);
-    if (m) return `track.${m[1].toLowerCase()}`;
-    const codec = (stream?.Codec || '').toLowerCase();
-    return VOBSUB_CODECS.includes(codec) ? 'track.mks' : 'track.sup';
-  }
 
   // Apply subtitle – routes by codec: PGS/VobSub → libbitsub overlay, text → VTT overlay.
   // The offset belongs to the TRACK: reset when another one is chosen, kept when the same track is
@@ -807,88 +797,170 @@
   function applySubtitleOverlay(index, ms) {
     subtitleFetchToken++;   // invalidate in-flight VTT fetches (otherwise a text overlay next to graphic/ASS)
     if (index !== offsetTrack) { subtitleOffset = 0; offsetTrack = index; }
-    if (index === -1 || !ms) { disposeGraphic(); clearAss(); subtitleCues = []; return; }
+    if (index === -1 || !ms) { disposeGraphic(); disposeAss(); subtitleCues = []; return; }
     const stream = (ms.MediaStreams || []).find(s => s.Index === index && s.Type === 'Subtitle');
     const codec  = (stream?.Codec || '').toLowerCase();
     const isPgs = PGS_CODECS.includes(codec);
     const isVob = VOBSUB_CODECS.includes(codec);
     const isAss = ['ass', 'ssa'].includes(codec);
     if (stream && clientGraphicRender && (isPgs || isVob)) {
-      clearAss();
+      disposeAss();
       subtitleCues = [];                    // no VTT overlay alongside
       applyGraphicSubtitle(stream, ms);     // soft switch without a gap (see below)
     } else if (stream && isAss && clientAssRender && (stream.DeliveryMethod || '').toLowerCase() !== 'encode') {
       disposeGraphic();
-      subtitleCues = [];                    // assjs renders itself → no VTT overlay alongside
+      subtitleCues = [];                    // libass renders itself → no VTT overlay alongside
       applyAssSubtitle(stream, ms);         // original layout (positions, fonts, typesetting)
     } else {
       disposeGraphic();                     // leaving graphic/ASS → remove the overlay immediately
-      clearAss();
+      disposeAss();
       applyExternalSubtitleIfNeeded(index, ms);   // text → VTT (burned-in graphic → nothing to do)
     }
   }
-  // Render ASS/SSA client-side with full styling via assjs (DOM/CSS, no WASM/worker). assjs mounts its
-  // overlay into assContainer and syncs time + size to the <video> itself (reads NO pixels → no
-  // cross-origin taint, no crossorigin on the <video>). The browser handles the font fallback. resampling controls the
-  // behavior when the script resolution (PlayResX/Y) ≠ video resolution (letterbox); the default 'video_height' usually fits.
-  // assjs has no setTrack → track switch/re-apply via rebuild (the DOM overlay is detached/re-attached).
-  // KNOWN LIMIT on webOS 25 (Chromium 120): assjs detects "border width is 0" inside a CSS filter via a
-  // round() trick, and round() needs Chromium 125. That single declaration is therefore dropped, so
-  // \blur on borderless text (\bord0) renders sharp instead of soft. Nothing else is affected — bordered
-  // text, i.e. normal dialogue, gets its blur from the :before/:after layers, which don't use round().
-  // Purely cosmetic and it degrades gracefully, so we don't work around it: patching it would mean
-  // rebuilding assjs' internal selectors and custom properties in our own CSS. Revisit on webOS 26.
+  // ASS/SSA in their original look via libass: JASSUB, libass compiled to WASM, running in a worker
+  // and drawing into its own canvas right after the <video> (CODE-HEALTH §56/§57). It replaced
+  // assjs (DOM/CSS) on 2026-10-10 — libass is the reference renderer, so karaoke, \blur, clips and
+  // drawings come out as authored, and the main thread only hands frames over. What it needs here:
+  //  - a requestVideoFrameCallback that fires: JASSUB renders ONLY from it, and webOS's never calls
+  //    back → ensureVideoFrameCallback() first. That, not the "tainted VideoFrame" warning it may log
+  //    while probing the colour space, is why it stayed blank when it was first tried.
+  //  - fonts: libass matches the name INSIDE a font file. It gets the file's own fonts (MKV
+  //    attachments, the ones the subtitle was made with), otherwise JASSUB's Liberation Sans, which
+  //    has Arial's metrics.
+  //  - one instance per media source: switching between its ASS tracks swaps the track in the running
+  //    worker. A fresh start measured ~300 ms on the B4 (the first, with the WASM download, ~1 s).
+  // If libass cannot start at all, the track still shows — as the plain text overlay.
   async function applyAssSubtitle(stream, ms) {
-    if (!videoElement || !assContainer) return;
-    const myToken = ++subtitleFetchToken;   // same guard as the VTT path — see the check below
-    const url = assSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
+    if (!videoElement) return;
+    const myToken = ++subtitleFetchToken;   // same guard as the VTT path — see the checks below
+    let content;
     try {
       // Prefetched while the menu entry was focused → use those bytes instead of fetching again.
       const cachedAss = subBlobs.get(stream.Index);
-      let content;
       if (cachedAss) { content = await cachedAss.text(); }
       else {
+        const url = assSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
         const res = await fetch(url);          // the ApiKey is in the URL → a simple GET, no preflight
         if (!res.ok) { console.warn('[OcenFin] ASS fetch failed:', res.status); return; }
         content = await res.text();
       }
-      // Superseded by a newer switch while we were awaiting? Then stop here. Without this a slow
-      // response would mount its overlay AFTER the newer one and win: switching ASS → PGS would end
-      // up showing both renderers at once, and ASS → off would bring the subtitle back.
-      // Blob.text() is async too, so the prefetch path needs the guard just as much.
-      if (myToken !== subtitleFetchToken) return;
-      ensureVideoFrameCallback();               // webOS: rVFC polyfill active BEFORE assjs reads it
-      disposeAss();                            // no setTrack → remove the old overlay, rebuild fresh
-      assRenderer = new ASS(content, videoElement, { container: assContainer });
-      if (subtitleOffset) assRenderer.delay = subtitleOffset;   // kept across a rebuild (applySubtitleOverlay)
-      assActive = true;
-      // assjs drives its render loop via requestAnimationFrame, started by the video's 'play'/'playing'
-      // event. On a track switch in the MIDDLE of playback the video is already running → it fires
-      // no new event → the loop would never start and the subtitle would stay frozen at the state from
-      // the switch. So kick it once if playback is already running. ('playing' instead of 'play': onplaying is
-      // side-effect-free, onplay would report to SyncPlay.)
-      if (!videoElement.paused) videoElement.dispatchEvent(new Event('playing'));
-      // The overlay is built ASYNCHRONOUSLY — i.e. AFTER changeTrack, which had already set the focus.
-      // Mounting the assjs DOM can lose the focus; so secure it again here. Onto the same
-      // trigger button as changeTrack (visible + consistent), not onto the invisible container.
-      if (!showSettings) restoreControlFocus();
-      dlog('[OcenFin] ASS subtitle via assjs:', stream.Index, stream.Codec);
-    } catch (e) { console.warn('[OcenFin] assjs error:', e?.message); }
+    } catch (e) { console.warn('[OcenFin] ASS fetch error:', e?.message); return; }
+    // Superseded by a newer switch while we were awaiting? Then stop here. Without this a slow
+    // response would set its track AFTER the newer one and win: switching ASS → PGS would end up
+    // showing both renderers at once, and ASS → off would bring the subtitle back.
+    if (myToken !== subtitleFetchToken) return;
+    const fonts = assFontUrls(ms);
+    if (!fonts.length && assNeedsSystemFonts(content)) {
+      // libass has only its Liberation Sans here, and that has no glyphs for this script — it would
+      // draw boxes. The text overlay goes through the TV's own fonts, which cover it.
+      dlog('[OcenFin] ASS in a script without a font in the file → text overlay:', stream.Index);
+      disposeAss();
+      applyExternalSubtitleIfNeeded(stream.Index, ms);
+      return;
+    }
+    ensureVideoFrameCallback();               // webOS: a rVFC that fires, BEFORE JASSUB reads it
+    try {
+      if (assRenderer && assSourceId === ms.Id) {
+        // Another track of the same file: swap it in the running worker. Waits for a start still
+        // in flight; the newest call sets its track last, so it wins.
+        const t0 = performance.now();
+        const inst = assRenderer;
+        await inst.ready;
+        await inst.renderer.setTrack(content);
+        if (assRenderer !== inst || myToken !== subtitleFetchToken) return;
+        inst.timeOffset = -subtitleOffset;   // the offset belongs to the track: applySubtitleOverlay reset it
+        if (videoElement.paused) inst.resize(true).catch(() => {});
+        assActive = true;
+        dlog('[OcenFin] ASS track swapped in libass:', stream.Index, Math.round(performance.now() - t0) + ' ms');
+        return;
+      }
+      disposeAss();
+      if (await startLibass(content, stream, ms, fonts, myToken)) return;
+    } catch (e) {
+      console.warn('[OcenFin] libass error:', e?.message || e);
+      disposeAss();
+    }
+    if (myToken === subtitleFetchToken) applyExternalSubtitleIfNeeded(stream.Index, ms);
   }
-  // Hide ASS (switch to PGS/text/off): remove the overlay.
-  function clearAss() { disposeAss(); }
+  const FONT_TYPES = ['font/ttf', 'font/otf', 'font/sfnt', 'font/woff', 'font/woff2', 'application/x-truetype-font',
+    'application/vnd.ms-opentype', 'application/x-font-ttf', 'application/x-font-otf', 'application/font-sfnt'];
+  // The file's fonts, as URLs: MKV attachments with a font type or extension.
+  function assFontUrls(ms) {
+    return (ms.MediaAttachments || [])
+      .filter(a => FONT_TYPES.includes((a.MimeType || '').toLowerCase()) || /\.(ttf|otf|ttc|woff2?)$/i.test(a.FileName || ''))
+      .map(a => {
+        const u = a.DeliveryUrl || `/Videos/${item.Id}/${ms.Id}/Attachments/${a.Index}`;
+        return /^https?:/i.test(u) ? u : `${session.serverUrl}${u}${u.includes('?') ? '&' : '?'}ApiKey=${session.token}`;
+      });
+  }
+  // Does the dialogue use a script JASSUB's Liberation Sans cannot draw? Measured (CODE-HEALTH §58):
+  // Latin, Greek, Cyrillic and Hebrew come out right; Arabic, Indic, Thai, CJK and Hangul as boxes.
+  // Only the text of Dialogue lines counts — a Japanese title in [Script Info] or a speaker name
+  // must not push an English track off libass.
+  const SCRIPTS_WITHOUT_FONT = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u0900-\u0DFF\u0E00-\u0EFF\u1000-\u109F\u1100-\u11FF\u1780-\u17FF\u3040-\u30FF\u3100-\u312F\u3130-\u318F\u3400-\u4DBF\u4E00-\u9FFF\uA960-\uA97F\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/;
+  function assNeedsSystemFonts(content) {
+    const dialogue = /^Dialogue:(?:[^,]*,){9}(.*)$/gm;
+    for (let m; (m = dialogue.exec(content));) {
+      if (SCRIPTS_WITHOUT_FONT.test(m[1].replace(/\{[^}]*\}/g, ''))) return true;
+    }
+    return false;
+  }
+  // Starts JASSUB for this media source. true = started or superseded (nothing more to do),
+  // false = it could not start → the caller falls back to the text overlay.
+  async function startLibass(content, stream, ms, fonts, myToken) {
+    const t0 = performance.now();
+    let inst = null;
+    try {
+      const { default: JASSUB } = await import('jassub');   // ~2 MB WASM, fetched with the first ASS track
+      if (myToken !== subtitleFetchToken) return true;
+      const debug = perfEnabled();
+      inst = assRenderer = new JASSUB({
+        video: videoElement, subContent: content, fonts,
+        queryFonts: false,          // no Local Font Access on webOS
+        libassMemoryLimit: 64,      // MB of libass' bitmap cache — the default is far more than a TV needs
+        timeOffset: -subtitleOffset,
+        debug,                      // frame numbers for the log line below, only with the debug switch on
+      });
+      assSourceId = ms.Id;
+      if (debug) {
+        // One line per 5 s: how long after the request a frame is ready (worker time + round trip).
+        let windowStart = performance.now(), n = 0, sum = 0, max = 0, droppedAt = 0;
+        inst.debug.onsubtitleFrameCallback = (now, m) => {
+          n++; sum += m.frameDelay; if (m.frameDelay > max) max = m.frameDelay;
+          if (now - windowStart < 5000) return;
+          dlog('[OcenFin] libass:', n + ' frames,', 'ready after ' + (sum / n).toFixed(1) + ' ms avg / ' + max.toFixed(1) + ' ms max,',
+               'skipped ' + (m.droppedFrames - droppedAt));
+          windowStart = now; n = 0; sum = 0; max = 0; droppedAt = m.droppedFrames;
+        };
+      }
+      await inst.ready;
+      // Disposed while starting (destroyed there), or a newer call owns it now — either way done.
+      if (assRenderer !== inst || myToken !== subtitleFetchToken) return true;
+      assActive = true;
+      dlog('[OcenFin] ASS subtitle via libass:', stream.Index, stream.Codec, fonts.length + ' font(s) from the file,',
+           Math.round(performance.now() - t0) + ' ms to ready');
+      return true;
+    } catch (e) {
+      console.warn('[OcenFin] libass failed, showing the text version:', e?.message || e);
+      if (inst && assRenderer === inst) disposeAss();
+      return false;
+    }
+  }
+  // Remove the ASS overlay (switch to PGS/text/off, player teardown).
   function disposeAss() {
     if (assRenderer) {
-      try { assRenderer.destroy(); } catch {}
+      const r = assRenderer;
       assRenderer = null;
+      assSourceId = null;
+      r.destroy().catch(() => {});   // removes its canvas at once, then ends the worker
     }
     assActive = false;
   }
   // webOS reports requestVideoFrameCallback as present (feature detection true) but NEVER calls the
   // callback. The bug is in LG's media integration, not in Chromium → version-independent (on desktop it
-  // doesn't occur). assjs drives its render loop with it → ASS subtitles run on desktop but freeze on
-  // the TV on the picture at setup time. So on webOS replace rVFC on the <video> with a rAF polyfill
-  // that really calls back (60 fps is plenty for subtitle timing). Idempotent.
+  // doesn't occur). JASSUB renders only from it → ASS subtitles run on desktop but never appear on
+  // the TV. So on webOS replace rVFC on the <video> with a rAF stand-in that really calls back, with
+  // the metadata JASSUB reads (mediaTime, width, height); 60 fps is plenty for subtitles. Idempotent.
   //
   // The check is DELIBERATELY broad (webOSSystem OR the webOS global) and therefore also matches
   // `npm run dev`, because index.html loads public/webOSTV.js there too and it defines
@@ -937,10 +1009,13 @@
       // requestVideoFrameCallback and picks cues by the presented frame's mediaTime instead of
       // video.currentTime. On webOS that is fatal — see ensureVideoFrameCallback() above: rVFC is
       // reported as present but never fires. libbitsub only feature-detects it (a typeof check in
-      // supportsFrameAwareSync) and has no watchdog for a callback that never arrives, so the
-      // loop would stall after the first frame and the subtitle would freeze on
-      // screen. Forcing it off restores the 1.11 behaviour exactly (requestAnimationFrame +
-      // currentTime). No loss either: PGS cues last seconds, so frame-exact selection buys nothing.
+      // supportsFrameAwareSync); up to 1.12 the loop then stalled after the first frame and the
+      // subtitle froze on screen. 1.13.0 added a watchdog that falls back to requestAnimationFrame,
+      // but only after ~1 s of advancing playback WITHOUT a callback, and per renderer — i.e. on
+      // every track switch and every episode. Measured with a dead rVFC (CODE-HEALTH §52): the first
+      // cue came 0.7 s late, then on time. Forcing it off keeps the 1.11 behaviour exactly
+      // (requestAnimationFrame + currentTime). No loss either: PGS cues last seconds, so frame-exact
+      // selection buys nothing.
       // NOTE: our rVFC polyfill would also satisfy the check, but it is installed in the ASS path
       // only — relying on that call order to keep graphic subtitles alive would be fragile.
       frameAwareSync: false,
@@ -952,8 +1027,9 @@
       // and takes the glue URL from the main thread (bundled builds hash the asset names, so deriving
       // it from the wasm URL doesn't work). Don't downgrade below 1.11.0 — the fallback is silent.
       onWarning: (w) => dlog('[OcenFin] libbitsub notice:', w?.code || w?.message || w, w?.details),
-      // Only ITS renderer: a superseded one whose streaming load fails late (dispose does not abort
-      // it) used to dispose whichever renderer was current — the track just switched to.
+      // Only ITS renderer: a superseded one whose streaming load failed late used to dispose whichever
+      // renderer was current — the track just switched to. Since 1.13.0 dispose() aborts that
+      // download and a disposed renderer reports nothing; the check stays as the cheap backstop.
       onError: (e) => { console.warn('[OcenFin] libbitsub error:', e?.code || '', e?.message || e); if (!mine || graphicRenderer === mine) disposeGraphic(); },
       onEvent: (ev) => {
         // renderer-change → GRAPHICS backend, only ever 'webgpu' | 'webgl2' | 'canvas2d' (webgl2 on the
@@ -976,7 +1052,10 @@
       // The codec is known → pick the explicit renderer (no format auto-detection needed).
       mine = graphicRenderer = PGS_CODECS.includes(codec)
         ? new PgsRenderer(opts)
-        : new VobSubRenderer({ ...opts, fileName: graphicSubFileName(url, stream) });   // VobSub/DVD: .mks container
+        // VobSub is ALWAYS the server's extracted .mks (the profile's Container sees to that). Loading
+        // from a URL, libbitsub tells .mks from an .idx/.sub pair by this name alone — and the
+        // DeliveryUrl ends in ".dvdsub", which once sent it looking for an .idx ("MISSING_INPUT").
+        : new VobSubRenderer({ ...opts, fileName: 'track.mks' });
       if (subtitleOffset) graphicRenderer.timeOffset = -subtitleOffset;   // kept across a rebuild, sign as in adjustSubtitleOffset
       dlog('[OcenFin] image subtitle via libbitsub:', stream.Index, stream.Codec);
     } catch (e) { dlog('[OcenFin] libbitsub renderer error:', e?.message); disposeGraphic(); }
@@ -1022,10 +1101,13 @@
     // unhandled rejection would surface in the console on webOS. Needs libbitsub >= 1.11.0.
     if (isGraphic) warmup().catch(() => {});
     prefetchedSubs.add(stream.Index);
+    // The time is the gauge for dropping this prefetch: 12.2 serves graphic tracks straight from the
+    // extraction cache (jellyfin#18168) instead of through the encoder — CODE-HEALTH §39, item 2.
+    const t0 = performance.now();
     fetch(url)
       .then(r => r.ok ? r.blob() : Promise.reject(new Error('HTTP ' + r.status)))
-      .then(b => subBlobs.set(stream.Index, b))
-      .catch(() => prefetchedSubs.delete(stream.Index));   // failed → allow a retry
+      .then(b => { subBlobs.set(stream.Index, b); dlog('[OcenFin] subtitle prefetch:', stream.Index, codec, Math.round(b.size / 1024) + ' kB in ' + Math.round(performance.now() - t0) + ' ms'); })
+      .catch((e) => { prefetchedSubs.delete(stream.Index); dlog('[OcenFin] subtitle prefetch failed:', stream.Index, codec, e?.message); });   // failed → allow a retry
   }
   // Apply a size change at runtime live to the running renderer.
   $effect(() => { if (graphicRenderer && (playbackPrefs.subtitleSize || 'normal')) {
@@ -1432,6 +1514,7 @@
     clearBufferWatchdog();
     sourceLive = false;   // the destroy below empties the element — see positionTicks()
     if (hls) { try { hls.destroy(); } catch {} hls = null; }
+    subtitleFetchToken++;   // a subtitle still loading (JASSUB's first start takes ~1 s) stands down
     disposeGraphic();
     disposeAss();
     reportPlaybackStopped(true);
@@ -1685,8 +1768,7 @@
         applySubtitleOverlay(index, currentMediaSource);
         // Return focus ONLY AFTER all reactive changes (selectedSubtitleIndex, subtitleCues, panel outro)
         // — otherwise the subsequent re-render throws it away again. Exactly like the close path,
-        // which mutates nothing after restoreControlFocus(). (ASS additionally secures the focus again after
-        // mounting assjs in applyAssSubtitle.)
+        // which mutates nothing after restoreControlFocus().
         await tick();
         restoreControlFocus();
         return;
@@ -2209,9 +2291,6 @@
     onclick={togglePlay}
   ></video>
 
-  <!-- ASS/SSA subtitles: assjs injects its DOM overlay here, synced to the <video> (reads NO pixels
-       → no taint). The container overlaps the video (absolute inset-0); z below spinner/controls. -->
-  <div bind:this={assContainer} class="absolute inset-0 pointer-events-none z-[20]"></div>
 
   <!-- LOADING ANIMATION — visible while the video buffers or the NAS wakes up -->
   {#if isBuffering && !playbackError}
@@ -2740,6 +2819,9 @@
   onClose={async () => { pickerMode = null; if (wasPlayingBeforePicker) videoElement?.play().catch(() => {}); wasPlayingBeforePicker = false; await tick(); if (controlOpener && document.contains(controlOpener)) controlOpener.focus(); else playerContainer?.focus(); controlOpener = null; }} />
 
 <style>
+  /* JASSUB (ASS subtitles) puts its canvas right after the <video>: above the picture, below spinner and controls. */
+  :global(canvas.JASSUB) { z-index: 20; }
+
   /* Auto-play countdown bar. Kept in the stylesheet rather than inline because Svelte scopes the
      @keyframes name together with the class — an inline `animation:` would reference a name that
      no longer exists. scaleX from a CSS variable, so one keyframe serves every restart.

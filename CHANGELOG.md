@@ -3,6 +3,37 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## 2026.10.11
+
+**This release needs Jellyfin Server 12.2 or newer.** On 12.0 or 12.1 it runs, but DVD subtitles stay
+empty.
+
+### Changed
+
+- **ASS subtitles look exactly as made.** "ASS/SSA in their original look" now draws them with libass,
+  the reference renderer, using the fonts inside the file; switching between ASS tracks is instant.
+- **One corner for a card's status.** Top right now shows the time or episodes left, or a green tick
+  once you have seen it all, instead of a tick, a count and a full bar at once.
+- **"Episode count" is now "Unwatched episodes".** Series in the library show how many episodes are
+  still left instead of their total.
+
+### Fixed
+
+- **Focus frame in the subtitle settings.** The frame around "Remember subtitle per series" is no
+  longer cut off at its bottom corners.
+- **DVD subtitles show up.** They used to stay empty; the TV now draws them itself, just like
+  Blu-ray subtitles.
+
+### Internal
+
+- **Updated picture-subtitle library.** libbitsub 1.13.0 also stops a subtitle download that is no
+  longer needed when you switch tracks.
+- **Updated build tools.** Svelte 5.57.2 and Vite 8.3.4, both patch releases with bug fixes only.
+- **Current webOS calls.** Leaving the app uses LG's documented way for apps with their own exit
+  question, and a launcher setting that webOS ignores is gone.
+- **License notes in the README.** It now lists every component the app ships, from hls.js to the
+  subtitle libraries and fonts, together with its license.
+
 ## 2026.10.04
 
 ### Added

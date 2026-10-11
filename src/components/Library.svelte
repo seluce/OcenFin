@@ -4,10 +4,10 @@
   // scroll, its own view cache, backdrop preview). App only coordinates navigation/details/sort
   // persistence and passes things in via props/callbacks (pattern like Collection/Favorites).
   import { tick } from 'svelte';
-  import WatchedBadge from './WatchedBadge.svelte';
+  import CardStatus from './CardStatus.svelte';
   import { session } from '../session.svelte.js';
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, itemBadge, getItemSubtitle, getItemImageUrl, blurUp, itemBlurHash, longPress,
+  import { itemProgress, getItemSubtitle, getItemImageUrl, blurUp, itemBlurHash, longPress,
            focusOnMount, isBackKey, makeFocusReturn, authHeaders, uiFade, dropTrapOnOutro, dlog, markContentChange } from '../utils.js';
 
   let {
@@ -738,7 +738,6 @@
         {/each}
       {:else}
         {#each visibleLibraryItems as item (item.Id)}
-          {@const badge = itemBadge(item)}
           <button onclick={() => openDetails(item)} data-item-id={item.Id}
             onfocus={() => previewItem(item)} onblur={cancelPreview}
             {@attach longPress()} onlongpress={() => onContextMenu?.(item)}
@@ -755,14 +754,7 @@
               {:else if getItemImageUrl(item)}
                 <img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
               {/if}
-              {#if displaySettings.episodeCount && item.Type === 'Series' && item.RecursiveItemCount}
-                <div class="absolute top-2 right-2 bg-black/80 text-white text-xs font-bold px-2 py-1 rounded-md">
-                  {item.RecursiveItemCount} {i18n.t.episodes}
-                </div>
-              {/if}
-              {#if badge}
-                <WatchedBadge />
-              {/if}
+              <CardStatus {item} unplayed={displaySettings.episodeCount} />
               {#if itemProgress(item) > 0}
                 <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
                   <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
