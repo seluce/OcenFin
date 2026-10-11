@@ -3,7 +3,7 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
-## [Unreleased]
+## 2026.10.11
 
 **This release needs Jellyfin Server 12.2 or newer.** On 12.0 or 12.1 it runs, but DVD subtitles stay
 empty.
@@ -19,6 +19,8 @@ empty.
 
 ### Fixed
 
+- **Focus frame in the subtitle settings.** The frame around "Remember subtitle per series" is no
+  longer cut off at its bottom corners.
 - **DVD subtitles show up.** They used to stay empty; the TV now draws them itself, just like
   Blu-ray subtitles.
 

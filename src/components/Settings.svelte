@@ -1470,7 +1470,7 @@
         <!-- Remember subtitle track per series -->
         <button onclick={() => togglePlaybackPref('rememberSubtitleTrack')}
           class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left last:rounded-b-2xl">
           <div>
             <span class="text-2xl text-white font-medium block">{i18n.t.rememberSubtitleTrack}</span>
             <span class="text-gray-400 mt-1 block text-sm">{i18n.t.rememberSubtitleTrackDesc}</span>
