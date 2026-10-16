@@ -9,7 +9,7 @@
   let {
     selectedUser,
     apiCache,
-    reduceAnimations = false,   // controls the hero auto-rotation
+    reduceAnimations = false,   // only the loading skeleton's pulse — the banner rotates either way (CODE-HEALTH §61)
     showHero         = true,    // show the hero banner (setting)
     dashboardBackdrop = true,   // backdrop of the focused title behind the dashboard (opt-out)
     showLibraries    = true,    // show the "My Libraries" row
@@ -214,7 +214,9 @@
     heroLoading = false;   // hero is ready → skeleton gone
     clearInterval(heroTimer);
     if (myCache) myCache.heroItems = heroItems;   // cache-proof: switching dashboards doesn't reload
-    if (!reduceAnimations && heroItems.length > 1) {
+    // Rotates with "Reduce animations" too, as a plain cut: what costs is the crossfade, and that
+    // setting zeroes it with every other transition; the swap alone is one paint per 8 s (§61).
+    if (heroItems.length > 1) {
       preloadHero(1);   // preload the next image
       heroTimer = setInterval(() => {
         if (heroHasFocus || !heroFull) return;   // held while you are on it, and while it is not whole
@@ -786,8 +788,8 @@
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
               {i18n.t.moreInfo}
             </button>
-            <!-- Dot indicators — only when it also rotates (with reduced motion: a static hero without dots) -->
-            {#if !reduceAnimations && heroItems.length > 1}
+            <!-- Dot indicators — whenever it rotates (with reduced motion too, there it simply cuts) -->
+            {#if heroItems.length > 1}
               <div class="flex gap-2 ml-2">
                 {#each heroItems as h, i (h.Id)}
                   <div class="h-2 rounded-full transition-all {i === heroIndex ? 'w-6 bg-white' : 'w-2 bg-white/40'}"></div>
