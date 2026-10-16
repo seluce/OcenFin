@@ -3,6 +3,13 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## [Unreleased]
+
+### Internal
+
+- **Updated ASS subtitle engine.** JASSUB 2.5.21 brings a freshly built libass and also finds fonts
+  in a file that carry no family name.
+
 ## 2026.10.11
 
 **This release needs Jellyfin Server 12.2 or newer.** On 12.0 or 12.1 it runs, but DVD subtitles stay
