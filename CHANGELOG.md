@@ -14,6 +14,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 - **Down from Back lands on Play.** On a title page it used to skip the play button and jump to the
   episodes or cast below; Up from there now comes back to the buttons as well.
+- **The menu logo lines up.** With the menu closed, the logo now sits centred above the profile
+  picture and the icons instead of slightly to the left.
 
 ### Internal
 

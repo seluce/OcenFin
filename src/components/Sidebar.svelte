@@ -92,9 +92,12 @@
               transition-opacity duration-300 {isExpanded ? 'opacity-100' : 'opacity-0'}" aria-hidden="true"></div>
 
   <!-- LOGO + NAME (above the profile) — hideable via a setting -->
+  <!-- ml-1.5 centres the mark on the column axis the avatar and the nav icons share (3rem): same px-5
+       as the profile button, but 2.75rem wide against the avatar's 3.5rem — so without it, the
+       collapsed bar showed the logo 0.375rem left of everything below it. -->
   {#if showLogo}
   <div class="w-full px-5 mb-5 flex items-center gap-3 select-none">
-    <AppMark class="w-11 h-11 shrink-0 drop-shadow" />
+    <AppMark class="w-11 h-11 shrink-0 drop-shadow ml-1.5" />
     <span class="text-2xl font-bold tracking-wide text-white overflow-hidden whitespace-nowrap transition-opacity duration-300
                  {isExpanded ? 'opacity-100' : 'opacity-0'}">OcenFin</span>
   </div>
