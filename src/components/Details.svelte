@@ -828,8 +828,11 @@
         {/if}
       </div>
 
-      <!-- HERO -->
-      <div class="flex gap-12 items-start mb-8">
+      <!-- HERO — the focus group spans the poster too, although nothing in it is focusable. Up/Down
+           only hands over to a group that overlaps horizontally (spatialnav nearestGroup), and Back
+           sits above the poster: with the group on the text column alone, Down from Back skipped
+           the play button and landed in the episodes or cast row below. -->
+      <div class="flex gap-12 items-start mb-8" data-focus-group="details-hero">
 
         <div class="w-64 shrink-0 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800 relative"
           style:--tw-shadow-color={tint?.glow}>
@@ -844,7 +847,7 @@
           {/if}
         </div>
 
-        <div class="flex-1 max-w-4xl" data-focus-group="details-hero">
+        <div class="flex-1 max-w-4xl">
           <!-- line-clamp-2: an unbounded title wraps and pushes the description and the action
                buttons down, and the hero area is capped at 95vh — so they can leave the screen. -->
           <!-- Off by default on purpose: the poster to the left already carries the title as

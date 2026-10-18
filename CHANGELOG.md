@@ -10,6 +10,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **The home banner keeps changing with "Reduce animations".** It now moves on to the next title as a
   plain cut instead of standing still; only the fade is left out.
 
+### Fixed
+
+- **Down from Back lands on Play.** On a title page it used to skip the play button and jump to the
+  episodes or cast below; Up from there now comes back to the buttons as well.
+
 ### Internal
 
 - **Updated ASS subtitle engine.** JASSUB 2.5.21 brings a freshly built libass and also finds fonts
