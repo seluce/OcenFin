@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, NAV_HIDDEN_TYPES, getItemImageUrl, libraryIcon } from '../utils.js';
+  import { itemProgress, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, isShownLibrary, getItemImageUrl, libraryIcon } from '../utils.js';
   import CardStatus from './CardStatus.svelte';
   import { session } from '../session.svelte.js';
   import { watchlist, refreshWatchlist } from '../watchlist.svelte.js';
@@ -273,7 +273,7 @@
       const uId  = selectedUser.Id;
       const opts = { headers: getAuthHeaders() };
       const [rRes, rNext] = await Promise.all([
-        fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
+        fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&MediaTypes=Video&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
         fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
       ]);
       // An error answer must not empty the rows — it parsed as "no items" and went into the cache.
@@ -407,7 +407,11 @@
       // one more skeleton second before the banner appears. Until the chain decides, buildHero stays blocked (heroForYouPending) — same trade as
       // before: a bit more skeleton time for the better hero, reserved space prevents shift-up.
       const pViews        = fetch(`${session.serverUrl}/UserViews?UserId=${uId}`, opts);
-      const pResume       = fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
+      // MediaTypes=Video, in refreshResume() too: without it the server returns every type in
+      // progress — an audiobook or an e-book read in another Jellyfin app landed in Continue
+      // watching with a play button that did nothing (§66). Jellyfin's own row asks the same; Video
+      // and not Movie,Episode, so a half-watched extra still comes back.
+      const pResume       = fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&MediaTypes=Video&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
       heroForYouPending = true;
       const pHeroForYou = loadHeroForYou(uId, opts)
         .then(pool => { heroForYouPending = false; if (!heroBuilt && !applyHeroPool(pool)) buildHero(); })
@@ -453,8 +457,8 @@
         isLoading = false; heroLoading = false;
         return;
       }
-      // Hide the same collection types as the sidebar (music / live TV — unsupported views).
-      libraries        = ((await resViews.json()).Items || []).filter(l => !NAV_HIDDEN_TYPES.includes((l.CollectionType || '').toLowerCase()));
+      // The same libraries as the sidebar (isShownLibrary: films, series, collections, playlists, mixed).
+      libraries        = ((await resViews.json()).Items || []).filter(isShownLibrary);
       continueWatching = (await resResume.json()).Items || [];
       isLoading        = false;
       session.connectionLost = false;   // server reachable

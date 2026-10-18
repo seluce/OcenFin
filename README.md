@@ -21,7 +21,7 @@
 
 OcenFin plays your movies and shows as they are: Direct Play with Dolby Vision and Dolby Atmos, and subtitles drawn by the TV itself instead of burned in by the server. Everything is built for the D-pad, and the app, made with Svelte 5, takes up almost no space.
 
-> **Movies and TV shows only.** OcenFin has no Live TV and no music, on purpose — the [FAQ](https://github.com/seluce/OcenFin/wiki) explains why.
+> **Movies and TV shows only.** OcenFin has no Live TV and no music, on purpose — the [FAQ](https://github.com/seluce/OcenFin/wiki) explains why. Libraries for music, Live TV, books, or home videos and photos do not appear in the app.
 
 ---
 

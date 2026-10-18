@@ -16,6 +16,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   episodes or cast below; Up from there now comes back to the buttons as well.
 - **The menu logo lines up.** With the menu closed, the logo now sits centred above the profile
   picture and the icons instead of slightly to the left.
+- **Only playable libraries in the menu.** Books, home videos and photos, and the server's folder
+  view no longer show up, as nothing in them could be played.
+- **Continue watching shows only videos.** An audiobook or e-book started in another Jellyfin app no
+  longer appears there.
 
 ### Internal
 
