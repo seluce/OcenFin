@@ -14,6 +14,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 - **Updated ASS subtitle engine.** JASSUB 2.5.21 brings a freshly built libass and also finds fonts
   in a file that carry no family name.
+- **A fresh README.** New screenshots of the current app, using the Blender Foundation's open movies
+  as demo data; they now live in the repository instead of on an external host.
 
 ## 2026.10.11
 
