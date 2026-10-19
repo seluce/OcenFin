@@ -328,9 +328,15 @@ export const NAV_ICON_PALETTE = {
 // Order in the icon picker.
 export const NAV_ICON_KEYS = ['dashboard','search','settings','movies','tvshows','tv','folder','star','heart','book','globe','music','photo','sparkles','bolt','ticket','syncplay','home','play','clock','calendar','fire','bookmark','queue','grid','building','newspaper','download','microphone','puzzle','flag','tag','cloud','bell','bolt2'];
 
-// Music and Live TV are deliberately left out (each needs its own view; currently unsupported).
-// Exported so the dashboard's library row filters by the exact same list as the sidebar.
-export const NAV_HIDDEN_TYPES = ['music', 'musicvideos', 'livetv'];
+// The libraries OcenFin shows: films and series, the two views it has screens for (collections,
+// playlists), and mixed libraries — those come without a CollectionType. Everything else stays out
+// of the menu and "My media": music, music videos and live TV would each need a view of their own;
+// books play nothing here; "Home videos and photos" and the server's folder view are trees of
+// albums, photos and folders that only opened as a title page with a Play button that went nowhere
+// (CODE-HEALTH §66). An allow-list, so a library type Jellyfin adds later stays out until checked.
+// One test for the sidebar and the dashboard's library row.
+const NAV_LIBRARY_TYPES = ['movies', 'tvshows', 'boxsets', 'playlists', ''];
+export const isShownLibrary = (lib) => NAV_LIBRARY_TYPES.includes((lib?.CollectionType || '').toLowerCase());
 
 // Bitmap subtitle codecs — ONE list for the app (it was written out seven times, once without
 // dvbsub). PGS and VobSub/DVD the app renders itself (libbitsub, when the profile allows it). DVB
@@ -356,7 +362,7 @@ export function buildNavEntries(libraries, t, iconOverrides = {}) {
   const pick = (id, fallbackKey) =>
     NAV_ICON_PALETTE[iconOverrides[id]] || NAV_ICON_PALETTE[fallbackKey] || NAV_ICON_PALETTE.folder;
   const libItems = (libraries || [])
-    .filter(l => !NAV_HIDDEN_TYPES.includes((l.CollectionType || '').toLowerCase()))
+    .filter(isShownLibrary)
     .map(l => ({ id: 'lib:' + l.Id, kind: 'library', lib: l, label: l.Name,
                  icon: libraryIcon(l, iconOverrides), locked: false }));
   return [

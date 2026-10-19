@@ -3,6 +3,31 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## 2026.10.19
+
+### Changed
+
+- **The home banner keeps changing with "Reduce animations".** It now moves on to the next title as a
+  plain cut instead of standing still; only the fade is left out.
+
+### Fixed
+
+- **Down from Back lands on Play.** On a title page it used to skip the play button and jump to the
+  episodes or cast below; Up from there now comes back to the buttons as well.
+- **The menu logo lines up.** With the menu closed, the logo now sits centred above the profile
+  picture and the icons instead of slightly to the left.
+- **Only playable libraries in the menu.** Books, home videos and photos, and the server's folder
+  view no longer show up, as nothing in them could be played.
+- **Continue watching shows only videos.** An audiobook or e-book started in another Jellyfin app no
+  longer appears there.
+
+### Internal
+
+- **Updated ASS subtitle engine.** JASSUB 2.5.23 draws ASS subtitles with less work per frame and
+  also finds fonts in a file that carry no family name.
+- **A fresh README.** New screenshots of the current app, using the Blender Foundation's open movies
+  as demo data; they now live in the repository instead of on an external host.
+
 ## 2026.10.11
 
 **This release needs Jellyfin Server 12.2 or newer.** On 12.0 or 12.1 it runs, but DVD subtitles stay

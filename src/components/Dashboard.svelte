@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, NAV_HIDDEN_TYPES, getItemImageUrl, libraryIcon } from '../utils.js';
+  import { itemProgress, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, isShownLibrary, getItemImageUrl, libraryIcon } from '../utils.js';
   import CardStatus from './CardStatus.svelte';
   import { session } from '../session.svelte.js';
   import { watchlist, refreshWatchlist } from '../watchlist.svelte.js';
@@ -9,7 +9,7 @@
   let {
     selectedUser,
     apiCache,
-    reduceAnimations = false,   // controls the hero auto-rotation
+    reduceAnimations = false,   // only the loading skeleton's pulse — the banner rotates either way (CODE-HEALTH §61)
     showHero         = true,    // show the hero banner (setting)
     dashboardBackdrop = true,   // backdrop of the focused title behind the dashboard (opt-out)
     showLibraries    = true,    // show the "My Libraries" row
@@ -214,7 +214,9 @@
     heroLoading = false;   // hero is ready → skeleton gone
     clearInterval(heroTimer);
     if (myCache) myCache.heroItems = heroItems;   // cache-proof: switching dashboards doesn't reload
-    if (!reduceAnimations && heroItems.length > 1) {
+    // Rotates with "Reduce animations" too, as a plain cut: what costs is the crossfade, and that
+    // setting zeroes it with every other transition; the swap alone is one paint per 8 s (§61).
+    if (heroItems.length > 1) {
       preloadHero(1);   // preload the next image
       heroTimer = setInterval(() => {
         if (heroHasFocus || !heroFull) return;   // held while you are on it, and while it is not whole
@@ -271,7 +273,7 @@
       const uId  = selectedUser.Id;
       const opts = { headers: getAuthHeaders() };
       const [rRes, rNext] = await Promise.all([
-        fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
+        fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&MediaTypes=Video&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
         fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
       ]);
       // An error answer must not empty the rows — it parsed as "no items" and went into the cache.
@@ -405,7 +407,11 @@
       // one more skeleton second before the banner appears. Until the chain decides, buildHero stays blocked (heroForYouPending) — same trade as
       // before: a bit more skeleton time for the better hero, reserved space prevents shift-up.
       const pViews        = fetch(`${session.serverUrl}/UserViews?UserId=${uId}`, opts);
-      const pResume       = fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
+      // MediaTypes=Video, in refreshResume() too: without it the server returns every type in
+      // progress — an audiobook or an e-book read in another Jellyfin app landed in Continue
+      // watching with a play button that did nothing (§66). Jellyfin's own row asks the same; Video
+      // and not Movie,Episode, so a half-watched extra still comes back.
+      const pResume       = fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&MediaTypes=Video&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
       heroForYouPending = true;
       const pHeroForYou = loadHeroForYou(uId, opts)
         .then(pool => { heroForYouPending = false; if (!heroBuilt && !applyHeroPool(pool)) buildHero(); })
@@ -451,8 +457,8 @@
         isLoading = false; heroLoading = false;
         return;
       }
-      // Hide the same collection types as the sidebar (music / live TV — unsupported views).
-      libraries        = ((await resViews.json()).Items || []).filter(l => !NAV_HIDDEN_TYPES.includes((l.CollectionType || '').toLowerCase()));
+      // The same libraries as the sidebar (isShownLibrary: films, series, collections, playlists, mixed).
+      libraries        = ((await resViews.json()).Items || []).filter(isShownLibrary);
       continueWatching = (await resResume.json()).Items || [];
       isLoading        = false;
       session.connectionLost = false;   // server reachable
@@ -786,8 +792,8 @@
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
               {i18n.t.moreInfo}
             </button>
-            <!-- Dot indicators — only when it also rotates (with reduced motion: a static hero without dots) -->
-            {#if !reduceAnimations && heroItems.length > 1}
+            <!-- Dot indicators — whenever it rotates (with reduced motion too, there it simply cuts) -->
+            {#if heroItems.length > 1}
               <div class="flex gap-2 ml-2">
                 {#each heroItems as h, i (h.Id)}
                   <div class="h-2 rounded-full transition-all {i === heroIndex ? 'w-6 bg-white' : 'w-2 bg-white/40'}"></div>
