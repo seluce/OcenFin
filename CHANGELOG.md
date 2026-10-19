@@ -3,7 +3,7 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
-## [Unreleased]
+## 2026.10.19
 
 ### Changed
 
@@ -23,7 +23,7 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Internal
 
-- **Updated ASS subtitle engine.** JASSUB 2.5.22 draws ASS subtitles with less work per frame and
+- **Updated ASS subtitle engine.** JASSUB 2.5.23 draws ASS subtitles with less work per frame and
   also finds fonts in a file that carry no family name.
 - **A fresh README.** New screenshots of the current app, using the Blender Foundation's open movies
   as demo data; they now live in the repository instead of on an external host.
