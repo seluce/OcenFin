@@ -12,6 +12,7 @@
 //     navigation.
 //   • Modals ([data-focus-trap]): only this group is navigable (no leaving).
 //   • Sliders (type=range): Left/Right control them, Up/Down leaves them.
+//   • Pointer (Magic Remote): moving it onto an element focuses that element (see onPointerMove).
 // ============================================================
 
 import { perfEnabled, perfSample, sinceContentChange } from './utils.js';
@@ -305,11 +306,22 @@ function nearestGroup(dir, from, currentGroup) {
   return pickGeometric(dir, from, groups, null);
 }
 
+// ── Pointer (Magic Remote) ────────────────────────────────────────────────────────────────
+// The pointer is the TV's primary input mode (LG's Magic Remote guide). Moving it onto a focusable
+// FOCUSES it, as LG's own Spotlight does: every element then shows its focus style as the hover
+// effect — all selection effects here are focus: styles, and Tailwind's hover: rules only apply where
+// the device reports (hover: hover) — and an arrow key afterwards goes on from where the pointer was,
+// not from an older focus that may sit off-screen (CODE-HEALTH §69/§70). Without scrolling: the element
+// is under the pointer already. Views that scroll on focus ask focusFromPointer() and leave it be.
+let pointerFocused = null;
+export function focusFromPointer(el = document.activeElement) { return !!el && el === pointerFocused; }
+
 // Enables the navigation globally. isEnabled() may return false to temporarily
 // disable it. Returns a cleanup function.
 export function createFocusManager(isEnabled) {
   function onFocusIn(e) {
     endMeasure();   // focus moved → any pending measurement describes the state before that
+    if (e.target !== pointerFocused) pointerFocused = null;
     // If a modal/banner is open as a trap, focus must not leave it — not even via
     // a programmatic focus() of a view mounting in parallel (e.g. the library's autofocus
     // while the "server unreachable" banner appears). In that case pull focus back into the modal.
@@ -452,10 +464,31 @@ export function createFocusManager(isEnabled) {
 
   }
 
+  // Only a hand moving the pointer counts: a move without movement is the browser re-reading what lies
+  // under a resting cursor. Not into an EDITABLE text field (focus would open the TV keyboard; the app's
+  // fields stay readOnly until OK or a click — tvKeyboard — so those take focus like any button), not
+  // past an open modal, not where a view opts out ([data-pointer-no-focus], the Player: its keys depend
+  // on where focus sits).
+  function onPointerMove(e) {
+    if (e.pointerType && e.pointerType !== 'mouse') return;
+    if (!e.movementX && !e.movementY) return;
+    if (typeof isEnabled === 'function' && !isEnabled()) return;
+    const el = e.target?.closest?.(FOCUSABLE);
+    if (!el || el === document.activeElement || !groupOf(el) && !el.closest('[data-focus-trap]')) return;
+    if (el.closest('[data-pointer-no-focus]')) return;
+    if ((el.tagName === 'INPUT' && el.type !== 'range' && !el.readOnly) || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return;
+    const trap = activeTrap();
+    if (trap && !trap.contains(el)) return;
+    pointerFocused = el;
+    el.focus({ preventScroll: true });
+  }
+
   window.addEventListener('focusin', onFocusIn);
   window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('pointermove', onPointerMove, { passive: true });
   return () => {
     window.removeEventListener('focusin', onFocusIn);
     window.removeEventListener('keydown', onKeyDown);
+    window.removeEventListener('pointermove', onPointerMove);
   };
 }

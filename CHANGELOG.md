@@ -3,6 +3,18 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## [Unreleased]
+
+### Changed
+
+- **The Magic Remote pointer moves the focus.** Pointing at a card or button now highlights it, and the
+  arrow keys carry on from there instead of from where you were before.
+
+### Fixed
+
+- **The pointer stays visible in the player while its controls are shown.** It was hidden over the
+  whole player, so the buttons had to be hit blind.
+
 ## 2026.10.19
 
 ### Changed

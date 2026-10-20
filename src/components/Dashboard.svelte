@@ -2,6 +2,7 @@
   import { i18n } from '../i18n.svelte.js';
   import { itemProgress, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, isShownLibrary, getItemImageUrl, libraryIcon } from '../utils.js';
   import CardStatus from './CardStatus.svelte';
+  import { focusFromPointer } from '../spatialnav.js';
   import { session } from '../session.svelte.js';
   import { watchlist, refreshWatchlist } from '../watchlist.svelte.js';
   import { onMount, onDestroy } from 'svelte';
@@ -142,6 +143,8 @@
     const settle = () => {
       const el = document.activeElement, hb = heroBottom();
       if (!hb || !el || !node.contains(el)) return;
+      // Focus the pointer brought: the page must not move under it (§70) — it settles on the next key.
+      if (focusFromPointer(el)) return;
       const top = sc.getBoundingClientRect().top;
       // fits below the whole banner? (24 px: the focused card's zoom and glow)
       if (el.getBoundingClientRect().bottom - top + sc.scrollTop + 24 <= sc.clientHeight) {

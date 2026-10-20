@@ -5,6 +5,7 @@
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
            AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter } from '../utils.js';
   import { session } from '../session.svelte.js';
+  import { focusFromPointer } from '../spatialnav.js';
   import { APP_VERSION } from '../version.js';
   import { tick, onDestroy, onMount } from 'svelte';
 
@@ -396,6 +397,7 @@
   // When focusing a header, scroll the whole card (incl. content) into view — otherwise
   // the content of the lowest open group would stay hidden (no focusable element below it).
   const scrollGroupIntoView = (e) => {
+    if (focusFromPointer(e.currentTarget)) return;   // the pointer is on it: nothing to bring into view (§70)
     const card = e.currentTarget?.parentElement;
     if (card?.scrollIntoView) card.scrollIntoView({ block: 'nearest' });
   };
