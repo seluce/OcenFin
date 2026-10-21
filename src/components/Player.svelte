@@ -8,6 +8,7 @@
   import { PgsRenderer, VobSubRenderer, initWasm, warmup } from 'libbitsub';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
+  import { diagVideoFrames } from '../diag.js';
 
   let {
     item,
@@ -2271,7 +2272,7 @@
     preload="auto"
     class="w-full h-full object-contain"
     onplay={() => { vlog('play'); isPlaying = true; onPlayable(); onLocalPlay(); flushProgress(); }}
-    onplaying={() => { vlog('playing'); onPlayable(); syncReportReady(); }}
+    onplaying={() => { vlog('playing'); onPlayable(); syncReportReady(); diagVideoFrames(videoElement); }}
     onpause={() => { isPlaying = false; clearSpinner(); isBuffering = false; clearBufferWatchdog(); onLocalPause(); flushProgress(); }}
     onseeked={onLocalSeeked}
     onseeking={syncReportBuffering}

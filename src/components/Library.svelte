@@ -5,6 +5,7 @@
   // persistence and passes things in via props/callbacks (pattern like Collection/Favorites).
   import { tick } from 'svelte';
   import CardStatus from './CardStatus.svelte';
+  import { diagCount } from '../diag.js';
   import { session } from '../session.svelte.js';
   import { i18n } from '../i18n.svelte.js';
   import { itemProgress, getItemSubtitle, getItemImageUrl, blurUp, itemBlurHash, longPress,
@@ -474,7 +475,7 @@
   // ── Infinite-scroll attachments ─────────────────────────────
   function infiniteScroll(node) {
     const obs = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) loadMoreLibraryItems(); },
+      (entries) => { if (entries[0].isIntersecting) { diagCount('library observer fired (next page)'); loadMoreLibraryItems(); } },
       { root: libraryScrollContainer ?? null, rootMargin: '2000px' }
     );
     obs.observe(node);
@@ -482,7 +483,7 @@
   }
   function infiniteScrollUp(node) {
     const obs = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) loadPreviousLibraryItems(); },
+      (entries) => { if (entries[0].isIntersecting) { diagCount('library observer fired (previous page)'); loadPreviousLibraryItems(); } },
       { root: libraryScrollContainer ?? null, rootMargin: '1000px' }
     );
     obs.observe(node);
@@ -497,7 +498,7 @@
     // scroll position. Both load functions guard against concurrent calls, so this never double-loads.
     const sc = libraryScrollContainer;
     if (sc) {
-      if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 2000) loadMoreLibraryItems();
+      if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 2000) { diagCount('library paging by scroll position (fallback)'); loadMoreLibraryItems(); }
       if (firstLoadedIndex > 0 && sc.scrollTop <= 1500) loadPreviousLibraryItems();
     }
     if (scrollTimer) clearTimeout(scrollTimer);

@@ -2,6 +2,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
   import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, makeFocusReturn, installConnectionGuard, installEnterRepeatGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
+  import { startPlatformDiagnostics } from './diag.js';
   import { buildPlayQueue, playableFor } from './playback.js';
   import { session } from './session.svelte.js';
   import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
@@ -957,6 +958,7 @@
     screensaverSettings.timeout    = asNumber(screensaverSettings.timeout, 90, 10, 3600);
     screensaverSettings.brightness = asNumber(screensaverSettings.brightness, 0.45, 0, 1);
     setDebug(localStorage.getItem('ocenfin_debug') === '1');   // device-wide diagnostic logging (opt-in)
+    startPlatformDiagnostics();   // "[diag]" lines for the move to webOS 26 — debug only, changes nothing (§71)
 
     // Device language for pre-login screens (server/user selection): last chosen language →
     // otherwise device language → otherwise English. Validated against existing translations.

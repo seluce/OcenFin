@@ -15,6 +15,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **The pointer stays visible in the player while its controls are shown.** It was hidden over the
   whole player, so the buttons had to be hit blind.
 
+### Internal
+
+- **Preparing for webOS 26.** With the diagnostic log switched on, the app also notes a few details
+  about the TV's browser and remote, to compare before and after the update.
+
 ## 2026.10.19
 
 ### Changed

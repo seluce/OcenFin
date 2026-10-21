@@ -6,6 +6,7 @@
            AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { focusFromPointer } from '../spatialnav.js';
+  import { startPlatformDiagnostics } from '../diag.js';
   import { APP_VERSION } from '../version.js';
   import { tick, onDestroy, onMount } from 'svelte';
 
@@ -333,6 +334,7 @@
     debugLogging = !debugLogging;
     localStorage.setItem('ocenfin_debug', debugLogging ? '1' : '0');
     setDebug(debugLogging);
+    if (debugLogging) startPlatformDiagnostics();   // switched on now: start the [diag] watchers too (§71)
   }
 
   // In-app log viewer: show the buffer, clear it, share it as a QR (last lines).
