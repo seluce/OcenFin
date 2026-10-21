@@ -494,7 +494,11 @@ export function setDebug(on) { _debug = !!on; }
 // Ring buffer so users can see/share logs without 'ares inspect'. console.error/warn
 // are ALWAYS captured (even without debug mode → after an error the log is already there);
 // dlog lines only when debug is active. The original console behavior stays unchanged.
-const LOG_BUFFER_MAX = 300;
+// 1000 entries since the whole log can go to the server (§72): a debug session writes ~2 lines a
+// second (measured), so 300 were gone after a few minutes. Entries are short (median 30, max ~100
+// characters measured) — 1000 is a few hundred KB at most, only filled while debug is on; the QR
+// still shows just the last ~1200 characters.
+const LOG_BUFFER_MAX = 1000;
 let _logBuffer = [];
 function _stringify(args) {
   return args.map(a => {

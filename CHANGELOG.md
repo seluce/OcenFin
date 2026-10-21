@@ -7,8 +7,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Added
 
-- **Send the log to your server.** The log viewer can now send the whole log to your Jellyfin server,
-  where an administrator opens it in the dashboard; the QR code only holds the last few lines.
+- **Send the log to your server.** The log viewer can now send the whole log, up to 1000 lines, to
+  your Jellyfin server, where an administrator opens it in the dashboard; the QR code only holds the
+  last few lines.
 
 ### Changed
 
