@@ -5,6 +5,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ## [Unreleased]
 
+### Added
+
+- **Send the log to your server.** The log viewer can now send the whole log to your Jellyfin server,
+  where an administrator opens it in the dashboard; the QR code only holds the last few lines.
+
 ### Changed
 
 - **The Magic Remote pointer moves the focus.** Pointing at a card or button now highlights it, and the

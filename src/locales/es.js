@@ -433,12 +433,17 @@ export default {
     // In-App-Log-Viewer
     clear: "Borrar",
     logShow: "Mostrar registro",
-    logShowDesc: "Ver, copiar o compartir los registros actuales como código QR.",
+    logShowDesc: "Ver el registro actual, compartir sus últimas líneas como código QR o enviarlo a tu servidor Jellyfin.",
     helpFaq: "Ayuda y FAQ",
     helpFaqHint: "Escanéalo con el teléfono para abrir la wiki y las FAQ de OcenFin.",
     logTitle: "Registro",
     logEmpty: "Aún no hay entradas.",
     logQrButton: "Código QR",
+    logSendButton: "Enviar al servidor",
+    logSending: "Enviando…",
+    logSent: "Enviado. Está en el servidor como {file}: un administrador lo encuentra en el panel de Jellyfin, en Registros.",
+    logSendDisabled: "El servidor no acepta registros de aplicaciones. Un administrador puede permitirlo en el panel de Jellyfin.",
+    logSendFailed: "No se pudo enviar el registro.",
     logQrHint: "Escanea con el móvil para transferir las últimas líneas (p. ej. por correo).",
     logBackToText: "Volver al texto",
 

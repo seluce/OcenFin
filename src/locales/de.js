@@ -433,12 +433,17 @@ export default {
     // In-App-Log-Viewer
     clear: "Leeren",
     logShow: "Protokoll anzeigen",
-    logShowDesc: "Aktuelle Logs ansehen, kopieren oder als QR-Code teilen.",
+    logShowDesc: "Aktuelles Log ansehen, die letzten Zeilen als QR-Code teilen oder an deinen Jellyfin-Server senden.",
     helpFaq: "Hilfe & FAQ",
     helpFaqHint: "Mit dem Handy scannen, um das OcenFin-Wiki & die FAQ zu öffnen.",
     logTitle: "Protokoll",
     logEmpty: "Noch keine Einträge.",
     logQrButton: "QR-Code",
+    logSendButton: "An Server senden",
+    logSending: "Wird gesendet …",
+    logSent: "Gesendet. Es liegt auf dem Server als {file} – ein Administrator findet es im Jellyfin-Dashboard unter Logs.",
+    logSendDisabled: "Der Server nimmt keine Logs von Apps an. Ein Administrator kann das im Jellyfin-Dashboard erlauben.",
+    logSendFailed: "Das Log konnte nicht gesendet werden.",
     logQrHint: "Mit dem Handy scannen, um die letzten Zeilen zu übertragen (z. B. per E-Mail).",
     logBackToText: "Zurück zum Text",
 

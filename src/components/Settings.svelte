@@ -3,7 +3,7 @@
   import { startQuickConnect as startQC } from '../quickconnect.js';
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter } from '../utils.js';
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, uploadLog, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { focusFromPointer } from '../spatialnav.js';
   import { startPlatformDiagnostics } from '../diag.js';
@@ -337,9 +337,8 @@
     if (debugLogging) startPlatformDiagnostics();   // switched on now: start the [diag] watchers too (§71)
   }
 
-  // In-app log viewer: show the buffer, clear it, share it as a QR (last lines).
-  // No "copy": on the TV there's no target to paste into — QR (to the phone) and
-  // taking a photo are the sensible ways.
+  // In-app log viewer: show the buffer, clear it, share it as a QR (last lines) or send all of it to
+  // the Jellyfin server (§72). No "copy": on the TV there's no target to paste into.
   let showLog = $state(false);
   let logText = $state('');
   let qrSvg = $state(null);
@@ -349,8 +348,19 @@
   function scrollLogToBottom() { if (logEl) logEl.scrollTop = logEl.scrollHeight; }
   // D-pad paging: ~85% of the visible height per press, focus stays on the button.
   function scrollLog(dir) { logEl?.scrollBy({ top: dir * logEl.clientHeight * 0.85, behavior: 'smooth' }); }
-  async function openLog()  { modalFocus.capture(); logText = formatLog(); qrSvg = null; showLog = true; await tick(); scrollLogToBottom(); }
-  function clearLog() { clearLogBuffer(); logText = formatLog(); qrSvg = null; }
+  async function openLog()  { modalFocus.capture(); logText = formatLog(); qrSvg = null; logSend = null; showLog = true; await tick(); scrollLogToBottom(); }
+  function clearLog() { clearLogBuffer(); logText = formatLog(); qrSvg = null; logSend = null; }
+  // The whole log to the server (the QR only holds the last ~1200 characters). One request at a time;
+  // a held OK repeats the click, so isRepeatedEnter() as everywhere a button sends something.
+  let logSend = $state(null);   // null | { state: 'sending' | 'done' | 'disabled' | 'failed', file? }
+  async function sendLog() {
+    if (logSend?.state === 'sending' || isRepeatedEnter()) return;
+    logSend = { state: 'sending' };
+    try {
+      const r = await uploadLog(session.serverUrl, session.token);
+      logSend = r.ok ? { state: 'done', file: r.fileName } : { state: r.reason === 'disabled' ? 'disabled' : 'failed' };
+    } catch { logSend = { state: 'failed' }; }
+  }
   function hideQr()   { qrSvg = null; tick().then(() => { qrBtnEl?.focus(); scrollLogToBottom(); }); }
   async function showLogQr() {
     try {
@@ -2036,6 +2046,10 @@
       <div class="flex items-center justify-between gap-4 shrink-0">
         <h2 class="text-4xl text-white font-bold">{i18n.t.logTitle}</h2>
         <div class="flex items-center gap-3">
+          <!-- not `disabled` while sending: a disabled button drops its focus; sendLog() guards instead -->
+          <button onclick={sendLog}
+            class="px-5 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white
+                   focus:outline-none focus:ring-4 focus:ring-white transition-colors">{logSend?.state === 'sending' ? i18n.t.logSending : i18n.t.logSendButton}</button>
           <button bind:this={qrBtnEl} onclick={showLogQr}
             class="px-5 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">{i18n.t.logQrButton}</button>
@@ -2044,6 +2058,12 @@
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">{i18n.t.close}</button>
         </div>
       </div>
+
+      {#if logSend && logSend.state !== 'sending'}
+        <p class="shrink-0 text-lg {logSend.state === 'done' ? 'text-green-400' : 'text-amber-300'}" role="status">
+          {logSend.state === 'done' ? i18n.t.logSent.replace('{file}', logSend.file || '') : logSend.state === 'disabled' ? i18n.t.logSendDisabled : i18n.t.logSendFailed}
+        </p>
+      {/if}
 
       {#if qrSvg}
         <div class="flex flex-col items-center justify-center gap-5 flex-1 min-h-0">

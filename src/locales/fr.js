@@ -433,12 +433,17 @@ export default {
     // In-App-Log-Viewer
     clear: "Effacer",
     logShow: "Afficher le journal",
-    logShowDesc: "Consulter, copier ou partager les journaux actuels via un QR code.",
+    logShowDesc: "Consulter le journal, partager ses dernières lignes via un QR code ou l'envoyer à votre serveur Jellyfin.",
     helpFaq: "Aide et FAQ",
     helpFaqHint: "Scannez avec votre téléphone pour ouvrir le wiki et la FAQ d'OcenFin.",
     logTitle: "Journal",
     logEmpty: "Aucune entrée pour le moment.",
     logQrButton: "QR code",
+    logSendButton: "Envoyer au serveur",
+    logSending: "Envoi…",
+    logSent: "Envoyé. Il se trouve sur le serveur sous le nom {file} — un administrateur le trouve dans le tableau de bord Jellyfin, sous Journaux.",
+    logSendDisabled: "Le serveur n'accepte pas les journaux des applications. Un administrateur peut l'autoriser dans le tableau de bord Jellyfin.",
+    logSendFailed: "Le journal n'a pas pu être envoyé.",
     logQrHint: "Scannez avec votre téléphone pour transférer les dernières lignes (par e-mail par ex.).",
     logBackToText: "Retour au texte",
 

@@ -433,12 +433,17 @@ export default {
     // In-App-Log-Viewer
     clear: "Wissen",
     logShow: "Logboek tonen",
-    logShowDesc: "Huidige logs bekijken, kopiëren of delen als QR-code.",
+    logShowDesc: "Het huidige log bekijken, de laatste regels als QR-code delen of naar je Jellyfin-server sturen.",
     helpFaq: "Help & FAQ",
     helpFaqHint: "Scan met je telefoon om de OcenFin-wiki & FAQ te openen.",
     logTitle: "Logboek",
     logEmpty: "Nog geen vermeldingen.",
     logQrButton: "QR-code",
+    logSendButton: "Naar server sturen",
+    logSending: "Bezig met verzenden…",
+    logSent: "Verzonden. Het staat op de server als {file} — een beheerder vindt het in het Jellyfin-dashboard onder Logs.",
+    logSendDisabled: "De server accepteert geen logs van apps. Een beheerder kan dit toestaan in het Jellyfin-dashboard.",
+    logSendFailed: "Het log kon niet worden verzonden.",
     logQrHint: "Scan met je telefoon om de laatste regels over te zetten (bijv. per e-mail).",
     logBackToText: "Terug naar tekst",
 

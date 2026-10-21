@@ -433,12 +433,17 @@ export default {
     // In-App-Log-Viewer
     clear: "Limpar",
     logShow: "Mostrar registo",
-    logShowDesc: "Ver, copiar ou partilhar os registos atuais como código QR.",
+    logShowDesc: "Ver o registo atual, partilhar as últimas linhas como código QR ou enviá-lo para o seu servidor Jellyfin.",
     helpFaq: "Ajuda e FAQ",
     helpFaqHint: "Digitalize com o telemóvel para abrir a wiki e as FAQ do OcenFin.",
     logTitle: "Registo",
     logEmpty: "Ainda sem entradas.",
     logQrButton: "Código QR",
+    logSendButton: "Enviar para o servidor",
+    logSending: "A enviar…",
+    logSent: "Enviado. Está no servidor como {file} — um administrador encontra-o no painel do Jellyfin, em Registos.",
+    logSendDisabled: "O servidor não aceita registos de aplicações. Um administrador pode permiti-lo no painel do Jellyfin.",
+    logSendFailed: "Não foi possível enviar o registo.",
     logQrHint: "Digitalize com o telemóvel para transferir as últimas linhas (p. ex. por e-mail).",
     logBackToText: "Voltar ao texto",
 
