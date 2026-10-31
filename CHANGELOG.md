@@ -3,7 +3,7 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
-## [Unreleased]
+## 2026.10.31
 
 ### Added
 
@@ -25,6 +25,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 - **Preparing for webOS 26.** With the diagnostic log switched on, the app also notes a few details
   about the TV's browser and remote, to compare before and after the update.
+- **Updated libraries.** Svelte, hls.js and Vite bring bug fixes, and the image subtitle engine now
+  also adjusts when a video changes its resolution during playback.
 
 ## 2026.10.19
 
