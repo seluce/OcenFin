@@ -13,7 +13,7 @@
 
   let {
     selectedUser,
-    library = null,            // { Id, Name } — which library to show (from App)
+    library = null,            // { Id, Name, CollectionType } — which library to show (from App)
     reloadKey = 0,             // increment → discard the view cache + reload
     focusFirstOnLoad = false,  // opened from the menu OR a dashboard tile: focus the first card
                                // (not "Surprise me"). Both entry points mean the same thing — the
@@ -48,6 +48,17 @@
   let isFetchingPrev      = $state(false);
   let isLoading           = $state(false);
   let firstLoadedIndex    = $state(0);
+
+  // What a film or series library lists: its own kind of title, wherever it sits on disk. A plain
+  // listing (ParentId alone) returns the library folder's direct children, and a film kept in a
+  // shared folder ("Movies/Harry Potter/<film>/") is not one of them: Jellyfin makes that folder a
+  // plain Folder item (MovieResolver — a folder holding only film folders is no film), which showed
+  // as one tile and opened as a title page with nothing on it (reported on 12.4). Jellyfin's web
+  // client asks recursively for the library's type and never shows such folders; so does this. The
+  // server's "group movies/shows into collections" setting still decides about collection tiles
+  // (Folder.CollapseBoxSetItems), as before. A mixed library (no type) stays a folder listing.
+  const LIBRARY_ITEM_TYPES = { movies: 'Movie', tvshows: 'Series' };
+  let currentLibraryType = '';   // the library's CollectionType, lower case; set with each new library
 
   // ── A-Z ─────────────────────────────────────────────────────
   let activeLetter  = $state('#');
@@ -222,15 +233,19 @@
     if (selectedAudioLangs.length)    q += `&AudioLanguages=${selectedAudioLangs.map(encodeURIComponent).join(',')}`;
     if (selectedSubtitleLangs.length) q += `&SubtitleLanguages=${selectedSubtitleLangs.map(encodeURIComponent).join(',')}`;
     // Only the server's DATABASE query knows these two filters, and it runs for recursive requests.
-    // A plain library listing is not recursive: the server then filters the folder's children in
-    // memory (UserViewBuilder.Filter), which handles genres, ratings and played state but not
-    // languages — so the parameter was silently ignored and nothing filtered (tested by Ferris on
-    // 12.1). With a language chosen, ask recursively for films and series; without one the listing
-    // stays exactly as it was. Here rather than at the call sites, so the A–Z count agrees.
+    // A plain listing is not recursive: the server then filters the folder's children in memory
+    // (UserViewBuilder.Filter), which handles genres, ratings and played state but not languages —
+    // so the parameter was silently ignored and nothing filtered (tested by Ferris on 12.1). Film and
+    // series libraries are recursive anyway (LIBRARY_ITEM_TYPES); a mixed one is asked recursively
+    // for films and series once a language is chosen. Here rather than at the call sites, so the A–Z
+    // count agrees.
     // CollapseBoxSetItems=false: the server switches "group films into collections" off for most
     // filters, but not for these two (Folder.AllowBoxSetCollapsing, 12.1) — with that setting on,
     // a recursive query would answer with collections instead of the films that have the language.
-    if (selectedAudioLangs.length || selectedSubtitleLangs.length) q += '&Recursive=true&IncludeItemTypes=Movie,Series&CollapseBoxSetItems=false';
+    const type  = LIBRARY_ITEM_TYPES[currentLibraryType];
+    const langs = selectedAudioLangs.length || selectedSubtitleLangs.length;
+    if (type || langs) q += `&Recursive=true&IncludeItemTypes=${type || 'Movie,Series'}`;
+    if (langs) q += '&CollapseBoxSetItems=false';
     return q;
   }
 
@@ -326,6 +341,7 @@
       clearTimeout(clearTimer);
       loadGenres(lib.Id);
       loadLanguages(lib.Id);
+      currentLibraryType = (lib.CollectionType || '').toLowerCase();
     }
     currentLibraryName = lib.Name;
     currentLibraryId   = lib.Id;
@@ -357,6 +373,7 @@
     let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${lib.Id}&Fields=PrimaryImageAspectRatio,SortName,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
     url += getFilterQuery();
 
+    const t0 = performance.now();
     try {
       const res = await fetch(url, authOpts());
       if (myToken !== loadToken) return;   // discard a superseded response
@@ -367,7 +384,8 @@
         markContentChange();
         totalLibraryItems = data.TotalRecordCount || 0;
         dlog('[Library] first page', { lib: lib.Name, start: startIndex, got: data.Items?.length ?? 0,
-             kept: currentItems.length, total: totalLibraryItems, hasCount: 'TotalRecordCount' in data });
+             kept: currentItems.length, total: totalLibraryItems, hasCount: 'TotalRecordCount' in data,
+             type: currentLibraryType || '-', ms: Math.round(performance.now() - t0) });
         if (isCacheableView()) cacheLibraryView(lib.Id, { items: currentItems, total: totalLibraryItems });
       }
       session.connectionLost = false;

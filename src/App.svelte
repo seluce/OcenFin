@@ -123,7 +123,7 @@
   let initializing = $state(true);    // splash screen until auto-login/startup is done
   let dashboardReloadKey = $state(0); // incrementing forces a fresh reload of the dashboard
   let resumeStale = $state(false);    // after playback: dashboard fetches Resume/NextUp fresh (cache stays otherwise)
-  let currentLibrary     = $state(null);  // { Id, Name } — active library (to Library.svelte)
+  let currentLibrary     = $state(null);  // { Id, Name, CollectionType } — active library (to Library.svelte)
   let libraryReloadKey   = $state(0);     // increment → Library discards its view cache + reloads
   let libraryFocusFirst  = $state(false); // set on every explicit open (navigateToLibrary): Library focuses its first card
   let librarySharedOn    = $state(false); // "watch together" active (reported by Library)
@@ -1928,7 +1928,7 @@
     libraryReturnNth = cardOrdinal(libraryReturnEl, libraryReturnId);
     libraryMounted = true;                  // from now on Library stays mounted (scroll/items survive Details)
     libraryFocusFirst = focusFirstCard;     // Library focuses the first card itself after loading
-    currentLibrary = { Id: lib.Id, Name: lib.Name };
+    currentLibrary = { Id: lib.Id, Name: lib.Name, CollectionType: lib.CollectionType };
     viewState = 'library';
   }
 

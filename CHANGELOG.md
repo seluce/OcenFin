@@ -3,6 +3,14 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## [Unreleased]
+
+### Fixed
+
+- **Films kept together in one folder show up one by one.** A library with films in a shared folder,
+  such as all Harry Potter films in one, showed that folder as a single tile that led nowhere; every
+  film now has its own tile, as in Jellyfin's web app. The same goes for series.
+
 ## 2026.10.31
 
 ### Added
