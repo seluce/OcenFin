@@ -10,6 +10,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Films kept together in one folder show up one by one.** A library with films in a shared folder,
   such as all Harry Potter films in one, showed that folder as a single tile that led nowhere; every
   film now has its own tile, as in Jellyfin's web app. The same goes for series.
+- **DVD subtitles no longer stay empty in some films.** When the server had packed two subtitle
+  pictures together, the whole track showed nothing; the updated image subtitle engine reads them.
 
 ## 2026.10.31
 

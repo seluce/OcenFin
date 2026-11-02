@@ -18,7 +18,7 @@
   "dependencies": {
     "hls.js": "^1.7.4",
     "jassub": "^2.5.23",
-    "libbitsub": "^1.13.1",
+    "libbitsub": "^1.13.2",
     "uqr": "^0.1.3"
   }
 }
