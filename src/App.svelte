@@ -2,6 +2,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
   import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, makeFocusReturn, installConnectionGuard, installEnterRepeatGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
+  import { startPlatformDiagnostics } from './diag.js';
   import { buildPlayQueue, playableFor } from './playback.js';
   import { session } from './session.svelte.js';
   import { initWatchlist, handlePlaylistDeleted, handlePlaylistItemsChanged } from './watchlist.svelte.js';
@@ -122,7 +123,7 @@
   let initializing = $state(true);    // splash screen until auto-login/startup is done
   let dashboardReloadKey = $state(0); // incrementing forces a fresh reload of the dashboard
   let resumeStale = $state(false);    // after playback: dashboard fetches Resume/NextUp fresh (cache stays otherwise)
-  let currentLibrary     = $state(null);  // { Id, Name } — active library (to Library.svelte)
+  let currentLibrary     = $state(null);  // { Id, Name, CollectionType } — active library (to Library.svelte)
   let libraryReloadKey   = $state(0);     // increment → Library discards its view cache + reloads
   let libraryFocusFirst  = $state(false); // set on every explicit open (navigateToLibrary): Library focuses its first card
   let librarySharedOn    = $state(false); // "watch together" active (reported by Library)
@@ -273,6 +274,7 @@
       playbackPrefs,
       reduceAnimations,
       librarySorts,
+      libraryFilters,
       sharedProfile
     }));
   }
@@ -298,6 +300,7 @@
     playbackPrefs    = { ...defaultPlaybackPrefs(), ...asObject(p.playbackPrefs) };
     reduceAnimations = p.reduceAnimations ?? false;
     librarySorts     = asObject(p.librarySorts);   // remembered sort per library
+    libraryFilters   = asObject(p.libraryFilters); // remembered filters per library (Library checks each field)
     sharedProfile    = p.sharedProfile && Array.isArray(p.sharedProfile.members)
                        ? { enabled: !!p.sharedProfile.enabled,
                            members: [p.sharedProfile.members[0] || null, p.sharedProfile.members[1] || null] }
@@ -794,6 +797,7 @@
   function openExitConfirm()  { exitFocus.capture(); showExitConfirm = true; }
   function closeExitConfirm() { showExitConfirm = false; exitFocus.restore(); }
   let librarySorts = $state({});   // remembered sort per library (saved in the profile)
+  let libraryFilters = $state({}); // remembered filters per library (likewise; only libraries with one set)
   let apiCache = { dashboard: null };   // dashboard only now; the library cache lives in Library.svelte
 
   // ============================================================
@@ -957,6 +961,7 @@
     screensaverSettings.timeout    = asNumber(screensaverSettings.timeout, 90, 10, 3600);
     screensaverSettings.brightness = asNumber(screensaverSettings.brightness, 0.45, 0, 1);
     setDebug(localStorage.getItem('ocenfin_debug') === '1');   // device-wide diagnostic logging (opt-in)
+    startPlatformDiagnostics();   // "[diag]" lines for the move to webOS 26 — debug only, changes nothing (§71)
 
     // Device language for pre-login screens (server/user selection): last chosen language →
     // otherwise device language → otherwise English. Validated against existing translations.
@@ -1926,7 +1931,7 @@
     libraryReturnNth = cardOrdinal(libraryReturnEl, libraryReturnId);
     libraryMounted = true;                  // from now on Library stays mounted (scroll/items survive Details)
     libraryFocusFirst = focusFirstCard;     // Library focuses the first card itself after loading
-    currentLibrary = { Id: lib.Id, Name: lib.Name };
+    currentLibrary = { Id: lib.Id, Name: lib.Name, CollectionType: lib.CollectionType };
     viewState = 'library';
   }
 
@@ -2548,10 +2553,11 @@
               {selectedUser} library={currentLibrary} reloadKey={libraryReloadKey}
               focusFirstOnLoad={libraryFocusFirst}
               sharedReady={sharedReady} partnerPlayedIds={partnersPlayedIds}
-              {librarySorts} {displaySettings}
+              {librarySorts} {libraryFilters} {displaySettings}
               onOpenDetails={(item) => showItemDetails(item)}
               onContextMenu={(item) => openContextMenu(item)}
               onSortPersist={(libId, sort) => { librarySorts[libId] = sort; saveUserPrefs(); }}
+              onFiltersPersist={(libId, f) => { if (f) libraryFilters[libId] = f; else delete libraryFilters[libId]; saveUserPrefs(); }}
               onSharedWatchToggle={(on) => librarySharedOn = on} />
           </div>
         {/if}

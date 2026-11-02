@@ -8,6 +8,7 @@
   import { PgsRenderer, VobSubRenderer, initWasm, warmup } from 'libbitsub';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
+  import { diagVideoFrames } from '../diag.js';
 
   let {
     item,
@@ -2253,11 +2254,15 @@
      (e.g. application) would override the app's own spatial navigation. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<!-- data-pointer-no-focus: the pointer does not move focus in here (spatialnav, §70) — Left/Right seek
+     only while focus sits on the container. The cursor hides with the bar: it was hidden for good, so
+     with the Magic Remote the buttons had to be hit blind (§69). -->
 <div
   bind:this={playerContainer}
   data-focus-trap
+  data-pointer-no-focus
   tabindex="0"
-  class="w-full h-screen bg-black relative overflow-hidden flex items-center justify-center cursor-none focus:outline-none"
+  class="w-full h-screen bg-black relative overflow-hidden flex items-center justify-center focus:outline-none {showControls ? '' : 'cursor-none'}"
   onpointermove={resetControlsTimeout}
   onkeydown={handleKeyDown}
 >
@@ -2267,7 +2272,7 @@
     preload="auto"
     class="w-full h-full object-contain"
     onplay={() => { vlog('play'); isPlaying = true; onPlayable(); onLocalPlay(); flushProgress(); }}
-    onplaying={() => { vlog('playing'); onPlayable(); syncReportReady(); }}
+    onplaying={() => { vlog('playing'); onPlayable(); syncReportReady(); diagVideoFrames(videoElement); }}
     onpause={() => { isPlaying = false; clearSpinner(); isBuffering = false; clearBufferWatchdog(); onLocalPause(); flushProgress(); }}
     onseeked={onLocalSeeked}
     onseeking={syncReportBuffering}

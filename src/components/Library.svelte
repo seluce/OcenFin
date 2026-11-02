@@ -3,8 +3,9 @@
   // (loading, filters incl. genre/age rating, sorting + A-Z with offset jump, bidirectional infinite
   // scroll, its own view cache, backdrop preview). App only coordinates navigation/details/sort
   // persistence and passes things in via props/callbacks (pattern like Collection/Favorites).
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import CardStatus from './CardStatus.svelte';
+  import { diagCount } from '../diag.js';
   import { session } from '../session.svelte.js';
   import { i18n } from '../i18n.svelte.js';
   import { itemProgress, getItemSubtitle, getItemImageUrl, blurUp, itemBlurHash, longPress,
@@ -12,7 +13,7 @@
 
   let {
     selectedUser,
-    library = null,            // { Id, Name } — which library to show (from App)
+    library = null,            // { Id, Name, CollectionType } — which library to show (from App)
     reloadKey = 0,             // increment → discard the view cache + reload
     focusFirstOnLoad = false,  // opened from the menu OR a dashboard tile: focus the first card
                                // (not "Surprise me"). Both entry points mean the same thing — the
@@ -21,10 +22,12 @@
     partnerPlayedIds = null,   // IDs watched by AT LEAST ONE member — a union, see App.svelte.
                                // Filtering them out leaves what is new to both. (App loads, Library filters.)
     librarySorts = {},         // remembered sort per library
+    libraryFilters = {},       // remembered filters per library
     displaySettings = {},      // backdropPreview, episodeCount, letterBar
     onOpenDetails,             // (item) => void
     onContextMenu,             // (item) => void
     onSortPersist,             // (libId, sort) => void — App saves into the profile
+    onFiltersPersist,          // (libId, filters | null) => void — likewise; null = none set
     onSharedWatchToggle,       // (on: boolean) => void — App loads/discards partner IDs
   } = $props();
 
@@ -47,6 +50,17 @@
   let isFetchingPrev      = $state(false);
   let isLoading           = $state(false);
   let firstLoadedIndex    = $state(0);
+
+  // What a film or series library lists: its own kind of title, wherever it sits on disk. A plain
+  // listing (ParentId alone) returns the library folder's direct children, and a film kept in a
+  // shared folder ("Movies/Harry Potter/<film>/") is not one of them: Jellyfin makes that folder a
+  // plain Folder item (MovieResolver — a folder holding only film folders is no film), which showed
+  // as one tile and opened as a title page with nothing on it (reported on 12.4). Jellyfin's web
+  // client asks recursively for the library's type and never shows such folders; so does this. The
+  // server's "group movies/shows into collections" setting still decides about collection tiles
+  // (Folder.CollapseBoxSetItems), as before. A mixed library (no type) stays a folder listing.
+  const LIBRARY_ITEM_TYPES = { movies: 'Movie', tvshows: 'Series' };
+  let currentLibraryType = '';   // the library's CollectionType, lower case; set with each new library
 
   // ── A-Z ─────────────────────────────────────────────────────
   let activeLetter  = $state('#');
@@ -162,7 +176,7 @@
       const res = await fetch(`${session.serverUrl}/Genres?ParentId=${libraryId}&UserId=${selectedUser.Id}&EnableTotalRecordCount=false`, authOpts());
       // Same guard as loadLanguages: after a quick A → B switch, A's genres arrived last and filled
       // B's filter menu.
-      if (res.ok) { const d = await res.json(); if (currentLibraryId === libraryId) availableGenres = d.Items || []; }
+      if (res.ok) { const d = await res.json(); if (currentLibraryId === libraryId) { availableGenres = d.Items || []; dropUnknownFilters('genres'); } }
     } catch { }
   }
 
@@ -179,6 +193,7 @@
       if (currentLibraryId !== libraryId) return;   // switched library meanwhile
       audioLangsRaw    = d.AudioLanguages    || [];
       subtitleLangsRaw = d.SubtitleLanguages || [];
+      dropUnknownFilters('languages');
       dlog('[Library] languages', audioLangsRaw.length, 'audio ·', subtitleLangsRaw.length, 'subtitle in', Math.round(performance.now() - t0), 'ms');
     } catch { }
   }
@@ -221,15 +236,19 @@
     if (selectedAudioLangs.length)    q += `&AudioLanguages=${selectedAudioLangs.map(encodeURIComponent).join(',')}`;
     if (selectedSubtitleLangs.length) q += `&SubtitleLanguages=${selectedSubtitleLangs.map(encodeURIComponent).join(',')}`;
     // Only the server's DATABASE query knows these two filters, and it runs for recursive requests.
-    // A plain library listing is not recursive: the server then filters the folder's children in
-    // memory (UserViewBuilder.Filter), which handles genres, ratings and played state but not
-    // languages — so the parameter was silently ignored and nothing filtered (tested by Ferris on
-    // 12.1). With a language chosen, ask recursively for films and series; without one the listing
-    // stays exactly as it was. Here rather than at the call sites, so the A–Z count agrees.
+    // A plain listing is not recursive: the server then filters the folder's children in memory
+    // (UserViewBuilder.Filter), which handles genres, ratings and played state but not languages —
+    // so the parameter was silently ignored and nothing filtered (tested by Ferris on 12.1). Film and
+    // series libraries are recursive anyway (LIBRARY_ITEM_TYPES); a mixed one is asked recursively
+    // for films and series once a language is chosen. Here rather than at the call sites, so the A–Z
+    // count agrees.
     // CollapseBoxSetItems=false: the server switches "group films into collections" off for most
     // filters, but not for these two (Folder.AllowBoxSetCollapsing, 12.1) — with that setting on,
     // a recursive query would answer with collections instead of the films that have the language.
-    if (selectedAudioLangs.length || selectedSubtitleLangs.length) q += '&Recursive=true&IncludeItemTypes=Movie,Series&CollapseBoxSetItems=false';
+    const type  = LIBRARY_ITEM_TYPES[currentLibraryType];
+    const langs = selectedAudioLangs.length || selectedSubtitleLangs.length;
+    if (type || langs) q += `&Recursive=true&IncludeItemTypes=${type || 'Movie,Series'}`;
+    if (langs) q += '&CollapseBoxSetItems=false';
     return q;
   }
 
@@ -242,24 +261,24 @@
     if (key === 'isPlayed'    && activeFilters.isPlayed)    activeFilters.isNotPlayed = false;
     if (key === 'isNotPlayed' && activeFilters.isNotPlayed) activeFilters.isPlayed    = false;
     activeFilters = { ...activeFilters };
-    if (!showFilterMenu) reloadCurrent();   // chip bar: immediately. In the menu: collected on close.
+    if (!showFilterMenu) applyFilters();   // chip bar: immediately. In the menu: collected on close.
   }
   function toggleGenre(name) {
     selectedGenres = selectedGenres.includes(name)
       ? selectedGenres.filter(g => g !== name) : [...selectedGenres, name];
-    if (!showFilterMenu) reloadCurrent();
+    if (!showFilterMenu) applyFilters();
   }
   function toggleFsk(age) {
     selectedFsk = selectedFsk.includes(age)
       ? selectedFsk.filter(v => v !== age) : [...selectedFsk, age];
-    if (!showFilterMenu) reloadCurrent();
+    if (!showFilterMenu) applyFilters();
   }
   const langSelected = (sel, group) => group.codes.some(c => sel.includes(c));
   function toggleLanguage(kind, group) {
     const sel  = kind === 'audio' ? selectedAudioLangs : selectedSubtitleLangs;
     const next = langSelected(sel, group) ? sel.filter(c => !group.codes.includes(c)) : [...sel, ...group.codes];
     if (kind === 'audio') selectedAudioLangs = next; else selectedSubtitleLangs = next;
-    if (!showFilterMenu) reloadCurrent();
+    if (!showFilterMenu) applyFilters();
   }
 
   // Filter menu: changes are collected and applied ONCE on close — instead of
@@ -274,7 +293,57 @@
   }
   function closeFilterMenu() {
     showFilterMenu = false;
-    if (filterStateKey() !== filterMenuSnapshot) reloadCurrent();
+    if (filterStateKey() !== filterMenuSnapshot) applyFilters();
+  }
+
+  // Remembered per library and profile, like the sort — Jellyfin's web and Android TV apps keep them
+  // too, and a reported annoyance was setting them again after every start. Saved when APPLIED (the
+  // chip bar at once, the menu on close), and removed once nothing is set. The Filter button's
+  // "Active" badge and the empty state's "no titles match" already say why titles are missing.
+  const strings = (v) => Array.isArray(v) ? v.filter(x => typeof x === 'string') : [];
+  function restoreFilters(saved) {
+    const f = saved && typeof saved === 'object' ? saved : {};
+    activeFilters = { isFavorite: !!f.isFavorite, isPlayed: !!f.isPlayed, isNotPlayed: !!f.isNotPlayed && !f.isPlayed };
+    selectedGenres        = strings(f.genres);
+    selectedFsk           = strings(f.fsk).filter(v => fskOptions.includes(v));
+    selectedAudioLangs    = strings(f.audio);
+    selectedSubtitleLangs = strings(f.subtitle);
+  }
+  function applyFilters() {
+    if (currentLibraryId) onFiltersPersist?.(currentLibraryId, hasFilters ? {
+      ...activeFilters, genres: [...selectedGenres], fsk: [...selectedFsk],
+      audio: [...selectedAudioLangs], subtitle: [...selectedSubtitleLangs],
+    } : null);
+    reloadCurrent();
+  }
+  // A remembered genre or language the library no longer has would go on filtering with no chip left
+  // in the menu to switch it off. Dropped once the library's own list has ARRIVED — a failed request
+  // tells nothing, so it drops nothing. Per list: the genres arrive before the languages or after.
+  // With the menu open, its close applies the change.
+  function dropUnknownFilters(kind) {
+    const known = (list, key) => new Set(list.map(x => x?.[key]));
+    let dropped = 0;
+    if (kind === 'genres') {
+      const has = known(availableGenres, 'Name');
+      const keep = selectedGenres.filter(x => has.has(x));
+      dropped = selectedGenres.length - keep.length;
+      if (dropped) selectedGenres = keep;
+    } else {
+      const audio = known(audioLangsRaw, 'Value'), subs = known(subtitleLangsRaw, 'Value');
+      const a = selectedAudioLangs.filter(x => audio.has(x)), t = selectedSubtitleLangs.filter(x => subs.has(x));
+      dropped = selectedAudioLangs.length - a.length + selectedSubtitleLangs.length - t.length;
+      if (dropped) { selectedAudioLangs = a; selectedSubtitleLangs = t; }
+    }
+    if (!dropped) return;
+    dlog('[Library] dropped', dropped, 'remembered', kind, 'filter(s) the library no longer has');
+    if (!showFilterMenu) applyFilters();
+  }
+  // In the menu: clears what is set; like every change there, it is applied on close. The button goes
+  // with the last filter, so focus moves on to "Done" instead of falling out of the dialog.
+  let filterDoneBtn = $state(null);
+  function resetFilters() {
+    restoreFilters(null);
+    filterDoneBtn?.focus();
   }
 
   function setSort(option) {
@@ -315,16 +384,15 @@
   async function loadLibraryItems(lib, letter = null) {
     const myToken = ++loadToken;
     if (currentLibraryId !== lib.Id) {
-      activeFilters   = { isFavorite: false, isPlayed: false, isNotPlayed: false };
-      selectedGenres  = [];
-      selectedFsk     = [];
-      selectedAudioLangs = []; selectedSubtitleLangs = [];
+      // untrack: this runs inside the load $effect, which must not re-run when App saves filters.
+      restoreFilters(untrack(() => libraryFilters[lib.Id]));
       currentSort     = librarySorts[lib.Id] ? { ...librarySorts[lib.Id] } : { by: 'SortName', order: 'Ascending' };
       previewBackdrop = '';
       clearTimeout(previewTimer);
       clearTimeout(clearTimer);
       loadGenres(lib.Id);
       loadLanguages(lib.Id);
+      currentLibraryType = (lib.CollectionType || '').toLowerCase();
     }
     currentLibraryName = lib.Name;
     currentLibraryId   = lib.Id;
@@ -356,6 +424,7 @@
     let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${lib.Id}&Fields=PrimaryImageAspectRatio,SortName,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
     url += getFilterQuery();
 
+    const t0 = performance.now();
     try {
       const res = await fetch(url, authOpts());
       if (myToken !== loadToken) return;   // discard a superseded response
@@ -366,7 +435,8 @@
         markContentChange();
         totalLibraryItems = data.TotalRecordCount || 0;
         dlog('[Library] first page', { lib: lib.Name, start: startIndex, got: data.Items?.length ?? 0,
-             kept: currentItems.length, total: totalLibraryItems, hasCount: 'TotalRecordCount' in data });
+             kept: currentItems.length, total: totalLibraryItems, hasCount: 'TotalRecordCount' in data,
+             type: currentLibraryType || '-', ms: Math.round(performance.now() - t0) });
         if (isCacheableView()) cacheLibraryView(lib.Id, { items: currentItems, total: totalLibraryItems });
       }
       session.connectionLost = false;
@@ -474,7 +544,7 @@
   // ── Infinite-scroll attachments ─────────────────────────────
   function infiniteScroll(node) {
     const obs = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) loadMoreLibraryItems(); },
+      (entries) => { if (entries[0].isIntersecting) { diagCount('library observer fired (next page)'); loadMoreLibraryItems(); } },
       { root: libraryScrollContainer ?? null, rootMargin: '2000px' }
     );
     obs.observe(node);
@@ -482,7 +552,7 @@
   }
   function infiniteScrollUp(node) {
     const obs = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) loadPreviousLibraryItems(); },
+      (entries) => { if (entries[0].isIntersecting) { diagCount('library observer fired (previous page)'); loadPreviousLibraryItems(); } },
       { root: libraryScrollContainer ?? null, rootMargin: '1000px' }
     );
     obs.observe(node);
@@ -497,7 +567,7 @@
     // scroll position. Both load functions guard against concurrent calls, so this never double-loads.
     const sc = libraryScrollContainer;
     if (sc) {
-      if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 2000) loadMoreLibraryItems();
+      if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 2000) { diagCount('library paging by scroll position (fallback)'); loadMoreLibraryItems(); }
       if (firstLoadedIndex > 0 && sc.scrollTop <= 1500) loadPreviousLibraryItems();
     }
     if (scrollTimer) clearTimeout(scrollTimer);
@@ -899,9 +969,16 @@
 
       </div>
 
-      <div class="p-8 pt-4 shrink-0">
-        <button onclick={closeFilterMenu}
-          class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold text-xl py-5 rounded-xl
+      <div class="p-8 pt-4 shrink-0 flex gap-4">
+        {#if hasFilters}
+          <button onclick={resetFilters}
+            class="flex-1 bg-gray-900 border-2 border-gray-700 hover:bg-gray-700 text-gray-300 focus:text-white font-bold text-xl py-5 rounded-xl
+                   focus:outline-none focus:ring-4 focus:ring-white">
+            {i18n.t.filterReset}
+          </button>
+        {/if}
+        <button onclick={closeFilterMenu} bind:this={filterDoneBtn}
+          class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold text-xl py-5 rounded-xl
                  focus:outline-none focus:ring-4 focus:ring-white transition-colors">
           {i18n.t.filterClose}
         </button>

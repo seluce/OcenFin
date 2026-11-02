@@ -3,6 +3,7 @@ import { tick } from 'svelte';
 import { fade } from 'svelte/transition';
 import { dependencies as deps } from '../package.json';   // for the version display on the status page
 import { session } from './session.svelte.js';   // server URL centralized for getItemImageUrl
+import { APP_VERSION } from './version.js';
 
 // Fade in/out for overlays that respects the "reduce animations" toggle (App maintains
 // body.dataset.reduceMotion). With reduced motion: duration 0 → instantly visible/gone, no animation.
@@ -493,7 +494,11 @@ export function setDebug(on) { _debug = !!on; }
 // Ring buffer so users can see/share logs without 'ares inspect'. console.error/warn
 // are ALWAYS captured (even without debug mode → after an error the log is already there);
 // dlog lines only when debug is active. The original console behavior stays unchanged.
-const LOG_BUFFER_MAX = 300;
+// 1000 entries since the whole log can go to the server (§72): a debug session writes ~2 lines a
+// second (measured), so 300 were gone after a few minutes. Entries are short (median 30, max ~100
+// characters measured) — 1000 is a few hundred KB at most, only filled while debug is on; the QR
+// still shows just the last ~1200 characters.
+const LOG_BUFFER_MAX = 1000;
 let _logBuffer = [];
 function _stringify(args) {
   return args.map(a => {
@@ -660,6 +665,21 @@ export function formatLog(maxChars = 0) {
   // For the QR code: return only the end (most recent lines) up to maxChars.
   if (maxChars > 0 && text.length > maxChars) text = '…\n' + text.slice(text.length - maxChars);
   return text;
+}
+// The WHOLE log to the Jellyfin server — the QR holds only the last ~1200 characters (§72).
+// POST /ClientLog/Document (12.2 spec): any signed-in user may send, the server keeps it as a file an
+// administrator finds in the dashboard under Logs; 403 while the server's AllowClientLogUpload is off
+// (default on), 413 above 1 MB. Only on request, never automatically: it holds what was watched.
+export async function uploadLog(serverUrl, token) {
+  let text = `OcenFin ${APP_VERSION} · ${typeof navigator !== 'undefined' ? navigator.userAgent : ''}\n` + formatLog();
+  if (text.length > 400_000) text = '…\n' + text.slice(-400_000);   // well under the 1 MB cap, even in UTF-8
+  const res = await fetch(`${serverUrl}/ClientLog/Document`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'text/plain' }, body: text,
+  });
+  if (res.status === 403) return { ok: false, reason: 'disabled' };
+  if (!res.ok) return { ok: false, reason: 'http', status: res.status };
+  const j = await res.json().catch(() => ({}));
+  return { ok: true, fileName: j.FileName || j.fileName || '' };
 }
 // Also mirror console.error/warn into the buffer (once; the original stays active).
 if (typeof console !== 'undefined' && !console.__ocenfinLogHook) {

@@ -3,6 +3,46 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## 2026.11.02
+
+### Changed
+
+- **Library filters stay set.** Each library now remembers its filters like its sort order, even after
+  a restart, and the filter menu has a button to reset them all.
+
+### Fixed
+
+- **Films kept together in one folder show up one by one.** A library with films in a shared folder,
+  such as all Harry Potter films in one, showed that folder as a single tile that led nowhere; every
+  film now has its own tile, as in Jellyfin's web app. The same goes for series.
+- **DVD subtitles no longer stay empty in some films.** When the server had packed two subtitle
+  pictures together, the whole track showed nothing; the updated image subtitle engine reads them.
+
+## 2026.10.31
+
+### Added
+
+- **Send the log to your server.** The log viewer can now send the whole log, up to 1000 lines, to
+  your Jellyfin server, where an administrator opens it in the dashboard; the QR code only holds the
+  last few lines.
+
+### Changed
+
+- **The Magic Remote pointer moves the focus.** Pointing at a card or button now highlights it, and the
+  arrow keys carry on from there instead of from where you were before.
+
+### Fixed
+
+- **The pointer stays visible in the player while its controls are shown.** It was hidden over the
+  whole player, so the buttons had to be hit blind.
+
+### Internal
+
+- **Preparing for webOS 26.** With the diagnostic log switched on, the app also notes a few details
+  about the TV's browser and remote, to compare before and after the update.
+- **Updated libraries.** Svelte, hls.js and Vite bring bug fixes, and the image subtitle engine now
+  also adjusts when a video changes its resolution during playback.
+
 ## 2026.10.19
 
 ### Changed
