@@ -5,6 +5,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ## 2026.11.02
 
+### Changed
+
+- **Library filters stay set.** Each library now remembers its filters like its sort order, even after
+  a restart, and the filter menu has a button to reset them all.
+
 ### Fixed
 
 - **Films kept together in one folder show up one by one.** A library with films in a shared folder,

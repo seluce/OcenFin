@@ -103,6 +103,7 @@ export default {
     filterPlayed: "Vistos",
     filterClose: "Hecho",
     filterActive: "Activo",
+    filterReset: "Borrar filtros",
     shuffle: "Aleatorio",
     surpriseMe: "Sorpréndeme",
     playAll: "Reproducir todo",

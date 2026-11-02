@@ -103,6 +103,7 @@ export default {
     filterPlayed: "Lus",
     filterClose: "Terminé",
     filterActive: "Actif",
+    filterReset: "Effacer les filtres",
     shuffle: "Aléatoire",
     surpriseMe: "Surprends-moi",
     playAll: "Tout lire",

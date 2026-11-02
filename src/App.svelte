@@ -274,6 +274,7 @@
       playbackPrefs,
       reduceAnimations,
       librarySorts,
+      libraryFilters,
       sharedProfile
     }));
   }
@@ -299,6 +300,7 @@
     playbackPrefs    = { ...defaultPlaybackPrefs(), ...asObject(p.playbackPrefs) };
     reduceAnimations = p.reduceAnimations ?? false;
     librarySorts     = asObject(p.librarySorts);   // remembered sort per library
+    libraryFilters   = asObject(p.libraryFilters); // remembered filters per library (Library checks each field)
     sharedProfile    = p.sharedProfile && Array.isArray(p.sharedProfile.members)
                        ? { enabled: !!p.sharedProfile.enabled,
                            members: [p.sharedProfile.members[0] || null, p.sharedProfile.members[1] || null] }
@@ -795,6 +797,7 @@
   function openExitConfirm()  { exitFocus.capture(); showExitConfirm = true; }
   function closeExitConfirm() { showExitConfirm = false; exitFocus.restore(); }
   let librarySorts = $state({});   // remembered sort per library (saved in the profile)
+  let libraryFilters = $state({}); // remembered filters per library (likewise; only libraries with one set)
   let apiCache = { dashboard: null };   // dashboard only now; the library cache lives in Library.svelte
 
   // ============================================================
@@ -2550,10 +2553,11 @@
               {selectedUser} library={currentLibrary} reloadKey={libraryReloadKey}
               focusFirstOnLoad={libraryFocusFirst}
               sharedReady={sharedReady} partnerPlayedIds={partnersPlayedIds}
-              {librarySorts} {displaySettings}
+              {librarySorts} {libraryFilters} {displaySettings}
               onOpenDetails={(item) => showItemDetails(item)}
               onContextMenu={(item) => openContextMenu(item)}
               onSortPersist={(libId, sort) => { librarySorts[libId] = sort; saveUserPrefs(); }}
+              onFiltersPersist={(libId, f) => { if (f) libraryFilters[libId] = f; else delete libraryFilters[libId]; saveUserPrefs(); }}
               onSharedWatchToggle={(on) => librarySharedOn = on} />
           </div>
         {/if}
