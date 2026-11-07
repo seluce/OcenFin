@@ -3,6 +3,13 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## [Unreleased]
+
+### Internal
+
+- **Updated libraries.** The styled subtitle engine (ASS) draws noticeably faster and handles its
+  memory more safely; Vite and Tailwind bring bug fixes.
+
 ## 2026.11.02
 
 ### Changed

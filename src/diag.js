@@ -31,8 +31,9 @@ export function startPlatformDiagnostics() {
     chromium: /Chrome\/(\d+)/.exec(navigator.userAgent)?.[1] || null,
     webOSTVjs: window.webOS?.libVersion ?? null,
     webOSSystem: typeof window.webOSSystem,
-    resizableWasmMemory: typeof WebAssembly?.Memory?.prototype?.toResizableBuffer === 'function',   // JASSUB: Chromium 136+
+    resizableWasmMemory: typeof WebAssembly?.Memory?.prototype?.toResizableBuffer === 'function',   // Chromium 136+; JASSUB ≤ 2.5.35 used it, 2.5.36 no longer (§78)
     rvfcPresent: typeof HTMLVideoElement.prototype.requestVideoFrameCallback === 'function',
+    deviceMemory: navigator.deviceMemory ?? null,   // JASSUB ≥ 2.5.36 would take its plain build at ≤ 2 (§78)
   });
 
   // Magic Remote — what the device reports. Tailwind's hover: rules apply only under (hover: hover).
