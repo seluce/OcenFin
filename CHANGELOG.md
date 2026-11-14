@@ -7,8 +7,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Added
 
-- **Czech, Swedish and Turkish.** OcenFin now speaks eleven languages, and the three new ones can also
-  be picked as preferred audio and subtitle language and in the subtitle search.
+- **Czech, Swedish, Danish, Norwegian and Turkish.** OcenFin now speaks thirteen languages, and the new
+  ones can also be picked as preferred audio and subtitle language and in the subtitle search.
 
 ### Fixed
 

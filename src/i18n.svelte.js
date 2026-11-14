@@ -14,6 +14,8 @@ import pt from './locales/pt.js';
 import pl from './locales/pl.js';
 import cs from './locales/cs.js';
 import sv from './locales/sv.js';
+import da from './locales/da.js';
+import nb from './locales/nb.js';
 import tr from './locales/tr.js';
 
 // Each language layered over en → missing keys automatically inherit the English text (never undefined).
@@ -30,6 +32,8 @@ export const translations = {
   pl: withFallback(pl),
   cs: withFallback(cs),
   sv: withFallback(sv),
+  da: withFallback(da),
+  nb: withFallback(nb),
   tr: withFallback(tr),
 };
 
@@ -47,6 +51,9 @@ export const LANGUAGES = [
   { key: 'pl', name: 'Polski',      flag: '🇵🇱', codes: ['pol', 'pl'] },
   { key: 'cs', name: 'Čeština',     flag: '🇨🇿', codes: ['cze', 'ces', 'cs'] },
   { key: 'sv', name: 'Svenska',     flag: '🇸🇪', codes: ['swe', 'sv'] },
+  { key: 'da', name: 'Dansk',       flag: '🇩🇰', codes: ['dan', 'da'] },
+  // Bokmål. TVs report nb, no or nn; streams are tagged nor, nob or nno — all of them land here.
+  { key: 'nb', name: 'Norsk',       flag: '🇳🇴', codes: ['nor', 'nob', 'nno', 'nb', 'no', 'nn'] },
   { key: 'tr', name: 'Türkçe',      flag: '🇹🇷', codes: ['tur', 'tr'] },
 ];
 
