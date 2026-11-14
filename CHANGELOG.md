@@ -24,6 +24,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   own forms for two to four and for five and more.
 - **Translations read more naturally.** All languages were checked: clumsy or wrong wording is fixed,
   names match Jellyfin's web app (Quick Connect included), and minutes are abbreviated the same way everywhere.
+- **Clear selection in pick lists.** The current choice stays blue and the highlighted entry gets a white
+  frame, as everywhere else in Settings, so two entries no longer look selected at once.
 
 ### Internal
 

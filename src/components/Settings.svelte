@@ -2139,14 +2139,16 @@
         <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.language}</h2>
         <!-- Every language on one screen, four columns in LANGUAGES order (by each language's own name).
              A single column had grown to 17 entries: up to 16 presses and a scroll to reach the last. Four,
-             not three: at 19 languages three columns ran past the screen at the "large" interface size. -->
+             not three: at 19 languages three columns ran past the screen at the "large" interface size.
+             Blue marks the language in force, the white ring the focus — as everywhere in Settings. A blue
+             focus as well left two blue tiles once the focus moved off the current one. -->
         <div class="grid grid-cols-4 gap-3 max-h-[70vh] overflow-y-auto hide-scrollbar p-2 -m-2">
           {#each LANGUAGES as l (l.key)}
             <button onclick={() => setLanguage(l.key)}
               data-modal-current={i18n.lang === l.key ? '' : null}
               class="w-full text-left px-5 py-3 text-2xl font-bold text-white rounded-xl transition-colors
                      focus:outline-none focus:ring-4 focus:ring-white
-                     {i18n.lang === l.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
+                     {i18n.lang === l.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-gray-700 focus:bg-gray-700'}">
               {l.flag}&nbsp; {l.name}
             </button>
           {/each}
@@ -2155,11 +2157,12 @@
       {:else if pickerModals[activeModal]}
         {@const picker = pickerModals[activeModal]}
         {#snippet pickerOption(opt)}
+          <!-- Blue = the value in force, ring = focus (same rule as the language modal above). -->
           <button onclick={() => { picker.set(opt.key); closeModal(); }}
             data-modal-current={picker.value === opt.key ? '' : null}
             class="w-full text-left {picker.grid ? 'px-5 py-3' : 'p-5'} text-xl font-bold text-white rounded-xl transition-colors
                    focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white
-                   {picker.value === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
+                   {picker.value === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-gray-700 focus:bg-gray-700'}">
             {opt.name}
           </button>
         {/snippet}
