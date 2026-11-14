@@ -312,10 +312,30 @@
   // The trailer button, for the way back: the overlay takes the focus and closing it removed the
   // focused element with nothing to land on, so the next key opened the sidebar.
   let trailerOpener = null;
+
+  // Which of the title's trailers: the first whose NAME says the app's language, else the first one.
+  // Jellyfin keeps no language per trailer, only URL and name, and a normal metadata refresh APPENDS
+  // what it fetched to the trailers it had (MetadataService: Concat … DistinctBy Url). A library once
+  // read in English, or an NFO file from Radarr/Sonarr, therefore keeps its English trailer IN FRONT of
+  // the German ones TMDb returns now — and the first one was all that ever played. TMDb's German
+  // trailers mostly say so in the name ("Trailer Deutsch German", CODE-HEALTH §90). Matched at a word
+  // start: the language's own name cut to five letters (Русск… also finds "на русском") and its English
+  // name. No language codes — "DE", "IT" or "ES" turn up in titles for other reasons.
+  function pickTrailer(list) {
+    const lang = i18n.lang;
+    const names = [LANGUAGES.find(l => l.key === lang)?.name?.slice(0, 5)];
+    try { names.push(new Intl.DisplayNames(['en'], { type: 'language' }).of(lang).split(' ')[0]); } catch { /* own name only */ }
+    // Letters only (language names), so nothing in them needs escaping for the RegExp.
+    const words = names.filter(Boolean).map(n => new RegExp(`(^|[^\\p{L}])${n}`, 'iu'));
+    const i = Math.max(0, list.findIndex(t => words.some(w => w.test(t?.Name || ''))));
+    dlog('[trailer]', list.length, 'trailer(s) · playing', i, `"${list[i]?.Name || ''}"`, '· app language', lang);
+    return list[i];
+  }
+
   function openTrailer() {
     if (!fullItem?.RemoteTrailers?.length) return;
     trailerOpener = document.activeElement;
-    const url     = fullItem.RemoteTrailers[0].Url;
+    const url     = pickTrailer(fullItem.RemoteTrailers).Url;
     const match   = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([^&?\s]{11})/);
     const videoId = match ? match[1] : null;
 

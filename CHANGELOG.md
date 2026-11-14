@@ -12,6 +12,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Fixed
 
+- **Trailers in the app's language.** When Jellyfin knows several trailers for a title, the one whose name
+  says the app's language plays, instead of always the first, which was often an older English one.
 - **Sharing a season or an episode names the series.** The share dialog shows the series above "Season 2" or
   "S2:E1 · title", and the QR code opens that season's or episode's own page instead of just the series.
 - **Buttons on a details page stay on one line.** "From start" and "Shuffle" no longer break into
