@@ -376,8 +376,8 @@ export default {
     changePwDesc: "Jellyfin şifrenizi güncelleyin.",
 
     // Quick Connect
-    quickConnect: "Quick Connect",
-    qcInstruction: "Bu kodu Jellyfin uygulamanızda (telefon/web) “Quick Connect” altında girin:",
+    quickConnect: "Hızlı Bağlan",
+    qcInstruction: "Bu kodu Jellyfin uygulamanızda (telefon/web) “Hızlı Bağlan” altında girin:",
     qcQrHint: "Jellyfin'de oturum açmış bir telefonla tarayın.",
     qcAuthInstruction: "Başka bir cihazı yetkilendirmek için onun 6 haneli kodunu girin:",
     qcAuthorizeBtn: "Cihazı yetkilendir",

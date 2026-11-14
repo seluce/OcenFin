@@ -234,7 +234,7 @@ export default {
     subtitleLanguage: "Výchozí titulky",
     rememberSubtitleTrack: "Pamatovat si titulky pro seriál",
     rememberSubtitleTrackDesc: "Zvolené titulky automaticky použije i u dalších dílů seriálu.",
-    langDefault: "Výchozí nastavení serveru",
+    langDefault: "Podle serveru",
     langOff: "Vypnuto",
     autoSkipIntro: "Automaticky přeskočit úvod",
     autoSkipDesc: "Úvody se přeskočí automaticky (vyžaduje plugin Intro Skipper).",
@@ -376,8 +376,8 @@ export default {
     changePwDesc: "Změňte své heslo k Jellyfinu.",
 
     // Quick Connect
-    quickConnect: "Quick Connect",
-    qcInstruction: "Zadejte tento kód v aplikaci Jellyfin (telefon/web) v části „Quick Connect“:",
+    quickConnect: "Rychlé připojení",
+    qcInstruction: "Zadejte tento kód v aplikaci Jellyfin (telefon/web) v části „Rychlé připojení“:",
     qcQrHint: "Naskenujte telefonem přihlášeným do Jellyfinu.",
     qcAuthInstruction: "Zadejte šestimístný kód z jiného zařízení a schvalte ho:",
     qcAuthorizeBtn: "Schválit zařízení",

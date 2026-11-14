@@ -234,7 +234,7 @@ export default {
     subtitleLanguage: "Subtítulos predeterminados",
     rememberSubtitleTrack: "Recordar subtítulos por serie",
     rememberSubtitleTrackDesc: "Aplica automáticamente el subtítulo elegido a los siguientes episodios de una serie.",
-    langDefault: "Predeterminado del servidor",
+    langDefault: "Según el servidor",
     langOff: "Desactivado",
     autoSkipIntro: "Saltar intro automáticamente",
     autoSkipDesc: "Salta las intros automáticamente (requiere el plugin Intro Skipper).",
@@ -376,8 +376,8 @@ export default {
     changePwDesc: "Actualiza tu contraseña de Jellyfin.",
 
     // Quick Connect
-    quickConnect: "Quick Connect",
-    qcInstruction: "Introduce este código en tu app de Jellyfin (móvil/web) en «Quick Connect»:",
+    quickConnect: "Conexión rápida",
+    qcInstruction: "Introduce este código en tu app de Jellyfin (móvil/web) en «Conexión rápida»:",
     qcQrHint: "Escanéalo con un móvil con sesión en Jellyfin.",
     qcAuthInstruction: "Introduce un código de 6 dígitos de otro dispositivo para autorizarlo:",
     qcAuthorizeBtn: "Autorizar dispositivo",

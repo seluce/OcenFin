@@ -234,7 +234,7 @@ export default {
     subtitleLanguage: "Legendas predefinidas",
     rememberSubtitleTrack: "Lembrar legenda por série",
     rememberSubtitleTrackDesc: "Aplica automaticamente a legenda escolhida aos próximos episódios de uma série.",
-    langDefault: "Predefinição do servidor",
+    langDefault: "Conforme o servidor",
     langOff: "Desligado",
     autoSkipIntro: "Saltar introdução automaticamente",
     autoSkipDesc: "Salta as introduções automaticamente (requer o plugin Intro Skipper).",
@@ -376,8 +376,8 @@ export default {
     changePwDesc: "Atualize a sua palavra-passe do Jellyfin.",
 
     // Quick Connect
-    quickConnect: "Quick Connect",
-    qcInstruction: "Introduza este código na sua aplicação Jellyfin (telemóvel/web) em «Quick Connect»:",
+    quickConnect: "Ligação rápida",
+    qcInstruction: "Introduza este código na sua aplicação Jellyfin (telemóvel/web) em «Ligação rápida»:",
     qcQrHint: "Digitalize com um telemóvel ligado ao Jellyfin.",
     qcAuthInstruction: "Introduza um código de 6 dígitos de outro dispositivo para o autorizar:",
     qcAuthorizeBtn: "Autorizar dispositivo",

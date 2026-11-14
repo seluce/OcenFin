@@ -376,8 +376,8 @@ export default {
     changePwDesc: "Skift din Jellyfin-adgangskode.",
 
     // Quick Connect
-    quickConnect: "Quick Connect",
-    qcInstruction: "Indtast denne kode i din Jellyfin-app (mobil/web) under »Quick Connect«:",
+    quickConnect: "Lyn-forbind",
+    qcInstruction: "Indtast denne kode i din Jellyfin-app (mobil/web) under »Lyn-forbind«:",
     qcQrHint: "Scan med en telefon, der er logget ind i Jellyfin.",
     qcAuthInstruction: "Indtast en sekscifret kode fra en anden enhed for at godkende den:",
     qcAuthorizeBtn: "Godkend enhed",

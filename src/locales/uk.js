@@ -376,8 +376,8 @@ export default {
     changePwDesc: "Змініть свій пароль Jellyfin.",
 
     // Quick Connect
-    quickConnect: "Quick Connect",
-    qcInstruction: "Введіть цей код у застосунку Jellyfin (телефон/веб) у розділі «Quick Connect»:",
+    quickConnect: "Швидке підключення",
+    qcInstruction: "Введіть цей код у застосунку Jellyfin (телефон/веб) у розділі «Швидке підключення»:",
     qcQrHint: "Скануйте телефоном, на якому виконано вхід у Jellyfin.",
     qcAuthInstruction: "Введіть шестизначний код з іншого пристрою, щоб авторизувати його:",
     qcAuthorizeBtn: "Авторизувати пристрій",

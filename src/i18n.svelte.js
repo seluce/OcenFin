@@ -13,9 +13,11 @@ import it from './locales/it.js';
 import pt from './locales/pt.js';
 import pl from './locales/pl.js';
 import cs from './locales/cs.js';
+import hu from './locales/hu.js';
 import sv from './locales/sv.js';
 import da from './locales/da.js';
 import nb from './locales/nb.js';
+import fi from './locales/fi.js';
 import tr from './locales/tr.js';
 import uk from './locales/uk.js';
 import ru from './locales/ru.js';
@@ -33,9 +35,11 @@ export const translations = {
   pt: withFallback(pt),
   pl: withFallback(pl),
   cs: withFallback(cs),
+  hu: withFallback(hu),
   sv: withFallback(sv),
   da: withFallback(da),
   nb: withFallback(nb),
+  fi: withFallback(fi),
   tr: withFallback(tr),
   uk: withFallback(uk),
   ru: withFallback(ru),
@@ -44,23 +48,27 @@ export const translations = {
 // Selection list for the language menu. `codes` maps 2-/3-letter language codes (e.g. "ger"/"deu"/"de")
 // to the internal key so device detection works. codes[0] must be the ISO 639-2/B code (cze, not ces):
 // the subtitle search sends it to Jellyfin, and the track preference matches streams by all of them.
+// Ordered by each language's OWN name, Latin before Cyrillic, the way TVs and phones list them — every
+// list built from it (app language, audio/subtitle preference, subtitle search) shows the same order.
 export const LANGUAGES = [
+  { key: 'cs', name: 'Čeština',     flag: '🇨🇿', codes: ['cze', 'ces', 'cs'] },
+  { key: 'da', name: 'Dansk',       flag: '🇩🇰', codes: ['dan', 'da'] },
   { key: 'de', name: 'Deutsch',     flag: '🇩🇪', codes: ['ger', 'deu', 'de'] },
   { key: 'en', name: 'English',     flag: '🇬🇧', codes: ['eng', 'en'] },
-  { key: 'fr', name: 'Français',    flag: '🇫🇷', codes: ['fre', 'fra', 'fr'] },
-  { key: 'nl', name: 'Nederlands',  flag: '🇳🇱', codes: ['dut', 'nld', 'nl'] },
   { key: 'es', name: 'Español',     flag: '🇪🇸', codes: ['spa', 'es'] },
+  { key: 'fr', name: 'Français',    flag: '🇫🇷', codes: ['fre', 'fra', 'fr'] },
   { key: 'it', name: 'Italiano',    flag: '🇮🇹', codes: ['ita', 'it'] },
-  { key: 'pt', name: 'Português',   flag: '🇵🇹', codes: ['por', 'pt'] },
-  { key: 'pl', name: 'Polski',      flag: '🇵🇱', codes: ['pol', 'pl'] },
-  { key: 'cs', name: 'Čeština',     flag: '🇨🇿', codes: ['cze', 'ces', 'cs'] },
-  { key: 'sv', name: 'Svenska',     flag: '🇸🇪', codes: ['swe', 'sv'] },
-  { key: 'da', name: 'Dansk',       flag: '🇩🇰', codes: ['dan', 'da'] },
+  { key: 'hu', name: 'Magyar',      flag: '🇭🇺', codes: ['hun', 'hu'] },
+  { key: 'nl', name: 'Nederlands',  flag: '🇳🇱', codes: ['dut', 'nld', 'nl'] },
   // Bokmål. TVs report nb, no or nn; streams are tagged nor, nob or nno — all of them land here.
   { key: 'nb', name: 'Norsk',       flag: '🇳🇴', codes: ['nor', 'nob', 'nno', 'nb', 'no', 'nn'] },
+  { key: 'pl', name: 'Polski',      flag: '🇵🇱', codes: ['pol', 'pl'] },
+  { key: 'pt', name: 'Português',   flag: '🇵🇹', codes: ['por', 'pt'] },
+  { key: 'fi', name: 'Suomi',       flag: '🇫🇮', codes: ['fin', 'fi'] },
+  { key: 'sv', name: 'Svenska',     flag: '🇸🇪', codes: ['swe', 'sv'] },
   { key: 'tr', name: 'Türkçe',      flag: '🇹🇷', codes: ['tur', 'tr'] },
-  { key: 'uk', name: 'Українська',  flag: '🇺🇦', codes: ['ukr', 'uk'] },
   { key: 'ru', name: 'Русский',     flag: '🇷🇺', codes: ['rus', 'ru'] },
+  { key: 'uk', name: 'Українська',  flag: '🇺🇦', codes: ['ukr', 'uk'] },
 ];
 
 // Detects the UI language at startup: last chosen language → otherwise the device language of the

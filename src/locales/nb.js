@@ -376,8 +376,8 @@ export default {
     changePwDesc: "Bytt Jellyfin-passordet ditt.",
 
     // Quick Connect
-    quickConnect: "Quick Connect",
-    qcInstruction: "Skriv inn denne koden i Jellyfin-appen din (mobil/nett) under «Quick Connect»:",
+    quickConnect: "Hurtigkobling",
+    qcInstruction: "Skriv inn denne koden i Jellyfin-appen din (mobil/nett) under «Hurtigkobling»:",
     qcQrHint: "Skann med en telefon som er logget inn i Jellyfin.",
     qcAuthInstruction: "Skriv inn en sekssifret kode fra en annen enhet for å godkjenne den:",
     qcAuthorizeBtn: "Godkjenn enhet",

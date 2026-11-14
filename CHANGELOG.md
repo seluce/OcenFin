@@ -7,9 +7,14 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Added
 
-- **Czech, Swedish, Danish, Norwegian, Turkish, Ukrainian and Russian.** OcenFin now speaks fifteen
-  languages, and the new ones can also be picked as preferred audio and subtitle language and in the
-  subtitle search.
+- **Czech, Hungarian, Swedish, Danish, Norwegian, Finnish, Turkish, Ukrainian and Russian.** OcenFin now
+  speaks seventeen languages, and the new ones can also be picked as preferred audio and subtitle language
+  and in the subtitle search.
+
+### Changed
+
+- **Language lists fit on one screen.** The interface, audio and subtitle language pickers show every
+  language at once in three columns, sorted by each language's own name.
 
 ### Fixed
 
@@ -17,8 +22,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   or Tinos when one of them is picked, instead of a mix with the TV's font.
 - **Counts read right.** A person's page says "1 episode" instead of "1 episodes", and Polish uses its
   own forms for two to four and for five and more.
-- **Translations read more naturally.** All fifteen languages were checked: clumsy or wrong wording is
-  fixed, names match Jellyfin's web app, and minutes are abbreviated the same way everywhere.
+- **Translations read more naturally.** All languages were checked: clumsy or wrong wording is fixed,
+  names match Jellyfin's web app (Quick Connect included), and minutes are abbreviated the same way everywhere.
 
 ### Internal
 
