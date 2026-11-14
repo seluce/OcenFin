@@ -1,5 +1,5 @@
 <script>
-  import { i18n, setLang, LANGUAGES } from '../i18n.svelte.js';
+  import { i18n, setLang, plural, LANGUAGES } from '../i18n.svelte.js';
   import { startQuickConnect as startQC } from '../quickconnect.js';
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
@@ -1259,7 +1259,7 @@
                 <button onclick={() => setStillWatchingEpisodes(n)}
                   class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                          {(playbackPrefs.stillWatchingEpisodes || 3) === n ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                  {n} {i18n.t.episodes}
+                  {plural('episodeCount', n)}
                 </button>
               {/each}
             </div>
@@ -1940,17 +1940,19 @@
               </div>
               <div class="h-px bg-gray-700/70"></div>
               <div class="flex justify-between items-baseline gap-4">
-                <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">HDR10</span>
+                <!-- lang="en" on names shown in capitals: CSS uppercase follows the document language, and Turkish
+                     would write DOLBY VİSİON, LİBBİTSUB (CODE-HEALTH §80). -->
+                <span lang="en" class="text-sm text-gray-400 uppercase tracking-wider font-bold">HDR10</span>
                 <span class="font-mono text-sm font-bold {capClass(tvInfo.hdr10)}">{capText(tvInfo.hdr10)}</span>
               </div>
               <div class="h-px bg-gray-700/70"></div>
               <div class="flex justify-between items-baseline gap-4">
-                <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">Dolby Vision</span>
+                <span lang="en" class="text-sm text-gray-400 uppercase tracking-wider font-bold">Dolby Vision</span>
                 <span class="font-mono text-sm font-bold {capClass(tvInfo.dolbyVision)}">{capText(tvInfo.dolbyVision)}</span>
               </div>
               <div class="h-px bg-gray-700/70"></div>
               <div class="flex justify-between items-baseline gap-4">
-                <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">Dolby Atmos</span>
+                <span lang="en" class="text-sm text-gray-400 uppercase tracking-wider font-bold">Dolby Atmos</span>
                 <span class="font-mono text-sm font-bold {capClass(tvInfo.dolbyAtmos)}">{capText(tvInfo.dolbyAtmos)}</span>
               </div>
               {#if tvInfo.dolbyAtmos === false}
@@ -1980,7 +1982,7 @@
         {#if openStatus.runtime}
           <div class="px-6 pb-6 flex flex-col gap-4">
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusChromium}</span>
+              <span lang="en" class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusChromium}</span>
               <span class="text-white font-mono text-sm">{envVersions.chromium || '—'}</span>
             </div>
             <div class="h-px bg-gray-700/70"></div>
@@ -2009,17 +2011,17 @@
         {#if openStatus.components}
           <div class="px-6 pb-6 flex flex-col gap-4">
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusHls}</span>
+              <span lang="en" class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusHls}</span>
               <span class="text-white font-mono text-sm">{envVersions.hls || '—'}</span>
             </div>
             <div class="h-px bg-gray-700/70"></div>
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusLibbitsub}</span>
+              <span lang="en" class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusLibbitsub}</span>
               <span class="text-white font-mono text-sm">{envVersions.libbitsub || '—'}</span>
             </div>
             <div class="h-px bg-gray-700/70"></div>
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusJassub}</span>
+              <span lang="en" class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusJassub}</span>
               <span class="text-white font-mono text-sm">{envVersions.jassub || '—'}</span>
             </div>
           </div>

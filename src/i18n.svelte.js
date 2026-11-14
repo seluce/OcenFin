@@ -12,6 +12,9 @@ import es from './locales/es.js';
 import it from './locales/it.js';
 import pt from './locales/pt.js';
 import pl from './locales/pl.js';
+import cs from './locales/cs.js';
+import sv from './locales/sv.js';
+import tr from './locales/tr.js';
 
 // Each language layered over en → missing keys automatically inherit the English text (never undefined).
 const withFallback = (lang) => ({ ...en, ...lang });
@@ -25,10 +28,14 @@ export const translations = {
   it: withFallback(it),
   pt: withFallback(pt),
   pl: withFallback(pl),
+  cs: withFallback(cs),
+  sv: withFallback(sv),
+  tr: withFallback(tr),
 };
 
 // Selection list for the language menu. `codes` maps 2-/3-letter language codes (e.g. "ger"/"deu"/"de")
-// to the internal key so device detection works.
+// to the internal key so device detection works. codes[0] must be the ISO 639-2/B code (cze, not ces):
+// the subtitle search sends it to Jellyfin, and the track preference matches streams by all of them.
 export const LANGUAGES = [
   { key: 'de', name: 'Deutsch',     flag: '🇩🇪', codes: ['ger', 'deu', 'de'] },
   { key: 'en', name: 'English',     flag: '🇬🇧', codes: ['eng', 'en'] },
@@ -38,6 +45,9 @@ export const LANGUAGES = [
   { key: 'it', name: 'Italiano',    flag: '🇮🇹', codes: ['ita', 'it'] },
   { key: 'pt', name: 'Português',   flag: '🇵🇹', codes: ['por', 'pt'] },
   { key: 'pl', name: 'Polski',      flag: '🇵🇱', codes: ['pol', 'pl'] },
+  { key: 'cs', name: 'Čeština',     flag: '🇨🇿', codes: ['cze', 'ces', 'cs'] },
+  { key: 'sv', name: 'Svenska',     flag: '🇸🇪', codes: ['swe', 'sv'] },
+  { key: 'tr', name: 'Türkçe',      flag: '🇹🇷', codes: ['tur', 'tr'] },
 ];
 
 // Detects the UI language at startup: last chosen language → otherwise the device language of the
@@ -82,6 +92,17 @@ export const i18n = {
   get lang() { return lang; },
   get t()    { return translations[lang] || translations.en; },
 };
+
+// Counted text in the language's own plural form: plural('episodeCount', 3) → "3 episodes". Such a
+// key holds { one, few, many, other } — only the forms that language has, `other` always. Intl knows
+// the rules: 2–4 differ from 5+ in Polish and Czech, Turkish has one form. Never "{n} " + a heading
+// word instead — "1 Episodes" was the result. One rules object per language, made on first use.
+const pluralRules = {};
+export function plural(key, n) {
+  const forms = translations[lang]?.[key] ?? en[key];
+  const rule = (pluralRules[lang] ||= new Intl.PluralRules(lang));
+  return (forms[rule.select(n)] ?? forms.other).replace('{n}', n);
+}
 
 // Change language (validated against existing translations; persistence happens in the caller).
 export function setLang(code) {

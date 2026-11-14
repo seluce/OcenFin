@@ -152,6 +152,7 @@ export default {
     subtitleForced: "Forced",
     subtitleMachine: "Machine-translated",
     episodes: "Episodes",
+    episodeCount: { one: "{n} episode", other: "{n} episodes" },
     mins: "min",
 
     // Player
@@ -166,7 +167,7 @@ export default {
     playbackNotAllowed: "This profile is not allowed to play this title.",
     playbackNoStream: "The server found no way to play this title on this TV.",
     playbackRateLimit: "The server is at its limit for playback right now. Please try again in a moment.",
-    nextEpisodeIn: "Next episode in",
+    nextEpisodeCountdown: { one: "Next episode in {n} second", other: "Next episode in {n} seconds" },
     playNow: "Play now",
     cancel: "Cancel",
     autoPlayNext: "Auto-play next episode",
@@ -203,8 +204,6 @@ export default {
     exitMessage: "Do you want to close the app?",
     exitConfirm: "Exit",
     endsAt: "ends at",
-    secondOne: "second",
-    secondsMany: "seconds",
     skipIntro: "Skip Intro",
     skipRecap: "Skip Recap",
     audioLanguage: "Default Audio Language",

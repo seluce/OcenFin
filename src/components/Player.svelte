@@ -1,5 +1,5 @@
 <script>
-  import { i18n } from '../i18n.svelte.js';
+  import { i18n, plural } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, authHeaders, dlog, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS } from '../utils.js';
   import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks } from '../trackmemory.js';
   import { session } from '../session.svelte.js';
@@ -2729,7 +2729,7 @@
               class="w-32 aspect-video object-cover rounded-lg shrink-0 bg-gray-800" />
           {/if}
           <div class="min-w-0 flex-1 flex flex-col gap-1">
-            <span class="text-sm font-semibold text-gray-400 uppercase tracking-wider">{i18n.t.nextEpisodeIn} {nextCountdown} {nextCountdown === 1 ? i18n.t.secondOne : i18n.t.secondsMany}</span>
+            <span class="text-sm font-semibold text-gray-400 uppercase tracking-wider">{plural('nextEpisodeCountdown', nextCountdown)}</span>
             <span class="text-xl font-bold text-white truncate">{nextEpisode.Name}</span>
             {#if nextEpisodeMeta}<span class="text-base text-gray-400">{nextEpisodeMeta}</span>{/if}
           </div>

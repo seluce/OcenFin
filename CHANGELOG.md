@@ -5,6 +5,16 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ## [Unreleased]
 
+### Added
+
+- **Czech, Swedish and Turkish.** OcenFin now speaks eleven languages, and the three new ones can also
+  be picked as preferred audio and subtitle language and in the subtitle search.
+
+### Fixed
+
+- **Counts read right.** A person's page says "1 episode" instead of "1 episodes", and Polish uses its
+  own forms for two to four and for five and more.
+
 ### Internal
 
 - **Updated libraries.** The styled subtitle engine (ASS) draws noticeably faster and handles its

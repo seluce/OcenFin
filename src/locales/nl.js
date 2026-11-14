@@ -152,6 +152,7 @@ export default {
     subtitleForced: "Geforceerd",
     subtitleMachine: "Machinaal vertaald",
     episodes: "Afleveringen",
+    episodeCount: { one: "{n} aflevering", other: "{n} afleveringen" },
     mins: "min",
 
     // Player
@@ -166,7 +167,7 @@ export default {
     playbackNotAllowed: "Dit profiel mag deze titel niet afspelen.",
     playbackNoStream: "De server vond geen manier om deze titel op deze tv af te spelen.",
     playbackRateLimit: "De server zit nu aan zijn afspeellimiet. Probeer het zo meteen opnieuw.",
-    nextEpisodeIn: "Volgende aflevering over",
+    nextEpisodeCountdown: { one: "Volgende aflevering over {n} seconde", other: "Volgende aflevering over {n} seconden" },
     playNow: "Nu afspelen",
     cancel: "Annuleren",
     autoPlayNext: "Volgende aflevering automatisch afspelen",
@@ -203,8 +204,6 @@ export default {
     exitMessage: "Wil je de app sluiten?",
     exitConfirm: "Afsluiten",
     endsAt: "eindigt om",
-    secondOne: "seconde",
-    secondsMany: "seconden",
     skipIntro: "Intro overslaan",
     skipRecap: "Samenvatting overslaan",
     audioLanguage: "Standaard audiotaal",

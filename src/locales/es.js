@@ -152,6 +152,7 @@ export default {
     subtitleForced: "Forzado",
     subtitleMachine: "Traducción automática",
     episodes: "Episodios",
+    episodeCount: { one: "{n} episodio", other: "{n} episodios" },
     mins: "min",
 
     // Player
@@ -166,7 +167,7 @@ export default {
     playbackNotAllowed: "Este perfil no puede reproducir este título.",
     playbackNoStream: "El servidor no encontró forma de reproducir este título en este televisor.",
     playbackRateLimit: "El servidor está ahora en su límite de reproducción. Inténtalo de nuevo en un momento.",
-    nextEpisodeIn: "Siguiente episodio en",
+    nextEpisodeCountdown: { one: "Siguiente episodio en {n} segundo", other: "Siguiente episodio en {n} segundos" },
     playNow: "Reproducir ahora",
     cancel: "Cancelar",
     autoPlayNext: "Reproducir automáticamente el siguiente episodio",
@@ -203,8 +204,6 @@ export default {
     exitMessage: "¿Quieres cerrar la aplicación?",
     exitConfirm: "Salir",
     endsAt: "termina a las",
-    secondOne: "segundo",
-    secondsMany: "segundos",
     skipIntro: "Saltar intro",
     skipRecap: "Saltar resumen",
     audioLanguage: "Idioma de audio predeterminado",

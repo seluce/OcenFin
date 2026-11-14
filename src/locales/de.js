@@ -152,6 +152,7 @@ export default {
     subtitleForced: "Erzwungen",
     subtitleMachine: "Maschinell übersetzt",
     episodes: "Folgen",
+    episodeCount: { one: "{n} Folge", other: "{n} Folgen" },
     mins: "min",
 
     // Player
@@ -166,7 +167,7 @@ export default {
     playbackNotAllowed: "Dieses Profil darf diesen Titel nicht abspielen.",
     playbackNoStream: "Der Server hat keinen Weg gefunden, diesen Titel auf diesem Fernseher abzuspielen.",
     playbackRateLimit: "Der Server ist gerade an seiner Wiedergabe-Grenze. Bitte gleich noch einmal versuchen.",
-    nextEpisodeIn: "Nächste Folge in",
+    nextEpisodeCountdown: { one: "Nächste Folge in {n} Sekunde", other: "Nächste Folge in {n} Sekunden" },
     playNow: "Jetzt abspielen",
     cancel: "Abbrechen",
     autoPlayNext: "Nächste Folge automatisch",
@@ -203,8 +204,6 @@ export default {
     exitMessage: "Möchtest du die App schließen?",
     exitConfirm: "Verlassen",
     endsAt: "endet um",
-    secondOne: "Sekunde",
-    secondsMany: "Sekunden",
     skipIntro: "Intro überspringen",
     skipRecap: "Rückblick überspringen",
     audioLanguage: "Standard-Audiosprache",

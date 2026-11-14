@@ -2328,7 +2328,8 @@
           <circle cx="256" cy="256" r="118" fill="none" stroke="#ffffff" stroke-width="64"/>
         </svg>
       </div>
-      <p class="mt-6 text-2xl font-bold tracking-widest text-gray-300 uppercase">OcenFin</p>
+      <!-- Capitals written out: CSS `uppercase` follows <html lang>, and Turkish makes the i an İ (OCENFİN). -->
+      <p class="mt-6 text-2xl font-bold tracking-widest text-gray-300">OCENFIN</p>
       <div class="mt-8 w-10 h-10 border-4 border-gray-700 border-t-blue-500 rounded-full animate-spin"></div>
     </div>
   {/if}

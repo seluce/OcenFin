@@ -85,7 +85,7 @@
                focus:outline-none focus:ring-4 focus:ring-white transition-colors">{i18n.t.close}</button>
     </div>
 
-    <!-- Language: the app's eight; the search runs again on every pick -->
+    <!-- Language: the app's own languages; the search runs again on every pick -->
     <div class="flex flex-wrap gap-2">
       {#each LANGUAGES as l (l.key)}
         <button onclick={() => search(l.key)} {@attach focusOnMount(l.key === lang)}
