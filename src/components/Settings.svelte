@@ -1,5 +1,5 @@
 <script>
-  import { i18n, setLang, LANGUAGES } from '../i18n.svelte.js';
+  import { i18n, setLang, plural, LANGUAGES } from '../i18n.svelte.js';
   import { startQuickConnect as startQC } from '../quickconnect.js';
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
@@ -34,14 +34,15 @@
   } = $props();
 
 
-  // Audio/subtitle language options for the modals
+  // Audio/subtitle language options for the modals. `lead` entries sit in their own row above the
+  // language grid (see the picker markup), so "Off" and "Server default" never land mid-alphabet.
   let audioLangOptions = $derived([
-    { key: 'default', name: i18n.t.langDefault },
+    { key: 'default', name: i18n.t.langDefault, lead: true },
     ...LANGUAGES
   ]);
   let subtitleLangOptions = $derived([
-    { key: 'off',     name: i18n.t.langOff },
-    { key: 'default', name: i18n.t.langDefault },
+    { key: 'off',     name: i18n.t.langOff,     lead: true },
+    { key: 'default', name: i18n.t.langDefault, lead: true },
     ...LANGUAGES
   ]);
   let audioLangName    = $derived((audioLangOptions.find(o => o.key === playbackPrefs.audioLanguage)    || audioLangOptions[0]).name);
@@ -84,11 +85,13 @@
   // would predictably have landed in some copies and not others. Each entry names its title,
   // options, current value and where the pick goes; the markup exists once. The app-language
   // modal stays separate on purpose (flags, immediate setLang semantics).
+  // `grid`: the two language lists are laid out like the app-language modal — every language on one
+  // screen in four columns instead of a column that scrolls 19 entries deep.
   let pickerModals = $derived({
-    audioLang:    { title: i18n.t.audioLanguage,      options: audioLangOptions,
+    audioLang:    { title: i18n.t.audioLanguage,      options: audioLangOptions, grid: true,
                     value: playbackPrefs.audioLanguage,
                     set: (k) => onPlaybackPrefsChange?.({ ...playbackPrefs, audioLanguage: k }) },
-    subtitleLang: { title: i18n.t.subtitleLanguage,   options: subtitleLangOptions,
+    subtitleLang: { title: i18n.t.subtitleLanguage,   options: subtitleLangOptions, grid: true,
                     value: playbackPrefs.subtitleLanguage,
                     set: (k) => onPlaybackPrefsChange?.({ ...playbackPrefs, subtitleLanguage: k }) },
     remoteAction: { title: i18n.t.remoteButtonAction, options: remoteActionOptions,
@@ -187,10 +190,10 @@
   function cancelSharedQuickConnect() { sharedQcSess?.cancel(); sharedQcSess = null; sharedQcCode = sharedQcQr = null; }
 
   let timeoutOptions = $derived([
-    { label: `1 ${i18n.t.minuteShort}`,  value: 60  },
+    { label: `1 ${i18n.t.mins}`,  value: 60  },
     { label: `90 ${i18n.t.secondShort}`, value: 90  },
-    { label: `2 ${i18n.t.minuteShort}`,  value: 120 },
-    { label: `5 ${i18n.t.minuteShort}`,  value: 300 },
+    { label: `2 ${i18n.t.mins}`,  value: 120 },
+    { label: `5 ${i18n.t.mins}`,  value: 300 },
   ]);
 
   onDestroy(() => { if (modalTimeout) clearTimeout(modalTimeout); sharedQcSess?.cancel(); });
@@ -1259,7 +1262,7 @@
                 <button onclick={() => setStillWatchingEpisodes(n)}
                   class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                          {(playbackPrefs.stillWatchingEpisodes || 3) === n ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                  {n} {i18n.t.episodes}
+                  {plural('episodeCount', n)}
                 </button>
               {/each}
             </div>
@@ -1940,17 +1943,19 @@
               </div>
               <div class="h-px bg-gray-700/70"></div>
               <div class="flex justify-between items-baseline gap-4">
-                <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">HDR10</span>
+                <!-- lang="en" on names shown in capitals: CSS uppercase follows the document language, and Turkish
+                     would write DOLBY VİSİON, LİBBİTSUB (CODE-HEALTH §80). -->
+                <span lang="en" class="text-sm text-gray-400 uppercase tracking-wider font-bold">HDR10</span>
                 <span class="font-mono text-sm font-bold {capClass(tvInfo.hdr10)}">{capText(tvInfo.hdr10)}</span>
               </div>
               <div class="h-px bg-gray-700/70"></div>
               <div class="flex justify-between items-baseline gap-4">
-                <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">Dolby Vision</span>
+                <span lang="en" class="text-sm text-gray-400 uppercase tracking-wider font-bold">Dolby Vision</span>
                 <span class="font-mono text-sm font-bold {capClass(tvInfo.dolbyVision)}">{capText(tvInfo.dolbyVision)}</span>
               </div>
               <div class="h-px bg-gray-700/70"></div>
               <div class="flex justify-between items-baseline gap-4">
-                <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">Dolby Atmos</span>
+                <span lang="en" class="text-sm text-gray-400 uppercase tracking-wider font-bold">Dolby Atmos</span>
                 <span class="font-mono text-sm font-bold {capClass(tvInfo.dolbyAtmos)}">{capText(tvInfo.dolbyAtmos)}</span>
               </div>
               {#if tvInfo.dolbyAtmos === false}
@@ -1980,7 +1985,7 @@
         {#if openStatus.runtime}
           <div class="px-6 pb-6 flex flex-col gap-4">
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusChromium}</span>
+              <span lang="en" class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusChromium}</span>
               <span class="text-white font-mono text-sm">{envVersions.chromium || '—'}</span>
             </div>
             <div class="h-px bg-gray-700/70"></div>
@@ -2009,17 +2014,17 @@
         {#if openStatus.components}
           <div class="px-6 pb-6 flex flex-col gap-4">
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusHls}</span>
+              <span lang="en" class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusHls}</span>
               <span class="text-white font-mono text-sm">{envVersions.hls || '—'}</span>
             </div>
             <div class="h-px bg-gray-700/70"></div>
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusLibbitsub}</span>
+              <span lang="en" class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusLibbitsub}</span>
               <span class="text-white font-mono text-sm">{envVersions.libbitsub || '—'}</span>
             </div>
             <div class="h-px bg-gray-700/70"></div>
             <div class="flex justify-between items-baseline gap-4">
-              <span class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusJassub}</span>
+              <span lang="en" class="text-sm text-gray-400 uppercase tracking-wider font-bold">{i18n.t.statusJassub}</span>
               <span class="text-white font-mono text-sm">{envVersions.jassub || '—'}</span>
             </div>
           </div>
@@ -2128,17 +2133,22 @@
     onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeModal(); } }}>
 
     <div data-modal data-focus-trap
-      class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full {activeModal === 'sharedQc' && sharedQcQr ? 'max-w-3xl' : 'max-w-xl'} flex flex-col gap-6 shadow-2xl">
+      class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full {activeModal === 'lang' || pickerModals[activeModal]?.grid ? 'max-w-6xl' : activeModal === 'sharedQc' && sharedQcQr ? 'max-w-3xl' : 'max-w-xl'} flex flex-col gap-6 shadow-2xl">
 
       {#if activeModal === 'lang'}
         <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.language}</h2>
-        <div class="flex flex-col gap-3 max-h-[60vh] overflow-y-auto hide-scrollbar p-2 -m-2">
+        <!-- Every language on one screen, four columns in LANGUAGES order (by each language's own name).
+             A single column had grown to 17 entries: up to 16 presses and a scroll to reach the last. Four,
+             not three: at 19 languages three columns ran past the screen at the "large" interface size.
+             Blue marks the language in force, the white ring the focus — as everywhere in Settings. A blue
+             focus as well left two blue tiles once the focus moved off the current one. -->
+        <div class="grid grid-cols-4 gap-3 max-h-[70vh] overflow-y-auto hide-scrollbar p-2 -m-2">
           {#each LANGUAGES as l (l.key)}
             <button onclick={() => setLanguage(l.key)}
               data-modal-current={i18n.lang === l.key ? '' : null}
-              class="w-full text-left p-6 text-2xl font-bold text-white rounded-xl transition-colors
+              class="w-full text-left px-5 py-3 text-2xl font-bold text-white rounded-xl transition-colors
                      focus:outline-none focus:ring-4 focus:ring-white
-                     {i18n.lang === l.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
+                     {i18n.lang === l.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-gray-700 focus:bg-gray-700'}">
               {l.flag}&nbsp; {l.name}
             </button>
           {/each}
@@ -2146,18 +2156,33 @@
 
       {:else if pickerModals[activeModal]}
         {@const picker = pickerModals[activeModal]}
+        {#snippet pickerOption(opt)}
+          <!-- Blue = the value in force, ring = focus (same rule as the language modal above). -->
+          <button onclick={() => { picker.set(opt.key); closeModal(); }}
+            data-modal-current={picker.value === opt.key ? '' : null}
+            class="w-full text-left {picker.grid ? 'px-5 py-3' : 'p-5'} text-xl font-bold text-white rounded-xl transition-colors
+                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white
+                   {picker.value === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-gray-700 focus:bg-gray-700'}">
+            {opt.name}
+          </button>
+        {/snippet}
         <h2 class="text-4xl text-white font-bold mb-2">{picker.title}</h2>
-        <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
-          {#each picker.options as opt (opt.key)}
-            <button onclick={() => { picker.set(opt.key); closeModal(); }}
-              data-modal-current={picker.value === opt.key ? '' : null}
-              class="w-full text-left p-5 text-xl font-bold text-white rounded-xl transition-colors
-                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white
-                     {picker.value === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-blue-600 focus:bg-blue-600'}">
-              {opt.name}
-            </button>
-          {/each}
-        </div>
+        {#if picker.grid}
+          <!-- Same columns as the app-language modal; "Off"/"Server default" get a row of their own on
+               the same column lines, so Up from the first languages lands on them. -->
+          <div class="flex flex-col gap-4 max-h-[60vh] overflow-y-auto hide-scrollbar">
+            <div class="grid grid-cols-4 gap-2">
+              {#each picker.options.filter(o => o.lead) as opt (opt.key)}{@render pickerOption(opt)}{/each}
+            </div>
+            <div class="grid grid-cols-4 gap-2">
+              {#each picker.options.filter(o => !o.lead) as opt (opt.key)}{@render pickerOption(opt)}{/each}
+            </div>
+          </div>
+        {:else}
+          <div class="flex flex-col gap-2 max-h-[55vh] overflow-y-auto hide-scrollbar">
+            {#each picker.options as opt (opt.key)}{@render pickerOption(opt)}{/each}
+          </div>
+        {/if}
       {:else if activeModal === 'password'}
         <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.changePassword}</h2>
         <div class="relative">

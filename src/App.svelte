@@ -2249,6 +2249,26 @@
   @font-face { font-family: 'Tinos'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/tinos-bold.woff2') format('woff2'); }
   @font-face { font-family: 'Tinos'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/tinos-italic.woff2') format('woff2'); }
   @font-face { font-family: 'Tinos'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/tinos-bolditalic.woff2') format('woff2'); }
+  /* Cyrillic (Russian, Ukrainian — UI and VTT subtitles): Google's own "cyrillic" subsets, same versions
+     as the Latin files (Arimo 1.341, Noto Sans 2.015, Tinos 1.340). unicode-range = Google's for that
+     subset, so the browser fetches a file only when such a letter is on screen — nothing for anyone else.
+     Arimo and Noto Sans exist on Google only as variable fonts now, one file per style — registered
+     ONCE PER WEIGHT (400 and 700, same file, fetched once), exactly as Google's CSS does. Never one rule
+     with `font-weight: 400 700`: Chromium only merges faces whose weight range is identical, picks the
+     range face alone, and every Latin letter fell back to the generic font — Cyrillic text or not.
+     Tinos is static. Punctuation (’ « » — „) comes from the Latin files (CODE-HEALTH §81). */
+  @font-face { font-family: 'Arimo'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/arimo-cyrillic.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  @font-face { font-family: 'Arimo'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/arimo-cyrillic.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  @font-face { font-family: 'Arimo'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/arimo-cyrillic-italic.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  @font-face { font-family: 'Arimo'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/arimo-cyrillic-italic.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  @font-face { font-family: 'Noto Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/notosans-cyrillic.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  @font-face { font-family: 'Noto Sans'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/notosans-cyrillic.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  @font-face { font-family: 'Noto Sans'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/notosans-cyrillic-italic.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  @font-face { font-family: 'Noto Sans'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/notosans-cyrillic-italic.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  @font-face { font-family: 'Tinos'; font-style: normal; font-weight: 400; font-display: swap; src: url('./fonts/tinos-cyrillic-regular.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  @font-face { font-family: 'Tinos'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/tinos-cyrillic-bold.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  @font-face { font-family: 'Tinos'; font-style: italic; font-weight: 400; font-display: swap; src: url('./fonts/tinos-cyrillic-italic.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  @font-face { font-family: 'Tinos'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/tinos-cyrillic-bolditalic.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
 
   /* TV scaling (10-foot UI): raises the rem-based base size so text and
      spacing look larger from couch distance. Standard browsers are 16px; 20px = +25%.
@@ -2328,7 +2348,8 @@
           <circle cx="256" cy="256" r="118" fill="none" stroke="#ffffff" stroke-width="64"/>
         </svg>
       </div>
-      <p class="mt-6 text-2xl font-bold tracking-widest text-gray-300 uppercase">OcenFin</p>
+      <!-- Capitals written out: CSS `uppercase` follows <html lang>, and Turkish makes the i an İ (OCENFİN). -->
+      <p class="mt-6 text-2xl font-bold tracking-widest text-gray-300">OCENFIN</p>
       <div class="mt-8 w-10 h-10 border-4 border-gray-700 border-t-blue-500 rounded-full animate-spin"></div>
     </div>
   {/if}

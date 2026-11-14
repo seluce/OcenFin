@@ -250,7 +250,7 @@
     <div class="absolute pointer-events-none ss-clock" style="left:{posX}%; top:{posY}%; opacity:{clockOn ? 1 : 0}">
       <p class="text-gray-300 font-thin tabular-nums text-center" style="font-size: clamp(3rem, 8vw, 7rem); letter-spacing:0.15em">{timeString}</p>
       <p class="text-gray-400 text-center text-2xl font-light mt-1 tracking-wider">{dateString}</p>
-      <p class="text-gray-600 text-center text-sm mt-3 tracking-widest font-medium uppercase">OcenFin</p>
+      <p class="text-gray-600 text-center text-sm mt-3 tracking-widest font-medium">OCENFIN</p>   <!-- not `uppercase`: Turkish would write OCENFİN -->
     </div>
   {/if}
 </div>

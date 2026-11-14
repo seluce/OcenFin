@@ -3,6 +3,35 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## 2026.11.14
+
+### Added
+
+- **Czech, Hungarian, Romanian, Swedish, Danish, Norwegian, Finnish, Turkish, Ukrainian, Russian and
+  Korean.** OcenFin now speaks nineteen languages, and the new ones can also be picked as preferred audio
+  and subtitle language and in the subtitle search.
+
+### Changed
+
+- **Language lists fit on one screen.** The interface, audio and subtitle language pickers show every
+  language at once in four columns, sorted by each language's own name.
+
+### Fixed
+
+- **Cyrillic text in the chosen font.** Russian or Ukrainian subtitles and titles now use Arimo, Noto Sans
+  or Tinos when one of them is picked, instead of a mix with the TV's font.
+- **Counts read right.** A person's page says "1 episode" instead of "1 episodes", and Polish uses its
+  own forms for two to four and for five and more.
+- **Translations read more naturally.** All languages were checked: clumsy or wrong wording is fixed,
+  names match Jellyfin's web app (Quick Connect included), and minutes are abbreviated the same way everywhere.
+- **Clear selection in pick lists.** The current choice stays blue and the highlighted entry gets a white
+  frame, as everywhere else in Settings, so two entries no longer look selected at once.
+
+### Internal
+
+- **Updated libraries.** The styled subtitle engine (ASS) draws noticeably faster and handles its
+  memory more safely; Vite and Tailwind bring bug fixes.
+
 ## 2026.11.02
 
 ### Changed

@@ -38,7 +38,7 @@
   // The episode the row's description panel shows: the one under the focus, else the next one.
   let focusedEpisode = $state(null);
   const epCode = (ep) => `S${ep?.ParentIndexNumber ?? '?'}:E${ep?.IndexNumber ?? '?'}`;
-  const epMinutes = (ep) => ep?.RunTimeTicks ? `${Math.round(ep.RunTimeTicks / 600000000)} ${i18n.t.minuteShort}` : '';
+  const epMinutes = (ep) => ep?.RunTimeTicks ? `${Math.round(ep.RunTimeTicks / 600000000)} ${i18n.t.mins}` : '';
   let similarItems = $state([]);
   let collections  = $state([]);   // collections (BoxSets) that contain the title — Jellyfin 12+
   let extras       = $state([]);   // special features (making-ofs, deleted scenes, …)
@@ -1393,13 +1393,13 @@
           <!-- File: container / size / total bitrate -->
           <div class="grid grid-cols-3 gap-3">
             {#if src.Container}
-              <div><div class="text-gray-400 text-xs uppercase tracking-wider">Container</div><div class="text-white font-semibold uppercase">{src.Container}</div></div>
+              <div lang="en"><div class="text-gray-400 text-xs uppercase tracking-wider">Container</div><div class="text-white font-semibold uppercase">{src.Container}</div></div>
             {/if}
             {#if formatBytes(src.Size)}
               <div><div class="text-gray-400 text-xs uppercase tracking-wider">{i18n.t.miSize}</div><div class="text-white font-semibold">{formatBytes(src.Size)}</div></div>
             {/if}
             {#if formatBitrate(src.Bitrate)}
-              <div><div class="text-gray-400 text-xs uppercase tracking-wider">Bitrate</div><div class="text-white font-semibold">{formatBitrate(src.Bitrate)}</div></div>
+              <div><div lang="en" class="text-gray-400 text-xs uppercase tracking-wider">Bitrate</div><div class="text-white font-semibold">{formatBitrate(src.Bitrate)}</div></div>
             {/if}
           </div>
 
@@ -1407,7 +1407,8 @@
           {#each (src.MediaStreams || []) as s (s.Index)}
             <div class="bg-gray-900 rounded-xl p-4 border border-gray-700/50">
               <div class="flex items-center gap-3 mb-2">
-                <span class="text-xs uppercase font-bold px-2 py-1 rounded bg-blue-600 text-white shrink-0">{s.Type === 'Subtitle' ? i18n.t.miSubtitle : s.Type}</span>
+                <!-- Video/Audio are the server's English type names: lang="en", or Turkish capitals write VİDEO -->
+                <span lang={s.Type === 'Subtitle' ? null : 'en'} class="text-xs uppercase font-bold px-2 py-1 rounded bg-blue-600 text-white shrink-0">{s.Type === 'Subtitle' ? i18n.t.miSubtitle : s.Type}</span>
                 <span class="text-white font-semibold truncate">{s.DisplayTitle || s.Codec || '—'}</span>
               </div>
               <div class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-gray-300">
