@@ -2528,6 +2528,7 @@
             onOpenPerson={(person) => openPerson(person)}
             onOpenCollection={(col) => openCollection(col)}
             onLibChanged={refreshLibraries}
+            onProgressChanged={() => resumeStale = true}
             onPlayVideo={startPlayback}
           />
 
@@ -2652,6 +2653,7 @@
       userId={activeUserId}
       onClose={() => contextItem = null}
       onChanged={onContextChanged}
+      onProgressChanged={() => resumeStale = true}
       onOpenDetails={contextOpenDetails}
       onPlay={contextPlay}
       onAddToList={contextAddToList}

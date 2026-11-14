@@ -5,6 +5,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ## [Unreleased]
 
+### Added
+
+- **Mark earlier episodes as watched.** For a series started in the middle or partly watched elsewhere, the
+  menu of an episode or a season marks every episode before it in one go, leaving specials out.
+
 ### Fixed
 
 - **Buttons on a details page stay on one line.** "From start" and "Shuffle" no longer break into

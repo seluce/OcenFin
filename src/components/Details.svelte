@@ -1,10 +1,10 @@
 <script>
-  import { i18n, LANGUAGES } from '../i18n.svelte.js';
+  import { i18n, LANGUAGES, plural } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
   import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
   import { pickDefaultTracks, rememberChoice } from '../trackmemory.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
-  import { buildPlayQueue, playableFor } from '../playback.js';
+  import { buildPlayQueue, playableFor, hasEarlierEpisodes, markEarlierPlayed } from '../playback.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
@@ -22,6 +22,7 @@
     focusItemId = null, focusScrollTop = 0,   // where to land when App brings us back (person page)
     takeResume = null,          // App: hands back, ONCE, what was on screen when we were left for a collection, a person page or the player
     onClose, onLibChanged, onOpenPerson, onOpenCollection, onPlayVideo,   // callback props
+    onProgressChanged,          // episodes were marked watched in bulk → App refreshes Next Up on the dashboard
   } = $props();
 
   let fullItem     = $state(null);
@@ -37,6 +38,8 @@
   let nextToPlay = $state(null);
   // The episode the row's description panel shows: the one under the focus, else the next one.
   let focusedEpisode = $state(null);
+  // "Mark earlier episodes as watched" in the ⋮ menu: null | 'busy' | { n } — see markEarlier().
+  let earlier = $state(null);
   const epCode = (ep) => `S${ep?.ParentIndexNumber ?? '?'}:E${ep?.IndexNumber ?? '?'}`;
   const epMinutes = (ep) => ep?.RunTimeTicks ? `${Math.round(ep.RunTimeTicks / 600000000)} ${i18n.t.mins}` : '';
   let similarItems = $state([]);
@@ -410,6 +413,7 @@
     similarItems = [];
     collections  = [];
     extras = [];
+    earlier = null;
     selectedAudioIndex    = -1;
     selectedSubtitleIndex = -1;
     selectedMediaSourceId = null;
@@ -590,6 +594,27 @@
       console.warn('[OcenFin] played-status toggle failed, rolled back:', e);
       shown.UserData = { ...shown.UserData, Played: !willBePlayed };
       if (carry) item.UserData = { ...item.UserData, Played: !willBePlayed };
+    }
+  }
+
+  // "Mark earlier episodes as watched" (playback.js) from the ⋮ menu of an episode or a season. The entry
+  // reports in place — how many, or that everything before was watched already — and the menu stays
+  // open; episodes in the row below that were marked get their tick at once. Bound to the title it
+  // started on: after a step along the chain meanwhile, the new page is left alone. State: `earlier`, above.
+  async function markEarlier() {
+    if (earlier) return;
+    const on = fullItem;
+    earlier = 'busy';
+    try {
+      const { found, done } = await markEarlierPlayed(on, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+      if (done.length) onProgressChanged?.();
+      if (fullItem !== on) return;
+      const marked = new Set(done);
+      for (const ep of relatedItems) if (marked.has(ep.Id)) ep.UserData = { ...ep.UserData, Played: true, PlaybackPositionTicks: 0 };
+      earlier = found && !done.length ? null : { n: done.length };
+    } catch (e) {
+      console.warn('[details] mark earlier episodes:', e?.message || e);
+      if (fullItem === on) earlier = null;
     }
   }
 
@@ -1020,6 +1045,14 @@
                 </button>
                 {#if openDropdown === 'kebab'}
                   <div class="absolute right-0 mt-2 z-50 w-80 max-h-[70vh] overflow-y-auto hide-scrollbar flex flex-col gap-1 bg-gray-900 rounded-xl border border-gray-700 p-2 shadow-2xl">
+                    {#if hasEarlierEpisodes(fullItem)}
+                      <!-- Stays open on purpose: the entry itself reports the result (see markEarlier). -->
+                      <button onclick={markEarlier}
+                        class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3 {earlier === 'busy' ? 'opacity-60' : ''}">
+                        <svg class="w-6 h-6 shrink-0 {earlier?.n >= 0 ? 'text-green-400' : 'text-gray-400'}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M1.5 12.5l4.5 4.5 9-10M11 16.5l.5.5 9-10"/></svg>
+                        {earlier?.n > 0 ? plural('earlierMarked', earlier.n) : earlier?.n === 0 ? i18n.t.earlierAllWatched : i18n.t.markEarlierWatched}
+                      </button>
+                    {/if}
                     {#if fullItem.MediaSources?.length > 0}
                       <button onclick={() => { menuReturn.capture(kebabBtnEl); closeDropdown(false); showMediaInfo = true; }}
                         class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
