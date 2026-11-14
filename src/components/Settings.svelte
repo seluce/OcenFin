@@ -86,7 +86,7 @@
   // options, current value and where the pick goes; the markup exists once. The app-language
   // modal stays separate on purpose (flags, immediate setLang semantics).
   // `grid`: the two language lists are laid out like the app-language modal — every language on one
-  // screen in three columns instead of a column that scrolls 17 entries deep.
+  // screen in four columns instead of a column that scrolls 19 entries deep.
   let pickerModals = $derived({
     audioLang:    { title: i18n.t.audioLanguage,      options: audioLangOptions, grid: true,
                     value: playbackPrefs.audioLanguage,
@@ -2133,13 +2133,14 @@
     onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeModal(); } }}>
 
     <div data-modal data-focus-trap
-      class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full {activeModal === 'lang' || pickerModals[activeModal]?.grid ? 'max-w-4xl' : activeModal === 'sharedQc' && sharedQcQr ? 'max-w-3xl' : 'max-w-xl'} flex flex-col gap-6 shadow-2xl">
+      class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full {activeModal === 'lang' || pickerModals[activeModal]?.grid ? 'max-w-6xl' : activeModal === 'sharedQc' && sharedQcQr ? 'max-w-3xl' : 'max-w-xl'} flex flex-col gap-6 shadow-2xl">
 
       {#if activeModal === 'lang'}
         <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.language}</h2>
-        <!-- Every language on one screen, three columns in LANGUAGES order (by each language's own name).
-             A single column had grown to 17 entries: up to 16 presses and a scroll to reach the last. -->
-        <div class="grid grid-cols-3 gap-3 max-h-[70vh] overflow-y-auto hide-scrollbar p-2 -m-2">
+        <!-- Every language on one screen, four columns in LANGUAGES order (by each language's own name).
+             A single column had grown to 17 entries: up to 16 presses and a scroll to reach the last. Four,
+             not three: at 19 languages three columns ran past the screen at the "large" interface size. -->
+        <div class="grid grid-cols-4 gap-3 max-h-[70vh] overflow-y-auto hide-scrollbar p-2 -m-2">
           {#each LANGUAGES as l (l.key)}
             <button onclick={() => setLanguage(l.key)}
               data-modal-current={i18n.lang === l.key ? '' : null}
@@ -2167,10 +2168,10 @@
           <!-- Same columns as the app-language modal; "Off"/"Server default" get a row of their own on
                the same column lines, so Up from the first languages lands on them. -->
           <div class="flex flex-col gap-4 max-h-[60vh] overflow-y-auto hide-scrollbar">
-            <div class="grid grid-cols-3 gap-2">
+            <div class="grid grid-cols-4 gap-2">
               {#each picker.options.filter(o => o.lead) as opt (opt.key)}{@render pickerOption(opt)}{/each}
             </div>
-            <div class="grid grid-cols-3 gap-2">
+            <div class="grid grid-cols-4 gap-2">
               {#each picker.options.filter(o => !o.lead) as opt (opt.key)}{@render pickerOption(opt)}{/each}
             </div>
           </div>

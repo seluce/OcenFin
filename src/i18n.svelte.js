@@ -11,6 +11,7 @@ import nl from './locales/nl.js';
 import es from './locales/es.js';
 import it from './locales/it.js';
 import pt from './locales/pt.js';
+import ro from './locales/ro.js';
 import pl from './locales/pl.js';
 import cs from './locales/cs.js';
 import hu from './locales/hu.js';
@@ -21,6 +22,7 @@ import fi from './locales/fi.js';
 import tr from './locales/tr.js';
 import uk from './locales/uk.js';
 import ru from './locales/ru.js';
+import ko from './locales/ko.js';
 
 // Each language layered over en → missing keys automatically inherit the English text (never undefined).
 const withFallback = (lang) => ({ ...en, ...lang });
@@ -33,6 +35,7 @@ export const translations = {
   es: withFallback(es),
   it: withFallback(it),
   pt: withFallback(pt),
+  ro: withFallback(ro),
   pl: withFallback(pl),
   cs: withFallback(cs),
   hu: withFallback(hu),
@@ -43,12 +46,13 @@ export const translations = {
   tr: withFallback(tr),
   uk: withFallback(uk),
   ru: withFallback(ru),
+  ko: withFallback(ko),
 };
 
 // Selection list for the language menu. `codes` maps 2-/3-letter language codes (e.g. "ger"/"deu"/"de")
 // to the internal key so device detection works. codes[0] must be the ISO 639-2/B code (cze, not ces):
 // the subtitle search sends it to Jellyfin, and the track preference matches streams by all of them.
-// Ordered by each language's OWN name, Latin before Cyrillic, the way TVs and phones list them — every
+// Ordered by each language's OWN name, Latin, then Cyrillic, then Hangul, the way TVs and phones list them — every
 // list built from it (app language, audio/subtitle preference, subtitle search) shows the same order.
 export const LANGUAGES = [
   { key: 'cs', name: 'Čeština',     flag: '🇨🇿', codes: ['cze', 'ces', 'cs'] },
@@ -64,11 +68,13 @@ export const LANGUAGES = [
   { key: 'nb', name: 'Norsk',       flag: '🇳🇴', codes: ['nor', 'nob', 'nno', 'nb', 'no', 'nn'] },
   { key: 'pl', name: 'Polski',      flag: '🇵🇱', codes: ['pol', 'pl'] },
   { key: 'pt', name: 'Português',   flag: '🇵🇹', codes: ['por', 'pt'] },
+  { key: 'ro', name: 'Română',      flag: '🇷🇴', codes: ['rum', 'ron', 'ro'] },
   { key: 'fi', name: 'Suomi',       flag: '🇫🇮', codes: ['fin', 'fi'] },
   { key: 'sv', name: 'Svenska',     flag: '🇸🇪', codes: ['swe', 'sv'] },
   { key: 'tr', name: 'Türkçe',      flag: '🇹🇷', codes: ['tur', 'tr'] },
   { key: 'ru', name: 'Русский',     flag: '🇷🇺', codes: ['rus', 'ru'] },
   { key: 'uk', name: 'Українська',  flag: '🇺🇦', codes: ['ukr', 'uk'] },
+  { key: 'ko', name: '한국어',      flag: '🇰🇷', codes: ['kor', 'ko'] },
 ];
 
 // Detects the UI language at startup: last chosen language → otherwise the device language of the

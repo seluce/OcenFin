@@ -7,14 +7,14 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Added
 
-- **Czech, Hungarian, Swedish, Danish, Norwegian, Finnish, Turkish, Ukrainian and Russian.** OcenFin now
-  speaks seventeen languages, and the new ones can also be picked as preferred audio and subtitle language
-  and in the subtitle search.
+- **Czech, Hungarian, Romanian, Swedish, Danish, Norwegian, Finnish, Turkish, Ukrainian, Russian and
+  Korean.** OcenFin now speaks nineteen languages, and the new ones can also be picked as preferred audio
+  and subtitle language and in the subtitle search.
 
 ### Changed
 
 - **Language lists fit on one screen.** The interface, audio and subtitle language pickers show every
-  language at once in three columns, sorted by each language's own name.
+  language at once in four columns, sorted by each language's own name.
 
 ### Fixed
 
