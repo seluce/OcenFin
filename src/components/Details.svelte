@@ -847,7 +847,13 @@
           {/if}
         </div>
 
-        <div class="flex-1 max-w-4xl">
+        <!-- The width cap sits on the text (title, meta, description), not on this column: the action
+             row may run past the text into the free space on the right. Capped, it was 1120px wide
+             and its labelled buttons shrank until "Von Anfang an" wrapped; the widest rows (Russian,
+             series with a trailer) need 1241px of the 1320px there are. Where even that is not
+             enough (UI size "large", nearly every language) the row wraps: the icon buttons move to
+             a second line instead of a label breaking into three lines or the row running off screen. -->
+        <div class="flex-1 min-w-0">
           <!-- line-clamp-2: an unbounded title wraps and pushes the description and the action
                buttons down, and the hero area is capped at 95vh — so they can leave the screen. -->
           <!-- Off by default on purpose: the poster to the left already carries the title as
@@ -863,7 +869,7 @@
                  opened. min-h (not a fixed h) keeps the common cases identical while still letting
                  a rare two-line fallback title have its second line, and costs nothing when the
                  option is off. items-end pins the baseline, so the gap below is always the same. -->
-            <div class="min-h-28 flex items-end mb-4">
+            <div class="min-h-28 max-w-4xl flex items-end mb-4">
               {#if getItemLogoUrl(fullItem)}
                 <img src={getItemLogoUrl(fullItem)} alt={fullItem.Name}
                      class="max-h-28 max-w-full w-auto object-contain object-left-bottom drop-shadow-lg" />
@@ -872,11 +878,11 @@
               {/if}
             </div>
           {:else}
-            <h1 class="text-6xl font-bold text-white mb-4 drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
+            <h1 class="max-w-4xl text-6xl font-bold text-white mb-4 drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
           {/if}
 
           <!-- META -->
-          <div class="flex items-center flex-wrap gap-4 text-lg font-semibold text-gray-200 mb-6 [text-shadow:0_1px_4px_rgba(0,0,0,0.75)]">
+          <div class="max-w-4xl flex items-center flex-wrap gap-4 text-lg font-semibold text-gray-200 mb-6 [text-shadow:0_1px_4px_rgba(0,0,0,0.75)]">
             {#if fullItem.ProductionYear}
               <span class="text-blue-400">{fullItem.ProductionYear}</span>
             {/if}
@@ -926,13 +932,13 @@
           <!-- Nothing rather than "No description available": seasons rarely have one, and the filler
                line read like an error. -->
           {#if fullItem.Overview}
-            <p class="text-xl text-gray-300 mb-10 line-clamp-4 leading-relaxed">{fullItem.Overview}</p>
+            <p class="max-w-4xl text-xl text-gray-300 mb-10 line-clamp-4 leading-relaxed">{fullItem.Overview}</p>
           {:else}
             <div class="mb-6"></div>
           {/if}
 
           <!-- ACTION BUTTONS -->
-          <div class="flex items-center gap-4 mb-12">
+          <div class="flex flex-wrap items-center gap-4 mb-12">
             <button onclick={handlePlay} {@attach focusUnlessRestoring} data-primary-action
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-2xl px-12 py-4 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-blue-500 flex items-center gap-3 shadow-lg">

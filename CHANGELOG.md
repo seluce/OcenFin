@@ -3,6 +3,13 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## [Unreleased]
+
+### Fixed
+
+- **Buttons on a details page stay on one line.** "From start" and "Shuffle" no longer break into
+  two or three lines in longer languages; at the largest interface size the round buttons move to a second row.
+
 ## 2026.11.14
 
 ### Added
