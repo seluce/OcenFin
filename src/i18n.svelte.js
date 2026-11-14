@@ -17,6 +17,8 @@ import sv from './locales/sv.js';
 import da from './locales/da.js';
 import nb from './locales/nb.js';
 import tr from './locales/tr.js';
+import uk from './locales/uk.js';
+import ru from './locales/ru.js';
 
 // Each language layered over en → missing keys automatically inherit the English text (never undefined).
 const withFallback = (lang) => ({ ...en, ...lang });
@@ -35,6 +37,8 @@ export const translations = {
   da: withFallback(da),
   nb: withFallback(nb),
   tr: withFallback(tr),
+  uk: withFallback(uk),
+  ru: withFallback(ru),
 };
 
 // Selection list for the language menu. `codes` maps 2-/3-letter language codes (e.g. "ger"/"deu"/"de")
@@ -55,6 +59,8 @@ export const LANGUAGES = [
   // Bokmål. TVs report nb, no or nn; streams are tagged nor, nob or nno — all of them land here.
   { key: 'nb', name: 'Norsk',       flag: '🇳🇴', codes: ['nor', 'nob', 'nno', 'nb', 'no', 'nn'] },
   { key: 'tr', name: 'Türkçe',      flag: '🇹🇷', codes: ['tur', 'tr'] },
+  { key: 'uk', name: 'Українська',  flag: '🇺🇦', codes: ['ukr', 'uk'] },
+  { key: 'ru', name: 'Русский',     flag: '🇷🇺', codes: ['rus', 'ru'] },
 ];
 
 // Detects the UI language at startup: last chosen language → otherwise the device language of the

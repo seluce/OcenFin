@@ -45,7 +45,7 @@ OcenFin plays your movies and shows as they are: Direct Play with Dolby Vision a
 - Everything works with the D-pad and the Magic Remote pointer, and Back always takes you to where you were.
 - Remote shortcuts: colour buttons, channel keys to jump between episodes, number keys to jump in the timeline.
 - Accent colours, interface size and font, an OLED-friendly screensaver and “Reduce animations” for a calmer screen.
-- In English, German, Spanish, French, Italian, Dutch, Portuguese, Polish, Czech, Swedish, Danish, Norwegian and Turkish.
+- In English, German, Spanish, French, Italian, Dutch, Portuguese, Polish, Czech, Swedish, Danish, Norwegian, Turkish, Ukrainian and Russian.
 
 **Profiles and watching together**
 
