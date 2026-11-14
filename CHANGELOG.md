@@ -12,6 +12,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Fixed
 
+- **Sharing a season or an episode names the series.** The share dialog shows the series above "Season 2" or
+  "S2:E1 · title", and the QR code opens that season's or episode's own page instead of just the series.
 - **Buttons on a details page stay on one line.** "From start" and "Shuffle" no longer break into
   two or three lines in longer languages; at the largest interface size the round buttons move to a second row.
 

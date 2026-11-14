@@ -247,16 +247,32 @@
   $effect(() => { if (!showShare && shareFocus.pending) shareFocus.restore(); });
   $effect(() => { if (!showMediaInfo && !pickerMode && menuReturn.pending) menuReturn.restore(); });
   let shareQrSvg = $state(null);
-  // Public link (IMDb/TMDb) of an item — or null if no own ID exists.
-  function buildShareUrl(item) {
+  // Public link (IMDb/TMDb) of an item — or null if none can be built. A season has no public ID of its
+  // own and an episode only sometimes (IMDb), so both go through their SERIES' IDs: on IMDb the season's
+  // episode list, on TMDb the season or episode page. They used to fall back to the plain series page.
+  // An episode prefers TMDb's own page over IMDb's season list, a season IMDb's list; season 0 (specials)
+  // has no list on IMDb → its series page.
+  function buildShareUrl(item, series) {
     const p = item?.ProviderIds || {};
-    if (p.Imdb) return `https://www.imdb.com/title/${p.Imdb}/`;
-    if (p.Tmdb && (item.Type === 'Movie' || item.Type === 'Series'))
-      return `https://www.themoviedb.org/${item.Type === 'Series' ? 'tv' : 'movie'}/${p.Tmdb}`;
-    return null;
+    if (item?.Type !== 'Season' && p.Imdb) return `https://www.imdb.com/title/${p.Imdb}/`;
+    if (item?.Type !== 'Season' && item?.Type !== 'Episode')
+      return p.Tmdb && (item?.Type === 'Movie' || item?.Type === 'Series')
+        ? `https://www.themoviedb.org/${item.Type === 'Series' ? 'tv' : 'movie'}/${p.Tmdb}` : null;
+    const sp = series?.ProviderIds || {};
+    const sn = item.Type === 'Season' ? item.IndexNumber : item.ParentIndexNumber;
+    const en = item.Type === 'Episode' ? item.IndexNumber : null;
+    const imdb = sp.Imdb ? `https://www.imdb.com/title/${sp.Imdb}/${sn >= 1 ? `episodes/?season=${sn}` : ''}` : null;
+    const tmdb = sp.Tmdb && sn != null ? `https://www.themoviedb.org/tv/${sp.Tmdb}/season/${sn}${en != null ? `/episode/${en}` : ''}` : null;
+    return (en != null ? tmdb || imdb : imdb || tmdb) || null;
   }
-  // Title as a readable fallback (a scan shows the name to look up, never a dead link).
+  // Title as a readable fallback (a scan shows the name to look up, never a dead link). A season or an
+  // episode carries its series — "Season 2" alone finds nothing — and an episode the S02E01 form a search
+  // understands.
   function shareTitleText(item) {
+    const two = (n) => String(n).padStart(2, '0');
+    if (item?.SeriesName && item.Type === 'Episode' && item.ParentIndexNumber != null && item.IndexNumber != null)
+      return `${item.SeriesName} S${two(item.ParentIndexNumber)}E${two(item.IndexNumber)} – ${item.Name}`;
+    if (item?.SeriesName && (item.Type === 'Season' || item.Type === 'Episode')) return `${item.SeriesName} – ${item.Name}`;
     return item?.ProductionYear ? `${item.Name} (${item.ProductionYear})` : (item?.Name || '');
   }
   async function openShare() {
@@ -264,15 +280,16 @@
     showShare = true;
     shareQrSvg = null;
     try {
-      let target = buildShareUrl(fullItem);
-      // No own public link (e.g. season/episode without an ID) → fall back to the series link.
-      if (!target && fullItem.SeriesId) {
+      // A season, or an episode without its own IMDb ID, links through its series (see buildShareUrl).
+      let series = null;
+      if ((fullItem.Type === 'Season' || fullItem.Type === 'Episode') && fullItem.SeriesId && !fullItem.ProviderIds?.Imdb) {
         try {
           const res = await fetch(`${session.serverUrl}/Items/${fullItem.SeriesId}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
-          if (res.ok) target = buildShareUrl(await res.json());
+          if (res.ok) series = await res.json();
         } catch { /* series unreachable → title fallback below */ }
       }
-      target = target || shareTitleText(fullItem);
+      const target = buildShareUrl(fullItem, series) || shareTitleText(fullItem);
+      dlog('[share]', fullItem.Type, '→', target);
       const { renderSVG } = await import('uqr');   // dynamically loaded, zero-dependency
       shareQrSvg = renderSVG(target || ' ', { ecc: 'M', border: 1 });   // vector instead of PNG → razor sharp
     } catch (e) { console.warn('[OcenFin] share QR failed', e); }
@@ -1484,7 +1501,16 @@
         <div class="rounded-xl bg-white p-3 [&>svg]:block [&>svg]:w-full [&>svg]:h-full"
              style="width:320px;height:320px;max-width:40vh;max-height:40vh;">{@html shareQrSvg}</div>
       {/if}
-      <p class="text-white font-bold text-center break-words">{fullItem?.Name}</p>
+      <!-- A season or an episode alone read "Season 2" / "Episode 1": the series first, then which part
+           of it, in the episode row's own form ("S2:E1 · title"). -->
+      {#if fullItem?.SeriesName && (fullItem.Type === 'Season' || fullItem.Type === 'Episode')}
+        <div class="text-center break-words">
+          <p class="text-white font-bold">{fullItem.SeriesName}</p>
+          <p class="text-gray-300 font-semibold mt-1">{fullItem.Type === 'Episode' ? `${epCode(fullItem)} · ${fullItem.Name}` : fullItem.Name}</p>
+        </div>
+      {:else}
+        <p class="text-white font-bold text-center break-words">{fullItem?.Name}</p>
+      {/if}
       <p class="text-gray-400 text-base text-center max-w-md">{i18n.t.shareHint}</p>
     </div>
   </div>
