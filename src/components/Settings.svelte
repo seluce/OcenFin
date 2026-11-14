@@ -187,10 +187,10 @@
   function cancelSharedQuickConnect() { sharedQcSess?.cancel(); sharedQcSess = null; sharedQcCode = sharedQcQr = null; }
 
   let timeoutOptions = $derived([
-    { label: `1 ${i18n.t.minuteShort}`,  value: 60  },
+    { label: `1 ${i18n.t.mins}`,  value: 60  },
     { label: `90 ${i18n.t.secondShort}`, value: 90  },
-    { label: `2 ${i18n.t.minuteShort}`,  value: 120 },
-    { label: `5 ${i18n.t.minuteShort}`,  value: 300 },
+    { label: `2 ${i18n.t.mins}`,  value: 120 },
+    { label: `5 ${i18n.t.mins}`,  value: 300 },
   ]);
 
   onDestroy(() => { if (modalTimeout) clearTimeout(modalTimeout); sharedQcSess?.cancel(); });

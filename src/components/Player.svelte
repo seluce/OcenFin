@@ -1417,7 +1417,7 @@
       parts.push(`S${nextEpisode.ParentIndexNumber} · E${nextEpisode.IndexNumber}`);
     const mins = nextEpisode.RunTimeTicks ? Math.round(nextEpisode.RunTimeTicks / 600000000) : 0;
     if (mins) {
-      parts.push(`${mins} ${i18n.t.minShort}`);
+      parts.push(`${mins} ${i18n.t.mins}`);
       const end = new Date(Date.now() + mins * 60000);
       parts.push(`${i18n.t.endsAt} ${end.toLocaleTimeString(i18n.lang || 'en', { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`);
     }

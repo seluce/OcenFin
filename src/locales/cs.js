@@ -73,7 +73,6 @@ export default {
     moveDown: "Posunout dolů",
     episode: "Díl",
     of: "z",
-    minShort: "min",
     stillWatching: "Ještě se díváte?",
     stillWatchingTimeout: "Bez odezvy se přehrávání samo ukončí",
     stillWatchingDesc: "U seriálů pozastaví přehrávání, když se několik dílů po sobě spustí samo bez jakékoli aktivity.",
@@ -245,7 +244,7 @@ export default {
     autoSkipOutroDesc: "Během závěrečných titulků automaticky přejde na další díl.",
 
     // Search
-    searchPlaceholder: "Pište pro hledání…",
+    searchPlaceholder: "Napište, co hledáte…",
     noResults: "Nic nenalezeno.",
     libraryEmpty: "Tato knihovna je prázdná.",
     libraryEmptyFiltered: "Aktuálním filtrům nic neodpovídá.",
@@ -269,10 +268,10 @@ export default {
     displayEpisodeCount: "Nezhlédnuté díly",
     episodesLeft: "ke zhlédnutí",
     displayLetterBar: "Lišta A–Z",
-    displayLibraries: "Řada knihoven",
-    displayHistory: "Řada nedávno sledovaných",
+    displayLibraries: "Moje média",
+    displayHistory: "Nedávno sledované",
     displayRecommendations: "Doporučení („Protože jste sledovali…“)",
-    displayLatest: "Řada nově přidaných",
+    displayLatest: "Nově přidané",
     displayBackdropPreview: "Náhled pozadí",
     displayChapters: "Značky kapitol",
     displayChaptersDesc: "Zobrazí nebo skryje značky kapitol na časové ose a tlačítka pro přeskakování kapitol.",
@@ -333,7 +332,6 @@ export default {
     screensaverArtWatched: "Zhlédnuté / rozkoukané",
     screensaverArtUnwatched: "Dosud nezhlédnuté",
     screensaverArtRandom: "Náhodně",
-    minuteShort: "min",
     secondShort: "s",
 
     // Settings — Profile
@@ -441,7 +439,7 @@ export default {
     logQrButton: "QR kód",
     logSendButton: "Odeslat na server",
     logSending: "Odesílání…",
-    logSent: "Odesláno. Na serveru je uložen jako {file} — správce ho najde v ovládacím panelu Jellyfinu v části Protokoly.",
+    logSent: "Odesláno. Na serveru je uložen jako {file} — správce ho najde v ovládacím panelu Jellyfinu v části Záznamy.",
     logSendDisabled: "Server nepřijímá protokoly z aplikací. Správce to může povolit v ovládacím panelu Jellyfinu.",
     logSendFailed: "Protokol se nepodařilo odeslat.",
     logQrHint: "Naskenujte telefonem a přeneste si poslední řádky (např. e-mailem).",

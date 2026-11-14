@@ -38,7 +38,7 @@
   // The episode the row's description panel shows: the one under the focus, else the next one.
   let focusedEpisode = $state(null);
   const epCode = (ep) => `S${ep?.ParentIndexNumber ?? '?'}:E${ep?.IndexNumber ?? '?'}`;
-  const epMinutes = (ep) => ep?.RunTimeTicks ? `${Math.round(ep.RunTimeTicks / 600000000)} ${i18n.t.minuteShort}` : '';
+  const epMinutes = (ep) => ep?.RunTimeTicks ? `${Math.round(ep.RunTimeTicks / 600000000)} ${i18n.t.mins}` : '';
   let similarItems = $state([]);
   let collections  = $state([]);   // collections (BoxSets) that contain the title — Jellyfin 12+
   let extras       = $state([]);   // special features (making-ofs, deleted scenes, …)

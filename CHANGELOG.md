@@ -17,6 +17,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   or Tinos when one of them is picked, instead of a mix with the TV's font.
 - **Counts read right.** A person's page says "1 episode" instead of "1 episodes", and Polish uses its
   own forms for two to four and for five and more.
+- **Translations read more naturally.** All fifteen languages were checked: clumsy or wrong wording is
+  fixed, names match Jellyfin's web app, and minutes are abbreviated the same way everywhere.
 
 ### Internal
 
