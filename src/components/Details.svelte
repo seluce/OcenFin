@@ -1,5 +1,5 @@
 <script>
-  import { i18n, LANGUAGES, plural } from '../i18n.svelte.js';
+  import { i18n, LANGUAGES, plural, baseLang } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
   import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
   import { pickDefaultTracks, rememberChoice } from '../trackmemory.js';
@@ -152,7 +152,7 @@
     });
   }
   // The language to search first: the profile's subtitle language, else the app's.
-  const subtitleSearchLang = $derived(LANGUAGES.some(l => l.key === playbackPrefs.subtitleLanguage) ? playbackPrefs.subtitleLanguage : i18n.lang);
+  const subtitleSearchLang = $derived(LANGUAGES.some(l => l.key === playbackPrefs.subtitleLanguage) ? playbackPrefs.subtitleLanguage : baseLang(i18n.lang));
   // The server reads a downloaded subtitle in with a refresh it queues — wait for the new track (a
   // stream this version did not have before, by content, since indexes of external files can shift)
   // and pick it. Bounded; false when it is not there yet, and the dialog says it will turn up.
@@ -322,7 +322,7 @@
   // start: the language's own name cut to five letters (Русск… also finds "на русском") and its English
   // name. No language codes — "DE", "IT" or "ES" turn up in titles for other reasons.
   function pickTrailer(list) {
-    const lang = i18n.lang;
+    const lang = baseLang(i18n.lang);   // pt-BR looks for "Portu…"/"Portuguese", not "Brazilian"
     const names = [LANGUAGES.find(l => l.key === lang)?.name?.slice(0, 5)];
     try { names.push(new Intl.DisplayNames(['en'], { type: 'language' }).of(lang).split(' ')[0]); } catch { /* own name only */ }
     // Letters only (language names), so nothing in them needs escaping for the RegExp.

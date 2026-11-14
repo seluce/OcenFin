@@ -1,5 +1,5 @@
 <script>
-  import { i18n, setLang, plural, LANGUAGES } from '../i18n.svelte.js';
+  import { i18n, setLang, plural, LANGUAGES, UI_LANGUAGES } from '../i18n.svelte.js';
   import { startQuickConnect as startQC } from '../quickconnect.js';
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
@@ -287,7 +287,7 @@
     try { localStorage.setItem('app_language', lang); } catch {}   // the choice survives a restart
     closeModal();
   }
-  let currentLangName = $derived((LANGUAGES.find(l => l.key === i18n.lang) || {}).name || 'English');
+  let currentLangName = $derived((UI_LANGUAGES.find(l => l.key === i18n.lang) || {}).name || 'English');
 
   // Both fields, and one request per press. Jellyfin reads an empty NEW password as "remove the
   // password" — and Enter in the first field used to send exactly that. A wrong current password
@@ -2137,16 +2137,21 @@
 
       {#if activeModal === 'lang'}
         <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.language}</h2>
-        <!-- Every language on one screen, four columns in LANGUAGES order (by each language's own name).
+        <!-- Every language on one screen, four columns in UI_LANGUAGES order (by each language's own name, a
+             regional variant such as Português (Brasil) right after its base).
              A single column had grown to 17 entries: up to 16 presses and a scroll to reach the last. Four,
              not three: at 19 languages three columns ran past the screen at the "large" interface size.
              Blue marks the language in force, the white ring the focus — as everywhere in Settings. A blue
-             focus as well left two blue tiles once the focus moved off the current one. -->
-        <div class="grid grid-cols-4 gap-3 max-h-[70vh] overflow-y-auto hide-scrollbar p-2 -m-2">
-          {#each LANGUAGES as l (l.key)}
+             focus as well left two blue tiles once the focus moved off the current one.
+             Type as in the audio/subtitle pickers (text-xl): "Português (Brasil)" in text-2xl needed 16 rem
+             in a 13.7 rem tile and wrapped, which made its whole row taller. A name never wraps — a column
+             is at least as wide as its longest name, so a wider TV font widens a column rather than
+             breaking a line; with the bundled fonts all four stay equal. -->
+        <div class="grid grid-cols-[repeat(4,minmax(max-content,1fr))] gap-3 max-h-[70vh] overflow-y-auto hide-scrollbar p-2 -m-2">
+          {#each UI_LANGUAGES as l (l.key)}
             <button onclick={() => setLanguage(l.key)}
               data-modal-current={i18n.lang === l.key ? '' : null}
-              class="w-full text-left px-5 py-3 text-2xl font-bold text-white rounded-xl transition-colors
+              class="w-full text-left px-5 py-3 text-xl font-bold whitespace-nowrap text-white rounded-xl transition-colors
                      focus:outline-none focus:ring-4 focus:ring-white
                      {i18n.lang === l.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-gray-700 focus:bg-gray-700'}">
               {l.flag}&nbsp; {l.name}

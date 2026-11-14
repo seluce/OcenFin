@@ -9,6 +9,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 - **Mark earlier episodes as watched.** For a series started in the middle or partly watched elsewhere, the
   menu of an episode or a season marks every episode before it in one go, leaving specials out.
+- **Brazilian Portuguese.** A language of its own in the menu, next to European Portuguese, and a TV set to
+  Portuguese (Brazil) starts in it.
 
 ### Fixed
 
