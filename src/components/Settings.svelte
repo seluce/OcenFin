@@ -47,6 +47,7 @@
   ]);
   let audioLangName    = $derived((audioLangOptions.find(o => o.key === playbackPrefs.audioLanguage)    || audioLangOptions[0]).name);
   let subtitleLangName = $derived((subtitleLangOptions.find(o => o.key === playbackPrefs.subtitleLanguage) || subtitleLangOptions[0]).name);
+  let subtitleLangChosen = $derived(LANGUAGES.some(l => l.key === playbackPrefs.subtitleLanguage));
 
   // Colour-button actions — a deliberately curated, closed list (see the wiring comment in
   // Player.svelte). Labels for chapters/episodes are reused from the player's own strings.
@@ -1492,6 +1493,24 @@
           <span class="text-2xl text-white font-medium">{i18n.t.subtitleLanguage}</span>
           <span class="text-xl font-bold text-gray-300">{subtitleLangName}</span>
         </button>
+
+        <!-- Only for foreign audio (Jellyfin's "Smart"): needs a language to compare the audio with,
+             so it is shown only while one is chosen — with "Off" or "Server default" it means nothing. -->
+        {#if subtitleLangChosen}
+        <button onclick={() => togglePlaybackPref('subtitleSmart')}
+          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
+                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
+          <div>
+            <span class="text-2xl text-white font-medium block">{i18n.t.subtitleSmart}</span>
+            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.subtitleSmartDesc}</span>
+          </div>
+          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
+                      {playbackPrefs.subtitleSmart ? 'bg-blue-500' : 'bg-gray-600'}">
+            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
+                        {playbackPrefs.subtitleSmart ? 'translate-x-8' : ''}"></div>
+          </div>
+        </button>
+        {/if}
 
         <!-- Remember subtitle track per series -->
         <button onclick={() => togglePlaybackPref('rememberSubtitleTrack')}

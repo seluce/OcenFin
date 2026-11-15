@@ -242,6 +242,8 @@ export default {
     remoteActionAudioMenu: "Menú de audio",
     remoteActionPlayPause: "Reproducir/Pausa",
     subtitleLanguage: "Subtítulos predeterminados",
+    subtitleSmart: "Solo con audio en otro idioma",
+    subtitleSmartDesc: "Si el audio ya está en el idioma de los subtítulos, solo se muestran los forzados, si los hay.",
     rememberSubtitleTrack: "Recordar subtítulos por serie",
     rememberSubtitleTrackDesc: "Aplica automáticamente el subtítulo elegido a los siguientes episodios de una serie.",
     langDefault: "Según el servidor",

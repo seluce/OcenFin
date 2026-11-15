@@ -242,6 +242,8 @@ export default {
     remoteActionAudioMenu: "오디오 메뉴",
     remoteActionPlayPause: "재생/일시정지",
     subtitleLanguage: "기본 자막",
+    subtitleSmart: "외국어 음성일 때만",
+    subtitleSmartDesc: "음성이 이미 자막 언어라면, 강제 자막이 있을 때 그것만 표시됩니다.",
     rememberSubtitleTrack: "시리즈별 자막 기억",
     rememberSubtitleTrackDesc: "선택한 자막을 시리즈의 다음 에피소드에 자동으로 적용합니다.",
     langDefault: "서버 기본값",

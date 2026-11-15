@@ -242,6 +242,8 @@ export default {
     remoteActionAudioMenu: "Lydmenu",
     remoteActionPlayPause: "Afspil/Pause",
     subtitleLanguage: "Standardundertekster",
+    subtitleSmart: "Kun ved lyd på et andet sprog",
+    subtitleSmartDesc: "Er lyden allerede på undertekstsproget, vises kun tvungne undertekster, hvis der er nogen.",
     rememberSubtitleTrack: "Husk undertekst for hver serie",
     rememberSubtitleTrackDesc: "Bruger automatisk den valgte undertekst til de næste afsnit af en serie.",
     langDefault: "Serverens standard",

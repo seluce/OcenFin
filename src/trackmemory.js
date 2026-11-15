@@ -99,10 +99,15 @@ export function matchRememberedSubtitleIndex(streams, seriesId) {
 // track and no subtitle, whatever the settings said.
 //   audio:    remembered per series → the app's language → the server's default, which is where the
 //             Jellyfin profile's preference lands ("original language" included)
-//   subtitle: remembered → off → the app's language → in "default" mode a forced track, ideally in
-//             the audio's language → the server's default → none
+//   subtitle: remembered → off → the app's language (its best track, see matchSubtitleLanguage; with
+//             "only for foreign audio" and the audio already in that language, a forced track at
+//             most) → in "default" mode a forced track, ideally in the audio's language → the
+//             server's default → none
 // Returns stream indexes; -1 means "none" for subtitles and "the file's default" for audio.
 const subCodec = (s) => (s?.Codec || '').toLowerCase();
+const langOf = (s) => s?.Language?.toLowerCase() || null;
+// Jellyfin's own list of "no language" tags (MediaStreamSelector.IsLanguageUndefined).
+const UNDEFINED_LANGS = ['und', 'unknown', 'undetermined', 'mul', 'zxx'];
 
 // May a subtitle be switched on automatically? Text always; a graphic one only when the app renders
 // it itself (PGS, VobSub/DVD via libbitsub — Direct Play stays). DVB bitmap subtitles can only be
@@ -113,7 +118,7 @@ function subtitleAutoEligible(s, prefs) {
   return CLIENT_SUB_CODECS.includes(subCodec(s)) && prefs.pgsRendering !== false;
 }
 
-// First stream of that type in the preferred language, or null for 'default' / no match.
+// First audio stream in the preferred language, or null for 'default' / no match.
 function matchLanguageStream(streams, type, prefKey) {
   if (!prefKey || prefKey === 'default') return null;
   const lang = LANGUAGES.find(l => l.key === prefKey);
@@ -122,11 +127,43 @@ function matchLanguageStream(streams, type, prefKey) {
   return match ? match.Index : null;
 }
 
+// The language of the audio that will play. -1 (the file's own default) is the track flagged
+// default, else the first one; null when that track carries no language.
+function audioLanguageOf(streams, audioIndex) {
+  const audios = streams.filter(s => s.Type === 'Audio');
+  return langOf(audioIndex === -1 ? (audios.find(s => s.IsDefault) ?? audios[0])
+                                  : audios.find(s => s.Index === audioIndex));
+}
+
+// The subtitle for a chosen language. One language often comes as several tracks, and the first one
+// used to win — on many releases that is "Deutsch (Forced)", signs only. Ranked instead: a full track
+// before a forced one, one the app shows without a transcode before one that costs Direct Play,
+// plain before SDH; the file's order among equals. null when the language has no track.
+function matchSubtitleLanguage(streams, lang, prefs) {
+  const rank = (s) => (s.IsForced ? 4 : 0) + (subtitleAutoEligible(s, prefs) ? 0 : 2) + (s.IsHearingImpaired ? 1 : 0);
+  let best = null;
+  for (const s of streams) {
+    if (s.Type !== 'Subtitle' || !lang.codes.includes(langOf(s))) continue;
+    if (!best || rank(s) < rank(best)) best = s;
+  }
+  return best ? best.Index : null;
+}
+
+// "Only for foreign audio" with the audio already in the chosen language: a forced track in that
+// language, else a forced one tagged with no language (Jellyfin's Smart mode does the same) — and
+// only one the app can switch on by itself. -1 when there is none.
+function pickOwnLanguageForced(streams, lang, prefs) {
+  const forced = streams.filter(s => s.Type === 'Subtitle' && s.IsForced && subtitleAutoEligible(s, prefs));
+  const pick = forced.find(s => lang.codes.includes(langOf(s)))
+            ?? forced.find(s => !langOf(s) || UNDEFINED_LANGS.includes(langOf(s)));
+  return pick ? pick.Index : -1;
+}
+
 function pickForcedSubtitle(streams, audioIndex, serverDefault, prefs) {
-  const audioLang = streams.find(s => s.Type === 'Audio' && s.Index === audioIndex)?.Language?.toLowerCase();
+  const audioLang = audioLanguageOf(streams, audioIndex);
   const subs = streams.filter(s => s.Type === 'Subtitle');
   const ok = (s) => subtitleAutoEligible(s, prefs);
-  const pick = subs.find(s => s.IsForced && ok(s) && audioLang && s.Language?.toLowerCase() === audioLang)
+  const pick = subs.find(s => s.IsForced && ok(s) && audioLang && langOf(s) === audioLang)
             ?? subs.find(s => s.IsForced && ok(s));
   if (pick) return pick.Index;
   if (serverDefault != null) {
@@ -137,23 +174,29 @@ function pickForcedSubtitle(streams, audioIndex, serverDefault, prefs) {
 }
 
 // source: a MediaSourceInfo (its MediaStreams plus the server's Default*StreamIndex for this user).
-export function pickDefaultTracks(source, { seriesId = null, prefs = {} } = {}) {
+// audio: an audio track already chosen (Details, when one is picked by hand) — only the subtitle is
+// picked then, since "only for foreign audio" depends on it.
+export function pickDefaultTracks(source, { seriesId = null, prefs = {}, audio = null } = {}) {
   const streams = source?.MediaStreams || [];
-  let audio = null, subtitle = null;
-  if (seriesId && prefs.rememberAudioTrack)    audio    = matchRememberedAudioIndex(streams, seriesId);
+  let subtitle = null;
+  if (audio == null) {
+    if (seriesId && prefs.rememberAudioTrack) audio = matchRememberedAudioIndex(streams, seriesId);
+    if (audio == null) audio = matchLanguageStream(streams, 'Audio', prefs.audioLanguage) ?? source?.DefaultAudioStreamIndex ?? -1;
+  }
   if (seriesId && prefs.rememberSubtitleTrack) subtitle = matchRememberedSubtitleIndex(streams, seriesId);
 
-  if (audio == null) audio = matchLanguageStream(streams, 'Audio', prefs.audioLanguage) ?? source?.DefaultAudioStreamIndex ?? -1;
-
   if (subtitle == null) {
+    const lang = LANGUAGES.find(l => l.key === prefs.subtitleLanguage);
     if (prefs.subtitleLanguage === 'off') subtitle = -1;
-    else {
-      const subPref = matchLanguageStream(streams, 'Subtitle', prefs.subtitleLanguage);
-      if (subPref != null) subtitle = subPref;
-      else if (prefs.subtitleLanguage === 'default')
-        subtitle = pickForcedSubtitle(streams, audio, source?.DefaultSubtitleStreamIndex, prefs);
-      else subtitle = source?.DefaultSubtitleStreamIndex ?? -1;
+    else if (lang) {
+      // Audio without a language tag counts as foreign, as in Jellyfin's Smart mode.
+      subtitle = prefs.subtitleSmart && lang.codes.includes(audioLanguageOf(streams, audio))
+        ? pickOwnLanguageForced(streams, lang, prefs)
+        : matchSubtitleLanguage(streams, lang, prefs) ?? source?.DefaultSubtitleStreamIndex ?? -1;
     }
+    else if (prefs.subtitleLanguage === 'default')
+      subtitle = pickForcedSubtitle(streams, audio, source?.DefaultSubtitleStreamIndex, prefs);
+    else subtitle = source?.DefaultSubtitleStreamIndex ?? -1;
   }
   return { audio, subtitle };
 }

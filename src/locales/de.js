@@ -242,6 +242,8 @@ export default {
     remoteActionAudioMenu: "Audio-Menü",
     remoteActionPlayPause: "Wiedergabe/Pause",
     subtitleLanguage: "Standard-Untertitel",
+    subtitleSmart: "Nur bei fremdsprachigem Ton",
+    subtitleSmartDesc: "Ist der Ton schon in der Untertitelsprache, laufen nur erzwungene Untertitel mit, falls es welche gibt.",
     rememberSubtitleTrack: "Untertitel pro Serie merken",
     rememberSubtitleTrackDesc: "Übernimmt den gewählten Untertitel automatisch für die nächsten Folgen einer Serie.",
     langDefault: "Server-Standard",

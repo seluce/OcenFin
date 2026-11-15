@@ -583,7 +583,7 @@
           if (src.MediaStreams?.length) titleStreams = src.MediaStreams;
           picked = true;
           dlog('[tracks] picked', { audio: t.audio, subtitle: t.subtitle, audioPref: playbackPrefs.audioLanguage,
-               subtitlePref: playbackPrefs.subtitleLanguage, serverDefault: src.DefaultAudioStreamIndex });
+               subtitlePref: playbackPrefs.subtitleLanguage, smart: !!playbackPrefs.subtitleSmart, serverDefault: src.DefaultAudioStreamIndex });
         }
       }
       if (!titleStreams.length && item?.Id) {

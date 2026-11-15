@@ -116,17 +116,25 @@
 
   // Choose default audio/subtitle for a source — the shared rule in trackmemory.js, which the Player
   // applies to every start that does not come through this page (series play button, play-all, …).
+  let subtitleByHand = false;   // plain let: nothing renders from it
   function applySourceDefaults(src) {
     const t = pickDefaultTracks(src, { seriesId: fullItem?.SeriesId, prefs: playbackPrefs });
     selectedAudioIndex    = t.audio;
     selectedSubtitleIndex = t.subtitle;
+    subtitleByHand = false;
   }
 
   // A track picked here counts like one picked in the Player's menu: it becomes the series' memory.
   // The Player re-applies that memory on its first setup, and used to overrule this page's choice
   // with an older one — "subtitles off" remembered, English picked here, played without subtitles.
+  // With "only for foreign audio" the subtitle depends on the audio, so another audio track picks it
+  // again — unless a subtitle was picked here by hand (subtitleByHand, above applySourceDefaults).
   function pickTrack(kind, index) {
-    if (kind === 'audio') selectedAudioIndex = index; else selectedSubtitleIndex = index;
+    if (kind === 'audio') {
+      selectedAudioIndex = index;
+      if (playbackPrefs.subtitleSmart && !subtitleByHand && selectedSource)
+        selectedSubtitleIndex = pickDefaultTracks(selectedSource, { seriesId: fullItem?.SeriesId, prefs: playbackPrefs, audio: index }).subtitle;
+    } else { selectedSubtitleIndex = index; subtitleByHand = true; }
     rememberChoice(fullItem?.SeriesId, kind, index, getMediaStreams(kind === 'audio' ? 'Audio' : 'Subtitle'), playbackPrefs);
   }
 

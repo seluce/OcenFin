@@ -20,9 +20,13 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Graphite accent.** A neutral grey next to the ten colours, for an interface without any colour.
 - **Subtitle size in five steps.** From very small to very large, with a step between normal and each end; a
   size chosen before stays as it was.
+- **Subtitles only for foreign-language audio.** With a subtitle language chosen, a new switch shows them only
+  when the audio is in another language, and otherwise just the forced ones, as Jellyfin's "Smart" mode does.
 
 ### Fixed
 
+- **The full subtitle track of the chosen language.** When a film has the language twice, the full track now
+  wins over the forced one, which often comes first and only translates signs and foreign lines.
 - **White text readable on every accent colour.** Buttons and labels in emerald, amber, sky, teal and orange
   are a little deeper now, and a focused button no longer turns paler.
 - **The accent colour everywhere.** The glow around the seek bar's handle and a small text in the screensaver

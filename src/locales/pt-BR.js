@@ -97,6 +97,7 @@ export default {
     remoteButtonAction: "Ação do botão",
     remoteActionPlayPause: "Reproduzir/Pausar",
     subtitleLanguage: "Legendas padrão",
+    subtitleSmart: "Só com áudio em outro idioma",
     autoSkipIntro: "Pular abertura automaticamente",
     autoSkipDesc: "Pula as aberturas automaticamente (requer o plugin Intro Skipper).",
     autoSkipRecap: "Pular resumo automaticamente",

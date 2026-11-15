@@ -242,6 +242,8 @@ export default {
     remoteActionAudioMenu: "Меню звука",
     remoteActionPlayPause: "Воспроизведение/Пауза",
     subtitleLanguage: "Субтитры по умолчанию",
+    subtitleSmart: "Только для иноязычного звука",
+    subtitleSmartDesc: "Если звук уже на языке субтитров, показываются только принудительные субтитры, если они есть.",
     rememberSubtitleTrack: "Запоминать субтитры для сериала",
     rememberSubtitleTrackDesc: "Автоматически применяет выбранные субтитры к следующим сериям сериала.",
     langDefault: "Как на сервере",

@@ -242,6 +242,8 @@ export default {
     remoteActionAudioMenu: "Menu de áudio",
     remoteActionPlayPause: "Reproduzir/Pausa",
     subtitleLanguage: "Legendas predefinidas",
+    subtitleSmart: "Só com áudio noutro idioma",
+    subtitleSmartDesc: "Se o áudio já estiver no idioma das legendas, só aparecem as legendas forçadas, se existirem.",
     rememberSubtitleTrack: "Lembrar legenda por série",
     rememberSubtitleTrackDesc: "Aplica automaticamente a legenda escolhida aos próximos episódios de uma série.",
     langDefault: "Conforme o servidor",

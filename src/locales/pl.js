@@ -242,6 +242,8 @@ export default {
     remoteActionAudioMenu: "Menu audio",
     remoteActionPlayPause: "Odtwarzanie/Pauza",
     subtitleLanguage: "Domyślne napisy",
+    subtitleSmart: "Tylko przy obcojęzycznym dźwięku",
+    subtitleSmartDesc: "Jeśli dźwięk jest już w języku napisów, pojawiają się tylko napisy wymuszone, o ile są.",
     rememberSubtitleTrack: "Zapamiętaj napisy dla serialu",
     rememberSubtitleTrackDesc: "Automatycznie stosuje wybrane napisy do kolejnych odcinków serialu.",
     langDefault: "Według serwera",

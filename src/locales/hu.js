@@ -242,6 +242,8 @@ export default {
     remoteActionAudioMenu: "Hangmenü",
     remoteActionPlayPause: "Lejátszás/szünet",
     subtitleLanguage: "Felirat nyelve",
+    subtitleSmart: "Csak idegen nyelvű hangnál",
+    subtitleSmartDesc: "Ha a hang már a felirat nyelvén szól, csak a kényszerített felirat jelenik meg, ha van.",
     rememberSubtitleTrack: "Felirat megjegyzése sorozatonként",
     rememberSubtitleTrackDesc: "A kiválasztott feliratot automatikusan alkalmazza a sorozat következő epizódjaira.",
     langDefault: "Szerver szerint",

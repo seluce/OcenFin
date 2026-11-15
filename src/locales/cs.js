@@ -242,6 +242,8 @@ export default {
     remoteActionAudioMenu: "Nabídka zvuku",
     remoteActionPlayPause: "Přehrát/Pozastavit",
     subtitleLanguage: "Výchozí titulky",
+    subtitleSmart: "Jen u cizojazyčného zvuku",
+    subtitleSmartDesc: "Pokud je zvuk už v jazyce titulků, zobrazí se jen vynucené titulky, pokud existují.",
     rememberSubtitleTrack: "Pamatovat si titulky pro seriál",
     rememberSubtitleTrackDesc: "Zvolené titulky automaticky použije i u dalších dílů seriálu.",
     langDefault: "Podle serveru",

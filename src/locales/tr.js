@@ -242,6 +242,8 @@ export default {
     remoteActionAudioMenu: "Ses menüsü",
     remoteActionPlayPause: "Oynat/Duraklat",
     subtitleLanguage: "Varsayılan altyazı",
+    subtitleSmart: "Yalnızca yabancı dilde seste",
+    subtitleSmartDesc: "Ses zaten altyazı dilindeyse, varsa yalnızca zorunlu altyazılar gösterilir.",
     rememberSubtitleTrack: "Altyazıyı dizi başına hatırla",
     rememberSubtitleTrackDesc: "Seçilen altyazıyı dizinin sonraki bölümlerine otomatik uygular.",
     langDefault: "Sunucu varsayılanı",

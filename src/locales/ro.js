@@ -242,6 +242,8 @@ export default {
     remoteActionAudioMenu: "Meniu audio",
     remoteActionPlayPause: "Redare/Pauză",
     subtitleLanguage: "Subtitrare implicită",
+    subtitleSmart: "Doar pentru audio într-o limbă străină",
+    subtitleSmartDesc: "Dacă sunetul e deja în limba subtitrării, apar doar subtitrările forțate, dacă există.",
     rememberSubtitleTrack: "Reține subtitrarea pentru fiecare serial",
     rememberSubtitleTrackDesc: "Aplică automat subtitrarea aleasă și la următoarele episoade ale serialului.",
     langDefault: "După server",

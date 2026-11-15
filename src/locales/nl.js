@@ -242,6 +242,8 @@ export default {
     remoteActionAudioMenu: "Audiomenu",
     remoteActionPlayPause: "Afspelen/Pauze",
     subtitleLanguage: "Standaard ondertitels",
+    subtitleSmart: "Alleen bij anderstalige audio",
+    subtitleSmartDesc: "Is de audio al in de ondertitelingstaal, dan verschijnt alleen geforceerde ondertiteling, als die er is.",
     rememberSubtitleTrack: "Ondertiteling per serie onthouden",
     rememberSubtitleTrackDesc: "Past de gekozen ondertiteling automatisch toe op de volgende afleveringen van een serie.",
     langDefault: "Serverstandaard",

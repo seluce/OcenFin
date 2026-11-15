@@ -242,6 +242,8 @@ export default {
     remoteActionAudioMenu: "Audio menu",
     remoteActionPlayPause: "Play/Pause",
     subtitleLanguage: "Default Subtitles",
+    subtitleSmart: "Only for foreign-language audio",
+    subtitleSmartDesc: "When the audio is already in the subtitle language, only forced subtitles are shown, if there are any.",
     rememberSubtitleTrack: "Remember subtitle per series",
     rememberSubtitleTrackDesc: "Automatically applies the chosen subtitle to the next episodes of a series.",
     langDefault: "Server Default",

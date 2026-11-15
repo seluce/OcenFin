@@ -242,6 +242,8 @@ export default {
     remoteActionAudioMenu: "Äänivalikko",
     remoteActionPlayPause: "Toista/tauko",
     subtitleLanguage: "Ensisijainen tekstitys",
+    subtitleSmart: "Vain vieraskielisellä äänellä",
+    subtitleSmartDesc: "Jos ääni on jo tekstityksen kielellä, näytetään vain pakotettu tekstitys, jos sellainen on.",
     rememberSubtitleTrack: "Muista tekstitys sarjakohtaisesti",
     rememberSubtitleTrackDesc: "Käyttää valittua tekstitystä automaattisesti sarjan seuraavissa jaksoissa.",
     langDefault: "Palvelimen oletus",
