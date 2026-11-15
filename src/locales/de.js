@@ -200,6 +200,7 @@ export default {
     navEditHint: "OK hebt einen Eintrag an, ▲▼ verschiebt ihn, OK legt ab. Ausgeblendete Einträge erscheinen nicht in der Seitenleiste.",
     navGrabbedHint: "▲▼ bewegen · OK ablegen",
     navAlwaysVisible: "Immer sichtbar",
+    homeEditHint: "OK hebt eine Reihe an, ▲▼ verschiebt sie, OK legt ab. Der Schalter rechts blendet sie ein oder aus.",
     navHide: "Ausblenden",
     navShow: "Einblenden",
     chooseIcon: "Symbol wählen",

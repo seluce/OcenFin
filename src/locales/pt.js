@@ -200,6 +200,7 @@ export default {
     navEditHint: "OK para pegar numa entrada, ▲▼ para a mover, OK para a largar. As entradas ocultas não aparecem na barra lateral.",
     navGrabbedHint: "▲▼ mover · OK largar",
     navAlwaysVisible: "Sempre visível",
+    homeEditHint: "OK para pegar numa linha, ▲▼ para a mover, OK para a largar. O interruptor à direita mostra-a ou oculta-a.",
     navHide: "Ocultar",
     navShow: "Mostrar",
     chooseIcon: "Escolher ícone",

@@ -200,6 +200,7 @@ export default {
     navEditHint: "OK로 항목을 집고, ▲▼로 옮긴 뒤, OK로 놓으세요. 숨긴 항목은 사이드바에 표시되지 않습니다.",
     navGrabbedHint: "▲▼ 이동 · OK 놓기",
     navAlwaysVisible: "항상 표시",
+    homeEditHint: "OK로 줄을 집고, ▲▼로 옮긴 뒤, OK로 놓으세요. 오른쪽 스위치로 표시하거나 숨깁니다.",
     navHide: "숨기기",
     navShow: "표시",
     chooseIcon: "아이콘 선택",

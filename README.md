@@ -35,7 +35,7 @@ OcenFin plays your movies and shows as they are: Direct Play with Dolby Vision a
 
 **Finding something to watch**
 
-- A home screen with Continue Watching, Next Up, recent additions, “Because you watched …”, collections and your watchlist.
+- A home screen with Continue Watching, Next Up, recent additions, “Because you watched …”, collections and your watchlist, in the order you choose.
 - Libraries with an A–Z jump, filters for genre and audio or subtitle language, sorting and “Surprise me”.
 - Search across titles and people; title pages with cast, similar titles and the collections a title belongs to.
 - Spoiler protection blurs the pictures of episodes you have not seen yet.

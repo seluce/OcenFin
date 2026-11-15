@@ -200,6 +200,7 @@ export default {
     navEditHint: "OK to pick up an entry, ▲▼ to move it, OK to drop. Hidden entries don't appear in the sidebar.",
     navGrabbedHint: "▲▼ move · OK drop",
     navAlwaysVisible: "Always visible",
+    homeEditHint: "OK to pick up a row, ▲▼ to move it, OK to drop. The switch on the right shows or hides it.",
     navHide: "Hide",
     navShow: "Show",
     chooseIcon: "Choose icon",

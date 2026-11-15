@@ -200,6 +200,7 @@ export default {
     navEditHint: "OK ile bir öğeyi alın, ▲▼ ile taşıyın, OK ile bırakın. Gizli öğeler kenar çubuğunda görünmez.",
     navGrabbedHint: "▲▼ taşı · OK bırak",
     navAlwaysVisible: "Her zaman görünür",
+    homeEditHint: "OK ile bir satırı alın, ▲▼ ile taşıyın, OK ile bırakın. Sağdaki anahtar onu gösterir veya gizler.",
     navHide: "Gizle",
     navShow: "Göster",
     chooseIcon: "Simge seç",

@@ -200,6 +200,7 @@ export default {
     navEditHint: "OK tar upp en post, ▲▼ flyttar den, OK släpper den. Dolda poster visas inte i sidofältet.",
     navGrabbedHint: "▲▼ flytta · OK släpp",
     navAlwaysVisible: "Alltid synlig",
+    homeEditHint: "OK tar upp en rad, ▲▼ flyttar den, OK släpper den. Reglaget till höger visar eller döljer den.",
     navHide: "Dölj",
     navShow: "Visa",
     chooseIcon: "Välj ikon",

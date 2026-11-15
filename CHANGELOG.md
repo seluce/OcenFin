@@ -24,6 +24,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   bar of very wide films.
 - **Subtitles only for foreign-language audio.** With a subtitle language chosen, a new switch shows them only
   when the audio is in another language, and otherwise just the forced ones, as Jellyfin's "Smart" mode does.
+- **Home screen rows in your own order.** Under Settings → Content → Home screen the rows move the same way as
+  the menu entries, and each can still be switched off there; only the banner stays on top.
 
 ### Fixed
 

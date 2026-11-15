@@ -200,6 +200,7 @@ export default {
     navEditHint: "OK om een item op te pakken, ▲▼ om te verplaatsen, OK om neer te zetten. Verborgen items verschijnen niet in de zijbalk.",
     navGrabbedHint: "▲▼ verplaatsen · OK neerzetten",
     navAlwaysVisible: "Altijd zichtbaar",
+    homeEditHint: "OK om een rij op te pakken, ▲▼ om te verplaatsen, OK om neer te zetten. De schakelaar rechts toont of verbergt hem.",
     navHide: "Verbergen",
     navShow: "Tonen",
     chooseIcon: "Pictogram kiezen",

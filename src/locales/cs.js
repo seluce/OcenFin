@@ -200,6 +200,7 @@ export default {
     navEditHint: "OK položku zvedne, ▲▼ ji posune, OK ji položí. Skryté položky se v postranním panelu nezobrazují.",
     navGrabbedHint: "▲▼ posunout · OK položit",
     navAlwaysVisible: "Vždy viditelné",
+    homeEditHint: "OK řadu zvedne, ▲▼ ji posune, OK ji položí. Přepínač vpravo ji zobrazí nebo skryje.",
     navHide: "Skrýt",
     navShow: "Zobrazit",
     chooseIcon: "Vybrat ikonu",

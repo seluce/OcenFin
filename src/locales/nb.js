@@ -200,6 +200,7 @@ export default {
     navEditHint: "OK plukker opp et punkt, ▲▼ flytter det, OK slipper det. Skjulte punkter vises ikke i sidepanelet.",
     navGrabbedHint: "▲▼ flytt · OK slipp",
     navAlwaysVisible: "Alltid synlig",
+    homeEditHint: "OK plukker opp en rad, ▲▼ flytter den, OK slipper den. Bryteren til høyre viser eller skjuler den.",
     navHide: "Skjul",
     navShow: "Vis",
     chooseIcon: "Velg ikon",

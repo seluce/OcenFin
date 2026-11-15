@@ -718,6 +718,20 @@ export function asUiSize(v) {
   const n = ({ small: 80, medium: 100, large: 120 })[v] ?? Number(v);
   return UI_SIZES.includes(n) ? n : 100;
 }
+// Home-screen rows in their default order (CODE-HEALTH §103). `displaySettings.homeOrder` holds a profile's
+// own order; orderHomeRows() turns whatever is stored into the complete list: unknown or repeated keys are
+// dropped, and a row the stored order does not name (one added in a later version) goes right after its
+// default predecessor — so it appears where it would by default, not at the very end.
+export const HOME_ROWS = ['libraries', 'resume', 'nextUp', 'watchlist', 'history', 'sharedSuggestions', 'recommendations', 'latest', 'collections'];
+export function orderHomeRows(order) {
+  const rows = Array.isArray(order) ? order.filter((k, i) => HOME_ROWS.includes(k) && order.indexOf(k) === i) : [];
+  for (const k of HOME_ROWS) {
+    if (rows.includes(k)) continue;
+    const prev = HOME_ROWS.slice(0, HOME_ROWS.indexOf(k)).reverse().find(p => rows.includes(p));
+    rows.splice(prev ? rows.indexOf(prev) + 1 : 0, 0, k);
+  }
+  return rows;
+}
 // Seek steps in seconds (CODE-HEALTH §97): ◄ and the rewind button jump back, ► and the forward button ahead.
 export const SEEK_BACK_STEPS = [5, 10, 15, 30];
 export const SEEK_FORWARD_STEPS = [10, 15, 30, 60];

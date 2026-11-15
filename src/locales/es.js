@@ -200,6 +200,7 @@ export default {
     navEditHint: "OK para tomar un elemento, ▲▼ para moverlo, OK para soltarlo. Los elementos ocultos no aparecen en la barra lateral.",
     navGrabbedHint: "▲▼ mover · OK soltar",
     navAlwaysVisible: "Siempre visible",
+    homeEditHint: "OK para tomar una fila, ▲▼ para moverla, OK para soltarla. El interruptor de la derecha la muestra u oculta.",
     navHide: "Ocultar",
     navShow: "Mostrar",
     chooseIcon: "Elegir icono",

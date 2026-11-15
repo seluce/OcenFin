@@ -200,6 +200,7 @@ export default {
     navEditHint: "OK: elem felvétele, ▲▼: mozgatás, OK: lerakás. A rejtett elemek nem jelennek meg az oldalsávban.",
     navGrabbedHint: "▲▼ mozgatás · OK lerakás",
     navAlwaysVisible: "Mindig látható",
+    homeEditHint: "OK: sor felvétele, ▲▼: mozgatás, OK: lerakás. A jobb oldali kapcsoló megjeleníti vagy elrejti.",
     navHide: "Elrejtés",
     navShow: "Megjelenítés",
     chooseIcon: "Ikon választása",

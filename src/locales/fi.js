@@ -200,6 +200,7 @@ export default {
     navEditHint: "OK poimii kohdan, ▲▼ siirtää sitä, OK pudottaa sen. Piilotetut kohdat eivät näy sivupalkissa.",
     navGrabbedHint: "▲▼ siirrä · OK pudota",
     navAlwaysVisible: "Aina näkyvissä",
+    homeEditHint: "OK poimii rivin, ▲▼ siirtää sitä, OK pudottaa sen. Oikealla oleva kytkin näyttää tai piilottaa sen.",
     navHide: "Piilota",
     navShow: "Näytä",
     chooseIcon: "Valitse kuvake",

@@ -200,6 +200,7 @@ export default {
     navEditHint: "OK pour saisir une entrée, ▲▼ pour la déplacer, OK pour la déposer. Les entrées masquées n'apparaissent pas dans la barre latérale.",
     navGrabbedHint: "▲▼ déplacer · OK déposer",
     navAlwaysVisible: "Toujours visible",
+    homeEditHint: "OK pour saisir une rangée, ▲▼ pour la déplacer, OK pour la déposer. L'interrupteur à droite l'affiche ou la masque.",
     navHide: "Masquer",
     navShow: "Afficher",
     chooseIcon: "Choisir une icône",

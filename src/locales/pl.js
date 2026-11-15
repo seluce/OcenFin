@@ -200,6 +200,7 @@ export default {
     navEditHint: "OK, aby chwycić pozycję, ▲▼, aby ją przesunąć, OK, aby upuścić. Ukryte pozycje nie pojawiają się na pasku bocznym.",
     navGrabbedHint: "▲▼ przesuń · OK upuść",
     navAlwaysVisible: "Zawsze widoczne",
+    homeEditHint: "OK, aby chwycić rząd, ▲▼, aby go przesunąć, OK, aby upuścić. Przełącznik po prawej go pokazuje lub ukrywa.",
     navHide: "Ukryj",
     navShow: "Pokaż",
     chooseIcon: "Wybierz ikonę",

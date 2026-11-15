@@ -75,6 +75,7 @@ export default {
     seekIntervalDesc: "Quanto ◄► e os botões de voltar/avançar pulam. Mantendo pressionado, ◄► percorrem cada vez mais rápido.",
     seekBack: "Voltar",
     navEditHint: "OK para pegar uma entrada, ▲▼ para movê-la, OK para soltá-la. As entradas ocultas não aparecem na barra lateral.",
+    homeEditHint: "OK para pegar uma linha, ▲▼ para movê-la, OK para soltá-la. O interruptor à direita a mostra ou oculta.",
     navGrabbedHint: "▲▼ mover · OK soltar",
     profilePicture: "Foto do perfil",
     avatarTabRecent: "Assistidos recentemente",

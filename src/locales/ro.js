@@ -200,6 +200,7 @@ export default {
     navEditHint: "OK pentru a prinde o intrare, ▲▼ pentru a o muta, OK pentru a o lăsa. Intrările ascunse nu apar în bara laterală.",
     navGrabbedHint: "▲▼ mută · OK lasă",
     navAlwaysVisible: "Mereu vizibil",
+    homeEditHint: "OK pentru a prinde un rând, ▲▼ pentru a-l muta, OK pentru a-l lăsa. Comutatorul din dreapta îl afișează sau îl ascunde.",
     navHide: "Ascunde",
     navShow: "Afișează",
     chooseIcon: "Alege pictograma",

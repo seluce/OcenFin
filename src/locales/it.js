@@ -200,6 +200,7 @@ export default {
     navEditHint: "OK per prendere una voce, ▲▼ per spostarla, OK per rilasciarla. Le voci nascoste non compaiono nella barra laterale.",
     navGrabbedHint: "▲▼ sposta · OK rilascia",
     navAlwaysVisible: "Sempre visibile",
+    homeEditHint: "OK per prendere una riga, ▲▼ per spostarla, OK per rilasciarla. L'interruttore a destra la mostra o la nasconde.",
     navHide: "Nascondi",
     navShow: "Mostra",
     chooseIcon: "Scegli icona",

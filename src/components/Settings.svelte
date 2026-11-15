@@ -3,7 +3,7 @@
   import { startQuickConnect as startQC } from '../quickconnect.js';
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, uploadLog, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter, UI_SIZES, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS } from '../utils.js';
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, uploadLog, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter, UI_SIZES, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS, orderHomeRows } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { focusFromPointer } from '../spatialnav.js';
   import { startPlatformDiagnostics } from '../diag.js';
@@ -606,13 +606,47 @@
     }
   }
   // In grab mode intercept ▲/▼ (before the focus manager, bubble phase) and move.
-  // OK (click) drops; Back cancels grab mode.
-  function onNavRowKey(e, entry) {
-    if (grabbedId !== entry.id) return;
-    if (e.key === 'ArrowUp')        { e.preventDefault(); e.stopPropagation(); moveGrabbed(-1); }
-    else if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); moveGrabbed(1); }
+  // OK (click) drops; Back cancels grab mode. Shared by the sidebar and the home-row editor.
+  function onGrabKey(e, move, cancel) {
+    if (e.key === 'ArrowUp')        { e.preventDefault(); e.stopPropagation(); move(-1); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); move(1); }
     else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); } // don't leave in grab mode
-    else if (isBackKey(e))          { e.preventDefault(); e.stopPropagation(); setGrabbed(null); }
+    else if (isBackKey(e))          { e.preventDefault(); e.stopPropagation(); cancel(); }
+  }
+  function onNavRowKey(e, entry) {
+    if (grabbedId === entry.id) onGrabKey(e, moveGrabbed, () => setGrabbed(null));
+  }
+
+  // ---- Home-row editor (§103): the same grab mode as the sidebar, on displaySettings.homeOrder ----
+  let homeGrabbed = $state(null);
+  let homeListEl = $state();
+  function setHomeGrabbed(id) {
+    homeGrabbed = id;
+    onReorderingChange?.(id !== null);   // the same focus-manager lock as the sidebar editor
+  }
+  function toggleHomeGrab(entry) {
+    const now = Date.now();
+    if (now - lastGrabToggle < 350) return;   // a held OK key = one toggle
+    lastGrabToggle = now;
+    setHomeGrabbed(homeGrabbed === entry.id ? null : entry.id);
+  }
+  // Moves among the rows SHOWN here: the shared row, hidden without a shared profile, keeps its place in the
+  // stored order and is stepped over instead of swallowing a key press.
+  async function moveHomeGrabbed(dir) {
+    const shown = homeEntries.map(e => e.id);
+    const i = shown.indexOf(homeGrabbed), j = i + dir;
+    if (i < 0 || j < 0 || j >= shown.length) return;
+    const order = orderHomeRows(displaySettings.homeOrder);
+    const a = order.indexOf(shown[i]), b = order.indexOf(shown[j]);
+    [order[a], order[b]] = [order[b], order[a]];
+    onDisplayChange?.({ ...displaySettings, homeOrder: order });
+    await tick();
+    homeListEl?.querySelector(`[data-home-id="${homeGrabbed}"]`)?.focus();   // focus follows the row
+  }
+  function onHomeRowKey(e, entry) {
+    if (homeGrabbed === entry.id) onGrabKey(e, moveHomeGrabbed, () => setHomeGrabbed(null));
+    // The locked row has no switch: ► would slide diagonally onto the switch of the row above.
+    else if (!entry.toggle && e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); }
   }
 
   // Accent colors (preview color = the 500 tone). OLED-friendly, vivid tones.
@@ -632,18 +666,20 @@
 
   // Display elements grouped: home rows vs. general interface
   let sharedSetUp = $derived(sharedProfile.enabled && sharedProfile.members.filter(m => m && m.id).length >= 1);
+  // The banner and the backdrop are no rows: plain switches above the row list.
   let homeToggles = $derived([
     { key: 'hero',            label: i18n.t.displayHero },
     { key: 'dashboardBackdrop', label: i18n.t.displayBackdropPreview },   // same wording as Library's; the heading tells them apart
-    { key: 'libraries',       label: i18n.t.displayLibraries },
-    { key: 'nextUp',          label: i18n.t.nextUp },
-    { key: 'watchlist',       label: i18n.t.watchlist },
-    { key: 'history',         label: i18n.t.displayHistory },
-    ...(sharedSetUp ? [{ key: 'sharedSuggestions', label: i18n.t.sharedSuggestions }] : []),
-    { key: 'recommendations', label: i18n.t.displayRecommendations },
-    { key: 'latest',          label: i18n.t.displayLatest },
-    { key: 'collections',     label: i18n.t.collections },
   ]);
+  // The rows themselves (§103): order AND visibility in one list, driven like the sidebar editor. Each row's
+  // switch is the displaySettings key of the same name; Continue watching has none (always shown, as before),
+  // the shared row exists only with a shared profile.
+  const HOME_ROW_LABELS = { libraries: 'displayLibraries', resume: 'continueWatchingRow', nextUp: 'nextUp', watchlist: 'watchlist',
+    history: 'displayHistory', sharedSuggestions: 'sharedSuggestions', recommendations: 'displayRecommendations',
+    latest: 'displayLatest', collections: 'collections' };
+  let homeEntries = $derived(orderHomeRows(displaySettings.homeOrder)
+    .filter(k => k !== 'sharedSuggestions' || sharedSetUp)
+    .map(k => ({ id: k, label: i18n.t[HOME_ROW_LABELS[k]], toggle: k === 'resume' ? null : k })));
   let uiToggles = $derived([
     { key: 'showLogo',        label: i18n.t.displayLogo },
     { key: 'clock',           label: i18n.t.displayClock },
@@ -882,9 +918,44 @@
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
           {@render toggleRows(homeToggles)}
 
+          <!-- The rows: OK lifts, ▲▼ moves, OK drops, Back cancels (like the sidebar editor); ► reaches the switch. -->
+          <p class="px-6 pt-4 pb-1 text-sm text-gray-400 border-t border-gray-700/50">{i18n.t.homeEditHint}</p>
+          <div bind:this={homeListEl} class="flex flex-col px-3 pb-2">
+            {#each homeEntries as entry (entry.id)}
+              <div class="flex items-center gap-2">
+                <button data-home-id={entry.id} onclick={() => toggleHomeGrab(entry)} onkeydown={(e) => onHomeRowKey(e, entry)}
+                  class="flex-1 flex items-center gap-3 px-3 py-3 rounded-xl text-left focus:outline-none transition-transform
+                         {homeGrabbed === entry.id
+                           ? 'bg-blue-600 text-white ring-4 ring-white scale-[1.02] shadow-xl'
+                           : 'hover:bg-gray-700 focus:bg-gray-700 focus:ring-4 focus:ring-white'}">
+                  <svg class="w-6 h-6 shrink-0 opacity-50" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6h2v2H8V6zm0 5h2v2H8v-2zm0 5h2v2H8v-2zm6-10h2v2h-2V6zm0 5h2v2h-2v-2zm0 5h2v2h-2v-2z"/></svg>
+                  <span class="text-lg flex-1 {homeGrabbed === entry.id ? '' : entry.toggle && !displaySettings[entry.toggle] ? 'text-gray-500' : 'text-gray-200'}">{entry.label}</span>
+                  {#if homeGrabbed === entry.id}
+                    <span class="text-sm font-medium opacity-90 whitespace-nowrap">{i18n.t.navGrabbedHint}</span>
+                  {/if}
+                </button>
+                {#if entry.toggle}
+                  <button onclick={() => toggleDisplay(entry.toggle)} aria-label={entry.label} aria-pressed={!!displaySettings[entry.toggle]}
+                    class="p-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-700 focus:bg-gray-700">
+                    <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors
+                                {displaySettings[entry.toggle] ? 'bg-blue-500' : 'bg-gray-600'}">
+                      <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
+                                  {displaySettings[entry.toggle] ? 'translate-x-7' : ''}"></div>
+                    </div>
+                  </button>
+                {:else}
+                  <!-- Continue watching: always shown — the lock sits where the switch would -->
+                  <div class="p-3 w-20 flex justify-center text-gray-600" title={i18n.t.navAlwaysVisible}>
+                    <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+
           <!-- Number of recommendation rows — only relevant when recommendations are active -->
           {#if displaySettings.recommendations}
-            <div class="px-6 py-4">
+            <div class="px-6 py-4 border-t border-gray-700/50">
               <span class="text-lg text-gray-200 block mb-3">{i18n.t.recommendationRows}</span>
               <div class="flex gap-2">
                 {#each [[1, i18n.t.rowsOne],[2, i18n.t.rowsTwo]] as [val, label]}

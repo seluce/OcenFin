@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, isShownLibrary, getItemImageUrl, libraryIcon } from '../utils.js';
+  import { itemProgress, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, isShownLibrary, getItemImageUrl, libraryIcon, orderHomeRows } from '../utils.js';
   import CardStatus from './CardStatus.svelte';
   import { focusFromPointer } from '../spatialnav.js';
   import { session } from '../session.svelte.js';
@@ -21,6 +21,7 @@
     recommendationRows   = 1,   // 1 or 2 recommendation rows
     showLatest       = true,    // "Recently Added" (movies + series)
     showCollections  = true,    // "Collections" (BoxSets)
+    homeOrder        = [],      // the profile's row order (Settings → Content → Home screen, CODE-HEALTH §103)
     sharedSuggestions = [],     // "For you both" — titles that match the shared preference
     showSharedSuggestions = false, // show the row (only when a shared profile is set up)
     resumeStale = false,        // App: playback happened since the last dashboard visit → fetch Resume/NextUp fresh
@@ -77,6 +78,9 @@
   // watched sits in Up next or Continue watching and used to be repeated here as the series. What stays
   // is what was finished — the way Netflix's "watch it again" works. Only against rows that are shown:
   // with Up next switched off, its series stay here. Reactive, so it follows refreshResume() too.
+  // Rows in the profile's order. Keyed {#each} below: a new order MOVES the rows, nothing reloads.
+  let homeRows = $derived(orderHomeRows(homeOrder));
+
   let historyRow = $derived.by(() => {
     const above = new Set();
     for (const i of [...resumeRow, ...(showNextUp ? nextUp : [])]) { above.add(i.Id); if (i.SeriesId) above.add(i.SeriesId); }
@@ -822,147 +826,152 @@
       {@render heroSkeleton()}
     {/if}
 
-    <!-- LIBRARIES -->
-    {#if showLibraries && libraries.length > 0}
-      <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.myMedia}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-          {#each libraries as library (library.Id)}
-            <!-- data-item-id: Back out of a library returns to the tile it was opened from. This row
-                 comes out of the first response round, so it satisfies the rule that only rows which
-                 arrive quickly carry the attribute. -->
-            <button onclick={() => onOpenLibrary?.(library)} data-item-id={library.Id}
-              class="shrink-0 scroll-mt-24 scroll-mx-4 group flex flex-col items-center focus:outline-none">
-              <div class="w-64 h-36 bg-gray-800 rounded-xl flex items-center justify-center
-                          border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow group-hover:border-gray-400
-                          transition-transform duration-200 shadow-lg overflow-hidden">
-                {#if getItemImageUrl(library)}
-                  <img src={getItemImageUrl(library)} {@attach blurUp(itemBlurHash(library))} alt={library.Name}
-                    class="w-full h-full object-cover opacity-80 group-focus:opacity-100" loading="lazy" />
-                {:else}
-                  <!-- No picture: the library's icon (as in the sidebar), not its name — the name is
-                       already written right under the tile. -->
-                  <svg class="w-14 h-14 text-gray-500 group-focus:text-gray-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" d={libraryIcon(library, navIcons)}/>
-                  </svg>
-                {/if}
-              </div>
-              <!-- block + w-64 (= tile width) + truncate: without a width bound a long library name
-                   makes the button wider than its tile, which breaks the spacing of the row. -->
-              <span class="mt-3 text-lg text-gray-300 group-focus:text-white block w-64 truncate text-center">{library.Name}</span>
-            </button>
-          {/each}
-        </div>
-      </div>
-    {/if}
+    <!-- ROWS in the profile's order (homeRows). Each branch keeps its own visibility condition. -->
+    {#each homeRows as row (row)}
+      {#if row === 'libraries'}
+        <!-- LIBRARIES -->
+        {#if showLibraries && libraries.length > 0}
+          <div>
+            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.myMedia}</h2>
+            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+              {#each libraries as library (library.Id)}
+                <!-- data-item-id: Back out of a library returns to the tile it was opened from. This row
+                     comes out of the first response round, so it satisfies the rule that only rows which
+                     arrive quickly carry the attribute. -->
+                <button onclick={() => onOpenLibrary?.(library)} data-item-id={library.Id}
+                  class="shrink-0 scroll-mt-24 scroll-mx-4 group flex flex-col items-center focus:outline-none">
+                  <div class="w-64 h-36 bg-gray-800 rounded-xl flex items-center justify-center
+                              border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow group-hover:border-gray-400
+                              transition-transform duration-200 shadow-lg overflow-hidden">
+                    {#if getItemImageUrl(library)}
+                      <img src={getItemImageUrl(library)} {@attach blurUp(itemBlurHash(library))} alt={library.Name}
+                        class="w-full h-full object-cover opacity-80 group-focus:opacity-100" loading="lazy" />
+                    {:else}
+                      <!-- No picture: the library's icon (as in the sidebar), not its name — the name is
+                           already written right under the tile. -->
+                      <svg class="w-14 h-14 text-gray-500 group-focus:text-gray-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d={libraryIcon(library, navIcons)}/>
+                      </svg>
+                    {/if}
+                  </div>
+                  <!-- block + w-64 (= tile width) + truncate: without a width bound a long library name
+                       makes the button wider than its tile, which breaks the spacing of the row. -->
+                  <span class="mt-3 text-lg text-gray-300 group-focus:text-white block w-64 truncate text-center">{library.Name}</span>
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      {:else if row === 'resume'}
+        <!-- CONTINUE WATCHING -->
+        {#if resumeRow.length > 0}
+          <div>
+            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.continueWatchingRow}</h2>
+            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+              {#each resumeRow as item (item.Id)}
+                {@render landscapeCard(item)}
+              {/each}
+            </div>
+          </div>
+        {/if}
+      {:else if row === 'nextUp'}
+        <!-- UP NEXT -->
+        {#if showNextUp && nextUp.length > 0}
+          <div>
+            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.nextUp}</h2>
+            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+              {#each nextUp as item (item.Id)}
+                {@render landscapeCard(item)}
+              {/each}
+            </div>
+          </div>
+        {/if}
+      {:else if row === 'watchlist'}
+        <!-- WATCHLIST — the user-curated "watch later" playlist (see watchlist.svelte.js) -->
+        {#if showWatchlist && watchlistDisplay.length > 0}
+          <div>
+            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.watchlist}</h2>
+            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+              {#each watchlistDisplay as item (item.Id)}
+                {@render portraitCard(item, item._imgUrl || getItemImageUrl(item), itemBlurHash(item))}
+              {/each}
+            </div>
+          </div>
+        {/if}
+      {:else if row === 'history'}
+        <!-- RECENTLY WATCHED (history) -->
+        {#if showHistory && historyRow.length > 0}
+          <div>
+            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.recentlyWatched}</h2>
+            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+              {#each historyRow as item (item.Id)}
+                {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}   <!-- episodes arrive as their series (dedupeHistory) -->
+              {/each}
+            </div>
+          </div>
+        {/if}
+      {:else if row === 'sharedSuggestions'}
+        <!-- SHARED SUGGESTIONS ("For you both") — only with a shared profile set up -->
+        {#if showSharedSuggestions && sharedSuggestions.length > 0}
+          <div>
+            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.sharedSuggestions}</h2>
+            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+              {#each sharedSuggestions as item (item.Id)}
+                {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
+              {/each}
+            </div>
+          </div>
+        {/if}
+      {:else if row === 'recommendations'}
+        <!-- RECOMMENDATIONS: "Because you watched X" — personalized -->
+        {#each (showRecommendations ? recommendations.slice(0, recommendationRows) : []) as rec (rec.seedId ?? rec.seedTitle)}
+          <div>
+            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
+            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+              {#each rec.items as item (item.Id)}
+                {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
+              {/each}
+            </div>
+          </div>
+        {/each}
+      {:else if row === 'latest'}
+        <!-- RECENTLY ADDED MOVIES -->
+        {#if showLatest && latestMovies.length > 0}
+          <div>
+            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestMovies}</h2>
+            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+              {#each latestMovies as item (item.Id)}
+                {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
+              {/each}
+            </div>
+          </div>
+        {/if}
 
-    <!-- CONTINUE WATCHING -->
-    {#if resumeRow.length > 0}
-      <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.continueWatchingRow}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-          {#each resumeRow as item (item.Id)}
-            {@render landscapeCard(item)}
-          {/each}
-        </div>
-      </div>
-    {/if}
-
-    <!-- UP NEXT -->
-    {#if showNextUp && nextUp.length > 0}
-      <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.nextUp}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-          {#each nextUp as item (item.Id)}
-            {@render landscapeCard(item)}
-          {/each}
-        </div>
-      </div>
-    {/if}
-
-    <!-- WATCHLIST — the user-curated "watch later" playlist (see watchlist.svelte.js) -->
-    {#if showWatchlist && watchlistDisplay.length > 0}
-      <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.watchlist}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-          {#each watchlistDisplay as item (item.Id)}
-            {@render portraitCard(item, item._imgUrl || getItemImageUrl(item), itemBlurHash(item))}
-          {/each}
-        </div>
-      </div>
-    {/if}
-
-    <!-- RECENTLY WATCHED (history) -->
-    {#if showHistory && historyRow.length > 0}
-      <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.recentlyWatched}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-          {#each historyRow as item (item.Id)}
-            {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}   <!-- episodes arrive as their series (dedupeHistory) -->
-          {/each}
-        </div>
-      </div>
-    {/if}
-
-    <!-- SHARED SUGGESTIONS ("For you both") — only with a shared profile set up -->
-    {#if showSharedSuggestions && sharedSuggestions.length > 0}
-      <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.sharedSuggestions}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-          {#each sharedSuggestions as item (item.Id)}
-            {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
-          {/each}
-        </div>
-      </div>
-    {/if}
-
-    <!-- RECOMMENDATIONS: "Because you watched X" — personalized -->
-    {#each (showRecommendations ? recommendations.slice(0, recommendationRows) : []) as rec (rec.seedId ?? rec.seedTitle)}
-      <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-          {#each rec.items as item (item.Id)}
-            {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
-          {/each}
-        </div>
-      </div>
+        <!-- RECENTLY ADDED SERIES -->
+        {#if showLatest && latestSeries.length > 0}
+          <div>
+            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestSeries}</h2>
+            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+              {#each latestSeries as item (item.Id)}
+                {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
+              {/each}
+            </div>
+          </div>
+        {/if}
+      {:else if row === 'collections'}
+        <!-- COLLECTIONS (BoxSets) — browse-oriented, hence at the bottom -->
+        {#if showCollections && collections.length > 0}
+          <div>
+            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.collections}</h2>
+            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+              {#each collections as col (col.Id)}
+                {@render collectionCard(col)}
+              {/each}
+            </div>
+          </div>
+        {/if}
+      {/if}
     {/each}
-
-    <!-- RECENTLY ADDED MOVIES -->
-    {#if showLatest && latestMovies.length > 0}
-      <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestMovies}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-          {#each latestMovies as item (item.Id)}
-            {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
-          {/each}
-        </div>
-      </div>
-    {/if}
-
-    <!-- RECENTLY ADDED SERIES -->
-    {#if showLatest && latestSeries.length > 0}
-      <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestSeries}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-          {#each latestSeries as item (item.Id)}
-            {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
-          {/each}
-        </div>
-      </div>
-    {/if}
-
-    <!-- COLLECTIONS (BoxSets) — browse-oriented, hence at the bottom -->
-    {#if showCollections && collections.length > 0}
-      <div>
-        <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.collections}</h2>
-        <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-          {#each collections as col (col.Id)}
-            {@render collectionCard(col)}
-          {/each}
-        </div>
-      </div>
-    {/if}
 
   {/if}
   </div>

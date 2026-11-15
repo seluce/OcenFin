@@ -200,6 +200,7 @@ export default {
     navEditHint: "OK tager et punkt op, ▲▼ flytter det, OK sætter det. Skjulte punkter vises ikke i sidepanelet.",
     navGrabbedHint: "▲▼ flyt · OK sæt",
     navAlwaysVisible: "Altid synlig",
+    homeEditHint: "OK tager en række op, ▲▼ flytter den, OK sætter den. Kontakten til højre viser eller skjuler den.",
     navHide: "Skjul",
     navShow: "Vis",
     chooseIcon: "Vælg ikon",
