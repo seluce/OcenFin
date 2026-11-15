@@ -1422,6 +1422,10 @@
   }
   // What the outro card offers: the next episode/queue title, else the collection's next film.
   let upNext = $derived(nextEpisode ?? nextFilm);
+  // A film is never called an episode: countdown, card, the ◄|/►| tooltips and the "only this one"
+  // switch say "film" whenever the title they name is one — a play-all queue of films included.
+  // ◄|/►| name their neighbour, or the title on screen when there is none (disabled button).
+  const isFilm = (x) => x?.Type === 'Movie';
   let nextEpisodeImage = $derived(upNext ? getItemImageUrl(upNext, 'landscape') : null);   // still for the compact "up next" thumbnail
 
   // "Only this episode" — one-shot sleep switch (opt-in via playbackPrefs.sleepButton).
@@ -2525,7 +2529,8 @@
           <button onclick={goToPrevEpisode}
             disabled={!prevEpisode}
             class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none disabled:opacity-30"
-            title={i18n.t.prevEpisode} aria-label={i18n.t.prevEpisode} {@attach hint()}>
+            title={isFilm(prevEpisode ?? item) ? i18n.t.prevFilm : i18n.t.prevEpisode}
+            aria-label={isFilm(prevEpisode ?? item) ? i18n.t.prevFilm : i18n.t.prevEpisode} {@attach hint()}>
             <!-- |◄ : bar on the left + triangle points LEFT -->
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/>
@@ -2581,7 +2586,8 @@
           <button onclick={() => goToNextEpisode(true)}
             disabled={!nextByIndex}
             class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none disabled:opacity-30"
-            title={i18n.t.nextEpisode} aria-label={i18n.t.nextEpisode} {@attach hint()}>
+            title={isFilm(nextEpisode ?? item) ? i18n.t.nextFilm : i18n.t.nextEpisode}
+            aria-label={isFilm(nextEpisode ?? item) ? i18n.t.nextFilm : i18n.t.nextEpisode} {@attach hint()}>
             <!-- ►| : triangle points RIGHT + bar on the right -->
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M16 6h2v12h-2zm-10 0l9 6-9 6V6z"/>
@@ -2594,7 +2600,7 @@
           <!-- ONLY THIS EPISODE — one-shot sleep switch (opt-in), first of the right group.
                Only visible when enabled AND an auto-advance is active (otherwise pointless). -->
           {#if playbackPrefs.sleepButton && autoAdvanceOn}
-            <button onclick={(e) => { e.stopPropagation(); toggleStopAfter(); }} title={i18n.t.stopAfterEpisode} aria-label={i18n.t.stopAfterEpisode} {@attach hint()}
+            <button onclick={(e) => { e.stopPropagation(); toggleStopAfter(); }} title={isFilm(item) ? i18n.t.stopAfterFilm : i18n.t.stopAfterEpisode} aria-label={isFilm(item) ? i18n.t.stopAfterFilm : i18n.t.stopAfterEpisode} {@attach hint()}
               class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                      {stopAfterThis ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -2766,7 +2772,7 @@
               class="w-32 aspect-video object-cover rounded-lg shrink-0 bg-gray-800" />
           {/if}
           <div class="min-w-0 flex-1 flex flex-col gap-1">
-            <span class="text-sm font-semibold text-gray-400 uppercase tracking-wider">{plural('nextEpisodeCountdown', nextCountdown)}</span>
+            <span class="text-sm font-semibold text-gray-400 uppercase tracking-wider">{isFilm(upNext) ? plural('nextFilmCountdown', nextCountdown) : plural('nextEpisodeCountdown', nextCountdown)}</span>
             <span class="text-xl font-bold text-white truncate">{nextEpisode.Name}</span>
             {#if nextEpisodeMeta}<span class="text-base text-gray-400">{nextEpisodeMeta}</span>{/if}
           </div>
@@ -2808,7 +2814,7 @@
               class="w-32 aspect-video object-cover rounded-lg shrink-0 bg-gray-800" />
           {/if}
           <div class="min-w-0 flex-1 flex flex-col gap-1">
-            <span class="text-sm font-semibold text-gray-400 uppercase tracking-wider">{nextEpisode ? i18n.t.nextEpisode : i18n.t.nextFilm}</span>
+            <span class="text-sm font-semibold text-gray-400 uppercase tracking-wider">{isFilm(upNext) ? i18n.t.nextFilm : i18n.t.nextEpisode}</span>
             <span class="text-xl font-bold text-white truncate">{upNext.Name}</span>
             {#if nextEpisodeMeta}<span class="text-base text-gray-400">{nextEpisodeMeta}</span>{/if}
           </div>

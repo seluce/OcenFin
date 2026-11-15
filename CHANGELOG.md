@@ -16,6 +16,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Fixed
 
+- **A film is called a film in the player.** Playing a collection with "Play all", the countdown, the end card
+  and the buttons spoke of the next episode; they now say film.
 - **Collections in the right order.** A film series is listed and played by release date, or in the order set
   on the server, instead of alphabetically, which put part 3 of a trilogy before part 2.
 - **Trailers in the app's language.** When Jellyfin knows several trailers for a title, the one whose name
