@@ -298,7 +298,6 @@ export default {
     clock24h: "24-годинний",
     clock12h: "12-годинний",
     uiSize: "Розмір інтерфейсу",
-    sizeMedium: "Середній",
     accentColor: "Колір акценту",
     themeBlue: "Синій",
     themeEmerald: "Смарагдовий",

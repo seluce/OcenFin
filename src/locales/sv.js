@@ -298,7 +298,6 @@ export default {
     clock24h: "24 timmar",
     clock12h: "12 timmar",
     uiSize: "Gränssnittets storlek",
-    sizeMedium: "Medel",
     accentColor: "Accentfärg",
     themeBlue: "Blå",
     themeEmerald: "Smaragd",

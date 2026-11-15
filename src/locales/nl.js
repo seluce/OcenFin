@@ -298,7 +298,6 @@ export default {
     clock24h: "24-uurs",
     clock12h: "12-uurs",
     uiSize: "Interfacegrootte",
-    sizeMedium: "Gemiddeld",
     accentColor: "Accentkleur",
     themeBlue: "Blauw",
     themeEmerald: "Smaragd",

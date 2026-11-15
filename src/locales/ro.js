@@ -298,7 +298,6 @@ export default {
     clock24h: "24 de ore",
     clock12h: "12 ore",
     uiSize: "Mărimea interfeței",
-    sizeMedium: "Medie",
     accentColor: "Culoare de accent",
     themeBlue: "Albastru",
     themeEmerald: "Smarald",

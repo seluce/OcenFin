@@ -298,7 +298,6 @@ export default {
     clock24h: "24 órás",
     clock12h: "12 órás",
     uiSize: "Felület mérete",
-    sizeMedium: "Közepes",
     accentColor: "Kiemelőszín",
     themeBlue: "Kék",
     themeEmerald: "Smaragd",

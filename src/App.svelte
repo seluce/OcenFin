@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, makeFocusReturn, installConnectionGuard, installEnterRepeatGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, makeFocusReturn, installConnectionGuard, installEnterRepeatGuard, perfMark, startPerfSampler, asArray, asObject, asNumber, asUiSize } from './utils.js';
   import { startPlatformDiagnostics } from './diag.js';
   import { buildPlayQueue, playableFor } from './playback.js';
   import { session } from './session.svelte.js';
@@ -221,7 +221,7 @@
   // existing profiles (their stored prefs are spread over the OTHER copy) — that paste-twice trap
   // fired once already (theme music). Functions, not shared literals: navOrder/navHidden/navIcons
   // must be fresh references on every call.
-  const defaultDisplaySettings = () => ({ clock: true, hero: true, episodeCount: true, letterBar: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
+  const defaultDisplaySettings = () => ({ clock: true, hero: true, episodeCount: true, letterBar: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 100, theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
   const defaultPlaybackPrefs   = () => ({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipRecap: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
   let displaySettings = $state(defaultDisplaySettings());
 
@@ -297,6 +297,7 @@
     displaySettings.navOrder  = asArray(displaySettings.navOrder);
     displaySettings.navHidden = asArray(displaySettings.navHidden);
     displaySettings.navIcons  = asObject(displaySettings.navIcons);
+    displaySettings.uiSize    = asUiSize(displaySettings.uiSize);   // small/medium/large → percent
     playbackPrefs    = { ...defaultPlaybackPrefs(), ...asObject(p.playbackPrefs) };
     reduceAnimations = p.reduceAnimations ?? false;
     librarySorts     = asObject(p.librarySorts);   // remembered sort per library
@@ -335,8 +336,7 @@
   // entire UI (Tailwind computes in rem), data-theme switches the accent color.
   // Runs reactively on every change of displaySettings (login, toggling, startup).
   $effect.pre(() => { if (typeof document !== 'undefined') {
-    const sizes = { small: '16px', medium: '20px', large: '24px' };
-    document.documentElement.style.fontSize = sizes[displaySettings.uiSize] || '20px';
+    document.documentElement.style.fontSize = `${asUiSize(displaySettings.uiSize) / 5}px`;   // 100 % = 20px
     document.documentElement.setAttribute('data-theme', displaySettings.theme || 'blue');
     // UI font: set on the root, everything inherits (font-mono spots deliberately stay mono).
     // 'system' → remove the inline style → Chromium/webOS default as before. Does NOT apply to
@@ -2272,7 +2272,7 @@
 
   /* TV scaling (10-foot UI): raises the rem-based base size so text and
      spacing look larger from couch distance. Standard browsers are 16px; 20px = +25%.
-     The baseline before the appearance effect applies uiSize (small/medium/large) inline. */
+     The baseline before the appearance effect applies uiSize (80–120 %) inline. */
   :global(html) { font-size: 20px; }
 
   /* Accent color themes: in Tailwind v4 all blue utilities use CSS variables.

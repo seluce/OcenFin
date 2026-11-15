@@ -3,7 +3,7 @@
   import { startQuickConnect as startQC } from '../quickconnect.js';
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, uploadLog, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter } from '../utils.js';
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, uploadLog, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter, UI_SIZES } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { focusFromPointer } from '../spatialnav.js';
   import { startPlatformDiagnostics } from '../diag.js';
@@ -432,6 +432,7 @@
   function setUiSize(size) {
     onDisplayChange?.({ ...displaySettings, uiSize: size });
   }
+  let percent = $derived(new Intl.NumberFormat(i18n.lang, { style: 'percent' }));
   function setRecRows(n) {
     onDisplayChange?.({ ...displaySettings, recommendationRows: n });
   }
@@ -764,12 +765,14 @@
         <div class="p-6">
           <span class="text-2xl text-white font-medium block">{i18n.t.uiSize}</span>
           <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.uiSizeDesc}</span>
+          <!-- Five steps of 10 % (CODE-HEALTH §94); the label is the language's own percent format
+               ("80 %", "80%", "%80"), so it needs no translation. -->
           <div class="flex gap-3">
-            {#each [['small', i18n.t.sizeSmall],['medium', i18n.t.sizeMedium],['large', i18n.t.sizeLarge]] as [val, label]}
-              <button onclick={() => setUiSize(val)}
+            {#each UI_SIZES as pct}
+              <button onclick={() => setUiSize(pct)}
                 class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                       {(displaySettings.uiSize || 'medium') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                {label}
+                       {displaySettings.uiSize === pct ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                {percent.format(pct / 100)}
               </button>
             {/each}
           </div>

@@ -711,6 +711,13 @@ export function asNumber(v, fb, min = -Infinity, max = Infinity) {
   const n = typeof v === 'number' ? v : parseFloat(v);
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fb;
 }
+// Interface size, in percent of the 20px TV baseline (CODE-HEALTH §94). Before 2026-11 it was
+// small/medium/large = 80/100/120 — a stored one keeps its size.
+export const UI_SIZES = [80, 90, 100, 110, 120];
+export function asUiSize(v) {
+  const n = ({ small: 80, medium: 100, large: 120 })[v] ?? Number(v);
+  return UI_SIZES.includes(n) ? n : 100;
+}
 
 // --- Performance instrumentation (opt-in, shares the debug switch) ---------------------------
 // Inert while debug is off: every entry point tests _debug FIRST, so a normal session pays one

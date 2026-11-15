@@ -298,7 +298,6 @@ export default {
     clock24h: "24시간",
     clock12h: "12시간",
     uiSize: "인터페이스 크기",
-    sizeMedium: "중간",
     accentColor: "강조 색상",
     themeBlue: "파랑",
     themeEmerald: "에메랄드",

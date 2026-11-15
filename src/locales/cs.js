@@ -298,7 +298,6 @@ export default {
     clock24h: "24hodinový",
     clock12h: "12hodinový",
     uiSize: "Velikost rozhraní",
-    sizeMedium: "Střední",
     accentColor: "Barva zvýraznění",
     themeBlue: "Modrá",
     themeEmerald: "Smaragdová",

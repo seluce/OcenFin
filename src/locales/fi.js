@@ -298,7 +298,6 @@ export default {
     clock24h: "24 tuntia",
     clock12h: "12 tuntia",
     uiSize: "Käyttöliittymän koko",
-    sizeMedium: "Keskikoko",
     accentColor: "Korostusväri",
     themeBlue: "Sininen",
     themeEmerald: "Smaragdi",

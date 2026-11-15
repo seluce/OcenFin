@@ -298,7 +298,6 @@ export default {
     clock24h: "24 horas",
     clock12h: "12 horas",
     uiSize: "Tamanho da interface",
-    sizeMedium: "Médio",
     accentColor: "Cor de destaque",
     themeBlue: "Azul",
     themeEmerald: "Esmeralda",

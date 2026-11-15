@@ -298,7 +298,6 @@ export default {
     clock24h: "24 saat",
     clock12h: "12 saat",
     uiSize: "Arayüz boyutu",
-    sizeMedium: "Orta",
     accentColor: "Vurgu rengi",
     themeBlue: "Mavi",
     themeEmerald: "Zümrüt",

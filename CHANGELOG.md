@@ -13,6 +13,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   Portuguese (Brazil) starts in it.
 - **The next film of a collection.** At the credits of a film that belongs to a collection, a card offers the
   next part, the same card as for the next episode, but a film never starts on its own.
+- **Interface size in five steps.** The setting now goes from 80 to 120 percent in steps of ten, with a step
+  between each of the old small, medium and large.
 
 ### Fixed
 
@@ -25,7 +27,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Sharing a season or an episode names the series.** The share dialog shows the series above "Season 2" or
   "S2:E1 · title", and the QR code opens that season's or episode's own page instead of just the series.
 - **Buttons on a details page stay on one line.** "From start" and "Shuffle" no longer break into
-  two or three lines in longer languages; at the largest interface size the round buttons move to a second row.
+  two or three lines in longer languages; at the larger interface sizes the round buttons move to a second row
+  if needed.
 
 ## 2026.11.14
 
