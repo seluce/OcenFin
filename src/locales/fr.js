@@ -163,6 +163,7 @@ export default {
     playback: "Lecture",
     prevEpisode: "Épisode précédent",
     nextEpisode: "Épisode suivant",
+    nextFilm: "Film suivant",
     collections: "Collections",
     playbackError: "Échec de la lecture",
     playbackErrorHint: "Ce titre n'a pas pu être lu. Format non pris en charge ou problème de connexion.",

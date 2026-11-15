@@ -163,6 +163,7 @@ export default {
     playback: "Přehrávání",
     prevEpisode: "Předchozí díl",
     nextEpisode: "Další díl",
+    nextFilm: "Další film",
     collections: "Kolekce",
     playbackError: "Přehrávání se nezdařilo",
     playbackErrorHint: "Tento titul nelze přehrát. Může jít o nepodporovaný formát nebo o problém s připojením.",

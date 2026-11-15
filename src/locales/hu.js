@@ -163,6 +163,7 @@ export default {
     playback: "Lejátszás",
     prevEpisode: "Előző epizód",
     nextEpisode: "Következő epizód",
+    nextFilm: "Következő film",
     collections: "Gyűjtemények",
     playbackError: "A lejátszás nem sikerült",
     playbackErrorHint: "Ezt a címet nem sikerült lejátszani. Lehet, hogy a formátum nem támogatott, vagy kapcsolati hiba történt.",

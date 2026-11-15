@@ -113,10 +113,12 @@
     playlistEditMode = false; confirmDeletePlaylist = false; renamingPlaylist = false; editFailed = false;
     if (collection.Type === 'Playlist') loadPlaylistRights(myId);
     // Playlists via their own endpoint (reliable + in list order),
-    // collections/BoxSets via ParentId.
+    // collections/BoxSets via ParentId — WITHOUT SortBy: a BoxSet lists in its own order (release date
+    // unless the admin set another), and any SortBy replaces it. SortName put part 3 of a trilogy
+    // before part 2, and "Play all" played it that way (CODE-HEALTH §92).
     const url = collection.Type === 'Playlist'
       ? `${session.serverUrl}/Playlists/${collection.Id}/Items?UserId=${selectedUser.Id}&Fields=PrimaryImageAspectRatio&Limit=300`
-      : `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${collection.Id}&SortBy=SortName&Fields=PrimaryImageAspectRatio&Limit=100&EnableTotalRecordCount=false`;
+      : `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${collection.Id}&Fields=PrimaryImageAspectRatio&Limit=100&EnableTotalRecordCount=false`;
     try {
       const res = await fetch(url, { headers: getAuthHeaders() });
       const loaded = res.ok ? ((await res.json()).Items || []) : null;

@@ -163,6 +163,7 @@ export default {
     playback: "Uppspelning",
     prevEpisode: "Föregående avsnitt",
     nextEpisode: "Nästa avsnitt",
+    nextFilm: "Nästa film",
     collections: "Samlingar",
     playbackError: "Uppspelningen misslyckades",
     playbackErrorHint: "Titeln kunde inte spelas upp. Formatet kanske inte stöds, eller så är det ett anslutningsproblem.",

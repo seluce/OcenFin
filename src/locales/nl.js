@@ -163,6 +163,7 @@ export default {
     playback: "Afspelen",
     prevEpisode: "Vorige aflevering",
     nextEpisode: "Volgende aflevering",
+    nextFilm: "Volgende film",
     collections: "Verzamelingen",
     playbackError: "Afspelen mislukt",
     playbackErrorHint: "Deze titel kon niet worden afgespeeld. Mogelijk een niet-ondersteund formaat of een verbindingsprobleem.",

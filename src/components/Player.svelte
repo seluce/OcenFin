@@ -1245,9 +1245,9 @@
     showSkipCredits || (duration - currentTime) <= OUTRO_FALLBACK
   ));
   // An interactive overlay is open → OK should trigger its focused button, not pause.
-  let overlayActive = $derived(!!activeSkip || showStillWatching || (outroPromptActive && !!nextEpisode));
+  let overlayActive = $derived(!!activeSkip || showStillWatching || (outroPromptActive && !!upNext));
   // Exactly then ONE outro decision prompt is visible (timer OR manual) → trap focus there.
-  let outroPromptShowing = $derived(!showStillWatching && !!nextEpisode && (nextCountdown !== null || (outroPromptActive && !outroDismissed)));
+  let outroPromptShowing = $derived(!showStillWatching && !!upNext && (nextCountdown !== null || (outroPromptActive && !outroDismissed)));
   // !showStillWatching is essential: when the countdown expires it sets nextCountdown back to null,
   // which would re-trigger this effect and restart the countdown behind the open prompt.
   $effect(() => { if (playbackPrefs.autoPlayNext && !stopAfterThis && nextEpisode && !playbackPrefs.autoSkipCredits
@@ -1388,7 +1388,41 @@
   let nextByIndex = $derived(queueActive ? queueNext : (episodeIndex >= 0 && episodeIndex < seriesEpisodes.length - 1
                    ? seriesEpisodes[episodeIndex + 1] : null));
   let nextEpisode = $derived(nextByIndex);   // auto-play/outro use the same sequential next episode (also into the next season)
-  let nextEpisodeImage = $derived(nextEpisode ? getItemImageUrl(nextEpisode, 'landscape') : null);   // still for the compact "up next" thumbnail
+
+  // A film started on its own that belongs to a collection: the collection's next film, offered ONLY
+  // by the outro card (CODE-HEALTH §93). Never by the countdown, the end of the video, auto-skip
+  // credits, the HUD button, the channel rocker or a colour key — all of those keep reading
+  // nextEpisode: a film is a choice, not a continuation, and no one asleep should be handed a
+  // three-hour sequel. Asked for once, when the outro begins, so a film start costs nothing.
+  // Several collections (a trilogy and a "Marvel" one): the SMALLEST one holding the film decides —
+  // it is the actual series. Last film there → no card. Watched or not does not matter: whoever
+  // watches part 1 again wants part 2 next. The order is the collection's own (§92), so no SortBy.
+  let nextFilm = $state(null);
+  let nextFilmAsked = false;
+  $effect(() => { if (outroPromptActive && !nextFilmAsked && item.Type === 'Movie' && !queueActive && !inSyncGroup) {
+    nextFilmAsked = true;
+    fetchNextFilm();
+  } });
+  async function fetchNextFilm() {
+    const t0 = performance.now();
+    try {
+      const r = await fetch(`${session.serverUrl}/Items/${item.Id}/Collections?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
+      if (!r.ok || destroyed) return;
+      const cols = ((await r.json()).Items || []).filter(c => c.Type === 'BoxSet').slice(0, 4);
+      const lists = await Promise.all(cols.map(c =>
+        fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${c.Id}&Fields=PrimaryImageAspectRatio&Limit=100&EnableTotalRecordCount=false`,
+              { headers: getAuthHeaders() })
+          .then(res => res.ok ? res.json() : null).then(d => d?.Items || []).catch(() => [])));
+      if (destroyed) return;
+      const list = lists.filter(l => l.some(x => x.Id === item.Id)).sort((a, b) => a.length - b.length)[0];
+      const after = list ? list.slice(list.findIndex(x => x.Id === item.Id) + 1) : [];
+      nextFilm = after.find(x => x.Type === 'Movie') || null;   // a series inside a collection is skipped
+      dlog('[player] next film', nextFilm?.Id ?? '(none)', 'from', cols.length, 'collections in', Math.round(performance.now() - t0), 'ms');
+    } catch { /* optional card */ }
+  }
+  // What the outro card offers: the next episode/queue title, else the collection's next film.
+  let upNext = $derived(nextEpisode ?? nextFilm);
+  let nextEpisodeImage = $derived(upNext ? getItemImageUrl(upNext, 'landscape') : null);   // still for the compact "up next" thumbnail
 
   // "Only this episode" — one-shot sleep switch (opt-in via playbackPrefs.sleepButton).
   // Blocks ONLY the automatic transitions (outro countdown, video end, auto-skip credits);
@@ -1411,11 +1445,12 @@
 
   // Info line for the next episode: "S2 · E1 · 52 min · ends at 11:59"
   let nextEpisodeMeta = $derived.by(() => {
-    if (!nextEpisode) return '';
+    if (!upNext) return '';
     const parts = [];
-    if (nextEpisode.ParentIndexNumber != null && nextEpisode.IndexNumber != null)
-      parts.push(`S${nextEpisode.ParentIndexNumber} · E${nextEpisode.IndexNumber}`);
-    const mins = nextEpisode.RunTimeTicks ? Math.round(nextEpisode.RunTimeTicks / 600000000) : 0;
+    if (upNext.ParentIndexNumber != null && upNext.IndexNumber != null)
+      parts.push(`S${upNext.ParentIndexNumber} · E${upNext.IndexNumber}`);
+    else if (upNext.Type === 'Movie' && upNext.ProductionYear) parts.push(String(upNext.ProductionYear));
+    const mins = upNext.RunTimeTicks ? Math.round(upNext.RunTimeTicks / 600000000) : 0;
     if (mins) {
       parts.push(`${mins} ${i18n.t.mins}`);
       const end = new Date(Date.now() + mins * 60000);
@@ -1815,7 +1850,9 @@
   }
 
   // manual=true → triggered by the user (button/prompt); manual=false → auto-play (countdown/end/credits).
-  function goToNextEpisode(manual = false) {
+  // next: only the outro card passes upNext (which may be a collection's next film); every other
+  // caller moves along the series/queue.
+  function goToNextEpisode(manual = false, next = nextEpisode) {
     // Already handing off (prev zap / colour key / admin previoustrack): this instance is being
     // replaced — its still-ticking countdown interval must not fire a SECOND navigation that
     // would override the first one (pressing "previous" and landing on the next episode).
@@ -1825,7 +1862,7 @@
     // press has meanwhile marked the user as awake. Only the prompt's button moves on (it calls
     // onNext directly); no answer at all lets the timeout close the player.
     if (showStillWatching) return;
-    if (!nextEpisode) return;
+    if (!next) return;
     const awake = manual || interacted;
     // Sleep protection: only for series auto-play, when the user hasn't done anything for a while.
     // autoPlayStreak counts episodes already auto-started; this call would start the next one, so
@@ -1842,7 +1879,7 @@
     // resetStreak: awake → counter in App to 0; otherwise increment.
     if (outroPromptActive) finishedAtOutro = true;   // came from the outro → this one is watched
     handingOff = true;
-    onNext?.({ episode: nextEpisode, resetStreak: awake });
+    onNext?.({ episode: next, resetStreak: awake });
   }
 
   // Mirror of goToNextEpisode for the four "previous" callers (HUD button, channel rocker, colour
@@ -2762,7 +2799,7 @@
 
   <!-- Manual "next episode" prompt (no countdown): appears with auto-play disabled OR after
        cancelling the timer. The user decides — "Cancel" stays on the current episode (outro). -->
-  {#if outroPromptActive && nextEpisode && nextCountdown === null && !outroDismissed && !showStillWatching}
+  {#if outroPromptActive && upNext && nextCountdown === null && !outroDismissed && !showStillWatching}
     <div transition:uiFade onoutrostart={releaseOverlay} data-focus-trap class="absolute bottom-12 right-12 z-[70] transition-transform duration-300 {showControls ? '-translate-y-32' : ''}">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-6 w-[30rem] flex flex-col gap-3">
         <div class="flex items-center gap-3">
@@ -2771,13 +2808,13 @@
               class="w-32 aspect-video object-cover rounded-lg shrink-0 bg-gray-800" />
           {/if}
           <div class="min-w-0 flex-1 flex flex-col gap-1">
-            <span class="text-sm font-semibold text-gray-400 uppercase tracking-wider">{i18n.t.nextEpisode}</span>
-            <span class="text-xl font-bold text-white truncate">{nextEpisode.Name}</span>
+            <span class="text-sm font-semibold text-gray-400 uppercase tracking-wider">{nextEpisode ? i18n.t.nextEpisode : i18n.t.nextFilm}</span>
+            <span class="text-xl font-bold text-white truncate">{upNext.Name}</span>
             {#if nextEpisodeMeta}<span class="text-base text-gray-400">{nextEpisodeMeta}</span>{/if}
           </div>
         </div>
         <div class="flex gap-3">
-          <button onclick={() => goToNextEpisode(true)} {@attach focusOnMount()}
+          <button onclick={() => goToNextEpisode(true, upNext)} {@attach focusOnMount()}
             class="flex-1 bg-white text-black font-bold text-lg py-3 rounded-lg flex items-center justify-center gap-2
                    focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
             <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>

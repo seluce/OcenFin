@@ -163,6 +163,7 @@ export default {
     playback: "Odtwarzanie",
     prevEpisode: "Poprzedni odcinek",
     nextEpisode: "Następny odcinek",
+    nextFilm: "Następny film",
     collections: "Kolekcje",
     playbackError: "Odtwarzanie nie powiodło się",
     playbackErrorHint: "Nie udało się odtworzyć tego tytułu. Możliwe, że format nie jest obsługiwany lub wystąpił problem z połączeniem.",

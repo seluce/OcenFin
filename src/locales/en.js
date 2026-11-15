@@ -163,6 +163,7 @@ export default {
     playback: "Playback",
     prevEpisode: "Previous Episode",
     nextEpisode: "Next Episode",
+    nextFilm: "Next Movie",
     collections: "Collections",
     playbackError: "Playback failed",
     playbackErrorHint: "This title could not be played. It may be an unsupported format or a connection issue.",

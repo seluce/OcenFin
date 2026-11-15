@@ -163,6 +163,7 @@ export default {
     playback: "Redare",
     prevEpisode: "Episodul anterior",
     nextEpisode: "Episodul următor",
+    nextFilm: "Filmul următor",
     collections: "Colecții",
     playbackError: "Redarea a eșuat",
     playbackErrorHint: "Acest titlu nu a putut fi redat. Poate fi un format neacceptat sau o problemă de conexiune.",

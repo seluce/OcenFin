@@ -163,6 +163,7 @@ export default {
     playback: "Toisto",
     prevEpisode: "Edellinen jakso",
     nextEpisode: "Seuraava jakso",
+    nextFilm: "Seuraava elokuva",
     collections: "Kokoelmat",
     playbackError: "Toisto epäonnistui",
     playbackErrorHint: "Tätä nimikettä ei voitu toistaa. Muotoa ei ehkä tueta, tai yhteydessä on ongelma.",

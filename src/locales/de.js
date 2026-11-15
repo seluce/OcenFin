@@ -163,6 +163,7 @@ export default {
     playback: "Wiedergabe",
     prevEpisode: "Vorige Folge",
     nextEpisode: "Nächste Folge",
+    nextFilm: "Nächster Film",
     collections: "Sammlungen",
     playbackError: "Wiedergabe fehlgeschlagen",
     playbackErrorHint: "Dieser Titel konnte nicht abgespielt werden. Möglicherweise ein nicht unterstütztes Format oder ein Verbindungsproblem.",

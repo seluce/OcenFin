@@ -163,6 +163,7 @@ export default {
     playback: "Oynatma",
     prevEpisode: "Önceki bölüm",
     nextEpisode: "Sonraki bölüm",
+    nextFilm: "Sonraki film",
     collections: "Koleksiyonlar",
     playbackError: "Oynatma başarısız",
     playbackErrorHint: "Bu içerik oynatılamadı. Desteklenmeyen bir biçim ya da bağlantı sorunu olabilir.",

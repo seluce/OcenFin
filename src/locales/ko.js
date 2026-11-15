@@ -163,6 +163,7 @@ export default {
     playback: "재생",
     prevEpisode: "이전 에피소드",
     nextEpisode: "다음 에피소드",
+    nextFilm: "다음 영화",
     collections: "컬렉션",
     playbackError: "재생 실패",
     playbackErrorHint: "이 작품을 재생할 수 없습니다. 지원되지 않는 형식이거나 연결 문제일 수 있습니다.",

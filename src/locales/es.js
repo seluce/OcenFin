@@ -163,6 +163,7 @@ export default {
     playback: "Reproducción",
     prevEpisode: "Episodio anterior",
     nextEpisode: "Episodio siguiente",
+    nextFilm: "Película siguiente",
     collections: "Colecciones",
     playbackError: "Error de reproducción",
     playbackErrorHint: "No se pudo reproducir este título. Puede ser un formato no compatible o un problema de conexión.",

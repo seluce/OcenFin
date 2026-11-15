@@ -163,6 +163,7 @@ export default {
     playback: "Riproduzione",
     prevEpisode: "Episodio precedente",
     nextEpisode: "Episodio successivo",
+    nextFilm: "Film successivo",
     collections: "Raccolte",
     playbackError: "Riproduzione non riuscita",
     playbackErrorHint: "Impossibile riprodurre questo titolo. Potrebbe trattarsi di un formato non supportato o di un problema di connessione.",

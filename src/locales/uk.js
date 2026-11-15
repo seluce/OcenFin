@@ -163,6 +163,7 @@ export default {
     playback: "Відтворення",
     prevEpisode: "Попередня серія",
     nextEpisode: "Наступна серія",
+    nextFilm: "Наступний фільм",
     collections: "Колекції",
     playbackError: "Не вдалося відтворити",
     playbackErrorHint: "Цей запис не вдалося відтворити. Можливо, формат не підтримується або є проблема зі з’єднанням.",

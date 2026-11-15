@@ -63,6 +63,7 @@ export default {
 
     // Player
     nextEpisode: "Próximo episódio",
+    nextFilm: "Próximo filme",
     playbackErrorHint: "Não foi possível reproduzir este título. Pode ser um formato não suportado ou um problema de conexão.",
     playbackRateLimit: "O servidor está no limite de reprodução no momento. Tente novamente daqui a pouco.",
     autoPlayNext: "Reproduzir automaticamente o próximo episódio",

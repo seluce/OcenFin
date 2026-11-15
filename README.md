@@ -31,7 +31,7 @@ OcenFin plays your movies and shows as they are: Direct Play with Dolby Vision a
 
 - Direct Play for 4K HEVC, AV1 and VP9 with Dolby Vision and HDR10, Dolby Atmos, TrueHD and DTS — the server only steps in when the TV really cannot play a file.
 - Subtitles on the TV, not burned in: Blu-ray (PGS) and DVD (VobSub) pictures, ASS/SSA exactly as made thanks to libass, plain text in your own style.
-- Skip intro, recap and credits (automatically if you like), a countdown to the next episode, “Are you still watching?” and preview pictures while seeking.
+- Skip intro, recap and credits (automatically if you like), a countdown to the next episode, the next part of a film series at the credits, “Are you still watching?” and preview pictures while seeking.
 
 **Finding something to watch**
 

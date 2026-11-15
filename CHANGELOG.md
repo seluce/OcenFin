@@ -11,9 +11,13 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   menu of an episode or a season marks every episode before it in one go, leaving specials out.
 - **Brazilian Portuguese.** A language of its own in the menu, next to European Portuguese, and a TV set to
   Portuguese (Brazil) starts in it.
+- **The next film of a collection.** At the credits of a film that belongs to a collection, a card offers the
+  next part, the same card as for the next episode, but a film never starts on its own.
 
 ### Fixed
 
+- **Collections in the right order.** A film series is listed and played by release date, or in the order set
+  on the server, instead of alphabetically, which put part 3 of a trilogy before part 2.
 - **Trailers in the app's language.** When Jellyfin knows several trailers for a title, the one whose name
   says the app's language plays, instead of always the first, which was often an older English one.
 - **Sharing a season or an episode names the series.** The share dialog shows the series above "Season 2" or
