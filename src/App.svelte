@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, makeFocusReturn, installConnectionGuard, installEnterRepeatGuard, perfMark, startPerfSampler, asArray, asObject, asNumber, asUiSize, asSubSize } from './utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, makeFocusReturn, installConnectionGuard, installEnterRepeatGuard, perfMark, startPerfSampler, asArray, asObject, asNumber, asUiSize, asSubSize, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS } from './utils.js';
   import { startPlatformDiagnostics } from './diag.js';
   import { buildPlayQueue, playableFor } from './playback.js';
   import { session } from './session.svelte.js';
@@ -221,7 +221,7 @@
   // existing profiles (their stored prefs are spread over the OTHER copy) — that paste-twice trap
   // fired once already (theme music). Functions, not shared literals: navOrder/navHidden/navIcons
   // must be fresh references on every call.
-  const defaultDisplaySettings = () => ({ clock: true, hero: true, episodeCount: true, letterBar: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 100, theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
+  const defaultDisplaySettings = () => ({ clock: true, hero: true, episodeCount: true, letterBar: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 100, theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekBack: 10, seekForward: 30, navOrder: [], navHidden: [], navIcons: {} });
   const defaultPlaybackPrefs   = () => ({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipRecap: false, autoSkipCredits: false, subtitleSize: 0, subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
   let displaySettings = $state(defaultDisplaySettings());
 
@@ -298,6 +298,14 @@
     displaySettings.navHidden = asArray(displaySettings.navHidden);
     displaySettings.navIcons  = asObject(displaySettings.navIcons);
     displaySettings.uiSize    = asUiSize(displaySettings.uiSize);   // small/medium/large → percent
+    // Until 2026-11 one step for both directions (seekStep, the HUD buttons only — ◄► were a fixed 10 s):
+    // it becomes the forward step; back starts at 10, as far as ◄ always jumped (CODE-HEALTH §97).
+    const _storedDs = asObject(p.displaySettings);
+    if (_storedDs.seekForward == null && _storedDs.seekStep != null) displaySettings.seekForward = Number(_storedDs.seekStep);
+    delete displaySettings.seekStep;
+    if (!SEEK_BACK_STEPS.includes(Number(displaySettings.seekBack)))       displaySettings.seekBack = 10;
+    if (!SEEK_FORWARD_STEPS.includes(Number(displaySettings.seekForward))) displaySettings.seekForward = 30;
+    displaySettings.seekBack = Number(displaySettings.seekBack); displaySettings.seekForward = Number(displaySettings.seekForward);
     playbackPrefs    = { ...defaultPlaybackPrefs(), ...asObject(p.playbackPrefs) };
     playbackPrefs.subtitleSize = asSubSize(playbackPrefs.subtitleSize);   // small/normal/large → step
     reduceAnimations = p.reduceAnimations ?? false;
@@ -2612,7 +2620,8 @@
           {selectedUser} {playbackPrefs} {use24h}
           showClock={displaySettings.clock}
           showChapters={displaySettings.showChapters}
-          seekStep={displaySettings.seekStep}
+          seekBack={displaySettings.seekBack}
+          seekForward={displaySettings.seekForward}
           selectedAudioIndex={activeAudioIndex}
           selectedSubtitleIndex={activeSubtitleIndex}
           mediaSourceId={activeMediaSourceId}

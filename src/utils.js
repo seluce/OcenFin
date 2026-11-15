@@ -718,6 +718,9 @@ export function asUiSize(v) {
   const n = ({ small: 80, medium: 100, large: 120 })[v] ?? Number(v);
   return UI_SIZES.includes(n) ? n : 100;
 }
+// Seek steps in seconds (CODE-HEALTH §97): ◄ and the rewind button jump back, ► and the forward button ahead.
+export const SEEK_BACK_STEPS = [5, 10, 15, 30];
+export const SEEK_FORWARD_STEPS = [10, 15, 30, 60];
 // Subtitle size, in steps from normal: -2 … 2 (CODE-HEALTH §95; the Player maps a step to sizes). Before
 // 2026-11 it was small/normal/large — the outer steps and the middle, so a stored one keeps its size.
 export function asSubSize(v) {

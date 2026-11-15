@@ -21,7 +21,8 @@
     use24h = true,   // time format (from the setting) for the clock in the Player
     showClock = true, // show the clock in the Player (follows the display setting)
     showChapters = false, // chapter markers on the bar (opt-in)
-    seekStep = 30,        // jump distance of the forward/back buttons in seconds (per profile)
+    seekBack = 10,        // jump of ◄ and the rewind button in seconds (per profile, CODE-HEALTH §97)
+    seekForward = 30,     // jump of ► and the forward button
     autoPlayStreak = 0,   // "still watching?": episodes auto-started without interaction (from App)
     syncPlayOpen = false, // SyncPlay modal open (from App) → pause playback meanwhile …
     inSyncGroup  = false, // … except in an active group: then do NOT pause locally
@@ -362,8 +363,8 @@
     }
     // Same path as the HUD's own jump buttons: the profile's step, the preview, presses in quick
     // succession adding up to one jump.
-    else if (cmd === 'rewind')      skip(-seekStep);
-    else if (cmd === 'fastforward') skip(seekStep);
+    else if (cmd === 'rewind')      skip(-seekBack);
+    else if (cmd === 'fastforward') skip(seekForward);
     else if (cmd === 'nexttrack') { if (nextEpisode) goToNextEpisode(true); }
     else if (cmd === 'previoustrack') { goToPrevEpisode(); }
   }
@@ -2137,12 +2138,33 @@
     }
   }
 
-  // Slider: Left/Right seek (±10 s), Up/Down leaves the bar
+  // ◄► seek by the profile's steps (seekBack / seekForward); held down they scrub faster the longer they
+  // are held (CODE-HEALTH §97). "Held" = a keydown with no keyup since the previous one, as for OK in
+  // installEnterRepeatGuard — e.repeat alone is not trusted on webOS; the 1 s cut-off only guards against
+  // a keyup that went missing. Each repeat adds speed × time since the previous event, so the scrub does
+  // not depend on the TV's key-repeat rate. Everything lands in skip(), i.e. ONE seek on release.
+  const SCRUB_SPEEDS = [[1.5, 120], [4, 480], [Infinity, 1200]];   // [held up to s, video s per s held]
+  let holdKey = null, holdSince = 0, holdLast = 0;
+  function arrowSeek(key) {
+    const now = performance.now();
+    if (holdKey === key && now - holdLast < 1000) {
+      const held = (now - holdSince) / 1000;
+      const dt = Math.min(0.25, (now - holdLast) / 1000);
+      const speed = SCRUB_SPEEDS.find(([upTo]) => held <= upTo)[1];
+      skip((key === 'ArrowLeft' ? -1 : 1) * Math.max(1, speed * dt));
+    } else {
+      holdKey = key; holdSince = now;
+      skip(key === 'ArrowLeft' ? -seekBack : seekForward);
+    }
+    holdLast = now;
+  }
+  function onArrowUp(e) { if (e.key === holdKey) holdKey = null; }
+
+  // Slider: Left/Right seek, Up/Down leaves the bar
   // (the native value change on Up/Down is suppressed; the group navigation
   // takes over the jump to the control buttons).
   function onSeekKey(e) {
-    if (e.key === 'ArrowLeft')      { e.preventDefault(); e.stopPropagation(); skip(-10); resetControlsTimeout(); }
-    else if (e.key === 'ArrowRight'){ e.preventDefault(); e.stopPropagation(); skip(10);  resetControlsTimeout(); }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); arrowSeek(e.key); resetControlsTimeout(); }
     // OK on the bar: apply the pending jump immediately, then toggle play/pause.
     else if (e.key === 'Enter' || e.keyCode === 13) {
       e.preventDefault(); e.stopPropagation();
@@ -2255,7 +2277,7 @@
       e.preventDefault(); e.stopPropagation();
       resetControlsTimeout();
       seekBarEl?.focus();
-      skip(e.key === 'ArrowLeft' ? -10 : 10);
+      arrowSeek(e.key);
       return;
     }
     // HUD hidden + Up/Down → just reveal the HUD and land on play/pause. Without this, spatial
@@ -2306,6 +2328,7 @@
   class="w-full h-screen bg-black relative overflow-hidden flex items-center justify-center focus:outline-none {showControls ? '' : 'cursor-none'}"
   onpointermove={resetControlsTimeout}
   onkeydown={handleKeyDown}
+  onkeyup={onArrowUp}
 >
 
   <video
@@ -2548,8 +2571,8 @@
             </button>
           {/if}
 
-          <button onclick={() => skip(-seekStep)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none"
-            title={i18n.t.rewindBy.replace('{n}', seekStep)} aria-label={i18n.t.rewindBy.replace('{n}', seekStep)} {@attach hint()}>
+          <button onclick={() => skip(-seekBack)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none"
+            title={i18n.t.rewindBy.replace('{n}', seekBack)} aria-label={i18n.t.rewindBy.replace('{n}', seekBack)} {@attach hint()}>
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.334 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z"/>
             </svg>
@@ -2564,8 +2587,8 @@
             {/if}
           </button>
 
-          <button onclick={() => skip(seekStep)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none"
-            title={i18n.t.forwardBy.replace('{n}', seekStep)} aria-label={i18n.t.forwardBy.replace('{n}', seekStep)} {@attach hint()}>
+          <button onclick={() => skip(seekForward)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none"
+            title={i18n.t.forwardBy.replace('{n}', seekForward)} aria-label={i18n.t.forwardBy.replace('{n}', seekForward)} {@attach hint()}>
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M11.934 12.8a1 1 0 000-1.6l-5.334-4A1 1 0 005 8v8a1 1 0 001.6.8l5.334-4zM19.934 12.8a1 1 0 000-1.6l-5.334-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.334-4z"/>
             </svg>

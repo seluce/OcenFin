@@ -15,6 +15,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   next part, the same card as for the next episode, but a film never starts on its own.
 - **Interface size in five steps.** The setting now goes from 80 to 120 percent in steps of ten, with a step
   between each of the old small, medium and large.
+- **Skipping back and forward on their own, faster when held.** ◄► now jump as far as set, with separate
+  steps for back and forward, and held down they scrub faster the longer they are held.
 - **Graphite accent.** A neutral grey next to the ten colours, for an interface without any colour.
 - **Subtitle size in five steps.** From very small to very large, with a step between normal and each end; a
   size chosen before stays as it was.

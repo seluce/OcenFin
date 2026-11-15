@@ -3,7 +3,7 @@
   import { startQuickConnect as startQC } from '../quickconnect.js';
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, uploadLog, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter, UI_SIZES } from '../utils.js';
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, uploadLog, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter, UI_SIZES, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { focusFromPointer } from '../spatialnav.js';
   import { startPlatformDiagnostics } from '../diag.js';
@@ -442,8 +442,8 @@
   function setUiFont(font) {
     onDisplayChange?.({ ...displaySettings, uiFont: font });
   }
-  function setSeekStep(sec) {
-    onDisplayChange?.({ ...displaySettings, seekStep: sec });
+  function setSeek(key, sec) {
+    onDisplayChange?.({ ...displaySettings, [key]: sec });
   }
 
   // ---- Navigation editor (arrange/hide sidebar entries, per profile) ----
@@ -1279,19 +1279,23 @@
       <!-- Group: player — controls and what it shows -->
       <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupPlayer}</h3>
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
-        <!-- Jump distance of the forward/back buttons (stacked + flex-1 so it's reachable via D-pad) -->
+        <!-- Jump distance of ◄► and the rewind/forward buttons, one row per direction (CODE-HEALTH §97;
+             stacked + flex-1 so every button is reachable via D-pad) -->
         <div class="p-6">
           <span class="text-2xl text-white font-medium block">{i18n.t.seekInterval}</span>
           <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.seekIntervalDesc}</span>
-          <div class="flex gap-3">
-            {#each [10, 30, 60] as sec}
-              <button onclick={() => setSeekStep(sec)}
-                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                       {(displaySettings.seekStep || 30) === sec ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                {sec}s
-              </button>
-            {/each}
-          </div>
+          {#each [['seekBack', i18n.t.seekBack, SEEK_BACK_STEPS], ['seekForward', i18n.t.seekForward, SEEK_FORWARD_STEPS]] as [key, label, steps], i}
+            <span class="text-lg text-gray-200 block mb-3 {i ? 'mt-5' : ''}">{label}</span>
+            <div class="flex gap-3">
+              {#each steps as sec}
+                <button onclick={() => setSeek(key, sec)}
+                  class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                         {displaySettings[key] === sec ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                  {sec}s
+                </button>
+              {/each}
+            </div>
+          {/each}
         </div>
 
         <div class="h-px bg-gray-700"></div>
