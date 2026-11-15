@@ -73,6 +73,16 @@
     i => !i.UserData?.Played && (i.UserData?.PlaybackPositionTicks || 0) > 0
   ));
 
+  // "Recently watched" leaves out what the rows above already show (CODE-HEALTH §102): a series being
+  // watched sits in Up next or Continue watching and used to be repeated here as the series. What stays
+  // is what was finished — the way Netflix's "watch it again" works. Only against rows that are shown:
+  // with Up next switched off, its series stay here. Reactive, so it follows refreshResume() too.
+  let historyRow = $derived.by(() => {
+    const above = new Set();
+    for (const i of [...resumeRow, ...(showNextUp ? nextUp : [])]) { above.add(i.Id); if (i.SeriesId) above.add(i.SeriesId); }
+    return recentlyWatched.filter(i => !above.has(i.Id)).slice(0, ROW_LIMIT);
+  });
+
   // HERO BANNER: rotating featured item
   let heroItems  = $state([]);
   let heroIndex  = $state(0);
@@ -482,7 +492,9 @@
 
       // Load history + collapse by series
       const pHist = pHistory.then(r => r.json()).then(async d => {
-        let items = dedupeHistory(d.Items || []).slice(0, ROW_LIMIT);   // uniform row length; capping BEFORE the enrichment saves series lookups
+        // Twice the row: historyRow drops what Up next/Continue watching show, and the row should stay full.
+        // Still capped BEFORE the enrichment, which looks the series up in one request.
+        let items = dedupeHistory(d.Items || []).slice(0, ROW_LIMIT * 2);
         // Show series with a real year range like in the library ("2016 – 2019" / "2024 – today"):
         // load the real series info (year/status/EndDate) once for all series entries.
         const seriesIds = items.filter(i => i.Type === 'Series').map(i => i.Id);
@@ -881,11 +893,11 @@
     {/if}
 
     <!-- RECENTLY WATCHED (history) -->
-    {#if showHistory && recentlyWatched.length > 0}
+    {#if showHistory && historyRow.length > 0}
       <div>
         <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.recentlyWatched}</h2>
         <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-          {#each recentlyWatched as item (item.Id)}
+          {#each historyRow as item (item.Id)}
             {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}   <!-- episodes arrive as their series (dedupeHistory) -->
           {/each}
         </div>

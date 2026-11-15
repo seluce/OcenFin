@@ -27,6 +27,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Fixed
 
+- **"Recently watched" without repeats.** A series you are in the middle of stood there and under "Up next" at
+  the same time; the row now keeps to what you finished, and the rest stays in the rows above.
 - **Screensaver times all in minutes.** The choices read 1 min, 90 sec, 2 min and 5 min; the second one is now
   1.5 min, written the way the language writes decimals.
 - **The full subtitle track of the chosen language.** When a film has the language twice, the full track now
