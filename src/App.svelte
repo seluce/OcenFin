@@ -2279,24 +2279,27 @@
   /* Accent color themes: in Tailwind v4 all blue utilities use CSS variables.
      We override only these → the whole accent color switches without touching 100+
      classes. Red (favorite) and green (watched) stay untouched. The tones are
-     chosen to be OLED-friendly (vivid, slightly desaturated, good on deep black). */
+     chosen to be OLED-friendly (vivid, slightly desaturated, good on deep black).
+     600 carries white text (buttons, labels, selected states), so it must reach 4.5:1 against white:
+     emerald, amber, sky, teal and orange therefore use the lightest tone between their 600 and 700 that
+     reaches 4.6:1 (OKLab mix, CODE-HEALTH §96) — darker would dull them for nothing. */
   :global(html[data-theme="emerald"]) {
-    --color-blue-300:#6ee7b7; --color-blue-400:#34d399; --color-blue-500:#10b981; --color-blue-600:#059669; --color-blue-900:#064e3b;
+    --color-blue-300:#6ee7b7; --color-blue-400:#34d399; --color-blue-500:#10b981; --color-blue-600:#04855f; --color-blue-900:#064e3b;
   }
   :global(html[data-theme="violet"]) {
     --color-blue-300:#c4b5fd; --color-blue-400:#a78bfa; --color-blue-500:#8b5cf6; --color-blue-600:#7c3aed; --color-blue-900:#4c1d95;
   }
   :global(html[data-theme="amber"]) {
-    --color-blue-300:#fcd34d; --color-blue-400:#fbbf24; --color-blue-500:#f59e0b; --color-blue-600:#d97706; --color-blue-900:#78350f;
+    --color-blue-300:#fcd34d; --color-blue-400:#fbbf24; --color-blue-500:#f59e0b; --color-blue-600:#bb5909; --color-blue-900:#78350f;
   }
   :global(html[data-theme="rose"]) {
     --color-blue-300:#fda4af; --color-blue-400:#fb7185; --color-blue-500:#f43f5e; --color-blue-600:#e11d48; --color-blue-900:#881337;
   }
   :global(html[data-theme="sky"]) {
-    --color-blue-300:#7dd3fc; --color-blue-400:#38bdf8; --color-blue-500:#0ea5e9; --color-blue-600:#0284c7; --color-blue-900:#0c4a6e;
+    --color-blue-300:#7dd3fc; --color-blue-400:#38bdf8; --color-blue-500:#0ea5e9; --color-blue-600:#027bbb; --color-blue-900:#0c4a6e;
   }
   :global(html[data-theme="teal"]) {
-    --color-blue-300:#5eead4; --color-blue-400:#2dd4bf; --color-blue-500:#14b8a6; --color-blue-600:#0d9488; --color-blue-900:#134e4a;
+    --color-blue-300:#5eead4; --color-blue-400:#2dd4bf; --color-blue-500:#14b8a6; --color-blue-600:#0f837a; --color-blue-900:#134e4a;
   }
   :global(html[data-theme="indigo"]) {
     --color-blue-300:#a5b4fc; --color-blue-400:#818cf8; --color-blue-500:#6366f1; --color-blue-600:#4f46e5; --color-blue-900:#312e81;
@@ -2305,7 +2308,12 @@
     --color-blue-300:#f0abfc; --color-blue-400:#e879f9; --color-blue-500:#d946ef; --color-blue-600:#c026d3; --color-blue-900:#701a75;
   }
   :global(html[data-theme="orange"]) {
-    --color-blue-300:#fdba74; --color-blue-400:#fb923c; --color-blue-500:#f97316; --color-blue-600:#ea580c; --color-blue-900:#7c2d12;
+    --color-blue-300:#fdba74; --color-blue-400:#fb923c; --color-blue-500:#f97316; --color-blue-600:#ce480c; --color-blue-900:#7c2d12;
+  }
+  /* Graphite: no colour at all, the UI's own gray family one step lighter than its surfaces — 600 = gray-500
+     (white text 4.83:1), 500 = gray-400, clearly above a switched-off toggle's gray-600 (CODE-HEALTH §96). */
+  :global(html[data-theme="graphite"]) {
+    --color-blue-300:#e5e7eb; --color-blue-400:#d1d5db; --color-blue-500:#9ca3af; --color-blue-600:#6b7280; --color-blue-900:#374151;
   }
 
   /* Splash screen: logo pulses gently, overlay fades out */

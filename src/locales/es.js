@@ -305,6 +305,7 @@ export default {
     themeEmerald: "Esmeralda",
     themeViolet: "Violeta",
     themeAmber: "Ámbar",
+    themeGraphite: "Grafito",
     themeRose: "Rosa",
     themeSky: "Celeste",
     themeTeal: "Verde azulado",

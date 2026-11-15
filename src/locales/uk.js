@@ -305,6 +305,7 @@ export default {
     themeEmerald: "Смарагдовий",
     themeViolet: "Фіолетовий",
     themeAmber: "Бурштиновий",
+    themeGraphite: "Графітовий",
     themeRose: "Рожевий",
     themeSky: "Небесний",
     themeTeal: "Бірюзовий",

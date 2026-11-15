@@ -296,7 +296,7 @@
     <h1 class="text-4xl font-bold text-white min-w-0 truncate">{name === WATCHLIST_NAME ? i18n.t.watchlist : name}</h1>
     {#if items.length > 0 && !playlistEditMode}
       <button onclick={playAll}
-        class="ml-4 shrink-0 bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold px-6 py-3 rounded-xl
+        class="ml-4 shrink-0 bg-blue-600 text-white font-bold px-6 py-3 rounded-xl
                focus:outline-none focus:ring-4 focus:ring-white transition-colors flex items-center gap-2">
         {#if buildingQueue}
           <div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -384,7 +384,7 @@
                        focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
               <button onclick={savePlaylistName}
-                class="px-6 py-3 rounded-lg font-bold bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+                class="px-6 py-3 rounded-lg font-bold bg-blue-600 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
                 {i18n.t.save}
               </button>
               <button onclick={endRename}

@@ -15,11 +15,16 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   next part, the same card as for the next episode, but a film never starts on its own.
 - **Interface size in five steps.** The setting now goes from 80 to 120 percent in steps of ten, with a step
   between each of the old small, medium and large.
+- **Graphite accent.** A neutral grey next to the ten colours, for an interface without any colour.
 - **Subtitle size in five steps.** From very small to very large, with a step between normal and each end; a
   size chosen before stays as it was.
 
 ### Fixed
 
+- **White text readable on every accent colour.** Buttons and labels in emerald, amber, sky, teal and orange
+  are a little deeper now, and a focused button no longer turns paler.
+- **The accent colour everywhere.** The glow around the seek bar's handle and a small text in the screensaver
+  settings stayed blue, whatever colour was chosen.
 - **A film is called a film in the player.** Playing a collection with "Play all", the countdown, the end card
   and the buttons spoke of the next episode; they now say film.
 - **Collections in the right order.** A film series is listed and played by release date, or in the order set

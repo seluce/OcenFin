@@ -305,6 +305,7 @@ export default {
     themeEmerald: "Smaragdová",
     themeViolet: "Fialová",
     themeAmber: "Jantarová",
+    themeGraphite: "Grafitová",
     themeRose: "Růžová",
     themeSky: "Nebesky modrá",
     themeTeal: "Modrozelená",

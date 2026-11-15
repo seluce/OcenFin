@@ -626,6 +626,7 @@
     { id: 'rose',    color: '#f43f5e', label: i18n.t.themeRose },
     { id: 'orange',  color: '#f97316', label: i18n.t.themeOrange },
     { id: 'amber',   color: '#f59e0b', label: i18n.t.themeAmber },
+    { id: 'graphite', color: '#6b7280', label: i18n.t.themeGraphite },
   ];
 
   // Display elements grouped: home rows vs. general interface
@@ -804,7 +805,8 @@
         <div class="p-6">
           <span class="text-2xl text-white font-medium block">{i18n.t.accentColor}</span>
           <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.accentColorDesc}</span>
-          <div class="flex gap-4 flex-wrap">
+          <!-- gap-3, not 4: eleven swatches stay on one line up to 120 % interface size (CODE-HEALTH §96). -->
+          <div class="flex gap-3 flex-wrap">
             {#each themeSwatches as sw}
               <button onclick={() => setTheme(sw.id)} title={sw.label}
                 class="w-14 h-14 rounded-full focus:outline-none focus:ring-4 focus:ring-white transition-all
@@ -1093,7 +1095,7 @@
                   class="flex-1 text-left p-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-white transition-all
                          {screensaverSettings.mode === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                   <span class="block font-bold text-lg">{label}</span>
-                  <span class="block text-sm mt-0.5 {screensaverSettings.mode === val ? 'text-blue-100' : 'text-gray-400'}">{desc}</span>
+                  <span class="block text-sm mt-0.5 {screensaverSettings.mode === val ? 'text-white/80' : 'text-gray-400'}">{desc}</span>
                 </button>
               {/each}
             </div>
@@ -1665,7 +1667,7 @@
             </button>
             <button onclick={saveProfileImage} disabled={!hasEditedAvatar}
               class="px-6 py-3 rounded-xl font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-colors
-                     {avatarSaved ? 'bg-green-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50'}">
+                     {avatarSaved ? 'bg-green-600 text-white' : 'bg-blue-600 text-white disabled:opacity-50'}">
               {avatarSaved ? i18n.t.saved : avatarSaving ? i18n.t.saving : i18n.t.save}
             </button>
           </div>
@@ -1750,7 +1752,7 @@
               </div>
             {/if}
             <button onclick={() => avatarModalOpen = false}
-              class="w-full py-3 rounded-xl font-bold text-base bg-blue-600 text-white hover:bg-blue-500 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+              class="w-full py-3 rounded-xl font-bold text-base bg-blue-600 text-white focus:outline-none focus:ring-4 focus:ring-white transition-colors">
               {i18n.t.close}
             </button>
           </div>
@@ -2056,10 +2058,10 @@
         <div class="flex items-center gap-3">
           <!-- not `disabled` while sending: a disabled button drops its focus; sendLog() guards instead -->
           <button onclick={sendLog}
-            class="px-5 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white
+            class="px-5 py-3 rounded-xl font-bold bg-blue-600 text-white
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">{logSend?.state === 'sending' ? i18n.t.logSending : i18n.t.logSendButton}</button>
           <button bind:this={qrBtnEl} onclick={showLogQr}
-            class="px-5 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white
+            class="px-5 py-3 rounded-xl font-bold bg-blue-600 text-white
                    focus:outline-none focus:ring-4 focus:ring-white transition-colors">{i18n.t.logQrButton}</button>
           <button onclick={() => showLog = false} {@attach focusOnMount()}
             class="px-5 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
@@ -2230,7 +2232,7 @@
         </div>
         {#if pwMessage}<p class="text-blue-400 font-bold text-lg">{pwMessage}</p>{/if}
         <button onclick={changePassword} disabled={!newPw}
-          class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-2xl py-6 rounded-xl
+          class="w-full bg-blue-600 text-white font-bold text-2xl py-6 rounded-xl
                  focus:outline-none focus:ring-4 focus:ring-white mt-2 disabled:opacity-50">{i18n.t.save}</button>
 
       {:else if activeModal === 'quickConnect'}
@@ -2242,7 +2244,7 @@
                  focus:outline-none focus:ring-4 focus:ring-blue-500" />
         {#if qcMessage}<p class="text-blue-400 font-bold text-lg">{qcMessage}</p>{/if}
         <button onclick={authorizeQuickConnect}
-          class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-2xl py-6 rounded-xl
+          class="w-full bg-blue-600 text-white font-bold text-2xl py-6 rounded-xl
                  focus:outline-none focus:ring-4 focus:ring-white mt-2">{i18n.t.qcAuthorizeBtn}</button>
 
       {:else if activeModal === 'sharedPicker'}
@@ -2297,7 +2299,7 @@
                  focus:outline-none focus:ring-4 focus:ring-blue-500" />
         {#if sharedError}<p class="text-red-400 font-bold text-lg">{sharedError}</p>{/if}
         <button onclick={commitSharedManual} disabled={sharedBusy || !sharedManualName.trim()}
-          class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-2xl py-6 rounded-xl
+          class="w-full bg-blue-600 text-white font-bold text-2xl py-6 rounded-xl
                  focus:outline-none focus:ring-4 focus:ring-white mt-2 disabled:opacity-50">{i18n.t.confirm}</button>
 
       {:else if activeModal === 'sharedPassword'}
@@ -2309,7 +2311,7 @@
                  focus:outline-none focus:ring-4 focus:ring-blue-500" />
         {#if sharedError}<p class="text-red-400 font-bold text-lg">{sharedError}</p>{/if}
         <button onclick={() => commitSharedUser(sharedPickerUser, sharedPw)} disabled={sharedBusy}
-          class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-2xl py-6 rounded-xl
+          class="w-full bg-blue-600 text-white font-bold text-2xl py-6 rounded-xl
                  focus:outline-none focus:ring-4 focus:ring-white mt-2 disabled:opacity-50">{i18n.t.confirm}</button>
       {/if}
 

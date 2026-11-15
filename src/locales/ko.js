@@ -305,6 +305,7 @@ export default {
     themeEmerald: "에메랄드",
     themeViolet: "바이올렛",
     themeAmber: "앰버",
+    themeGraphite: "그라파이트",
     themeRose: "로즈",
     themeSky: "하늘",
     themeTeal: "청록",

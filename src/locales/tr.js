@@ -305,6 +305,7 @@ export default {
     themeEmerald: "Zümrüt",
     themeViolet: "Menekşe",
     themeAmber: "Kehribar",
+    themeGraphite: "Grafit",
     themeRose: "Gül",
     themeSky: "Gök mavisi",
     themeTeal: "Turkuaz",

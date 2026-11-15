@@ -2906,11 +2906,11 @@
   }
   :global(.seekbar:focus::-webkit-slider-thumb) {
     width: 24px; height: 24px;
-    box-shadow: 0 0 0 5px var(--color-blue-500, #3b82f6), 0 0 16px 3px rgba(59,130,246,.55);
+    box-shadow: 0 0 0 5px var(--color-blue-500, #3b82f6), 0 0 16px 3px color-mix(in oklab, var(--color-blue-500, #3b82f6) 55%, transparent);
   }
   :global(.seekbar:focus::-moz-range-thumb) {
     width: 24px; height: 24px;
-    box-shadow: 0 0 0 5px var(--color-blue-500, #3b82f6), 0 0 16px 3px rgba(59,130,246,.55);
+    box-shadow: 0 0 0 5px var(--color-blue-500, #3b82f6), 0 0 16px 3px color-mix(in oklab, var(--color-blue-500, #3b82f6) 55%, transparent);
   }
 
   /* Our own subtitle overlay renderer (external VTT): layout only — size, colour, edge and
