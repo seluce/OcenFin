@@ -1,6 +1,6 @@
 <script>
   import { i18n, plural } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount, authHeaders, dlog, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS } from '../utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS, asSubSize } from '../utils.js';
   import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks } from '../trackmemory.js';
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
@@ -782,13 +782,14 @@
   // -webkit-text-fill-color in addition to color: with -webkit-text-stroke set, on webOS the
   // FILL color determines the rendering and falsely falls back to black there instead of inheriting color → subtitles
   // otherwise black despite the color choice. Setting it explicitly forces the chosen color (a no-op on desktop anyway).
-  let subStyle = $derived(`color:${subColor};-webkit-text-fill-color:${subColor};${subFontCss}${subEdgeCss}${subBgCss}`);
+  // Size in steps from normal (asSubSize, CODE-HEALTH §95): [text height in vh, libbitsub scale for PGS/VobSub].
+  // The outer steps are the old small/large; the inner ones sit at the geometric middle.
+  const SUB_STEPS = { '-2': [2.6, 0.85], '-1': [3.0, 0.92], '0': [3.4, 1.0], '1': [4.0, 1.12], '2': [4.8, 1.25] };
+  let subStep = $derived(SUB_STEPS[asSubSize(playbackPrefs.subtitleSize)]);
+  let subStyle = $derived(`font-size:${subStep[0]}vh;color:${subColor};-webkit-text-fill-color:${subColor};${subFontCss}${subEdgeCss}${subBgCss}`);
 
   // Subtitle size → libbitsub scaling (applies to PGS AND VobSub, not just VTT).
-  function graphicSubScale() {
-    const s = playbackPrefs.subtitleSize || 'normal';
-    return s === 'small' ? 0.85 : s === 'large' ? 1.25 : 1.0;
-  }
+  function graphicSubScale() { return subStep[1]; }
 
   // Apply subtitle – routes by codec: PGS/VobSub → libbitsub overlay, text → VTT overlay.
   // The offset belongs to the TRACK: reset when another one is chosen, kept when the same track is
@@ -1111,8 +1112,7 @@
       .catch((e) => { prefetchedSubs.delete(stream.Index); dlog('[OcenFin] subtitle prefetch failed:', stream.Index, codec, e?.message); });   // failed → allow a retry
   }
   // Apply a size change at runtime live to the running renderer.
-  $effect(() => { if (graphicRenderer && (playbackPrefs.subtitleSize || 'normal')) {
-    const sc = graphicSubScale();
+  $effect(() => { const sc = subStep[1]; if (graphicRenderer) {
     try { graphicRenderer.setDisplaySettings({ scale: sc }); } catch {}
   } });
 
@@ -2738,7 +2738,7 @@
   {#if currentSubtitleText}
     <div class="absolute inset-x-0 z-[65] flex justify-center px-[8%] pointer-events-none transition-all duration-200
                 {showControls ? 'bottom-44' : 'bottom-[7%]'}">
-      <span class="subtitle-box sub-{playbackPrefs.subtitleSize || 'normal'}" style={subStyle}>{currentSubtitleText}</span>
+      <span class="subtitle-box" style={subStyle}>{currentSubtitleText}</span>
     </div>
   {/if}
 
@@ -2913,13 +2913,10 @@
     box-shadow: 0 0 0 5px var(--color-blue-500, #3b82f6), 0 0 16px 3px rgba(59,130,246,.55);
   }
 
-  /* Our own subtitle overlay renderer (external VTT): layout and size only — colour, edge and
+  /* Our own subtitle overlay renderer (external VTT): layout only — size, colour, edge and
      background come from subStyle (the subtitle prefs). */
   .subtitle-box {
     white-space: pre-line; text-align: center; font-weight: 600; line-height: 1.35;
     max-width: 100%;
   }
-  .sub-small  { font-size: 2.6vh; }
-  .sub-normal { font-size: 3.4vh; }
-  .sub-large  { font-size: 4.8vh; }
 </style>

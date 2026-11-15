@@ -718,6 +718,12 @@ export function asUiSize(v) {
   const n = ({ small: 80, medium: 100, large: 120 })[v] ?? Number(v);
   return UI_SIZES.includes(n) ? n : 100;
 }
+// Subtitle size, in steps from normal: -2 … 2 (CODE-HEALTH §95; the Player maps a step to sizes). Before
+// 2026-11 it was small/normal/large — the outer steps and the middle, so a stored one keeps its size.
+export function asSubSize(v) {
+  const n = ({ small: -2, normal: 0, large: 2 })[v] ?? Number(v);
+  return Number.isInteger(n) && n >= -2 && n <= 2 ? n : 0;
+}
 
 // --- Performance instrumentation (opt-in, shares the debug switch) ---------------------------
 // Inert while debug is off: every entry point tests _debug FIRST, so a normal session pays one

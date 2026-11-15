@@ -17,7 +17,7 @@
     screensaverSettings = { enabled: true, timeout: 90 },
     reduceAnimations    = false,
     displaySettings     = { clock: true, hero: true, episodeCount: true },
-    playbackPrefs       = { audioLanguage: 'default', subtitleLanguage: 'default', subtitleSize: 'normal' },
+    playbackPrefs       = { audioLanguage: 'default', subtitleLanguage: 'default', subtitleSize: 0 },
     serverVersion       = '',      // Jellyfin server version (status page)
     libraries           = [],      // real libraries (for the navigation editor)
     publicUsers         = [],      // selectable profiles (public list from the server)
@@ -1565,7 +1565,7 @@
           <span class="text-2xl text-white font-medium block">{i18n.t.subtitleSize}</span>
           <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleSizeDesc}</span>
           <div class="flex gap-3">
-            {#each [['small', i18n.t.sizeSmall], ['normal', i18n.t.sizeNormal], ['large', i18n.t.sizeLarge]] as [val, label]}
+            {#each [[-2, i18n.t.sizeXSmall], [-1, i18n.t.sizeSmall], [0, i18n.t.sizeNormal], [1, i18n.t.sizeLarge], [2, i18n.t.sizeXLarge]] as [val, label]}
               <button onclick={() => setSubtitleSize(val)}
                 class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                        {playbackPrefs.subtitleSize === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
