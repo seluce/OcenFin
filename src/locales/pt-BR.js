@@ -97,6 +97,8 @@ export default {
     remoteButtonAction: "Ação do botão",
     remoteActionPlayPause: "Reproduzir/Pausar",
     subtitleLanguage: "Legendas padrão",
+    subtitlePositionDesc: "Só para legendas de texto. Bem embaixo, cabem quase sempre na barra preta dos filmes muito largos.",
+    positionLowest: "Bem embaixo",
     subtitleSmart: "Só com áudio em outro idioma",
     autoSkipIntro: "Pular abertura automaticamente",
     autoSkipDesc: "Pula as aberturas automaticamente (requer o plugin Intro Skipper).",

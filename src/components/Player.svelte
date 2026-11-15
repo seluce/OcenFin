@@ -1,6 +1,6 @@
 <script>
   import { i18n, plural } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount, authHeaders, dlog, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS, asSubSize } from '../utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS, asSubSize, asSubPosition } from '../utils.js';
   import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks } from '../trackmemory.js';
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
@@ -787,6 +787,9 @@
   // The outer steps are the old small/large; the inner ones sit at the geometric middle.
   const SUB_STEPS = { '-2': [2.6, 0.85], '-1': [3.0, 0.92], '0': [3.4, 1.0], '1': [4.0, 1.12], '2': [4.8, 1.25] };
   let subStep = $derived(SUB_STEPS[asSubSize(playbackPrefs.subtitleSize)]);
+  // Height (asSubPosition, CODE-HEALTH §100): the box's bottom edge in % of the screen. With the control bar
+  // up it never sits lower than above the bar (11rem), so a higher setting stays where it is.
+  let subBottom = $derived(asSubPosition(playbackPrefs.subtitlePosition));
   let subStyle = $derived(`font-size:${subStep[0]}vh;color:${subColor};-webkit-text-fill-color:${subColor};${subFontCss}${subEdgeCss}${subBgCss}`);
 
   // Subtitle size → libbitsub scaling (applies to PGS AND VobSub, not just VTT).
@@ -2759,8 +2762,8 @@
   <!-- SUBTITLE OVERLAY — our own VTT renderer (native track display is unreliable on webOS).
        Moves up when the control bar is visible so nothing is covered. -->
   {#if currentSubtitleText}
-    <div class="absolute inset-x-0 z-[65] flex justify-center px-[8%] pointer-events-none transition-all duration-200
-                {showControls ? 'bottom-44' : 'bottom-[7%]'}">
+    <div class="absolute inset-x-0 z-[65] flex justify-center px-[8%] pointer-events-none transition-all duration-200"
+         style="bottom:{showControls ? `max(11rem, ${subBottom}%)` : `${subBottom}%`}">
       <span class="subtitle-box" style={subStyle}>{currentSubtitleText}</span>
     </div>
   {/if}

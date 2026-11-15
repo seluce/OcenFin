@@ -727,6 +727,13 @@ export function asSubSize(v) {
   const n = ({ small: -2, normal: 0, large: 2 })[v] ?? Number(v);
   return Number.isInteger(n) && n >= -2 && n <= 2 ? n : 0;
 }
+// Height of text subtitles: the bottom of the box in percent of the screen height (CODE-HEALTH §100) — lowest
+// (two lines fit into the black bar of a 2.39:1 film), normal (where they always sat), a bit higher, higher.
+export const SUB_POSITIONS = [2, 7, 13, 20];
+export function asSubPosition(v) {
+  const n = Number(v);
+  return SUB_POSITIONS.includes(n) ? n : 7;
+}
 
 // --- Performance instrumentation (opt-in, shares the debug switch) ---------------------------
 // Inert while debug is off: every entry point tests _debug FIRST, so a normal session pays one

@@ -1600,6 +1600,21 @@
           </div>
         </div>
 
+        <!-- Height — text subtitles only (the overlay); PGS/VobSub and ASS bring their own position (§100). -->
+        <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
+          <span class="text-2xl text-white font-medium block">{i18n.t.subtitlePosition}</span>
+          <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitlePositionDesc}</span>
+          <div class="flex gap-3">
+            {#each [[2, i18n.t.positionLowest], [7, i18n.t.positionNormal], [13, i18n.t.positionRaised], [20, i18n.t.positionHigher]] as [val, label]}
+              <button onclick={() => setSubtitlePref('subtitlePosition', val)}
+                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                       {(playbackPrefs.subtitlePosition ?? 7) === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                {label}
+              </button>
+            {/each}
+          </div>
+        </div>
+
         <!-- VTT font — text subtitles only, deliberately separate from the UI font (appearance).
              Buttons show themselves in their own font (preview); Tinos = serif, selectable only here. -->
         <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
