@@ -344,7 +344,6 @@ export default {
     screensaverArtWatched: "Sedda / påbörjade",
     screensaverArtUnwatched: "Inte sedda än",
     screensaverArtRandom: "Slumpvis",
-    secondShort: "s",
 
     // Settings — Profile
     profile: "Profil",

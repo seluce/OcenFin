@@ -25,6 +25,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Fixed
 
+- **Screensaver times all in minutes.** The choices read 1 min, 90 sec, 2 min and 5 min; the second one is now
+  1.5 min, written the way the language writes decimals.
 - **The full subtitle track of the chosen language.** When a film has the language twice, the full track now
   wins over the forced one, which often comes first and only translates signs and foreign lines.
 - **White text readable on every accent colour.** Buttons and labels in emerald, amber, sky, teal and orange

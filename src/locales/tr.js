@@ -344,7 +344,6 @@ export default {
     screensaverArtWatched: "İzlenen / izlenmekte olan",
     screensaverArtUnwatched: "Henüz izlenmemiş",
     screensaverArtRandom: "Rastgele",
-    secondShort: "sn",
 
     // Settings — Profile
     profile: "Profil",

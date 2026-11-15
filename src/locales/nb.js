@@ -344,7 +344,6 @@ export default {
     screensaverArtWatched: "Sett / påbegynt",
     screensaverArtUnwatched: "Ikke sett ennå",
     screensaverArtRandom: "Tilfeldig",
-    secondShort: "s",
 
     // Settings — Profile
     profile: "Profil",

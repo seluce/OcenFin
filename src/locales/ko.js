@@ -344,7 +344,6 @@ export default {
     screensaverArtWatched: "본 작품 / 보는 중",
     screensaverArtUnwatched: "아직 안 본 작품",
     screensaverArtRandom: "무작위",
-    secondShort: "초",
 
     // Settings — Profile
     profile: "프로필",

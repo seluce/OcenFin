@@ -344,7 +344,6 @@ export default {
     screensaverArtWatched: "Megnézett / folyamatban",
     screensaverArtUnwatched: "Még nem látott",
     screensaverArtRandom: "Véletlenszerű",
-    secondShort: "mp",
 
     // Settings — Profile
     profile: "Profil",

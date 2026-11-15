@@ -344,7 +344,6 @@ export default {
     screensaverArtWatched: "Просмотренные / начатые",
     screensaverArtUnwatched: "Ещё не просмотренные",
     screensaverArtRandom: "Случайно",
-    secondShort: "сек",
 
     // Settings — Profile
     profile: "Профиль",

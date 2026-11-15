@@ -344,7 +344,6 @@ export default {
     screensaverArtWatched: "Vizionate / începute",
     screensaverArtUnwatched: "Încă nevizionate",
     screensaverArtRandom: "Aleatoriu",
-    secondShort: "s",
 
     // Settings — Profile
     profile: "Profil",

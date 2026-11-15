@@ -190,12 +190,12 @@
   }
   function cancelSharedQuickConnect() { sharedQcSess?.cancel(); sharedQcSess = null; sharedQcCode = sharedQcQr = null; }
 
-  let timeoutOptions = $derived([
-    { label: `1 ${i18n.t.mins}`,  value: 60  },
-    { label: `90 ${i18n.t.secondShort}`, value: 90  },
-    { label: `2 ${i18n.t.mins}`,  value: 120 },
-    { label: `5 ${i18n.t.mins}`,  value: 300 },
-  ]);
+  // All four in minutes — "90 s" between "1 min" and "2 min" mixed the units; 1.5 in the language's own
+  // decimal sign ("1,5 Min."). The stored value stays in seconds.
+  let timeoutOptions = $derived.by(() => {
+    const num = new Intl.NumberFormat(i18n.lang);
+    return [60, 90, 120, 300].map(value => ({ label: `${num.format(value / 60)} ${i18n.t.mins}`, value }));
+  });
 
   onDestroy(() => { if (modalTimeout) clearTimeout(modalTimeout); sharedQcSess?.cancel(); });
 

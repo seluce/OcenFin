@@ -344,7 +344,6 @@ export default {
     screensaverArtWatched: "Katsotut / kesken",
     screensaverArtUnwatched: "Katsomattomat",
     screensaverArtRandom: "Satunnainen",
-    secondShort: "s",
 
     // Settings — Profile
     profile: "Profiili",
