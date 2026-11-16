@@ -14,19 +14,24 @@ export const watchlist = $state({
   playlistId: null,
   entries: {},       // { [itemId]: playlistItemId }
   items: [],         // full playlist items — feeds the dashboard row reactively
+  loaded: false,     // this profile's first load is through (found, none yet, or failed) — the dashboard
+                     // holds the rows below the watchlist until then (CODE-HEALTH §106)
 });
 
 let currentUserId = null;
+let initSeq = 0;     // the newest initWatchlist() — only it may report the load as through
 
 function headers() { return authHeaders(session.token); }
 
 // Find the user's watchlist playlist (by its fixed name) and load its members.
 // Called by App whenever the active profile changes.
 export async function initWatchlist(userId) {
+  const seq = ++initSeq;
   currentUserId = userId;
   watchlist.playlistId = null;
   watchlist.entries = {};
   watchlist.items = [];
+  watchlist.loaded = false;
   try {
     const res = await fetch(
       `${session.serverUrl}/Items?UserId=${userId}&IncludeItemTypes=Playlist&Recursive=true&Fields=CanDelete&EnableTotalRecordCount=false`,
@@ -42,6 +47,7 @@ export async function initWatchlist(userId) {
     watchlist.playlistId = pl.Id;
     await refreshEntries(userId);
   } catch { /* watchlist is optional — the UI simply shows nothing as bookmarked */ }
+  finally { if (seq === initSeq) watchlist.loaded = true; }
 }
 
 // (Re)load the member list. The POST that adds an item does not return its EntryId,

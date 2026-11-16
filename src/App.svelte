@@ -69,7 +69,10 @@
       }
       const main   = document.querySelector('[data-focus-group="main"]');
       const shown  = main ? [...main.querySelectorAll(CONTENT_FOCUSABLE)].filter(isShown) : [];
-      const target = shown.find(el => !el.closest('[data-hero]')) || shown[0];
+      // The hero only as the last resort — not while the view is still building (aria-busy: the dashboard
+      // holds rows back, §106), or start focus lands on the banner a moment before the first row appears.
+      const target = shown.find(el => !el.closest('[data-hero]'))
+                  || (main?.querySelector('[aria-busy="true"]') ? null : shown[0]);
       if (target) { target.focus(); dlog('[focus]', why, '→', (target.textContent || '').trim().slice(0, 24)); return; }
       if (++tries < maxTries) { setTimeout(attempt, gap); return; }
       onGiveUp?.();
@@ -523,6 +526,7 @@
   // ── Shared suggestions (dashboard row "For you both") ──────────────────────
   let sharedSuggestions = $state([]);
   let _loadedSugKey     = null;
+  let sharedSugDoneKey  = $state('');   // the members the row was computed for — the dashboard holds the rows below it until it matches (§106)
   let sharedSugKey = $derived((sharedReady && displaySettings.sharedSuggestions)
                     ? sharedProfile.members.filter(m => m?.id).map(m => m.id).join('|') : '');
   $effect(() => { if (!sharedSugKey && sharedSuggestions.length) sharedSuggestions = []; });
@@ -1426,7 +1430,7 @@
       } catch { return null; }
     }))).filter(Boolean);
     if (_loadedSugKey !== myKey || activeUserId !== myUser) return;   // superseded meanwhile
-    if (!memberData.length) { sharedSuggestions = []; return; }
+    if (!memberData.length) { sharedSuggestions = []; sharedSugDoneKey = myKey; return; }
 
     // Genre weights: genres that ALL members have watched (product of the counts → "both like it").
     const allGenres = new Set();
@@ -1457,6 +1461,7 @@
       .sort((a, b) => b.score - a.score || (b.it.CommunityRating || 0) - (a.it.CommunityRating || 0))
       .slice(0, 12)   // uniform dashboard row length (ROW_LIMIT in Dashboard.svelte)
       .map(x => ({ ...x.it, UserData: {} }));   // clear UserData → no progress bar of a member
+    sharedSugDoneKey = myKey;
     dlog('[Shared] suggestions:', sharedSuggestions.length);
   }
 
@@ -1543,7 +1548,7 @@
     // one's dashboard until that one's own scan replaced it.
     contextItem = null; contextPickerMode = null; contextPickerItem = null;
     showExitConfirm = false; exitFocus.cancel();
-    sharedSuggestions = []; _loadedSugKey = null;
+    sharedSuggestions = []; _loadedSugKey = null; sharedSugDoneKey = '';
     _partnersSeq++; partnersPlayedIds = null;   // an in-flight library scan must not publish
     viewState = 'dashboard';
     apiCache.dashboard = null;   // clear cache (property mutation instead of reassignment → shared reference stays)
@@ -2498,6 +2503,7 @@
             homeOrder={displaySettings.homeOrder}
             {sharedSuggestions}
             showSharedSuggestions={sharedReady && displaySettings.sharedSuggestions}
+            sharedSuggestionsReady={sharedSugDoneKey === sharedSugKey}
             onOpenLibrary={(lib) => navigateToLibrary(lib, true)}
             onLibrariesLoaded={(libs) => navLibraries = libs}
             onOpenDetails={(item) => showItemDetails(item)}

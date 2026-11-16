@@ -3,7 +3,7 @@
   import { startQuickConnect as startQC } from '../quickconnect.js';
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, uploadLog, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter, UI_SIZES, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS, orderHomeRows } from '../utils.js';
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, uploadLog, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter, UI_SIZES, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS, orderHomeRows, SUB_POSITIONS, asSubPosition } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { focusFromPointer } from '../spatialnav.js';
   import { startPlatformDiagnostics } from '../diag.js';
@@ -677,6 +677,8 @@
   const HOME_ROW_LABELS = { libraries: 'displayLibraries', resume: 'continueWatchingRow', nextUp: 'nextUp', watchlist: 'watchlist',
     history: 'displayHistory', sharedSuggestions: 'sharedSuggestions', recommendations: 'displayRecommendations',
     latest: 'displayLatest', collections: 'collections' };
+  // The heights themselves are SUB_POSITIONS (utils.js), the one list the Player and the load check use too.
+  const SUB_POSITION_LABELS = { 2: 'positionLowest', 7: 'positionNormal', 13: 'positionRaised', 20: 'positionHigher' };
   let homeEntries = $derived(orderHomeRows(displaySettings.homeOrder)
     .filter(k => k !== 'sharedSuggestions' || sharedSetUp)
     .map(k => ({ id: k, label: i18n.t[HOME_ROW_LABELS[k]], toggle: k === 'resume' ? null : k })));
@@ -1676,11 +1678,11 @@
           <span class="text-2xl text-white font-medium block">{i18n.t.subtitlePosition}</span>
           <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitlePositionDesc}</span>
           <div class="flex gap-3">
-            {#each [[2, i18n.t.positionLowest], [7, i18n.t.positionNormal], [13, i18n.t.positionRaised], [20, i18n.t.positionHigher]] as [val, label]}
+            {#each SUB_POSITIONS as val}
               <button onclick={() => setSubtitlePref('subtitlePosition', val)}
                 class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                       {(playbackPrefs.subtitlePosition ?? 7) === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                {label}
+                       {asSubPosition(playbackPrefs.subtitlePosition) === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
+                {i18n.t[SUB_POSITION_LABELS[val]]}
               </button>
             {/each}
           </div>
