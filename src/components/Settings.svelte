@@ -1469,7 +1469,8 @@
               <span class="text-2xl text-white font-medium block">{i18n.t.screensaverPreview}</span>
               <span class="text-gray-400 mt-0.5 block text-sm">{i18n.t.screensaverPreviewDesc}</span>
             </div>
-            <svg class="w-7 h-7 text-gray-400 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 001.52.85l11.05-6.86a1 1 0 000-1.7L9.52 4.29A1 1 0 008 5.14z"/></svg>
+            <!-- An eye — "look at it" — in the stroke style of the other rows' chevrons. -->
+            <svg class="w-7 h-7 text-gray-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
           </button>
         {/if}
 

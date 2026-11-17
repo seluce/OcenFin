@@ -38,6 +38,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Settings in a clearer order.** Content now covers the home screen, library and details page, theme music and
   watch together included; the clock moved to Appearance, the logo to Navigation, and the two account
   categories became one, Profile & Account.
+- **Gallery screen saver straight away.** It stays black for the moment the first picture needs and then fades
+  into it, instead of showing the clock first; the clock only stands in when there are no pictures.
 
 ### Fixed
 
