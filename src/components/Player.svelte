@@ -2741,7 +2741,7 @@
   {#if currentSubtitleText}
     <div class="absolute inset-x-0 z-[65] flex justify-center px-[8%] pointer-events-none transition-all duration-200"
          style="bottom:{showControls ? `max(11rem, ${subBottom}%)` : `${subBottom}%`}">
-      <span class="subtitle-box" style={subStyle}>{currentSubtitleText}</span>
+      <span class="subtitle-box" data-text={currentSubtitleText} style={subStyle}>{currentSubtitleText}</span>
     </div>
   {/if}
 

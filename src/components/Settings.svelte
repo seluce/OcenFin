@@ -865,7 +865,7 @@
 <!-- One line of the subtitle preview, inside its scaled screen; "from" and "to" lie on top of each other while it turns. -->
 {#snippet subLine(prefs, layer)}
   <div class="absolute inset-x-0 flex justify-center px-[8%]" style="bottom:{asSubPosition(prefs.subtitlePosition)}vh">
-    <span data-sub-layer={layer} class="subtitle-box" style={subtitleTextStyle(prefs)}>{i18n.t.subtitlePreviewText}</span>
+    <span data-sub-layer={layer} class="subtitle-box" data-text={i18n.t.subtitlePreviewText} style={subtitleTextStyle(prefs)}>{i18n.t.subtitlePreviewText}</span>
   </div>
 {/snippet}
 

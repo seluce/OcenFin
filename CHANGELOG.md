@@ -3,6 +3,13 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## [Unreleased]
+
+### Fixed
+
+- **Outlined subtitles readable on the TV.** With the outline style, the black edge covered most of each letter
+  on webOS 25; it now runs around the letters, as it always did in a desktop browser.
+
 ## 2026.11.17
 
 ### Added
