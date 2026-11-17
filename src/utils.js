@@ -748,6 +748,31 @@ export function asSubPosition(v) {
   const n = Number(v);
   return SUB_POSITIONS.includes(n) ? n : 7;
 }
+// The look of TEXT subtitles (WebVTT/SRT) — ONE rule for the Player's overlay and the live preview in Settings
+// (CODE-HEALTH §109), so the preview cannot show something the Player does not. PGS/VobSub are bitmaps (only
+// scalable, SUB_STEPS[…][1]), ASS brings its own styling. Every length is in vh, i.e. relative to the SCREEN — the
+// preview, drawn at the screen's bottom edge, is therefore true to size and position.
+// Size in steps from normal (asSubSize, CODE-HEALTH §95): [text height in vh, libbitsub scale for PGS/VobSub].
+// The outer steps are the old small/large; the inner ones sit at the geometric middle.
+export const SUB_STEPS = { '-2': [2.6, 0.85], '-1': [3.0, 0.92], '0': [3.4, 1.0], '1': [4.0, 1.12], '2': [4.8, 1.25] };
+const SUB_COLORS = { white: '#ffffff', yellow: '#ffe14d', green: '#6dff6d', cyan: '#66e0ff' };
+// Font — deliberately ALWAYS set explicitly (even for 'system' → browser default stack), so the UI font choice
+// (html level) doesn't inherit through into the subtitles.
+const SUB_FONTS = { arimo: "font-family:'Arimo',sans-serif;", noto: "font-family:'Noto Sans',sans-serif;", tinos: "font-family:'Tinos',serif;" };
+export function subtitleTextStyle(p) {
+  const color = SUB_COLORS[p.subtitleColor || 'white'] || '#ffffff';
+  const edge = p.subtitleEdge === 'outline' ? '-webkit-text-stroke:0.35vh #000;paint-order:stroke fill;text-shadow:0 0 3px rgba(0,0,0,.55);'
+             : p.subtitleEdge === 'none' ? 'text-shadow:none;'
+             : 'text-shadow:0 1px 2px #000,0 2px 8px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.9);';
+  const bg = p.subtitleBackground === 'solid' ? 'background:#000;padding:0.05em 0.5em;border-radius:0.5vh;'
+           : p.subtitleBackground === 'semi' ? 'background:rgba(0,0,0,.6);padding:0.05em 0.5em;border-radius:0.5vh;'
+           : 'background:transparent;';
+  const font = SUB_FONTS[p.subtitleFont] ?? 'font-family:ui-sans-serif,system-ui,sans-serif;';
+  // -webkit-text-fill-color in addition to color: with -webkit-text-stroke set, on webOS the FILL color determines
+  // the rendering and falsely falls back to black there instead of inheriting color → subtitles otherwise black
+  // despite the color choice. Setting it explicitly forces the chosen color (a no-op on desktop anyway).
+  return `font-size:${SUB_STEPS[asSubSize(p.subtitleSize)][0]}vh;color:${color};-webkit-text-fill-color:${color};${font}${edge}${bg}`;
+}
 
 // --- Performance instrumentation (opt-in, shares the debug switch) ---------------------------
 // Inert while debug is off: every entry point tests _debug FIRST, so a normal session pays one

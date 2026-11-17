@@ -469,6 +469,8 @@ export default {
     subtitleEdge: "Szegély",
     subtitleBackground: "Háttér",
     subtitleStyleHint: "Csak szöveges feliratokhoz. A képes feliratok megtartják saját megjelenésüket, csak a méretük változtatható.",
+    subtitlePreview: "Előnézet valós méretben",
+    subtitlePreviewText: "Hol voltál éjjel?\nA régi világítótoronynál.",
     subtitleFont: "Betűtípus",
     subtitleFontDesc: "Csak szöveges feliratokhoz, az alkalmazás betűtípusától függetlenül. A stílusos ASS-feliratok saját betűtípust hoznak.",
     colorWhite: "Fehér",

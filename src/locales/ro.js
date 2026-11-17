@@ -469,6 +469,8 @@ export default {
     subtitleEdge: "Margine",
     subtitleBackground: "Fundal",
     subtitleStyleHint: "Doar pentru subtitrările text. Subtitrările imagine își păstrează aspectul și pot fi doar redimensionate.",
+    subtitlePreview: "Previzualizare la mărime reală",
+    subtitlePreviewText: "Unde ai fost azi-noapte?\nLa farul cel vechi.",
     subtitleFont: "Font",
     subtitleFontDesc: "Doar pentru subtitrările text, independent de fontul aplicației. Subtitrările ASS stilizate vin cu fonturile lor.",
     colorWhite: "Alb",

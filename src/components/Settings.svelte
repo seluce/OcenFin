@@ -3,7 +3,7 @@
   import { startQuickConnect as startQC } from '../quickconnect.js';
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, uploadLog, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter, UI_SIZES, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS, orderHomeRows, SUB_POSITIONS, asSubPosition } from '../utils.js';
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, uploadLog, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter, UI_SIZES, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS, orderHomeRows, SUB_POSITIONS, asSubPosition, subtitleTextStyle } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { focusFromPointer } from '../spatialnav.js';
   import { startPlatformDiagnostics } from '../diag.js';
@@ -697,6 +697,35 @@
 
   // Two-column navigation: pick the category on the left, content on the right (no long scrolling)
   let activeCategory = $state('appearance');
+
+  // Subtitle preview (CODE-HEALTH §109) — shown with the style rows, i.e. unless everything is burned in.
+  // Height in vh: the highest position (20) plus two lines at the largest size (2 × 4.8 × 1.35 ≈ 13.4 with the
+  // background's padding) plus the label — 38 left the label touching the line at 120 % interface size.
+  const SUB_PREVIEW_VH = 40;
+  let subPreviewShown = $derived(activeCategory === 'subtitles' && !playbackPrefs.burnSubtitles);
+  // Behind the line: one backdrop of the library, fetched the first time the category opens (UserId, so an
+  // age-restricted profile gets one of its own titles). None or an error: a neutral gradient, light towards the
+  // bottom so edge and background still show what they do.
+  const PREVIEW_FALLBACK = 'linear-gradient(180deg, #1e293b 0%, #475569 60%, #94a3b8 100%)';
+  let previewBackdrop = $state(null);
+  let previewRequested = false;
+  $effect(() => {
+    if (activeCategory !== 'subtitles' || previewRequested || !selectedUser?.Id || !session.serverUrl) return;
+    previewRequested = true;
+    fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&Recursive=true&IncludeItemTypes=Movie,Series&ImageTypes=Backdrop`
+        + `&SortBy=Random&Limit=1&EnableImageTypes=Backdrop&ImageTypeLimit=1&EnableTotalRecordCount=false`, { headers: authHeaders(session.token) })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        const it = d?.Items?.[0];
+        if (it?.BackdropImageTags?.length)
+          previewBackdrop = `${session.serverUrl}/Items/${it.Id}/Images/Backdrop/0?tag=${it.BackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
+      })
+      .catch(() => {});   // optional — the gradient stays
+  });
+  // The backdrop as the full screen would show it (16:9 at screen height), cut to the strip's bottom and middle.
+  let previewBg = $derived(previewBackdrop
+    ? `url("${previewBackdrop}") center bottom / calc(100vh * 16 / 9) 100vh no-repeat, ${PREVIEW_FALLBACK}`
+    : PREVIEW_FALLBACK);
   let contentEl = $state();
   // Reset the content scroll position on category switch, so a new category always starts at the
   // top instead of inheriting the previous category's scroll depth.
@@ -777,8 +806,10 @@
        in the app, the setting rows carry no scroll-margin of their own, so the container has to
        provide the breathing room — otherwise a row revealed downwards (e.g. the profile picker
        appearing under "watch together") sits right on the bottom edge with its ring clipped. -->
-  <div bind:this={contentEl} data-enter-top class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16 [scroll-padding-top:4rem] [scroll-padding-bottom:4rem]">
-    <div class="max-w-4xl flex flex-col gap-10 pb-32">
+  <!-- With the subtitle preview the bottom padding grows by its height, so a row moved to never lands under it (§109). -->
+  <div bind:this={contentEl} data-enter-top class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16 [scroll-padding-top:4rem] [scroll-padding-bottom:4rem]"
+       style={subPreviewShown ? `scroll-padding-bottom:calc(${SUB_PREVIEW_VH}vh + 1.5rem)` : null}>
+    <div class="max-w-4xl flex flex-col gap-10 {subPreviewShown ? '' : 'pb-32'}">
     <!-- ══════════════════════════════════════════
          APPEARANCE
     ══════════════════════════════════════════ -->
@@ -1760,6 +1791,23 @@
             {/each}
           </div>
         </div>
+        </div>
+
+        <!-- Live preview (CODE-HEALTH §109): the lower part of the screen at ACTUAL size and position. It draws
+             with the Player's own rule (subtitleTextStyle, vh units, bottom in % of the screen height) and sticks to
+             the screen's bottom edge — so the line sits exactly where and as big as it will in a film. Last in the
+             section with the bottom paddings taken out (pb-32 dropped, -mb-10 eats the scroller's), so it never
+             lifts off that edge at the end of the page; -bottom-10, not bottom-0, because Chromium sticks to the
+             scrollport MINUS its padding (p-10) — at bottom-0 the strip floated 2.5rem above the edge. FIXED height (the highest position with two lines at the
+             largest size, plus the label): a strip growing with the setting would push the focused button
+             under itself. Text subtitles only, like every row above it but size. -->
+        <div aria-hidden="true"
+          class="sticky -bottom-10 -mb-10 shrink-0 overflow-hidden rounded-t-2xl border border-b-0 border-gray-700 shadow-2xl"
+          style="height:{SUB_PREVIEW_VH}vh;background:{previewBg}">
+          <span class="absolute top-3 left-4 px-2.5 py-1 rounded-md bg-black/60 text-gray-200 text-xs font-bold uppercase tracking-wider">{i18n.t.subtitlePreview}</span>
+          <div class="absolute inset-x-0 flex justify-center px-[8%]" style="bottom:{asSubPosition(playbackPrefs.subtitlePosition)}vh">
+            <span class="subtitle-box" style={subtitleTextStyle(playbackPrefs)}>{i18n.t.subtitlePreviewText}</span>
+          </div>
         </div>
       {/if}
     </section>

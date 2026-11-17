@@ -469,6 +469,8 @@ export default {
     subtitleEdge: "Reunus",
     subtitleBackground: "Tausta",
     subtitleStyleHint: "Vain tekstimuotoisille tekstityksille. Kuvatekstitykset säilyttävät oman ulkoasunsa, ja vain niiden kokoa voi muuttaa.",
+    subtitlePreview: "Esikatselu todellisessa koossa",
+    subtitlePreviewText: "Missä olit viime yönä?\nVanhalla majakalla.",
     subtitleFont: "Fontti",
     subtitleFontDesc: "Vain tekstimuotoisille tekstityksille, sovelluksen fontista riippumatta. Tyylitellyt ASS-tekstitykset tuovat omat fonttinsa.",
     colorWhite: "Valkoinen",

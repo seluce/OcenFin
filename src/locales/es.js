@@ -469,6 +469,8 @@ export default {
     subtitleEdge: "Borde",
     subtitleBackground: "Fondo",
     subtitleStyleHint: "Solo para subtítulos de texto. Los subtítulos de imagen conservan su aspecto y solo se pueden cambiar de tamaño.",
+    subtitlePreview: "Vista previa a tamaño real",
+    subtitlePreviewText: "¿Dónde estuviste anoche?\nEn el viejo faro.",
     subtitleFont: "Fuente",
     subtitleFontDesc: "Solo para subtítulos de texto, independiente de la fuente de la app. Los subtítulos ASS con estilo traen sus propias fuentes.",
     colorWhite: "Blanco",

@@ -469,6 +469,8 @@ export default {
     subtitleEdge: "Край",
     subtitleBackground: "Фон",
     subtitleStyleHint: "Только для текстовых субтитров. Графические субтитры сохраняют свой вид, изменить можно только размер.",
+    subtitlePreview: "Предпросмотр в реальном размере",
+    subtitlePreviewText: "Где вы были ночью?\nУ старого маяка.",
     subtitleFont: "Шрифт",
     subtitleFontDesc: "Только для текстовых субтитров, независимо от шрифта приложения. У стилизованных субтитров ASS свои шрифты.",
     colorWhite: "Белый",

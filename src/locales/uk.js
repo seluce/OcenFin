@@ -469,6 +469,8 @@ export default {
     subtitleEdge: "Край",
     subtitleBackground: "Фон",
     subtitleStyleHint: "Лише для текстових субтитрів. Графічні субтитри зберігають свій вигляд, змінити можна лише розмір.",
+    subtitlePreview: "Попередній перегляд у реальному розмірі",
+    subtitlePreviewText: "Де ви були вночі?\nБіля старого маяка.",
     subtitleFont: "Шрифт",
     subtitleFontDesc: "Лише для текстових субтитрів, незалежно від шрифту застосунку. Стилізовані субтитри ASS мають власні шрифти.",
     colorWhite: "Білий",

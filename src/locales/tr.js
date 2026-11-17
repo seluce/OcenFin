@@ -469,6 +469,8 @@ export default {
     subtitleEdge: "Kenar",
     subtitleBackground: "Arka plan",
     subtitleStyleHint: "Yalnızca metin altyazıları için. Görüntü altyazıları kendi görünümlerini korur, yalnızca boyutları değiştirilebilir.",
+    subtitlePreview: "Gerçek boyutta önizleme",
+    subtitlePreviewText: "Dün gece neredeydin?\nEski deniz fenerinde.",
     subtitleFont: "Yazı tipi",
     subtitleFontDesc: "Yalnızca metin altyazıları için, uygulamanın yazı tipinden bağımsız. Biçimlendirilmiş ASS altyazıları kendi yazı tiplerini getirir.",
     colorWhite: "Beyaz",

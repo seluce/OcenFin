@@ -26,6 +26,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   when the audio is in another language, and otherwise just the forced ones, as Jellyfin's "Smart" mode does.
 - **Home screen rows in your own order.** Under Settings → Content → Home screen the rows move the same way as
   the menu entries, and each can still be switched off there; only the banner stays on top.
+- **Subtitle preview.** Under Settings → Subtitles a sample line sits at the bottom of the screen, at its real size
+  and height over a picture from your library, and changes with every style setting.
 
 ### Changed
 

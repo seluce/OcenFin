@@ -202,6 +202,8 @@ export default {
 
     // Subtitle styling (text only)
     subtitleStyleHint: "Só para legendas de texto. As legendas de imagem mantêm a sua aparência e só podem ser redimensionadas.",
+    subtitlePreview: "Prévia em tamanho real",
+    subtitlePreviewText: "Onde você estava ontem?\nNo velho farol.",
     subtitleFontDesc: "Só para legendas de texto, independentemente da fonte do app. As legendas ASS com estilo trazem as suas próprias fontes.",
 
     // Share
