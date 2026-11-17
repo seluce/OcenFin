@@ -803,10 +803,12 @@
   const SUB_PANE_SCALE = 0.6;
   // Behind the line: one backdrop of the library, fetched the first time the category opens (UserId, so an
   // age-restricted profile gets one of its own titles). None or an error: a neutral gradient, light towards the
-  // bottom so edge and background still show what they do.
+  // bottom so edge and background still show what they do. The picture itself is loaded and decoded right then too,
+  // and handed to the card only once it is ready (§117): the card used to start loading it on OK and showed the
+  // gradient until it arrived. `previewImg` holds it for as long as Settings is open, so it stays in memory.
   const PREVIEW_FALLBACK = 'linear-gradient(180deg, #1e293b 0%, #475569 60%, #94a3b8 100%)';
   let previewBackdrop = $state(null);
-  let previewRequested = false;
+  let previewRequested = false, previewImg = null;
   $effect(() => {
     if (activeCategory !== 'subtitles' || previewRequested || !selectedUser?.Id || !session.serverUrl) return;
     previewRequested = true;
@@ -816,8 +818,11 @@
       .then(d => {
         const it = d?.Items?.[0];
         // 1200 px: the whole screen is drawn at SUB_PANE_SCALE, i.e. about 1150 px wide on a 1920 screen.
-        if (it?.BackdropImageTags?.length)
-          previewBackdrop = `${session.serverUrl}/Items/${it.Id}/Images/Backdrop/0?tag=${it.BackdropImageTags[0]}&maxWidth=1200&quality=80&format=webp`;
+        if (!it?.BackdropImageTags?.length) return;
+        const url = `${session.serverUrl}/Items/${it.Id}/Images/Backdrop/0?tag=${it.BackdropImageTags[0]}&maxWidth=1200&quality=80&format=webp`;
+        previewImg = new Image();
+        previewImg.src = url;
+        return previewImg.decode().then(() => { previewBackdrop = url; });
       })
       .catch(() => {});   // optional — the gradient stays
   });
