@@ -27,7 +27,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Home screen rows in your own order.** Under Settings → Content → Home screen the rows move the same way as
   the menu entries, and each can still be switched off there; only the banner stays on top.
 - **Subtitle preview.** Under Settings → Subtitles, choosing a style option opens a small window for a few seconds
-  in which a sample line turns from the old look into the new one, over a picture from your library.
+  in which a sample line turns from the old look into the new one, over a coast at sunset drawn so that every
+  style shows its difference.
 - **Reset settings.** Next to Clear cache under Settings → Profile & Account, one button puts every setting of your
   profile back to its default after asking; the language, watch together and the saved password stay.
 - **Screen saver preview.** A last row in the screen saver settings starts it right away with what you chose; any

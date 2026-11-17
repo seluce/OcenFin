@@ -8,6 +8,7 @@
   import { focusFromPointer } from '../spatialnav.js';
   import { startPlatformDiagnostics } from '../diag.js';
   import { APP_VERSION } from '../version.js';
+  import subPreviewArt from '../assets/subtitle-preview.svg';   // the subtitle preview's scene (§118)
   import { tick, onDestroy, onMount } from 'svelte';
 
   let {
@@ -801,32 +802,19 @@
   // The pane: a crop 50 % of the screen wide and 35 % high (the highest position with two lines at the largest
   // size ends at 33.4 %), at this scale. In vw/vh, not rem — it stands for the screen, whatever the interface size.
   const SUB_PANE_SCALE = 0.6;
-  // Behind the line: one backdrop of the library, fetched the first time the category opens (UserId, so an
-  // age-restricted profile gets one of its own titles). None or an error: a neutral gradient, light towards the
-  // bottom so edge and background still show what they do. The picture itself is loaded and decoded right then too,
-  // and handed to the card only once it is ready (§117): the card used to start loading it on OK and showed the
-  // gradient until it arrived. `previewImg` holds it for as long as Settings is open, so it stays in memory.
-  const PREVIEW_FALLBACK = 'linear-gradient(180deg, #1e293b 0%, #475569 60%, #94a3b8 100%)';
-  let previewBackdrop = $state(null);
-  let previewRequested = false, previewImg = null;
+  // Behind the line: a scene drawn for it (src/assets/subtitle-preview.svg, CODE-HEALTH §118) — a coast at sunset,
+  // bright sky, glittering sea and surf right beside dark rock and posts, so every edge, background and colour shows
+  // what it does. A random backdrop of the library was often dark exactly where the line sits, and then showed no
+  // difference at all. The scene IS the crop the pane shows (960 × 378 of a 1920 × 1080 screen), drawn on the pane, not
+  // on the scaled screen. Decoded when the category opens, so the card opens with it (§117); `previewImg` keeps it.
+  const SUB_PREVIEW_BG = `url("${subPreviewArt}") center bottom / cover no-repeat #1e293b`;
+  let previewImg = null;
   $effect(() => {
-    if (activeCategory !== 'subtitles' || previewRequested || !selectedUser?.Id || !session.serverUrl) return;
-    previewRequested = true;
-    fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&Recursive=true&IncludeItemTypes=Movie,Series&ImageTypes=Backdrop`
-        + `&SortBy=Random&Limit=1&EnableImageTypes=Backdrop&ImageTypeLimit=1&EnableTotalRecordCount=false`, { headers: authHeaders(session.token) })
-      .then(r => (r.ok ? r.json() : null))
-      .then(d => {
-        const it = d?.Items?.[0];
-        // 1200 px: the whole screen is drawn at SUB_PANE_SCALE, i.e. about 1150 px wide on a 1920 screen.
-        if (!it?.BackdropImageTags?.length) return;
-        const url = `${session.serverUrl}/Items/${it.Id}/Images/Backdrop/0?tag=${it.BackdropImageTags[0]}&maxWidth=1200&quality=80&format=webp`;
-        previewImg = new Image();
-        previewImg.src = url;
-        return previewImg.decode().then(() => { previewBackdrop = url; });
-      })
-      .catch(() => {});   // optional — the gradient stays
+    if (activeCategory !== 'subtitles' || previewImg) return;
+    previewImg = new Image();
+    previewImg.src = subPreviewArt;
+    previewImg.decode().catch(() => {});
   });
-  let previewBg = $derived(previewBackdrop ? `url("${previewBackdrop}") center / cover no-repeat, ${PREVIEW_FALLBACK}` : PREVIEW_FALLBACK);
   let contentEl = $state();
   // Reset the content scroll position on category switch, so a new category always starts at the
   // top instead of inheriting the previous category's scroll depth.
@@ -1856,8 +1844,8 @@
             <div class="mb-2 text-sm font-semibold whitespace-nowrap text-gray-100">
               {#if subPreview.fromLabel}<span class="text-gray-400">{subPreview.fromLabel}</span><span class="mx-2 text-gray-400">→</span>{/if}{subPreview.label}
             </div>
-            <div class="relative overflow-hidden rounded-lg" style="width:{50 * SUB_PANE_SCALE}vw;height:{35 * SUB_PANE_SCALE}vh">
-              <div class="absolute bottom-0 origin-bottom" style="left:calc(50% - 50vw);width:100vw;height:100vh;transform:scale({SUB_PANE_SCALE});background:{previewBg}">
+            <div class="relative overflow-hidden rounded-lg" style="width:{50 * SUB_PANE_SCALE}vw;height:{35 * SUB_PANE_SCALE}vh;background:{SUB_PREVIEW_BG}">
+              <div class="absolute bottom-0 origin-bottom" style="left:calc(50% - 50vw);width:100vw;height:100vh;transform:scale({SUB_PANE_SCALE})">
                 {#if subPreview.from}{@render subLine(subPreview.from, 'from')}{/if}
                 {@render subLine(playbackPrefs, 'to')}
               </div>
