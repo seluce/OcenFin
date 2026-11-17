@@ -214,6 +214,8 @@ export default {
     customize: "Muokkaa",
     profilePictureHint: "Valitse avatar ja väri – ne tallentuvat tiliisi.",
     screensaverBrightness: "Kirkkaus",
+    screensaverPreview: "Esikatselu",
+    screensaverPreviewDesc: "Käynnistää sen nyt näillä asetuksilla. Mikä tahansa näppäin lopettaa sen.",
     brightnessDim: "Himmeä",
     brightnessMedium: "Keskitaso",
     brightnessBright: "Kirkas",

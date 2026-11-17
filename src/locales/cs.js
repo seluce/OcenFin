@@ -214,6 +214,8 @@ export default {
     customize: "Upravit",
     profilePictureHint: "Vyberte avatar a barvu — uloží se k vašemu účtu.",
     screensaverBrightness: "Jas",
+    screensaverPreview: "Náhled",
+    screensaverPreviewDesc: "Spustí ho hned s tímto nastavením. Libovolné tlačítko ho ukončí.",
     brightnessDim: "Ztlumený",
     brightnessMedium: "Střední",
     brightnessBright: "Jasný",

@@ -214,6 +214,8 @@ export default {
     customize: "Dostosuj",
     profilePictureHint: "Wybierz awatar i kolor — synchronizowane z Twoim kontem.",
     screensaverBrightness: "Jasność",
+    screensaverPreview: "Podgląd",
+    screensaverPreviewDesc: "Uruchamia go teraz z tymi ustawieniami. Dowolny przycisk go kończy.",
     brightnessDim: "Przyciemniona",
     brightnessMedium: "Średnia",
     brightnessBright: "Jasna",

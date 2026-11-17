@@ -214,6 +214,8 @@ export default {
     customize: "Anpassa",
     profilePictureHint: "Välj en avatar och en färg — sparas på ditt konto.",
     screensaverBrightness: "Ljusstyrka",
+    screensaverPreview: "Förhandsvisning",
+    screensaverPreviewDesc: "Startar den nu med de här inställningarna. Valfri knapp avslutar den.",
     brightnessDim: "Dämpad",
     brightnessMedium: "Medel",
     brightnessBright: "Ljus",

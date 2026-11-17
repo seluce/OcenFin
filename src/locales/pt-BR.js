@@ -148,6 +148,8 @@ export default {
     resetPrefsTitle: "Redefinir todas as configurações?",
     resetPrefsText: "Cada configuração deste perfil volta ao padrão. Continuam como estão: o idioma, Ver juntos, a senha salva e o protetor de tela, que vale para a TV inteira.",
     resetPrefsConfirm: "Redefinir",
+    screensaverPreview: "Prévia",
+    screensaverPreviewDesc: "Inicia agora com estas configurações. Qualquer tecla encerra.",
     fastSwitchDesc: "Permite entrar sem digitar a senha neste dispositivo.",
 
     // Settings — Security

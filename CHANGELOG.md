@@ -30,6 +30,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   in which a sample line turns from the old look into the new one, over a picture from your library.
 - **Reset settings.** Next to Clear cache under Settings → Profile & Account, one button puts every setting of your
   profile back to its default after asking; the language, watch together and the saved password stay.
+- **Screen saver preview.** A last row in the screen saver settings starts it right away with what you chose; any
+  key ends it.
 
 ### Changed
 

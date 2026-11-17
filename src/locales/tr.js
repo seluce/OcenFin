@@ -214,6 +214,8 @@ export default {
     customize: "Özelleştir",
     profilePictureHint: "Bir avatar ve renk seçin — hesabınızla eşitlenir.",
     screensaverBrightness: "Parlaklık",
+    screensaverPreview: "Önizleme",
+    screensaverPreviewDesc: "Bu ayarlarla şimdi başlatır. Herhangi bir tuş kapatır.",
     brightnessDim: "Kısık",
     brightnessMedium: "Orta",
     brightnessBright: "Parlak",

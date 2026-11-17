@@ -214,6 +214,8 @@ export default {
     customize: "Налаштувати",
     profilePictureHint: "Виберіть аватар і колір — зберігається у вашому обліковому записі.",
     screensaverBrightness: "Яскравість",
+    screensaverPreview: "Попередній перегляд",
+    screensaverPreviewDesc: "Запускає її зараз із цими налаштуваннями. Будь-яка кнопка її вимикає.",
     brightnessDim: "Приглушена",
     brightnessMedium: "Середня",
     brightnessBright: "Яскрава",

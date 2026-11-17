@@ -214,6 +214,8 @@ export default {
     customize: "Aanpassen",
     profilePictureHint: "Kies een avatar en kleur — gesynchroniseerd met je account.",
     screensaverBrightness: "Helderheid",
+    screensaverPreview: "Voorbeeld",
+    screensaverPreviewDesc: "Start hem nu met deze instellingen. Elke toets stopt hem.",
     brightnessDim: "Gedimd",
     brightnessMedium: "Gemiddeld",
     brightnessBright: "Helder",

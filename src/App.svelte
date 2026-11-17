@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, makeFocusReturn, installConnectionGuard, installEnterRepeatGuard, perfMark, startPerfSampler, asArray, asObject, asNumber, asUiSize, asSubSize, asSubPosition, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS } from './utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, makeFocusReturn, installConnectionGuard, installEnterRepeatGuard, isRepeatedEnter, perfMark, startPerfSampler, asArray, asObject, asNumber, asUiSize, asSubSize, asSubPosition, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS } from './utils.js';
   import { startPlatformDiagnostics } from './diag.js';
   import { buildPlayQueue, playableFor } from './playback.js';
   import { session } from './session.svelte.js';
@@ -436,13 +436,34 @@
 
   // While the screensaver is running, use the first keypress ONLY to wake and swallow it
   // (capture phase + stopImmediatePropagation) so it doesn't also e.g. toggle the paused playback
-  // or trigger something under the screensaver.
+  // or trigger something under the screensaver. A held OK's repeats are swallowed WITHOUT waking: they
+  // belong to the press that started the preview (a timed screensaver never meets one — any held key
+  // keeps resetting the timer).
   $effect(() => {
     if (!showScreensaver) return;
-    const swallow = (e) => { e.preventDefault(); e.stopImmediatePropagation(); resetActivity(); };
+    const swallow = (e) => { e.preventDefault(); e.stopImmediatePropagation(); if (!isRepeatedEnter()) resetActivity(); };
     window.addEventListener('keydown', swallow, true);
     return () => window.removeEventListener('keydown', swallow, true);
   });
+
+  // Settings → Screen saver → "Preview" (CODE-HEALTH §113): the real screensaver, now, with the current settings.
+  // Started after the click has run its course — it bubbles on to the window's onclick, which would wake it in the
+  // same moment. Pointer movement counts only after a moment: the Magic Remote's pointer trembles in the hand that
+  // just pressed. Keys and clicks wake it at once, as always; focus is still on the button afterwards (the
+  // screensaver takes none).
+  let screensaverPointerQuietUntil = 0;
+  function previewScreensaver() {
+    setTimeout(() => {
+      if (appPhase !== 'app') return;
+      screensaverPointerQuietUntil = Date.now() + 1500;
+      showScreensaver = true;
+      screensaverShownAt = Date.now();
+    }, 0);
+  }
+  function pointerActivity() {
+    if (showScreensaver && Date.now() < screensaverPointerQuietUntil) return;
+    resetActivity();
+  }
 
   function onScreensaverSettingsChange(v) {
     screensaverSettings = v;
@@ -2256,8 +2277,8 @@
 
 <svelte:window
   onkeydown={resetActivity}
-  onmousemove={resetActivity}
-  onpointermove={resetActivity}
+  onmousemove={pointerActivity}
+  onpointermove={pointerActivity}
   onclick={resetActivity}
 />
 
@@ -2548,6 +2569,7 @@
             onSwitchUser={handleSwitchUser}
             onLogout={handleLogout}
             onScreensaverChange={onScreensaverSettingsChange}
+            onPreviewScreensaver={previewScreensaver}
             onReduceAnimationsChange={onReduceAnimationsChange}
             onDisplayChange={onDisplayChange}
             onReorderingChange={(v) => navReordering = v}
@@ -2740,7 +2762,7 @@
   {#if showScreensaver}
     <Screensaver {use24h} userId={activeUserId}
       mode={screensaverSettings.mode} artSource={screensaverSettings.artSource} brightness={screensaverSettings.brightness}
-      onDismiss={resetActivity} />
+      onDismiss={pointerActivity} />
   {/if}
 
 </main>

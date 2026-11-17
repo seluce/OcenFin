@@ -214,6 +214,8 @@ export default {
     customize: "Testreszabás",
     profilePictureHint: "Válassz avatart és színt – a fiókodhoz mentjük.",
     screensaverBrightness: "Fényerő",
+    screensaverPreview: "Előnézet",
+    screensaverPreviewDesc: "Most elindítja ezekkel a beállításokkal. Bármelyik gomb kilép belőle.",
     brightnessDim: "Halvány",
     brightnessMedium: "Közepes",
     brightnessBright: "Világos",

@@ -214,6 +214,8 @@ export default {
     customize: "Personalizza",
     profilePictureHint: "Scegli un avatar e un colore — sincronizzati con il tuo account.",
     screensaverBrightness: "Luminosità",
+    screensaverPreview: "Anteprima",
+    screensaverPreviewDesc: "Lo avvia ora con queste impostazioni. Un tasto qualsiasi lo chiude.",
     brightnessDim: "Attenuata",
     brightnessMedium: "Media",
     brightnessBright: "Intensa",

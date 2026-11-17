@@ -29,7 +29,7 @@
                                                  //   → 'ok'|'needPassword'|'sameUser'|'offline'|'error'
     onSharedRemoveMember = () => {},
     // Callback props
-    onToggleSave, onSwitchUser, onLogout, onScreensaverChange, onReduceAnimationsChange,
+    onToggleSave, onSwitchUser, onLogout, onScreensaverChange, onPreviewScreensaver, onReduceAnimationsChange,
     onDisplayChange, onReorderingChange, onProfileImageChanged, onPlaybackPrefsChange, onClearCache, onResetPrefs,
   } = $props();
 
@@ -1458,6 +1458,19 @@
               </div>
             </div>
           {/if}
+
+          <!-- Preview (CODE-HEALTH §113): the real screen saver at once, any key ends it. The last row, an action row
+               like "Change password" in Profile & Account — the card's own look, not a separate button. -->
+          <div class="h-px bg-gray-700"></div>
+          <button onclick={() => { if (!isRepeatedEnter()) onPreviewScreensaver?.(); }}
+            class="flex items-center justify-between w-full px-6 py-5 hover:bg-gray-700 focus:bg-gray-700
+                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left last:rounded-b-2xl">
+            <div>
+              <span class="text-2xl text-white font-medium block">{i18n.t.screensaverPreview}</span>
+              <span class="text-gray-400 mt-0.5 block text-sm">{i18n.t.screensaverPreviewDesc}</span>
+            </div>
+            <svg class="w-7 h-7 text-gray-400 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 001.52.85l11.05-6.86a1 1 0 000-1.7L9.52 4.29A1 1 0 008 5.14z"/></svg>
+          </button>
         {/if}
 
       </div>

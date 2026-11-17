@@ -214,6 +214,8 @@ export default {
     customize: "Customize",
     profilePictureHint: "Pick an avatar and color — synced to your account.",
     screensaverBrightness: "Brightness",
+    screensaverPreview: "Preview",
+    screensaverPreviewDesc: "Starts it now with these settings. Any key ends it.",
     brightnessDim: "Dimmed",
     brightnessMedium: "Medium",
     brightnessBright: "Bright",

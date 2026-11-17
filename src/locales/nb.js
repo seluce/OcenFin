@@ -214,6 +214,8 @@ export default {
     customize: "Tilpass",
     profilePictureHint: "Velg en avatar og en farge — lagres på kontoen din.",
     screensaverBrightness: "Lysstyrke",
+    screensaverPreview: "Forhåndsvisning",
+    screensaverPreviewDesc: "Starter den nå med disse innstillingene. Hvilken som helst tast avslutter den.",
     brightnessDim: "Dempet",
     brightnessMedium: "Middels",
     brightnessBright: "Lys",

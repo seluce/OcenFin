@@ -214,6 +214,8 @@ export default {
     customize: "Personalizează",
     profilePictureHint: "Alege un avatar și o culoare – se salvează în contul tău.",
     screensaverBrightness: "Luminozitate",
+    screensaverPreview: "Previzualizare",
+    screensaverPreviewDesc: "Îl pornește acum cu aceste setări. Orice tastă îl oprește.",
     brightnessDim: "Redusă",
     brightnessMedium: "Medie",
     brightnessBright: "Ridicată",

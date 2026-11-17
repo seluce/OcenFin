@@ -214,6 +214,8 @@ export default {
     customize: "변경",
     profilePictureHint: "아바타와 색상을 고르세요. 계정에 저장됩니다.",
     screensaverBrightness: "밝기",
+    screensaverPreview: "미리 보기",
+    screensaverPreviewDesc: "지금 이 설정으로 시작합니다. 아무 버튼이나 누르면 끝납니다.",
     brightnessDim: "어둡게",
     brightnessMedium: "중간",
     brightnessBright: "밝게",

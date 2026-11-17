@@ -214,6 +214,8 @@ export default {
     customize: "Anpassen",
     profilePictureHint: "Avatar und Farbe wählen – wird mit deinem Konto synchronisiert.",
     screensaverBrightness: "Helligkeit",
+    screensaverPreview: "Vorschau",
+    screensaverPreviewDesc: "Startet ihn jetzt mit diesen Einstellungen. Jede Taste beendet ihn.",
     brightnessDim: "Gedimmt",
     brightnessMedium: "Mittel",
     brightnessBright: "Hell",
