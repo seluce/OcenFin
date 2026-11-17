@@ -10,6 +10,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Outlined subtitles readable on the TV.** With the outline style, the black edge covered most of each letter
   on webOS 25; it now runs around the letters, as it always did in a desktop browser.
 
+### Internal
+
+- **Updated ASS subtitle engine.** JASSUB 2.5.38 brings a newer libass that lays out text faster and reads damaged
+  subtitle files more safely.
+
 ## 2026.11.17
 
 ### Added
