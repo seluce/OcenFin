@@ -283,6 +283,7 @@ export default {
     reduceAnimationsDesc: "Geçişleri ve efektleri kapatır — yavaş TV'lerde performansı artırır.",
     displayElements: "İçerik",
     displayClock: "Saat",
+    clockDesc: "Saati sağ üst köşede gösterir, oynatıcıda da.",
     displayHero: "Öne çıkan banner",
     displayEpisodeCount: "İzlenmemiş bölümler",
     episodesLeft: "izlenecek",
@@ -296,7 +297,6 @@ export default {
     displayChaptersDesc: "Zaman çubuğundaki kısım işaretlerini ve kısım atlama düğmelerini gösterir veya gizler.",
     spoilerProtection: "Bölümler için spoiler koruması",
     groupHome: "Ana ekran",
-    groupInterface: "Arayüz",
     groupDetails: "Ayrıntılar",
     groupLibrary: "Kitaplık",
     groupWatchTogether: "Birlikte izle",
@@ -307,6 +307,7 @@ export default {
     displayDetailsBackdrop: "Arka plan",
     displayDetailsLogo: "Başlık metin yerine logo olarak",
     clockFormat: "Saat biçimi",
+    clockFormatDesc: "Ekran koruyucu ve ayrıntı sayfasındaki bitiş saati için de geçerlidir.",
     clockAuto: "Otomatik",
     clock24h: "24 saat",
     clock12h: "12 saat",
@@ -358,7 +359,7 @@ export default {
     fastSwitchDesc: "Bu cihazda şifre girmeden giriş yapmayı sağlar.",
 
     // Settings — Security
-    profileSecurity: "Profil ve güvenlik",
+    settingsProfileAccount: "Profil ve hesap",
     sharedWatching: "Ortak profil",
     sharedWatchingDesc: "İki profili birleştirir ve ikinizden birinin bitirdiklerini gizler.",
     sharedWatchingPick: "Birleştirilecek iki profili seçin.",
@@ -405,7 +406,6 @@ export default {
     qcPlaceholder: "örn. 123456",
 
     // Settings — Account
-    settingsAccount: "Hesap ve sunucu",
     statusSection: "Durum / Günlükler",
     debugLogging: "Tanılama günlüğü",
     debugLoggingDesc: "Oynatma, altyazılar ve SyncPlay hakkında ayrıntılı tanılama kaydeder — bir sorun bildirirken işe yarar. Varsayılan olarak kapalı; bu TV'deki tüm profiller için geçerlidir.",

@@ -283,6 +283,7 @@ export default {
     reduceAnimationsDesc: "Désactive les transitions et effets — améliore les performances sur les téléviseurs plus lents.",
     displayElements: "Contenus",
     displayClock: "Horloge",
+    clockDesc: "Affiche l'heure en haut à droite, aussi dans le lecteur.",
     displayHero: "Bannière à la une",
     displayEpisodeCount: "Épisodes à voir",
     episodesLeft: "à voir",
@@ -296,7 +297,6 @@ export default {
     displayChaptersDesc: "Affiche ou masque les repères de chapitre sur la barre de lecture et les boutons de chapitre.",
     spoilerProtection: "Protection anti-spoiler des épisodes",
     groupHome: "Écran d'accueil",
-    groupInterface: "Interface",
     groupDetails: "Détails",
     groupLibrary: "Médiathèque",
     groupWatchTogether: "Regarder ensemble",
@@ -307,6 +307,7 @@ export default {
     displayDetailsBackdrop: "Arrière-plan",
     displayDetailsLogo: "Titre en logo plutôt qu'en texte",
     clockFormat: "Format de l'heure",
+    clockFormatDesc: "S'applique aussi à l'écran de veille et à l'heure de fin sur la page de détails.",
     clockAuto: "Automatique",
     clock24h: "24 heures",
     clock12h: "12 heures",
@@ -358,7 +359,7 @@ export default {
     fastSwitchDesc: "Permet de se connecter sans saisir de mot de passe sur cet appareil.",
 
     // Settings — Security
-    profileSecurity: "Profil et sécurité",
+    settingsProfileAccount: "Profil et compte",
     sharedWatching: "Profil partagé",
     sharedWatchingDesc: "Combine deux profils et masque ce que l'un de vous a déjà terminé.",
     sharedWatchingPick: "Choisissez les deux profils à combiner.",
@@ -405,7 +406,6 @@ export default {
     qcPlaceholder: "p. ex. 123456",
 
     // Settings — Account
-    settingsAccount: "Compte et serveur",
     statusSection: "État / Journaux",
     debugLogging: "Journalisation de diagnostic",
     debugLoggingDesc: "Enregistre des diagnostics détaillés sur la lecture, les sous-titres et SyncPlay — utile pour signaler un problème. Désactivé par défaut ; s'applique à tous les profils de ce téléviseur.",

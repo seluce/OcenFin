@@ -283,6 +283,7 @@ export default {
     reduceAnimationsDesc: "전환과 효과를 끕니다. 느린 TV에서 성능이 좋아집니다.",
     displayElements: "콘텐츠",
     displayClock: "시계",
+    clockDesc: "오른쪽 위에 시간을 표시합니다. 플레이어에서도 표시됩니다.",
     displayHero: "배너",
     displayEpisodeCount: "안 본 에피소드",
     episodesLeft: "편 남음",
@@ -296,7 +297,6 @@ export default {
     displayChaptersDesc: "탐색 바의 챕터 표시와 챕터 건너뛰기 버튼을 표시하거나 숨깁니다.",
     spoilerProtection: "에피소드 스포일러 방지",
     groupHome: "홈 화면",
-    groupInterface: "인터페이스",
     groupDetails: "상세 페이지",
     groupLibrary: "라이브러리",
     groupWatchTogether: "함께 보기",
@@ -307,6 +307,7 @@ export default {
     displayDetailsBackdrop: "배경 이미지",
     displayDetailsLogo: "제목을 텍스트 대신 로고로",
     clockFormat: "시간 형식",
+    clockFormatDesc: "화면 보호기와 상세 페이지의 종료 시간에도 적용됩니다.",
     clockAuto: "자동",
     clock24h: "24시간",
     clock12h: "12시간",
@@ -358,7 +359,7 @@ export default {
     fastSwitchDesc: "이 기기에서 비밀번호 입력 없이 로그인할 수 있습니다.",
 
     // Settings — Security
-    profileSecurity: "프로필 및 보안",
+    settingsProfileAccount: "프로필 및 계정",
     sharedWatching: "공유 프로필",
     sharedWatchingDesc: "두 프로필을 합칩니다. 둘 중 한 사람이라도 끝까지 본 작품은 숨깁니다.",
     sharedWatchingPick: "합칠 두 프로필을 선택하세요.",
@@ -405,7 +406,6 @@ export default {
     qcPlaceholder: "예: 123456",
 
     // Settings — Account
-    settingsAccount: "계정 및 서버",
     statusSection: "상태 / 로그",
     debugLogging: "진단 로그",
     debugLoggingDesc: "재생, 자막, SyncPlay에 대한 자세한 진단 정보를 기록합니다. 문제를 보고할 때 유용합니다. 기본값은 꺼짐이며, 이 TV의 모든 프로필에 적용됩니다.",

@@ -283,6 +283,7 @@ export default {
     reduceAnimationsDesc: "Schakelt overgangen en effecten uit — verbetert prestaties op tragere tv's.",
     displayElements: "Inhoud",
     displayClock: "Klok",
+    clockDesc: "Toont de tijd rechtsboven, ook in de speler.",
     displayHero: "Uitgelichte banner",
     displayEpisodeCount: "Afleveringen te gaan",
     episodesLeft: "te gaan",
@@ -296,7 +297,6 @@ export default {
     displayChaptersDesc: "Toont of verbergt de hoofdstukmarkeringen op de afspeelbalk en de hoofdstukknoppen.",
     spoilerProtection: "Spoilerbescherming voor afleveringen",
     groupHome: "Startscherm",
-    groupInterface: "Interface",
     groupDetails: "Details",
     groupLibrary: "Bibliotheek",
     groupWatchTogether: "Samen kijken",
@@ -307,6 +307,7 @@ export default {
     displayDetailsBackdrop: "Achtergrond",
     displayDetailsLogo: "Titel als logo i.p.v. tekst",
     clockFormat: "Tijdnotatie",
+    clockFormatDesc: "Geldt ook voor de schermbeveiliging en de eindtijd op de detailpagina.",
     clockAuto: "Automatisch",
     clock24h: "24-uurs",
     clock12h: "12-uurs",
@@ -358,7 +359,7 @@ export default {
     fastSwitchDesc: "Maakt inloggen zonder wachtwoord op dit apparaat mogelijk.",
 
     // Settings — Security
-    profileSecurity: "Profiel en beveiliging",
+    settingsProfileAccount: "Profiel en account",
     sharedWatching: "Gedeeld profiel",
     sharedWatchingDesc: "Combineert twee profielen en verbergt wat een van jullie al heeft uitgekeken.",
     sharedWatchingPick: "Kies de twee te combineren profielen.",
@@ -405,7 +406,6 @@ export default {
     qcPlaceholder: "bijv. 123456",
 
     // Settings — Account
-    settingsAccount: "Account en server",
     statusSection: "Status / Logboek",
     debugLogging: "Diagnostische logging",
     debugLoggingDesc: "Legt uitgebreide diagnosegegevens vast over afspelen, ondertitels en SyncPlay — handig als je een probleem meldt. Standaard uit; geldt voor alle profielen op deze tv.",

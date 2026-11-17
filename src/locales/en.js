@@ -283,6 +283,7 @@ export default {
     reduceAnimationsDesc: "Disables transitions and effects — improves performance on slower TVs.",
     displayElements: "Content",
     displayClock: "Clock",
+    clockDesc: "Shows the time at the top right, in the player too.",
     displayHero: "Featured Banner",
     displayEpisodeCount: "Unwatched episodes",
     episodesLeft: "left",
@@ -296,7 +297,6 @@ export default {
     displayChaptersDesc: "Shows or hides chapter marks on the seek bar and the chapter skip buttons.",
     spoilerProtection: "Episode spoiler guard",
     groupHome: "Home Screen",
-    groupInterface: "Interface",
     groupDetails: "Details",
     groupLibrary: "Library",
     groupWatchTogether: "Watch Together",
@@ -307,6 +307,7 @@ export default {
     displayDetailsBackdrop: "Backdrop",
     displayDetailsLogo: "Title as logo instead of text",
     clockFormat: "Time Format",
+    clockFormatDesc: "Also applies to the screen saver and to the end time on a details page.",
     clockAuto: "Automatic",
     clock24h: "24-hour",
     clock12h: "12-hour",
@@ -358,7 +359,7 @@ export default {
     fastSwitchDesc: "Allows logging in without entering a password on this device.",
 
     // Settings — Security
-    profileSecurity: "Profile & Security",
+    settingsProfileAccount: "Profile & Account",
     sharedWatching: "Shared profile",
     sharedWatchingDesc: "Combine two profiles: hide what either of you has already finished.",
     sharedWatchingPick: "Choose the two profiles to combine.",
@@ -405,7 +406,6 @@ export default {
     qcPlaceholder: "e.g. 123456",
 
     // Settings — Account
-    settingsAccount: "Account & Server",
     statusSection: "Status / Logs",
     debugLogging: "Diagnostic logging",
     debugLoggingDesc: "Records detailed diagnostics on playback, subtitles and SyncPlay — useful when reporting a problem. Off by default; applies to every profile on this TV.",

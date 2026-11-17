@@ -283,6 +283,7 @@ export default {
     reduceAnimationsDesc: "Wyłącza przejścia i efekty — poprawia wydajność na wolniejszych telewizorach.",
     displayElements: "Zawartość",
     displayClock: "Zegar",
+    clockDesc: "Pokazuje godzinę w prawym górnym rogu, także w odtwarzaczu.",
     displayHero: "Baner wyróżniony",
     displayEpisodeCount: "Odcinki do obejrzenia",
     episodesLeft: "do obejrzenia",
@@ -296,7 +297,6 @@ export default {
     displayChaptersDesc: "Pokazuje lub ukrywa znaczniki rozdziałów na pasku odtwarzania oraz przyciski rozdziałów.",
     spoilerProtection: "Ochrona przed spoilerami odcinków",
     groupHome: "Ekran główny",
-    groupInterface: "Interfejs",
     groupDetails: "Szczegóły",
     groupLibrary: "Biblioteka",
     groupWatchTogether: "Wspólne oglądanie",
@@ -307,6 +307,7 @@ export default {
     displayDetailsBackdrop: "Tło",
     displayDetailsLogo: "Tytuł jako logo zamiast tekstu",
     clockFormat: "Format czasu",
+    clockFormatDesc: "Dotyczy też wygaszacza ekranu i godziny zakończenia na stronie szczegółów.",
     clockAuto: "Automatyczny",
     clock24h: "24-godzinny",
     clock12h: "12-godzinny",
@@ -358,7 +359,7 @@ export default {
     fastSwitchDesc: "Umożliwia logowanie bez wpisywania hasła na tym urządzeniu.",
 
     // Settings — Security
-    profileSecurity: "Profil i bezpieczeństwo",
+    settingsProfileAccount: "Profil i konto",
     sharedWatching: "Wspólny profil",
     sharedWatchingDesc: "Łączy dwa profile i ukrywa to, co któreś z was już ukończyło.",
     sharedWatchingPick: "Wybierz dwa profile do połączenia.",
@@ -405,7 +406,6 @@ export default {
     qcPlaceholder: "np. 123456",
 
     // Settings — Account
-    settingsAccount: "Konto i serwer",
     statusSection: "Status / Dzienniki",
     debugLogging: "Rejestrowanie diagnostyczne",
     debugLoggingDesc: "Zapisuje szczegółową diagnostykę odtwarzania, napisów i SyncPlay — przydatną przy zgłaszaniu problemu. Domyślnie wyłączone; dotyczy wszystkich profili na tym telewizorze.",

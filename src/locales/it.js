@@ -283,6 +283,7 @@ export default {
     reduceAnimationsDesc: "Disattiva transizioni ed effetti — migliora le prestazioni sui televisori più lenti.",
     displayElements: "Contenuti",
     displayClock: "Orologio",
+    clockDesc: "Mostra l'ora in alto a destra, anche nel lettore.",
     displayHero: "Banner in evidenza",
     displayEpisodeCount: "Episodi da vedere",
     episodesLeft: "da vedere",
@@ -296,7 +297,6 @@ export default {
     displayChaptersDesc: "Mostra o nasconde i marcatori di capitolo sulla barra di riproduzione e i pulsanti dei capitoli.",
     spoilerProtection: "Protezione anti-spoiler episodi",
     groupHome: "Schermata iniziale",
-    groupInterface: "Interfaccia",
     groupDetails: "Dettagli",
     groupLibrary: "Libreria",
     groupWatchTogether: "Guarda insieme",
@@ -307,6 +307,7 @@ export default {
     displayDetailsBackdrop: "Sfondo",
     displayDetailsLogo: "Titolo come logo invece del testo",
     clockFormat: "Formato ora",
+    clockFormatDesc: "Vale anche per il salvaschermo e per l'ora di fine nella pagina dei dettagli.",
     clockAuto: "Automatico",
     clock24h: "24 ore",
     clock12h: "12 ore",
@@ -358,7 +359,7 @@ export default {
     fastSwitchDesc: "Consente di accedere senza inserire la password su questo dispositivo.",
 
     // Settings — Security
-    profileSecurity: "Profilo e sicurezza",
+    settingsProfileAccount: "Profilo e account",
     sharedWatching: "Profilo condiviso",
     sharedWatchingDesc: "Combina due profili e nasconde ciò che uno di voi ha già finito di vedere.",
     sharedWatchingPick: "Scegli i due profili da combinare.",
@@ -405,7 +406,6 @@ export default {
     qcPlaceholder: "es. 123456",
 
     // Settings — Account
-    settingsAccount: "Account e server",
     statusSection: "Stato / Log",
     debugLogging: "Log diagnostici",
     debugLoggingDesc: "Registra una diagnostica dettagliata su riproduzione, sottotitoli e SyncPlay, utile per segnalare un problema. Disattivo per impostazione predefinita; vale per tutti i profili su questo televisore.",

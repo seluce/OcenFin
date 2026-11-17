@@ -283,6 +283,7 @@ export default {
     reduceAnimationsDesc: "Вимикає переходи й ефекти — покращує швидкодію на повільніших телевізорах.",
     displayElements: "Вміст",
     displayClock: "Годинник",
+    clockDesc: "Показує час угорі праворуч, також у плеєрі.",
     displayHero: "Головний банер",
     displayEpisodeCount: "Непереглянуті серії",
     episodesLeft: "до перегляду",
@@ -296,7 +297,6 @@ export default {
     displayChaptersDesc: "Показує або приховує позначки розділів на шкалі часу та кнопки переходу між розділами.",
     spoilerProtection: "Захист від спойлерів у серіях",
     groupHome: "Головний екран",
-    groupInterface: "Інтерфейс",
     groupDetails: "Подробиці",
     groupLibrary: "Медіатека",
     groupWatchTogether: "Спільний перегляд",
@@ -307,6 +307,7 @@ export default {
     displayDetailsBackdrop: "Фон",
     displayDetailsLogo: "Назва логотипом замість тексту",
     clockFormat: "Формат часу",
+    clockFormatDesc: "Діє також для заставки й часу закінчення на сторінці з подробицями.",
     clockAuto: "Автоматично",
     clock24h: "24-годинний",
     clock12h: "12-годинний",
@@ -358,7 +359,7 @@ export default {
     fastSwitchDesc: "Дозволяє входити на цьому пристрої без введення пароля.",
 
     // Settings — Security
-    profileSecurity: "Профіль і безпека",
+    settingsProfileAccount: "Профіль і обліковий запис",
     sharedWatching: "Спільний профіль",
     sharedWatchingDesc: "Об’єднує два профілі: приховує те, що хтось із вас уже додивився.",
     sharedWatchingPick: "Виберіть два профілі для об’єднання.",
@@ -405,7 +406,6 @@ export default {
     qcPlaceholder: "напр. 123456",
 
     // Settings — Account
-    settingsAccount: "Обліковий запис і сервер",
     statusSection: "Стан / Журнали",
     debugLogging: "Діагностичний журнал",
     debugLoggingDesc: "Записує докладну діагностику відтворення, субтитрів і SyncPlay — стане в пригоді, коли повідомляєте про проблему. За замовчуванням вимкнено; діє для всіх профілів на цьому телевізорі.",

@@ -283,6 +283,7 @@ export default {
     reduceAnimationsDesc: "Poistaa siirtymät ja tehosteet – parantaa suorituskykyä hitaammissa televisioissa.",
     displayElements: "Sisältö",
     displayClock: "Kello",
+    clockDesc: "Näyttää kellonajan oikeassa yläkulmassa, myös soittimessa.",
     displayHero: "Banneri",
     displayEpisodeCount: "Katsomattomat jaksot",
     episodesLeft: "katsomatta",
@@ -296,7 +297,6 @@ export default {
     displayChaptersDesc: "Näyttää tai piilottaa lukumerkit aikajanalla ja lukujen ohituspainikkeet.",
     spoilerProtection: "Jaksojen spoilerisuoja",
     groupHome: "Etusivu",
-    groupInterface: "Käyttöliittymä",
     groupDetails: "Tietosivu",
     groupLibrary: "Kirjasto",
     groupWatchTogether: "Yhteiskatselu",
@@ -307,6 +307,7 @@ export default {
     displayDetailsBackdrop: "Taustakuva",
     displayDetailsLogo: "Nimi logona tekstin sijaan",
     clockFormat: "Ajan muoto",
+    clockFormatDesc: "Koskee myös näytönsäästäjää ja päättymisaikaa tietosivulla.",
     clockAuto: "Automaattinen",
     clock24h: "24 tuntia",
     clock12h: "12 tuntia",
@@ -358,7 +359,7 @@ export default {
     fastSwitchDesc: "Sallii kirjautumisen tällä laitteella ilman salasanaa.",
 
     // Settings — Security
-    profileSecurity: "Profiili ja suojaus",
+    settingsProfileAccount: "Profiili ja tili",
     sharedWatching: "Yhteinen profiili",
     sharedWatchingDesc: "Yhdistä kaksi profiilia: piilota se, minkä jompikumpi teistä on jo katsonut loppuun.",
     sharedWatchingPick: "Valitse yhdistettävät kaksi profiilia.",
@@ -405,7 +406,6 @@ export default {
     qcPlaceholder: "esim. 123456",
 
     // Settings — Account
-    settingsAccount: "Tili ja palvelin",
     statusSection: "Tila / Lokit",
     debugLogging: "Diagnostiikkaloki",
     debugLoggingDesc: "Tallentaa tarkat diagnostiikkatiedot toistosta, tekstityksistä ja SyncPlaysta – hyödyllinen, kun ilmoitat ongelmasta. Oletuksena pois; koskee kaikkia tämän television profiileja.",

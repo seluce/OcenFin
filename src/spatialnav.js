@@ -378,7 +378,7 @@ export function createFocusManager(isEnabled) {
       let within = pickVisible(e.key, from, scopeCands, active, true, true);
       // Fallback for entering a "start-at-top" area (data-enter-top): if the strict
       // row binding found nothing because at the source's height the target area has only NON-focusable
-      // content (e.g. the server-info card above "Clear cache" in Account & Server), retry without row
+      // content (e.g. an info card at the top of a settings category, as the server card once was), retry without row
       // binding and enter at its top. Only applies when transitioning into a foreign enter-top area.
       if (!within && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
         const loose = pickVisible(e.key, from, scopeCands, active, false);

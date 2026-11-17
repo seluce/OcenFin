@@ -283,6 +283,7 @@ export default {
     reduceAnimationsDesc: "Vypne přechody a efekty — na pomalejších televizích zlepší odezvu.",
     displayElements: "Obsah",
     displayClock: "Hodiny",
+    clockDesc: "Zobrazuje čas vpravo nahoře, i v přehrávači.",
     displayHero: "Hlavní banner",
     displayEpisodeCount: "Nezhlédnuté díly",
     episodesLeft: "ke zhlédnutí",
@@ -296,7 +297,6 @@ export default {
     displayChaptersDesc: "Zobrazí nebo skryje značky kapitol na časové ose a tlačítka pro přeskakování kapitol.",
     spoilerProtection: "Ochrana proti spoilerům u dílů",
     groupHome: "Domovská obrazovka",
-    groupInterface: "Rozhraní",
     groupDetails: "Podrobnosti",
     groupLibrary: "Knihovna",
     groupWatchTogether: "Společné sledování",
@@ -307,6 +307,7 @@ export default {
     displayDetailsBackdrop: "Pozadí",
     displayDetailsLogo: "Název jako logo místo textu",
     clockFormat: "Formát času",
+    clockFormatDesc: "Platí i pro spořič obrazovky a čas konce na stránce titulu.",
     clockAuto: "Automaticky",
     clock24h: "24hodinový",
     clock12h: "12hodinový",
@@ -358,7 +359,7 @@ export default {
     fastSwitchDesc: "Umožní na tomto zařízení přihlášení bez zadávání hesla.",
 
     // Settings — Security
-    profileSecurity: "Profil a zabezpečení",
+    settingsProfileAccount: "Profil a účet",
     sharedWatching: "Společný profil",
     sharedWatchingDesc: "Spojí dva profily: skryje, co už jeden z vás dokoukal.",
     sharedWatchingPick: "Vyberte dva profily, které chcete spojit.",
@@ -405,7 +406,6 @@ export default {
     qcPlaceholder: "např. 123456",
 
     // Settings — Account
-    settingsAccount: "Účet a server",
     statusSection: "Stav / Protokoly",
     debugLogging: "Diagnostické protokolování",
     debugLoggingDesc: "Zaznamenává podrobnou diagnostiku přehrávání, titulků a SyncPlay — hodí se při hlášení problému. Ve výchozím stavu vypnuto; platí pro všechny profily na této televizi.",

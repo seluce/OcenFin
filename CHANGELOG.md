@@ -27,6 +27,12 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Home screen rows in your own order.** Under Settings → Content → Home screen the rows move the same way as
   the menu entries, and each can still be switched off there; only the banner stays on top.
 
+### Changed
+
+- **Settings in a clearer order.** Content now covers the home screen, library and details page, theme music and
+  watch together included; the clock moved to Appearance, the logo to Navigation, and the two account
+  categories became one, Profile & Account.
+
 ### Fixed
 
 - **"Recently watched" without repeats.** A series you are in the middle of stood there and under "Up next" at

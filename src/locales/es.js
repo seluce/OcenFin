@@ -283,6 +283,7 @@ export default {
     reduceAnimationsDesc: "Desactiva las transiciones y efectos — mejora el rendimiento en televisores más lentos.",
     displayElements: "Contenido",
     displayClock: "Reloj",
+    clockDesc: "Muestra la hora arriba a la derecha, también en el reproductor.",
     displayHero: "Banner destacado",
     displayEpisodeCount: "Episodios por ver",
     episodesLeft: "por ver",
@@ -296,7 +297,6 @@ export default {
     displayChaptersDesc: "Muestra u oculta las marcas de capítulo en la barra de reproducción y los botones de capítulo.",
     spoilerProtection: "Protección contra spoilers de episodios",
     groupHome: "Pantalla de inicio",
-    groupInterface: "Interfaz",
     groupDetails: "Detalles",
     groupLibrary: "Biblioteca",
     groupWatchTogether: "Ver juntos",
@@ -307,6 +307,7 @@ export default {
     displayDetailsBackdrop: "Fondo",
     displayDetailsLogo: "Título como logo en vez de texto",
     clockFormat: "Formato de hora",
+    clockFormatDesc: "También se aplica al salvapantallas y a la hora de fin en la página de detalles.",
     clockAuto: "Automático",
     clock24h: "24 horas",
     clock12h: "12 horas",
@@ -358,7 +359,7 @@ export default {
     fastSwitchDesc: "Permite iniciar sesión sin introducir contraseña en este dispositivo.",
 
     // Settings — Security
-    profileSecurity: "Perfil y seguridad",
+    settingsProfileAccount: "Perfil y cuenta",
     sharedWatching: "Perfil compartido",
     sharedWatchingDesc: "Combina dos perfiles: oculta lo que alguno de los dos ya ha terminado.",
     sharedWatchingPick: "Elige los dos perfiles a combinar.",
@@ -405,7 +406,6 @@ export default {
     qcPlaceholder: "p. ej. 123456",
 
     // Settings — Account
-    settingsAccount: "Cuenta y servidor",
     statusSection: "Estado / Registros",
     debugLogging: "Registro de diagnóstico",
     debugLoggingDesc: "Registra diagnósticos detallados sobre la reproducción, los subtítulos y SyncPlay, útiles para informar de un problema. Desactivado por defecto; se aplica a todos los perfiles de este televisor.",

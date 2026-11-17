@@ -283,6 +283,7 @@ export default {
     reduceAnimationsDesc: "Отключает переходы и эффекты — повышает скорость работы на медленных телевизорах.",
     displayElements: "Содержимое",
     displayClock: "Часы",
+    clockDesc: "Показывает время в правом верхнем углу, в том числе в плеере.",
     displayHero: "Главный баннер",
     displayEpisodeCount: "Непросмотренные серии",
     episodesLeft: "к просмотру",
@@ -296,7 +297,6 @@ export default {
     displayChaptersDesc: "Показывает или скрывает отметки глав на шкале времени и кнопки перехода между главами.",
     spoilerProtection: "Защита от спойлеров в сериях",
     groupHome: "Главный экран",
-    groupInterface: "Интерфейс",
     groupDetails: "Подробности",
     groupLibrary: "Медиатека",
     groupWatchTogether: "Совместный просмотр",
@@ -307,6 +307,7 @@ export default {
     displayDetailsBackdrop: "Фон",
     displayDetailsLogo: "Название логотипом вместо текста",
     clockFormat: "Формат времени",
+    clockFormatDesc: "Действует также для заставки и времени окончания на странице с подробностями.",
     clockAuto: "Автоматически",
     clock24h: "24-часовой",
     clock12h: "12-часовой",
@@ -358,7 +359,7 @@ export default {
     fastSwitchDesc: "Позволяет входить на этом устройстве без ввода пароля.",
 
     // Settings — Security
-    profileSecurity: "Профиль и безопасность",
+    settingsProfileAccount: "Профиль и аккаунт",
     sharedWatching: "Общий профиль",
     sharedWatchingDesc: "Объединяет два профиля: скрывает то, что кто-то из вас уже досмотрел.",
     sharedWatchingPick: "Выберите два профиля для объединения.",
@@ -405,7 +406,6 @@ export default {
     qcPlaceholder: "напр. 123456",
 
     // Settings — Account
-    settingsAccount: "Аккаунт и сервер",
     statusSection: "Статус / Журналы",
     debugLogging: "Диагностический журнал",
     debugLoggingDesc: "Записывает подробную диагностику воспроизведения, субтитров и SyncPlay — пригодится, когда сообщаете о проблеме. По умолчанию выключено; действует для всех профилей на этом телевизоре.",

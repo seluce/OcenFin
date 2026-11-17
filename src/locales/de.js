@@ -283,6 +283,7 @@ export default {
     reduceAnimationsDesc: "Deaktiviert Übergänge und Effekte – verbessert die Leistung auf langsameren Fernsehern.",
     displayElements: "Inhalte",
     displayClock: "Uhrzeit",
+    clockDesc: "Zeigt die Uhrzeit oben rechts an, auch im Player.",
     displayHero: "Banner",
     displayEpisodeCount: "Offene Folgen",
     episodesLeft: "offen",
@@ -296,7 +297,6 @@ export default {
     displayChaptersDesc: "Blendet die Kapitelmarken in der Wiedergabeleiste und die Kapitel-Buttons ein oder aus.",
     spoilerProtection: "Spoilerschutz f\u00fcr Folgen",
     groupHome: "Startseite",
-    groupInterface: "Oberfläche",
     groupDetails: "Details",
     groupLibrary: "Bibliothek",
     groupWatchTogether: "Gemeinsam schauen",
@@ -307,6 +307,7 @@ export default {
     displayDetailsBackdrop: "Hintergrundbild",
     displayDetailsLogo: "Titel als Logo statt Text",
     clockFormat: "Zeitformat",
+    clockFormatDesc: "Gilt auch für den Bildschirmschoner und die Endzeit auf der Detailseite.",
     clockAuto: "Automatisch",
     clock24h: "24 Stunden",
     clock12h: "12 Stunden",
@@ -358,7 +359,7 @@ export default {
     fastSwitchDesc: "Erlaubt die Anmeldung auf diesem Gerät ohne Passworteingabe.",
 
     // Settings — Security
-    profileSecurity: "Profil & Sicherheit",
+    settingsProfileAccount: "Profil & Konto",
     sharedWatching: "Gemeinsames Profil",
     sharedWatchingDesc: "Zwei Profile zusammenführen: blendet aus, was einer von euch schon zu Ende gesehen hat.",
     sharedWatchingPick: "Wähle die zwei Profile, die zusammengeführt werden.",
@@ -405,7 +406,6 @@ export default {
     qcPlaceholder: "z. B. 123456",
 
     // Settings — Account
-    settingsAccount: "Konto & Server",
     statusSection: "Status / Protokoll",
     debugLogging: "Diagnose-Protokollierung",
     debugLoggingDesc: "Zeichnet ausführliche Diagnosedaten zu Wiedergabe, Untertiteln und SyncPlay auf – hilfreich, wenn du ein Problem meldest. Standardmäßig aus; gilt für alle Profile auf diesem Fernseher.",

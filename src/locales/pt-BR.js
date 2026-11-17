@@ -132,6 +132,8 @@ export default {
 
     // Settings — OLED
     screensaverSection: "Protetor de tela",
+    clockDesc: "Mostra a hora no canto superior direito, também no player.",
+    clockFormatDesc: "Vale também para o protetor de tela e o horário de término na página de detalhes.",
     screensaverTitle: "Protetor de tela",
     screensaverDesc: "Protege a tela OLED contra a retenção de imagem durante a inatividade.",
     screensaverModeArtDesc: "Fundos desfocados que se fundem, com o título.",

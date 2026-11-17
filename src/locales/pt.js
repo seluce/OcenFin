@@ -283,6 +283,7 @@ export default {
     reduceAnimationsDesc: "Desativa transições e efeitos — melhora o desempenho em TVs mais lentas.",
     displayElements: "Conteúdo",
     displayClock: "Relógio",
+    clockDesc: "Mostra a hora no canto superior direito, também no leitor.",
     displayHero: "Banner em destaque",
     displayEpisodeCount: "Episódios por ver",
     episodesLeft: "por ver",
@@ -296,7 +297,6 @@ export default {
     displayChaptersDesc: "Mostra ou oculta os marcadores de capítulo na barra de reprodução e os botões de capítulo.",
     spoilerProtection: "Proteção contra spoilers de episódios",
     groupHome: "Ecrã inicial",
-    groupInterface: "Interface",
     groupDetails: "Detalhes",
     groupLibrary: "Biblioteca",
     groupWatchTogether: "Ver juntos",
@@ -307,6 +307,7 @@ export default {
     displayDetailsBackdrop: "Fundo",
     displayDetailsLogo: "Título como logótipo em vez de texto",
     clockFormat: "Formato da hora",
+    clockFormatDesc: "Aplica-se também à proteção de ecrã e à hora de fim na página de detalhes.",
     clockAuto: "Automático",
     clock24h: "24 horas",
     clock12h: "12 horas",
@@ -358,7 +359,7 @@ export default {
     fastSwitchDesc: "Permite iniciar sessão sem introduzir a palavra-passe neste dispositivo.",
 
     // Settings — Security
-    profileSecurity: "Perfil e segurança",
+    settingsProfileAccount: "Perfil e conta",
     sharedWatching: "Perfil partilhado",
     sharedWatchingDesc: "Combina dois perfis e oculta o que um de vocês já terminou.",
     sharedWatchingPick: "Escolha os dois perfis a combinar.",
@@ -405,7 +406,6 @@ export default {
     qcPlaceholder: "p. ex. 123456",
 
     // Settings — Account
-    settingsAccount: "Conta e servidor",
     statusSection: "Estado / Registos",
     debugLogging: "Registo de diagnóstico",
     debugLoggingDesc: "Regista diagnósticos detalhados sobre reprodução, legendas e SyncPlay — útil para comunicar um problema. Desativado por predefinição; aplica-se a todos os perfis nesta TV.",

@@ -283,6 +283,7 @@ export default {
     reduceAnimationsDesc: "Dezactivează tranzițiile și efectele – îmbunătățește performanța pe televizoarele mai lente.",
     displayElements: "Conținut",
     displayClock: "Ceas",
+    clockDesc: "Afișează ora în dreapta sus, și în player.",
     displayHero: "Banner",
     displayEpisodeCount: "Episoade nevizionate",
     episodesLeft: "de văzut",
@@ -296,7 +297,6 @@ export default {
     displayChaptersDesc: "Afișează sau ascunde marcajele de capitole pe bara de derulare și butoanele de salt între capitole.",
     spoilerProtection: "Protecție anti-spoiler pentru episoade",
     groupHome: "Ecran principal",
-    groupInterface: "Interfață",
     groupDetails: "Pagina de detalii",
     groupLibrary: "Bibliotecă",
     groupWatchTogether: "Vizionare împreună",
@@ -307,6 +307,7 @@ export default {
     displayDetailsBackdrop: "Imagine de fundal",
     displayDetailsLogo: "Titlul ca logo în loc de text",
     clockFormat: "Formatul orei",
+    clockFormatDesc: "Se aplică și protectorului de ecran și orei de final de pe pagina de detalii.",
     clockAuto: "Automat",
     clock24h: "24 de ore",
     clock12h: "12 ore",
@@ -358,7 +359,7 @@ export default {
     fastSwitchDesc: "Permite autentificarea pe acest dispozitiv fără introducerea parolei.",
 
     // Settings — Security
-    profileSecurity: "Profil și securitate",
+    settingsProfileAccount: "Profil și cont",
     sharedWatching: "Profil comun",
     sharedWatchingDesc: "Combină două profiluri: ascunde ce a terminat deja oricare dintre voi.",
     sharedWatchingPick: "Alege cele două profiluri de combinat.",
@@ -405,7 +406,6 @@ export default {
     qcPlaceholder: "ex. 123456",
 
     // Settings — Account
-    settingsAccount: "Cont și server",
     statusSection: "Stare / Jurnal",
     debugLogging: "Jurnal de diagnosticare",
     debugLoggingDesc: "Înregistrează date detaliate despre redare, subtitrări și SyncPlay – util când raportezi o problemă. Oprit implicit; se aplică tuturor profilurilor de pe acest televizor.",

@@ -283,6 +283,7 @@ export default {
     reduceAnimationsDesc: "Kikapcsolja az átmeneteket és az effekteket – gyorsabb lesz a lassabb tévéken.",
     displayElements: "Tartalom",
     displayClock: "Óra",
+    clockDesc: "Jobb felül mutatja az időt, a lejátszóban is.",
     displayHero: "Banner",
     displayEpisodeCount: "Nem látott epizódok",
     episodesLeft: "nem látott",
@@ -296,7 +297,6 @@ export default {
     displayChaptersDesc: "Megjeleníti vagy elrejti a fejezetjelölőket az idősávon és a fejezetugró gombokat.",
     spoilerProtection: "Spoilervédelem epizódoknál",
     groupHome: "Kezdőlap",
-    groupInterface: "Kezelőfelület",
     groupDetails: "Részletek oldal",
     groupLibrary: "Könyvtár",
     groupWatchTogether: "Közös nézés",
@@ -307,6 +307,7 @@ export default {
     displayDetailsBackdrop: "Háttérkép",
     displayDetailsLogo: "Cím logóként szöveg helyett",
     clockFormat: "Időformátum",
+    clockFormatDesc: "A képernyővédőre és a részletek oldalon látható befejezési időre is vonatkozik.",
     clockAuto: "Automatikus",
     clock24h: "24 órás",
     clock12h: "12 órás",
@@ -358,7 +359,7 @@ export default {
     fastSwitchDesc: "Lehetővé teszi a bejelentkezést ezen az eszközön jelszó megadása nélkül.",
 
     // Settings — Security
-    profileSecurity: "Profil és biztonság",
+    settingsProfileAccount: "Profil és fiók",
     sharedWatching: "Közös profil",
     sharedWatchingDesc: "Két profil összevonása: elrejti, amit bármelyikőtök már végignézett.",
     sharedWatchingPick: "Válaszd ki az összevonandó két profilt.",
@@ -405,7 +406,6 @@ export default {
     qcPlaceholder: "pl. 123456",
 
     // Settings — Account
-    settingsAccount: "Fiók és szerver",
     statusSection: "Állapot / Naplók",
     debugLogging: "Diagnosztikai naplózás",
     debugLoggingDesc: "Részletes diagnosztikát rögzít a lejátszásról, a feliratokról és a SyncPlayről – hasznos hibabejelentéshez. Alapból ki van kapcsolva; a tévé minden profiljára vonatkozik.",

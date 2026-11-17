@@ -283,6 +283,7 @@ export default {
     reduceAnimationsDesc: "Slår av overganger og effekter — gir bedre ytelse på tregere TV-er.",
     displayElements: "Innhold",
     displayClock: "Klokke",
+    clockDesc: "Viser klokken øverst til høyre, også i avspilleren.",
     displayHero: "Fremhevet banner",
     displayEpisodeCount: "Episoder som ikke er sett",
     episodesLeft: "igjen",
@@ -296,7 +297,6 @@ export default {
     displayChaptersDesc: "Viser eller skjuler kapittelmarkeringer på tidslinjen og knappene for å hoppe mellom kapitler.",
     spoilerProtection: "Spoilerbeskyttelse for episoder",
     groupHome: "Startskjerm",
-    groupInterface: "Grensesnitt",
     groupDetails: "Detaljer",
     groupLibrary: "Bibliotek",
     groupWatchTogether: "Se sammen",
@@ -307,6 +307,7 @@ export default {
     displayDetailsBackdrop: "Bakgrunn",
     displayDetailsLogo: "Tittel som logo i stedet for tekst",
     clockFormat: "Tidsformat",
+    clockFormatDesc: "Gjelder også skjermspareren og sluttidspunktet på detaljsiden.",
     clockAuto: "Automatisk",
     clock24h: "24 timer",
     clock12h: "12 timer",
@@ -358,7 +359,7 @@ export default {
     fastSwitchDesc: "Gjør det mulig å logge inn uten passord på denne enheten.",
 
     // Settings — Security
-    profileSecurity: "Profil og sikkerhet",
+    settingsProfileAccount: "Profil og konto",
     sharedWatching: "Delt profil",
     sharedWatchingDesc: "Kombinerer to profiler og skjuler det en av dere allerede har sett ferdig.",
     sharedWatchingPick: "Velg de to profilene som skal kombineres.",
@@ -405,7 +406,6 @@ export default {
     qcPlaceholder: "f.eks. 123456",
 
     // Settings — Account
-    settingsAccount: "Konto og server",
     statusSection: "Status / Logger",
     debugLogging: "Diagnoselogging",
     debugLoggingDesc: "Lagrer detaljert diagnostikk om avspilling, undertekster og SyncPlay — nyttig når du rapporterer et problem. Av som standard; gjelder alle profiler på denne TV-en.",
