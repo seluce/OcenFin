@@ -47,6 +47,7 @@
 
   // ── ART MODE ───────────────────────────────────────────────────────────────
   let artlist  = [];                          // [{ id, url, title, logo }] — internal data (not in the template)
+  let ownPick  = null, fill = [], fillAt = 0;  // a ONE-title selection and the random titles it alternates with (loadArt)
   let slots    = $state([{ url: '', title: '', logo: null }, { url: '', title: '', logo: null }]);  // two crossfade layers
   let front    = $state(0);                   // visible layer
   let artIdx   = 0;
@@ -119,7 +120,7 @@
   async function loadArt() {
     if (!session.serverUrl || !userId || !session.token) return;
     try {
-      let list;
+      let list, random = artSource === 'random';
       if (artSource === 'watched') {
         // "Watched / current" = ongoing series (Next Up) + started titles (Resume) + fully
         // watched, merged. The order prioritizes the current, deduplicated by ID.
@@ -138,15 +139,24 @@
         list = await fetchBackdrops('');
       }
       // Nothing in the chosen selection (no favourites yet, nothing watched yet, everything watched) → random titles
-      // instead of the clock: whoever chose the gallery wants pictures (§115). A SHORT list is not topped up, though.
-      if (!list.length && artSource !== 'random') list = await fetchBackdrops('');
+      // instead of the clock: whoever chose the gallery wants pictures (§115). A SHORT list is not topped up, though —
+      // except a single title, below.
+      if (!list.length && !random) { list = await fetchBackdrops(''); random = true; }
       // Deduplicate by ID across ALL sources: the same series / the same movie never appears
       // twice in the rotation (the first, higher-prioritized occurrence stays).
       const seen = new Set();
       list = list.filter(x => x.id && !seen.has(x.id) && seen.add(x.id));
-      // Shuffle for a varied order. NO topping up with random titles — a selection that has anything is
-      // respected strictly; the clock only when the library has no backdrops at all (or the request failed).
+      // Shuffle for a varied order. NO topping up with random titles — a selection of two or more is respected
+      // strictly; the clock only when the library has no backdrops at all (or the request failed).
       shuffle(list);
+      // ONE title cannot change the picture, and a picture standing still for hours is what a screen saver is there to
+      // prevent (§116). It alternates with random titles then, a fresh one each round (newRound). Nothing to alternate
+      // with (the library has this one backdrop) → the clock, which moves.
+      if (list.length === 1) {
+        fill = random ? [] : (await fetchBackdrops('')).filter(x => x.id !== list[0].id);
+        if (fill.length) { ownPick = list[0]; list = [ownPick, fill[0]]; }
+        else list = [];
+      }
       artlist = list;
     } catch {
       artlist = [];
@@ -154,6 +164,14 @@
   }
 
   function preload(u) { if (u) { const im = new Image(); im.src = u; } }
+
+  // The next round. A one-title selection: that title, then the next random one — strictly alternating. Otherwise all
+  // of them reshuffled, so one order does not recur 1:1, and never starting with the picture on screen.
+  function newRound(shown) {
+    if (ownPick) { fillAt = (fillAt + 1) % fill.length; artlist = [ownPick, fill[fillAt]]; return; }
+    shuffle(artlist);
+    if (artlist.length > 1 && artlist[0] === shown) [artlist[0], artlist[1]] = [artlist[1], artlist[0]];
+  }
 
   // Put backdrop i into the hidden layer and fade that to the front (CSS opacity).
   function applyArt(i) {
@@ -196,24 +214,18 @@
           clearTimeout(firstArtTimeout);
           clearTimeout(artWaitCap);
           stopClock();                 // the cap may have put the clock up meanwhile
-          applyArt(0);
-          artIdx = 0;
+          // Show picture i and line up the next: on a round's last picture the next round is drawn NOW, so the preload
+          // fetches the picture that really comes next (it used to fetch the old round's first, then reshuffle).
+          const show = (i) => {
+            applyArt(i);
+            artIdx = i;
+            if (artIdx + 1 >= artlist.length) { newRound(artlist[artIdx]); artIdx = -1; }
+            preload(artlist[artIdx + 1]?.url);
+          };
+          show(0);
           artReady = true;
-          preload(artlist[1]?.url);
           const tick = () => {
-            if (artIdx + 1 >= artlist.length) {
-              // All backdrops shown once → reshuffle the repeat round so the
-              // same order doesn't recur 1:1. Then make sure the just-shown image
-              // doesn't land right back at position 0 (no immediate double).
-              const lastShown = artlist[artIdx];
-              shuffle(artlist);
-              if (artlist.length > 1 && artlist[0] === lastShown) [artlist[0], artlist[1]] = [artlist[1], artlist[0]];
-              artIdx = 0;
-            } else {
-              artIdx++;
-            }
-            applyArt(artIdx);
-            preload(artlist[(artIdx + 1) % artlist.length]?.url);
+            show(artIdx + 1);
             artTimer = setTimeout(tick, 30000 + Math.random() * 30000);   // 30–60 s
           };
           artTimer = setTimeout(tick, 30000 + Math.random() * 30000);

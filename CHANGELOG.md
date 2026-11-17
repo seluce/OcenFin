@@ -46,6 +46,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   over; what was set so far stays with every profile, a new one starts fresh.
 - **No clock in place of an empty gallery.** If the chosen source has nothing yet, such as no favourites or nothing
   watched, the gallery shows random titles instead.
+- **No still picture from a single title.** If the chosen source holds just one title, it takes turns with random
+  ones, so the picture keeps changing.
 
 ### Fixed
 
