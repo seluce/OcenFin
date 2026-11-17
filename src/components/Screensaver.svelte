@@ -237,7 +237,7 @@
         firstArtTimeout = setTimeout(startArt, 4000);   // safety net in case the preload hangs
         return;                          // black until the first image is there
       }
-      // no backdrops available → clock fallback (below)
+      // no backdrops, or one with nothing to alternate with (loadArt) → clock fallback (below)
       clearTimeout(artWaitCap);
     }
 

@@ -344,7 +344,7 @@
     onScreensaverChange?.({ ...screensaverSettings, ...patch });
   }
 
-  // Diagnostic logging: a device-wide opt-in switch (like the screensaver, not tied to a profile).
+  // Diagnostic logging: a device-wide opt-in switch, not tied to a profile.
   // setDebug takes effect immediately on all dlog calls (shared utils module); localStorage persists it.
   let debugLogging = $state(localStorage.getItem('ocenfin_debug') === '1');
   function toggleDebugLogging() {
@@ -537,7 +537,7 @@
   // Effective values only for rendering/uploading (fallback to default); the marking stays on the raw values.
   let effectiveIcon  = $derived(avatarIcon  || AVATAR_ICON_KEYS[0]);
   let effectiveColor = $derived(avatarColor || AVATAR_COLORS[0]);
-  // When leaving "profile & security" without saving → reset the preview/selection.
+  // When leaving "Profile & Account" without saving → reset the preview/selection.
   $effect(() => { if (activeCategory !== 'security' && hasEditedAvatar) {
     hasEditedAvatar = false; avatarIcon = null; avatarColor = null; avatarPoster = null;
   } });

@@ -232,10 +232,9 @@
   let playbackPrefs = $state(defaultPlaybackPrefs());
 
   // ── Profile-specific settings ───────────────────────────────
-  // Language + display + playback + animations are stored PER USER.
-  // Before login (server/user selection) there is no profile yet — there the
-  // last chosen device language ('app_language') applies. The screensaver
-  // stays device-wide (protects the physical OLED panel, user-independent).
+  // Language + display + playback + animations + screensaver are stored PER USER (the screensaver since
+  // 2026-11-17, §115). Before login (server/user selection) there is no profile yet — there the last
+  // chosen device language ('app_language') applies, and the TV's own screensaver.
   let activeUserId = $state(null);
 
   // Load (or reset) the user's watchlist whenever the active profile changes.
