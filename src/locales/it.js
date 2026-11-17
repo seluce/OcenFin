@@ -469,8 +469,6 @@ export default {
     subtitleEdge: "Bordo",
     subtitleBackground: "Sfondo",
     subtitleStyleHint: "Solo per i sottotitoli di testo. I sottotitoli immagine mantengono il loro aspetto e si possono solo ridimensionare.",
-    subtitleBefore: "Prima",
-    subtitleAfter: "Dopo",
     subtitlePreviewText: "Dov'eri stanotte?\nAl vecchio faro.",
     subtitleFont: "Carattere",
     subtitleFontDesc: "Solo per i sottotitoli di testo, indipendente dal carattere dell'app. I sottotitoli ASS con stile usano i propri caratteri.",

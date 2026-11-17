@@ -469,8 +469,6 @@ export default {
     subtitleEdge: "Okraj",
     subtitleBackground: "Pozadí",
     subtitleStyleHint: "Jen pro textové titulky. Obrázkové titulky si ponechají svůj vzhled a lze měnit jen jejich velikost.",
-    subtitleBefore: "Před",
-    subtitleAfter: "Po",
     subtitlePreviewText: "Kde jste byli v noci?\nU starého majáku.",
     subtitleFont: "Písmo",
     subtitleFontDesc: "Jen pro textové titulky, nezávisle na písmu aplikace. Stylizované titulky ASS mají svá vlastní písma.",

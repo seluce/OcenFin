@@ -469,8 +469,6 @@ export default {
     subtitleEdge: "Edge",
     subtitleBackground: "Background",
     subtitleStyleHint: "For text subtitles only. Image subtitles keep their own look and can only be resized.",
-    subtitleBefore: "Before",
-    subtitleAfter: "After",
     subtitlePreviewText: "Where were you last night?\nAt the old lighthouse.",
     subtitleFont: "Font",
     subtitleFontDesc: "For text subtitles only, independent of the app's font. Styled ASS subtitles bring their own fonts.",

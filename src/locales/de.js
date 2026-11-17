@@ -469,8 +469,6 @@ export default {
     subtitleEdge: "Rand",
     subtitleBackground: "Hintergrund",
     subtitleStyleHint: "Nur für Text-Untertitel. Bild-Untertitel behalten ihr Aussehen und lassen sich nur in der Größe ändern.",
-    subtitleBefore: "Vorher",
-    subtitleAfter: "Nachher",
     subtitlePreviewText: "Wo warst du heute Nacht?\nAm alten Leuchtturm.",
     subtitleFont: "Schriftart",
     subtitleFontDesc: "Nur für Text-Untertitel, unabhängig von der Schrift der App. Gestaltete ASS-Untertitel bringen eigene Schriften mit.",

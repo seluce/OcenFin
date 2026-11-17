@@ -469,8 +469,6 @@ export default {
     subtitleEdge: "Bord",
     subtitleBackground: "Fond",
     subtitleStyleHint: "Uniquement pour les sous-titres texte. Les sous-titres image gardent leur apparence et ne peuvent qu'être redimensionnés.",
-    subtitleBefore: "Avant",
-    subtitleAfter: "Après",
     subtitlePreviewText: "Où étais-tu cette nuit ?\nPrès du vieux phare.",
     subtitleFont: "Police",
     subtitleFontDesc: "Uniquement pour les sous-titres texte, indépendamment de la police de l'application. Les sous-titres ASS stylisés apportent leurs propres polices.",

@@ -469,8 +469,6 @@ export default {
     subtitleEdge: "Krawędź",
     subtitleBackground: "Tło",
     subtitleStyleHint: "Tylko dla napisów tekstowych. Napisy graficzne zachowują swój wygląd i można zmienić tylko ich rozmiar.",
-    subtitleBefore: "Przed",
-    subtitleAfter: "Po",
     subtitlePreviewText: "Gdzie byliście w nocy?\nPrzy starej latarni.",
     subtitleFont: "Czcionka",
     subtitleFontDesc: "Tylko dla napisów tekstowych, niezależnie od czcionki aplikacji. Stylizowane napisy ASS mają własne czcionki.",

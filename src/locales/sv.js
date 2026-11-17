@@ -469,8 +469,6 @@ export default {
     subtitleEdge: "Kant",
     subtitleBackground: "Bakgrund",
     subtitleStyleHint: "Bara för textundertexter. Bildundertexter behåller sitt eget utseende och kan bara ändras i storlek.",
-    subtitleBefore: "Före",
-    subtitleAfter: "Efter",
     subtitlePreviewText: "Var var du i natt?\nVid den gamla fyren.",
     subtitleFont: "Typsnitt",
     subtitleFontDesc: "Bara för textundertexter, oberoende av appens typsnitt. Formaterade ASS-undertexter har egna typsnitt.",

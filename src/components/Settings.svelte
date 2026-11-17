@@ -716,45 +716,76 @@
       options: [['none', i18n.t.styleNone], ['semi', i18n.t.bgSemi], ['solid', i18n.t.bgSolid]] },
   ]);
 
-  // Subtitle preview (CODE-HEALTH §109/§110): a small card beside the style row that holds focus, and only then.
-  // Left "before" — the row's value when focus came into it, so it stays put after OK — right "after", the
-  // focused choice. Each shows the lower middle of a whole screen scaled down (SUB_PANE_SCALE), drawn with the
-  // Player's own rule, so size and height keep their proportions to the picture.
-  let subPreview = $state(null);   // { key, base, baseLabel, val, label, top }
+  // Subtitle preview (CODE-HEALTH §109–§111): a small card beside the row, only for a moment after OK on a style
+  // option. It opens on the look BEFORE the choice and turns into the one after it in the same place — the two
+  // lines move, scale and cross-fade (transform + opacity only: the compositor's work, no layout or paint per frame
+  // on the B4) — then holds and goes. OK on the option already chosen shows it unchanged, a way to just look.
+  // The pane is a whole screen scaled down (SUB_PANE_SCALE), drawn with the Player's own rule, so size and height
+  // keep their proportions to the picture.
+  const SUB_PREVIEW_MS = 3000;                     // from the last OK until the card goes
+  const SUB_MORPH_DELAY = 250, SUB_MORPH_MS = 350; // "before" stands a moment, so the eye has it, then turns
+  let subPreview = $state(null);                   // { from: prefs before | null, fromLabel, label, top, left }
   let subPreviewEl = $state();
-  let subPreviewRow = null;        // the row the card belongs to — a late placement for another one is dropped
-  function showSubPreview(row, val, label, btn) {
-    const same = subPreview?.key === row.key;
-    subPreview = {
-      key: row.key, val, label,
-      base: same ? subPreview.base : row.value,
-      baseLabel: same ? subPreview.baseLabel : (row.options.find(o => o[0] === row.value)?.[1] ?? ''),
-      top: subPreview?.top ?? null,
-    };
-    const rowEl = btn.closest('[data-sub-row]');
-    subPreviewRow = rowEl;
-    // Placed one frame later: spatial navigation scrolls the row into view AFTER the focus event.
-    requestAnimationFrame(() => placeSubPreview(rowEl));
+  let subPreviewTimer = null;
+  let subMorphId = 0;
+  onDestroy(() => clearTimeout(subPreviewTimer));
+  async function pickSubStyle(row, val, label, btn) {
+    if (isRepeatedEnter()) return;                 // a held OK repeats the click — it would cut the morph off
+    const changed = row.value !== val;
+    const from = changed ? { ...playbackPrefs } : null;
+    const fromLabel = changed ? (row.options.find(o => o[0] === row.value)?.[1] ?? '') : '';
+    subPreviewEl?.querySelectorAll('[data-sub-layer]').forEach(el => el.getAnimations().forEach(a => a.cancel()));
+    if (changed) setSubtitlePref(row.key, val);
+    clearTimeout(subPreviewTimer);
+    subPreviewTimer = setTimeout(hideSubPreview, SUB_PREVIEW_MS);
+    const id = ++subMorphId;
+    subPreview = { from, fromLabel, label, top: subPreview?.top ?? null, left: subPreview?.left ?? 0 };
+    await tick();                                  // both lines rendered, the new prefs included
+    if (id !== subMorphId || !subPreviewEl) return;
+    placeSubPreview(btn);
+    if (from) morphSubPreview(id);
   }
-  function hideSubPreview(e) {
-    if (e.currentTarget.contains(e.relatedTarget)) return;
+  function hideSubPreview() {
+    clearTimeout(subPreviewTimer);
+    subPreviewTimer = null;
+    subMorphId++;
     subPreview = null;
-    subPreviewRow = null;
   }
-  // Above the row when it fits on screen (moving down, the row just left is the one covered), else below. The
-  // margin to the screen edge is the rows' own scroll-padding (4rem) — less, and the clock at the top right sat
-  // on the card at 120 % interface size.
-  function placeSubPreview(rowEl) {
-    if (rowEl !== subPreviewRow || !subPreview || !subPreviewEl?.offsetParent || !contentEl) return;
-    const r = rowEl.getBoundingClientRect(), view = contentEl.getBoundingClientRect(), cs = getComputedStyle(contentEl);
-    const h = subPreviewEl.offsetHeight, gap = 12;
+  // The new line starts on the old one's box (FLIP) and the old one goes the other way, both cross-fading.
+  // Rects are on screen, the transforms act inside the scaled screen — hence ÷ SUB_PANE_SCALE.
+  function morphSubPreview(id) {
+    const fromEl = subPreviewEl.querySelector('[data-sub-layer="from"]'), toEl = subPreviewEl.querySelector('[data-sub-layer="to"]');
+    if (!fromEl || !toEl) return;
+    const a = fromEl.getBoundingClientRect(), b = toEl.getBoundingClientRect();
+    const k = a.height / b.height || 1;
+    const dx = (a.left + a.width / 2 - b.left - b.width / 2) / SUB_PANE_SCALE;
+    const dy = (a.top + a.height / 2 - b.top - b.height / 2) / SUB_PANE_SCALE;
+    // Reduced animations: no movement, but still "before" first and then a cut to "after".
+    const reduced = document.body.dataset.reduceMotion === '1';
+    const timing = { duration: reduced ? 0 : SUB_MORPH_MS, delay: SUB_MORPH_DELAY, easing: 'cubic-bezier(.4,0,.2,1)' };
+    toEl.animate([{ transform: `translate(${dx}px,${dy}px) scale(${k})`, opacity: 0 }, { transform: 'none', opacity: 1 }],
+      { ...timing, fill: 'backwards' });
+    fromEl.animate([{ transform: 'none', opacity: 1 }, { transform: `translate(${-dx}px,${-dy}px) scale(${1 / k})`, opacity: 0 }],
+      { ...timing, fill: 'forwards' })
+      .finished.then(() => { if (id === subMorphId && subPreview) subPreview.from = null; }, () => {});
+  }
+  // Above the row when it fits on screen, else below — never over the row itself. The margin to the screen edge is
+  // the rows' own scroll-padding (4rem): with less, the clock at the top right sat on the card at 120 % interface
+  // size. Sideways centred on the option pressed, kept inside the column.
+  function placeSubPreview(btn) {
+    const parent = subPreviewEl?.offsetParent, rowEl = btn.closest('[data-sub-row]');
+    if (!parent || !rowEl || !contentEl) return;
+    const r = rowEl.getBoundingClientRect(), o = btn.getBoundingClientRect(), p = parent.getBoundingClientRect();
+    const view = contentEl.getBoundingClientRect(), cs = getComputedStyle(contentEl);
+    const h = subPreviewEl.offsetHeight, w = subPreviewEl.offsetWidth, gap = 12;
     const roomAbove = r.top - view.top - parseFloat(cs.scrollPaddingTop), roomBelow = view.bottom - r.bottom - parseFloat(cs.scrollPaddingBottom);
     const above = roomAbove >= h + gap || roomAbove >= roomBelow;
-    subPreview.top = (above ? r.top - h - gap : r.bottom + gap) - subPreviewEl.offsetParent.getBoundingClientRect().top;
+    subPreview.top = (above ? r.top - h - gap : r.bottom + gap) - p.top;
+    subPreview.left = Math.max(0, Math.min(o.left + o.width / 2 - w / 2 - p.left, p.width - w));
   }
-  // Each pane: a crop 50 % of the screen wide and 35 % high (the highest position with two lines at the largest
+  // The pane: a crop 50 % of the screen wide and 35 % high (the highest position with two lines at the largest
   // size ends at 33.4 %), at this scale. In vw/vh, not rem — it stands for the screen, whatever the interface size.
-  const SUB_PANE_SCALE = 0.52;
+  const SUB_PANE_SCALE = 0.6;
   // Behind the line: one backdrop of the library, fetched the first time the category opens (UserId, so an
   // age-restricted profile gets one of its own titles). None or an error: a neutral gradient, light towards the
   // bottom so edge and background still show what they do.
@@ -769,9 +800,9 @@
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
         const it = d?.Items?.[0];
-        // 1000 px: the whole screen is drawn at SUB_PANE_SCALE, i.e. about 1000 px wide on a 1920 screen.
+        // 1200 px: the whole screen is drawn at SUB_PANE_SCALE, i.e. about 1150 px wide on a 1920 screen.
         if (it?.BackdropImageTags?.length)
-          previewBackdrop = `${session.serverUrl}/Items/${it.Id}/Images/Backdrop/0?tag=${it.BackdropImageTags[0]}&maxWidth=1000&quality=80&format=webp`;
+          previewBackdrop = `${session.serverUrl}/Items/${it.Id}/Images/Backdrop/0?tag=${it.BackdropImageTags[0]}&maxWidth=1200&quality=80&format=webp`;
       })
       .catch(() => {});   // optional — the gradient stays
   });
@@ -823,21 +854,10 @@
   {/each}
 {/snippet}
 
-<!-- One pane of the subtitle preview card: a whole screen (100vw × 100vh) scaled down around its bottom middle, cut
-     to the lower middle. Same rule as the Player, so position and size are in proportion to the picture. -->
-{#snippet subPane(caption, valueLabel, prefs)}
-  <div class="min-w-0" style="width:{50 * SUB_PANE_SCALE}vw">
-    <div class="flex items-baseline gap-2 mb-2 text-sm whitespace-nowrap">
-      <span class="font-bold uppercase tracking-wider text-gray-400">{caption}</span>
-      <span class="font-semibold text-gray-100 truncate">{valueLabel}</span>
-    </div>
-    <div class="relative overflow-hidden rounded-lg" style="height:{35 * SUB_PANE_SCALE}vh">
-      <div class="absolute bottom-0 origin-bottom" style="left:calc(50% - 50vw);width:100vw;height:100vh;transform:scale({SUB_PANE_SCALE});background:{previewBg}">
-        <div class="absolute inset-x-0 flex justify-center px-[8%]" style="bottom:{asSubPosition(prefs.subtitlePosition)}vh">
-          <span class="subtitle-box" style={subtitleTextStyle(prefs)}>{i18n.t.subtitlePreviewText}</span>
-        </div>
-      </div>
-    </div>
+<!-- One line of the subtitle preview, inside its scaled screen; "from" and "to" lie on top of each other while it turns. -->
+{#snippet subLine(prefs, layer)}
+  <div class="absolute inset-x-0 flex justify-center px-[8%]" style="bottom:{asSubPosition(prefs.subtitlePosition)}vh">
+    <span data-sub-layer={layer} class="subtitle-box" style={subtitleTextStyle(prefs)}>{i18n.t.subtitlePreviewText}</span>
   </div>
 {/snippet}
 
@@ -1770,14 +1790,16 @@
       {#if !playbackPrefs.burnSubtitles}
         <!-- Group: look of text subtitles — gone with burn-in, which draws them into the picture -->
         <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupAppearance}</h3>
-        <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl" onfocusout={hideSubPreview}>
+        <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
           {#each subStyleRows as row, i (row.key)}
-            <div data-sub-row class="p-6 last:rounded-b-2xl {i ? 'border-t border-gray-700/50' : ''}">
+            <!-- Leaving the row takes the card along: it may lie over the row focus goes to. -->
+            <div data-sub-row class="p-6 last:rounded-b-2xl {i ? 'border-t border-gray-700/50' : ''}"
+              onfocusout={(e) => { if (subPreview && !e.currentTarget.contains(e.relatedTarget)) hideSubPreview(); }}>
               <span class="text-2xl text-white font-medium block {row.desc ? '' : 'mb-4'}">{row.title}</span>
               {#if row.desc}<span class="text-gray-400 mt-1 mb-4 block text-sm">{row.desc}</span>{/if}
               <div class="flex gap-3">
                 {#each row.options as [val, label, fam]}
-                  <button onclick={() => setSubtitlePref(row.key, val)} onfocus={(e) => showSubPreview(row, val, label, e.currentTarget)}
+                  <button onclick={(e) => pickSubStyle(row, val, label, e.currentTarget)}
                     class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                            {row.value === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}"
                     style={fam ? `font-family: ${fam}` : ''}>
@@ -1789,16 +1811,22 @@
           {/each}
         </div>
 
-        <!-- Preview card (CODE-HEALTH §110): only while a style row holds focus, beside it, never over it. Not
-             focusable and transparent to the pointer — a Magic Remote pointing at a row underneath reaches it, and
-             the card moves away from that row. No transition: it repaints with its shadow in every frame. As wide as
-             the column, or wider where the panes need it (80 % interface size: the column is narrower than the panes). -->
+        <!-- Preview card (CODE-HEALTH §111): for a moment after OK, beside the row, never over it. Not focusable and
+             transparent to the pointer — a Magic Remote pointing at a row underneath reaches it (and leaving the row
+             closes the card). Caption "before → after". -->
         {#if subPreview}
-          <div bind:this={subPreviewEl} aria-hidden="true"
-            class="absolute left-0 min-w-full z-20 pointer-events-none flex justify-center gap-4 p-4 rounded-2xl bg-gray-900 border border-gray-600 shadow-2xl"
-            class:invisible={subPreview.top == null} style="top:{subPreview.top ?? 0}px">
-            {@render subPane(i18n.t.subtitleBefore, subPreview.baseLabel, { ...playbackPrefs, [subPreview.key]: subPreview.base })}
-            {@render subPane(i18n.t.subtitleAfter, subPreview.label, { ...playbackPrefs, [subPreview.key]: subPreview.val })}
+          <div bind:this={subPreviewEl} aria-hidden="true" out:uiFade
+            class="absolute z-20 pointer-events-none p-4 rounded-2xl bg-gray-900 border border-gray-600 shadow-2xl"
+            class:invisible={subPreview.top == null} style="top:{subPreview.top ?? 0}px;left:{subPreview.left}px">
+            <div class="mb-2 text-sm font-semibold whitespace-nowrap text-gray-100">
+              {#if subPreview.fromLabel}<span class="text-gray-400">{subPreview.fromLabel}</span><span class="mx-2 text-gray-400">→</span>{/if}{subPreview.label}
+            </div>
+            <div class="relative overflow-hidden rounded-lg" style="width:{50 * SUB_PANE_SCALE}vw;height:{35 * SUB_PANE_SCALE}vh">
+              <div class="absolute bottom-0 origin-bottom" style="left:calc(50% - 50vw);width:100vw;height:100vh;transform:scale({SUB_PANE_SCALE});background:{previewBg}">
+                {#if subPreview.from}{@render subLine(subPreview.from, 'from')}{/if}
+                {@render subLine(playbackPrefs, 'to')}
+              </div>
+            </div>
           </div>
         {/if}
       {/if}

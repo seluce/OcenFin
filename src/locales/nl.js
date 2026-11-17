@@ -469,8 +469,6 @@ export default {
     subtitleEdge: "Rand",
     subtitleBackground: "Achtergrond",
     subtitleStyleHint: "Alleen voor tekstondertitels. Beeldondertitels houden hun uiterlijk en kunnen alleen in grootte worden aangepast.",
-    subtitleBefore: "Voor",
-    subtitleAfter: "Na",
     subtitlePreviewText: "Waar was je vannacht?\nBij de oude vuurtoren.",
     subtitleFont: "Lettertype",
     subtitleFontDesc: "Alleen voor tekstondertitels, los van het lettertype van de app. Opgemaakte ASS-ondertitels hebben hun eigen lettertypen.",

@@ -469,8 +469,6 @@ export default {
     subtitleEdge: "Borda",
     subtitleBackground: "Fundo",
     subtitleStyleHint: "Só para legendas de texto. As legendas de imagem mantêm o seu aspeto e só podem ser redimensionadas.",
-    subtitleBefore: "Antes",
-    subtitleAfter: "Depois",
     subtitlePreviewText: "Onde estiveste esta noite?\nNo velho farol.",
     subtitleFont: "Fonte",
     subtitleFontDesc: "Só para legendas de texto, independentemente do tipo de letra da app. As legendas ASS com estilo trazem os seus próprios tipos de letra.",

@@ -469,8 +469,6 @@ export default {
     subtitleEdge: "Край",
     subtitleBackground: "Фон",
     subtitleStyleHint: "Только для текстовых субтитров. Графические субтитры сохраняют свой вид, изменить можно только размер.",
-    subtitleBefore: "До",
-    subtitleAfter: "После",
     subtitlePreviewText: "Где вы были ночью?\nУ старого маяка.",
     subtitleFont: "Шрифт",
     subtitleFontDesc: "Только для текстовых субтитров, независимо от шрифта приложения. У стилизованных субтитров ASS свои шрифты.",
