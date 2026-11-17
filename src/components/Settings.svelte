@@ -1433,10 +1433,11 @@
             <div class="h-px bg-gray-700"></div>
             <div class="p-6">
               <span class="text-base text-gray-400 font-medium block mb-3">{i18n.t.screensaverArtSource}</span>
-              <div class="flex gap-3">
-                {#each [['watched', i18n.t.screensaverArtWatched], ['unwatched', i18n.t.screensaverArtUnwatched], ['random', i18n.t.screensaverArtRandom]] as [val, label]}
+              <!-- 2 × 2: four in one row wrap in several languages (CODE-HEALTH §115, measured). -->
+              <div class="grid grid-cols-2 gap-3">
+                {#each [['random', i18n.t.screensaverArtRandom], ['favorites', i18n.t.screensaverArtFavorites], ['watched', i18n.t.screensaverArtWatched], ['unwatched', i18n.t.screensaverArtUnwatched]] as [val, label]}
                   <button onclick={() => updateScreensaver({ artSource: val })}
-                    class="flex-1 py-3 rounded-xl font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-all
+                    class="py-3 rounded-xl font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-all
                            {screensaverSettings.artSource === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                     {label}
                   </button>

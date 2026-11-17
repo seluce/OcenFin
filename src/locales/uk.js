@@ -95,7 +95,7 @@ export default {
     resetPrefsDesc: "Лише цей профіль, повернення до стандартних значень.",
     resetPrefsDone: "Усі налаштування повернуто до стандартних значень.",
     resetPrefsTitle: "Скинути всі налаштування?",
-    resetPrefsText: "Кожне налаштування цього профілю повернеться до стандартного значення. Залишаться: мова, Спільний перегляд, збережений пароль і заставка, яка діє для всього телевізора.",
+    resetPrefsText: "Кожне налаштування цього профілю повернеться до стандартного значення. Залишаться: мова, Спільний перегляд і збережений пароль.",
     resetPrefsConfirm: "Скинути",
     subtitleSize: "Розмір субтитрів",
     subtitleSizeDesc: "Діє для текстових і графічних субтитрів. Стилізовані субтитри ASS зберігають власний розмір.",
@@ -349,7 +349,7 @@ export default {
     // Settings — OLED
     screensaverSection: "Заставка",
     screensaverTitle: "Заставка",
-    screensaverDesc: "Захищає OLED від вигоряння під час бездіяльності.",
+    screensaverDesc: "Захищає OLED від вигоряння під час бездіяльності. Якщо вимкнено, працює заставка самого телевізора.",
     screensaverAfter: "Вмикати через",
     screensaverStyle: "Стиль",
     screensaverModeClock: "Годинник",
@@ -360,6 +360,7 @@ export default {
     screensaverArtWatched: "Переглянуті / розпочаті",
     screensaverArtUnwatched: "Ще не переглянуті",
     screensaverArtRandom: "Випадково",
+    screensaverArtFavorites: "Обране / дивитимусь",
 
     // Settings — Profile
     profile: "Профіль",

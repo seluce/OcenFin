@@ -95,7 +95,7 @@ export default {
     resetPrefsDesc: "Bara den här profilen, tillbaka till standard.",
     resetPrefsDone: "Alla inställningar är tillbaka på standard.",
     resetPrefsTitle: "Återställa alla inställningar?",
-    resetPrefsText: "Varje inställning i den här profilen går tillbaka till standardvärdet. Kvar blir: språket, Titta tillsammans, det sparade lösenordet och skärmsläckaren, som gäller för hela tv:n.",
+    resetPrefsText: "Varje inställning i den här profilen går tillbaka till standardvärdet. Kvar blir: språket, Titta tillsammans och det sparade lösenordet.",
     resetPrefsConfirm: "Återställ",
     subtitleSize: "Undertextstorlek",
     subtitleSizeDesc: "Gäller text- och bildundertexter. Formaterade ASS-undertexter behåller sin egen storlek.",
@@ -349,7 +349,7 @@ export default {
     // Settings — OLED
     screensaverSection: "Skärmsläckare",
     screensaverTitle: "Skärmsläckare",
-    screensaverDesc: "Skyddar OLED-skärmen mot inbränning vid inaktivitet.",
+    screensaverDesc: "Skyddar OLED-skärmen mot inbränning vid inaktivitet. Avstängd tar tv:ns egen skärmsläckare över.",
     screensaverAfter: "Aktivera efter",
     screensaverStyle: "Stil",
     screensaverModeClock: "Klocka",
@@ -360,6 +360,7 @@ export default {
     screensaverArtWatched: "Sedda / påbörjade",
     screensaverArtUnwatched: "Inte sedda än",
     screensaverArtRandom: "Slumpvis",
+    screensaverArtFavorites: "Favoriter / min lista",
 
     // Settings — Profile
     profile: "Profil",

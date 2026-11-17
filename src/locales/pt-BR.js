@@ -135,10 +135,11 @@ export default {
     clockDesc: "Mostra a hora no canto superior direito, também no player.",
     clockFormatDesc: "Vale também para o protetor de tela e o horário de término na página de detalhes.",
     screensaverTitle: "Protetor de tela",
-    screensaverDesc: "Protege a tela OLED contra a retenção de imagem durante a inatividade.",
+    screensaverDesc: "Protege a tela OLED contra a retenção de imagem durante a inatividade. Desligado, o protetor de tela da própria TV assume.",
     screensaverModeArtDesc: "Fundos desfocados que se fundem, com o título.",
     screensaverArtWatched: "Assistidos / assistindo",
     screensaverArtUnwatched: "Ainda não assistidos",
+    screensaverArtFavorites: "Favoritos / minha lista",
 
     // Settings — Profile
     savePasswords: "Salvar a senha para trocar de usuário rapidamente",
@@ -146,7 +147,7 @@ export default {
     resetPrefsDesc: "Só este perfil, de volta ao padrão.",
     resetPrefsDone: "Todas as configurações voltaram ao padrão.",
     resetPrefsTitle: "Redefinir todas as configurações?",
-    resetPrefsText: "Cada configuração deste perfil volta ao padrão. Continuam como estão: o idioma, Ver juntos, a senha salva e o protetor de tela, que vale para a TV inteira.",
+    resetPrefsText: "Cada configuração deste perfil volta ao padrão. Continuam como estão: o idioma, Ver juntos e a senha salva.",
     resetPrefsConfirm: "Redefinir",
     screensaverPreview: "Prévia",
     screensaverPreviewDesc: "Inicia agora com estas configurações. Qualquer tecla encerra.",

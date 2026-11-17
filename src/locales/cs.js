@@ -95,7 +95,7 @@ export default {
     resetPrefsDesc: "Jen tento profil, zpět na výchozí hodnoty.",
     resetPrefsDone: "Všechna nastavení jsou zpět na výchozích hodnotách.",
     resetPrefsTitle: "Obnovit všechna nastavení?",
-    resetPrefsText: "Každé nastavení tohoto profilu se vrátí na výchozí hodnotu. Zůstává: jazyk, Společné sledování, uložené heslo a spořič obrazovky, který platí pro celý televizor.",
+    resetPrefsText: "Každé nastavení tohoto profilu se vrátí na výchozí hodnotu. Zůstává: jazyk, Společné sledování a uložené heslo.",
     resetPrefsConfirm: "Obnovit",
     subtitleSize: "Velikost titulků",
     subtitleSizeDesc: "Platí pro textové i obrázkové titulky. Stylizované titulky ASS si ponechají vlastní velikost.",
@@ -349,7 +349,7 @@ export default {
     // Settings — OLED
     screensaverSection: "Spořič obrazovky",
     screensaverTitle: "Spořič obrazovky",
-    screensaverDesc: "Chrání OLED před vypálením obrazu při nečinnosti.",
+    screensaverDesc: "Chrání OLED před vypálením obrazu při nečinnosti. Když je vypnutý, převezme to spořič televizoru.",
     screensaverAfter: "Spustit po",
     screensaverStyle: "Styl",
     screensaverModeClock: "Hodiny",
@@ -360,6 +360,7 @@ export default {
     screensaverArtWatched: "Zhlédnuté / rozkoukané",
     screensaverArtUnwatched: "Dosud nezhlédnuté",
     screensaverArtRandom: "Náhodně",
+    screensaverArtFavorites: "Oblíbené / chci vidět",
 
     // Settings — Profile
     profile: "Profil",

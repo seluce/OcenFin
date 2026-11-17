@@ -95,7 +95,7 @@ export default {
     resetPrefsDesc: "Apenas este perfil, de volta aos valores predefinidos.",
     resetPrefsDone: "Todas as definições voltaram aos valores predefinidos.",
     resetPrefsTitle: "Repor todas as definições?",
-    resetPrefsText: "Cada definição deste perfil volta ao seu valor predefinido. Mantêm-se: o idioma, Ver juntos, a palavra-passe guardada e a proteção de ecrã, que vale para todo o televisor.",
+    resetPrefsText: "Cada definição deste perfil volta ao seu valor predefinido. Mantêm-se: o idioma, Ver juntos e a palavra-passe guardada.",
     resetPrefsConfirm: "Repor",
     subtitleSize: "Tamanho das legendas",
     subtitleSizeDesc: "Aplica-se a legendas de texto e de imagem. As legendas ASS com estilo mantêm o seu próprio tamanho.",
@@ -349,7 +349,7 @@ export default {
     // Settings — OLED
     screensaverSection: "Proteção de ecrã",
     screensaverTitle: "Proteção de ecrã",
-    screensaverDesc: "Protege o ecrã OLED contra a retenção de imagem durante a inatividade.",
+    screensaverDesc: "Protege o ecrã OLED contra a retenção de imagem durante a inatividade. Desligada, assume a proteção de ecrã do próprio televisor.",
     screensaverAfter: "Ativar após",
     screensaverStyle: "Estilo",
     screensaverModeClock: "Relógio",
@@ -360,6 +360,7 @@ export default {
     screensaverArtWatched: "Vistos / a ver",
     screensaverArtUnwatched: "Ainda não vistos",
     screensaverArtRandom: "Aleatório",
+    screensaverArtFavorites: "Favoritos / a minha lista",
 
     // Settings — Profile
     profile: "Perfil",

@@ -95,7 +95,7 @@ export default {
     resetPrefsDesc: "Kun denne profil, tilbage til standard.",
     resetPrefsDone: "Alle indstillinger er tilbage på standard.",
     resetPrefsTitle: "Nulstil alle indstillinger?",
-    resetPrefsText: "Hver indstilling i denne profil går tilbage til standardværdien. Bevares: sproget, Se sammen, den gemte adgangskode og pauseskærmen, som gælder for hele tv'et.",
+    resetPrefsText: "Hver indstilling i denne profil går tilbage til standardværdien. Bevares: sproget, Se sammen og den gemte adgangskode.",
     resetPrefsConfirm: "Nulstil",
     subtitleSize: "Undertekststørrelse",
     subtitleSizeDesc: "Gælder tekst- og billedundertekster. Formaterede ASS-undertekster beholder deres egen størrelse.",
@@ -349,7 +349,7 @@ export default {
     // Settings — OLED
     screensaverSection: "Pauseskærm",
     screensaverTitle: "Pauseskærm",
-    screensaverDesc: "Beskytter OLED-skærmen mod indbrænding ved inaktivitet.",
+    screensaverDesc: "Beskytter OLED-skærmen mod indbrænding ved inaktivitet. Slået fra overtager tv'ets egen pauseskærm.",
     screensaverAfter: "Aktivér efter",
     screensaverStyle: "Stil",
     screensaverModeClock: "Ur",
@@ -360,6 +360,7 @@ export default {
     screensaverArtWatched: "Set / i gang",
     screensaverArtUnwatched: "Ikke set endnu",
     screensaverArtRandom: "Tilfældig",
+    screensaverArtFavorites: "Favoritter / se senere",
 
     // Settings — Profile
     profile: "Profil",

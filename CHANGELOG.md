@@ -32,6 +32,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   profile back to its default after asking; the language, watch together and the saved password stay.
 - **Screen saver preview.** A last row in the screen saver settings starts it right away with what you chose; any
   key ends it.
+- **Favourites and watchlist in the gallery.** The screen saver's pictures can now come from the titles you marked
+  yourself; the four sources sit in two rows, and random titles are the new default.
 
 ### Changed
 
@@ -40,6 +42,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   categories became one, Profile & Account.
 - **Gallery screen saver straight away.** It stays black for the moment the first picture needs and then fades
   into it, instead of showing the clock first; the clock only stands in when there are no pictures.
+- **Screen saver per profile.** Each profile chooses its own, or switches it off and lets the TV's screen saver take
+  over; what was set so far stays with every profile, a new one starts fresh.
+- **No clock in place of an empty gallery.** If the chosen source has nothing yet, such as no favourites or nothing
+  watched, the gallery shows random titles instead.
 
 ### Fixed
 

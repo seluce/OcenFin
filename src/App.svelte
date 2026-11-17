@@ -278,7 +278,8 @@
       reduceAnimations,
       librarySorts,
       libraryFilters,
-      sharedProfile
+      sharedProfile,
+      screensaver: screensaverSettings
     }));
   }
 
@@ -313,6 +314,7 @@
     playbackPrefs.subtitleSize = asSubSize(playbackPrefs.subtitleSize);   // small/normal/large → step
     playbackPrefs.subtitlePosition = asSubPosition(playbackPrefs.subtitlePosition);
     reduceAnimations = p.reduceAnimations ?? false;
+    screensaverSettings = asScreensaver(p.screensaver);   // per profile since 2026-11-17 (CODE-HEALTH §115)
     librarySorts     = asObject(p.librarySorts);   // remembered sort per library
     libraryFilters   = asObject(p.libraryFilters); // remembered filters per library (Library checks each field)
     sharedProfile    = p.sharedProfile && Array.isArray(p.sharedProfile.members)
@@ -376,22 +378,35 @@
   // Settings → Profile & Account → "Reset settings" (CODE-HEALTH §112): this profile's own settings back to the
   // defaults a new profile starts with. Kept: the language (a new profile takes the device's current one too),
   // watch together (signed-in members, not a setting), the saved password, the search history and the per-series
-  // track memory (history, not settings); the screensaver is device-wide anyway. Library reads sort and filters only
-  // when a library opens, so the mounted one is dropped and comes back fresh on the next visit — as after a
-  // profile switch.
+  // track memory (history, not settings). The screensaver goes back too — it is per profile since §115. Library reads
+  // sort and filters only when a library opens, so the mounted one is dropped and comes back fresh on the next visit —
+  // as after a profile switch.
   function resetUserPrefs() {
     displaySettings  = defaultDisplaySettings();
     playbackPrefs    = defaultPlaybackPrefs();
     reduceAnimations = false;
+    screensaverSettings = defaultScreensaverSettings();
     librarySorts     = {};
     libraryFilters   = {};
     libraryMounted   = false;
     saveUserPrefs();
   }
 
-  // One source for the defaults: the initializer here and the merge on load (onMount) — the same
-  // paste-twice trap as the profile prefs above.
-  const defaultScreensaverSettings = () => ({ enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45 });
+  // The screensaver is PER PROFILE (CODE-HEALTH §115): each profile chooses OcenFin's own or — switched off — the TV's,
+  // and a new profile starts with these defaults instead of whatever another one set. Before any sign-in (server and
+  // profile selection) OcenFin's never runs and the TV's takes over, see scheduleScreensaver and the Luna veto.
+  // One source for the defaults: the initializer here and the merge in applyUserPrefs — the same paste-twice trap
+  // as the profile prefs above.
+  const defaultScreensaverSettings = () => ({ enabled: true, timeout: 90, mode: 'clock', artSource: 'random', brightness: 0.45 });
+  // timeout drives setTimeout: a non-numeric value makes that NaN, which fires IMMEDIATELY and then again on every
+  // reschedule — a screensaver flashing over the whole interface, hard to escape with a remote. Clamped rather than
+  // merely defaulted, so an absurd stored number cannot disable it either. brightness likewise, since it reaches CSS.
+  function asScreensaver(v) {
+    const s = { ...defaultScreensaverSettings(), ...asObject(v) };
+    s.timeout    = asNumber(s.timeout, 90, 10, 3600);
+    s.brightness = asNumber(s.brightness, 0.45, 0, 1);
+    return s;
+  }
   let screensaverSettings = $state(defaultScreensaverSettings());
   let showScreensaver     = $state(false);
   // Theme music yields to the screensaver: silence while it is up, resume when it goes.
@@ -467,7 +482,7 @@
 
   function onScreensaverSettingsChange(v) {
     screensaverSettings = v;
-    localStorage.setItem('screensaver_settings', JSON.stringify(screensaverSettings));
+    saveUserPrefs();
     scheduleScreensaver();
   }
 
@@ -900,8 +915,24 @@
   function persistSharedTokens() {
     localStorage.setItem('jellyfin_shared_tokens_v1', JSON.stringify(sharedTokens));
   }
-  function loadScreensaverSettings() {
-    try { return asObject(JSON.parse(localStorage.getItem('screensaver_settings') || '{}')); } catch { return {}; }
+  // Until 2026-11-17 the screensaver was one device-wide record (`screensaver_settings`). It goes, once, into every
+  // profile that has signed in here and has no screensaver of its own yet — each keeps exactly what it saw — and the
+  // key is removed. A profile that never signed in on this TV starts with the defaults (§115).
+  function migrateScreensaverSettings() {
+    const raw = localStorage.getItem('screensaver_settings');
+    if (raw == null) return;
+    let old = {};
+    try { old = asObject(JSON.parse(raw)); } catch { }
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k?.startsWith('user_prefs_')) continue;
+      let p;
+      try { p = asObject(JSON.parse(localStorage.getItem(k) || '{}')); } catch { continue; }
+      if (p.screensaver) continue;
+      p.screensaver = old;
+      localStorage.setItem(k, JSON.stringify(p));
+    }
+    localStorage.removeItem('screensaver_settings');
   }
 
   /**
@@ -1004,13 +1035,7 @@
     savedServers        = loadSavedServers();
     savedTokens         = loadSavedTokens();
     sharedTokens        = loadSharedTokens();
-    screensaverSettings = { ...defaultScreensaverSettings(), ...loadScreensaverSettings() };
-    // timeout drives setTimeout: a non-numeric value makes that NaN, which fires IMMEDIATELY and
-    // then again on every reschedule — a screensaver flashing over the whole interface, hard to
-    // escape with a remote. Clamped rather than merely defaulted, so an absurd stored number
-    // cannot disable it either. brightness likewise, since it reaches CSS.
-    screensaverSettings.timeout    = asNumber(screensaverSettings.timeout, 90, 10, 3600);
-    screensaverSettings.brightness = asNumber(screensaverSettings.brightness, 0.45, 0, 1);
+    migrateScreensaverSettings();   // device-wide → per profile, once (§115); applyUserPrefs loads it
     setDebug(localStorage.getItem('ocenfin_debug') === '1');   // device-wide diagnostic logging (opt-in)
     startPlatformDiagnostics();   // "[diag]" lines for the move to webOS 26 — debug only, changes nothing (§71)
 

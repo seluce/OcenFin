@@ -95,7 +95,7 @@ export default {
     resetPrefsDesc: "Ce profil uniquement, retour aux valeurs par défaut.",
     resetPrefsDone: "Tous les paramètres sont revenus aux valeurs par défaut.",
     resetPrefsTitle: "Réinitialiser tous les paramètres ?",
-    resetPrefsText: "Chaque paramètre de ce profil revient à sa valeur par défaut. Restent tels quels : la langue, Regarder ensemble, le mot de passe enregistré et l'écran de veille, qui vaut pour tout le téléviseur.",
+    resetPrefsText: "Chaque paramètre de ce profil revient à sa valeur par défaut. Restent tels quels : la langue, Regarder ensemble et le mot de passe enregistré.",
     resetPrefsConfirm: "Réinitialiser",
     subtitleSize: "Taille des sous-titres",
     subtitleSizeDesc: "S'applique aux sous-titres texte et image. Les sous-titres ASS stylisés gardent leur propre taille.",
@@ -349,7 +349,7 @@ export default {
     // Settings — OLED
     screensaverSection: "Écran de veille",
     screensaverTitle: "Écran de veille",
-    screensaverDesc: "Protège l'écran OLED du marquage en cas d'inactivité.",
+    screensaverDesc: "Protège l'écran OLED du marquage en cas d'inactivité. Désactivé, c'est l'écran de veille du téléviseur qui prend le relais.",
     screensaverAfter: "Activer après",
     screensaverStyle: "Style",
     screensaverModeClock: "Horloge",
@@ -360,6 +360,7 @@ export default {
     screensaverArtWatched: "Vu / en cours",
     screensaverArtUnwatched: "Pas encore vu",
     screensaverArtRandom: "Aléatoire",
+    screensaverArtFavorites: "Favoris / ma liste",
 
     // Settings — Profile
     profile: "Profil",

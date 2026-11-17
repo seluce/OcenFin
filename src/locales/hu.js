@@ -95,7 +95,7 @@ export default {
     resetPrefsDesc: "Csak ez a profil, vissza az alapértékekre.",
     resetPrefsDone: "Minden beállítás visszaállt az alapértékre.",
     resetPrefsTitle: "Visszaállítod az összes beállítást?",
-    resetPrefsText: "A profil minden beállítása visszaáll az alapértékre. Megmarad: a nyelv, a Közös nézés, a mentett jelszó és a képernyővédő, amely az egész tévére vonatkozik.",
+    resetPrefsText: "A profil minden beállítása visszaáll az alapértékre. Megmarad: a nyelv, a Közös nézés és a mentett jelszó.",
     resetPrefsConfirm: "Visszaállítás",
     subtitleSize: "Feliratméret",
     subtitleSizeDesc: "Szöveges és képes feliratokra is vonatkozik. A stílusos ASS-feliratok megtartják a saját méretüket.",
@@ -349,7 +349,7 @@ export default {
     // Settings — OLED
     screensaverSection: "Képernyővédő",
     screensaverTitle: "Képernyővédő",
-    screensaverDesc: "Tétlenség alatt védi az OLED-kijelzőt a beégéstől.",
+    screensaverDesc: "Tétlenség alatt védi az OLED-kijelzőt a beégéstől. Kikapcsolva a tévé saját képernyővédője veszi át.",
     screensaverAfter: "Indulás ennyi idő után",
     screensaverStyle: "Stílus",
     screensaverModeClock: "Óra",
@@ -360,6 +360,7 @@ export default {
     screensaverArtWatched: "Megnézett / folyamatban",
     screensaverArtUnwatched: "Még nem látott",
     screensaverArtRandom: "Véletlenszerű",
+    screensaverArtFavorites: "Kedvencek / megnézendők",
 
     // Settings — Profile
     profile: "Profil",

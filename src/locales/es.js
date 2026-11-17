@@ -95,7 +95,7 @@ export default {
     resetPrefsDesc: "Solo este perfil, de vuelta a los valores predeterminados.",
     resetPrefsDone: "Todos los ajustes han vuelto a sus valores predeterminados.",
     resetPrefsTitle: "¿Restablecer todos los ajustes?",
-    resetPrefsText: "Cada ajuste de este perfil vuelve a su valor predeterminado. Se mantienen: el idioma, Ver juntos, la contraseña guardada y el salvapantallas, que se aplica a todo el televisor.",
+    resetPrefsText: "Cada ajuste de este perfil vuelve a su valor predeterminado. Se mantienen: el idioma, Ver juntos y la contraseña guardada.",
     resetPrefsConfirm: "Restablecer",
     subtitleSize: "Tamaño de los subtítulos",
     subtitleSizeDesc: "Se aplica a los subtítulos de texto y de imagen. Los subtítulos ASS con estilo conservan su propio tamaño.",
@@ -349,7 +349,7 @@ export default {
     // Settings — OLED
     screensaverSection: "Salvapantallas",
     screensaverTitle: "Salvapantallas",
-    screensaverDesc: "Protege la pantalla OLED del quemado durante la inactividad.",
+    screensaverDesc: "Protege la pantalla OLED del quemado durante la inactividad. Desactivado, se encarga el salvapantallas del propio televisor.",
     screensaverAfter: "Activar tras",
     screensaverStyle: "Estilo",
     screensaverModeClock: "Reloj",
@@ -360,6 +360,7 @@ export default {
     screensaverArtWatched: "Visto / viendo",
     screensaverArtUnwatched: "Aún no visto",
     screensaverArtRandom: "Aleatorio",
+    screensaverArtFavorites: "Favoritos / mi lista",
 
     // Settings — Profile
     profile: "Perfil",

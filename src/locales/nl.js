@@ -95,7 +95,7 @@ export default {
     resetPrefsDesc: "Alleen dit profiel, terug naar de standaardwaarden.",
     resetPrefsDone: "Alle instellingen staan weer op hun standaardwaarde.",
     resetPrefsTitle: "Alle instellingen terugzetten?",
-    resetPrefsText: "Elke instelling van dit profiel gaat terug naar de standaardwaarde. Blijven behouden: de taal, Samen kijken, het opgeslagen wachtwoord en de schermbeveiliging, die voor de hele tv geldt.",
+    resetPrefsText: "Elke instelling van dit profiel gaat terug naar de standaardwaarde. Blijven behouden: de taal, Samen kijken en het opgeslagen wachtwoord.",
     resetPrefsConfirm: "Terugzetten",
     subtitleSize: "Ondertitelgrootte",
     subtitleSizeDesc: "Geldt voor tekst- en beeldondertitels. Opgemaakte ASS-ondertitels houden hun eigen grootte.",
@@ -349,7 +349,7 @@ export default {
     // Settings — OLED
     screensaverSection: "Schermbeveiliging",
     screensaverTitle: "Schermbeveiliging",
-    screensaverDesc: "Beschermt het OLED-scherm tegen inbranden bij inactiviteit.",
+    screensaverDesc: "Beschermt het OLED-scherm tegen inbranden bij inactiviteit. Uitgeschakeld neemt de schermbeveiliging van de tv het over.",
     screensaverAfter: "Activeren na",
     screensaverStyle: "Stijl",
     screensaverModeClock: "Klok",
@@ -360,6 +360,7 @@ export default {
     screensaverArtWatched: "Bekeken / bezig",
     screensaverArtUnwatched: "Nog niet bekeken",
     screensaverArtRandom: "Willekeurig",
+    screensaverArtFavorites: "Favorieten / kijklijst",
 
     // Settings — Profile
     profile: "Profiel",

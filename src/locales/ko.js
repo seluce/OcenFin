@@ -95,7 +95,7 @@ export default {
     resetPrefsDesc: "이 프로필만 기본값으로 되돌립니다.",
     resetPrefsDone: "모든 설정이 기본값으로 돌아왔습니다.",
     resetPrefsTitle: "모든 설정을 초기화할까요?",
-    resetPrefsText: "이 프로필의 모든 설정이 기본값으로 돌아갑니다. 언어, 함께 보기, 저장된 비밀번호, 그리고 TV 전체에 적용되는 화면 보호기는 그대로 유지됩니다.",
+    resetPrefsText: "이 프로필의 모든 설정이 기본값으로 돌아갑니다. 언어, 함께 보기, 저장된 비밀번호는 그대로 유지됩니다.",
     resetPrefsConfirm: "초기화",
     subtitleSize: "자막 크기",
     subtitleSizeDesc: "텍스트 자막과 이미지 자막에 적용됩니다. 스타일이 적용된 ASS 자막은 자체 크기를 유지합니다.",
@@ -349,7 +349,7 @@ export default {
     // Settings — OLED
     screensaverSection: "화면 보호기",
     screensaverTitle: "화면 보호기",
-    screensaverDesc: "사용하지 않을 때 OLED 번인을 방지합니다.",
+    screensaverDesc: "사용하지 않을 때 OLED 번인을 방지합니다. 끄면 TV 자체 화면 보호기가 대신합니다.",
     screensaverAfter: "시작 시간",
     screensaverStyle: "스타일",
     screensaverModeClock: "시계",
@@ -360,6 +360,7 @@ export default {
     screensaverArtWatched: "본 작품 / 보는 중",
     screensaverArtUnwatched: "아직 안 본 작품",
     screensaverArtRandom: "무작위",
+    screensaverArtFavorites: "즐겨찾기 / 찜 목록",
 
     // Settings — Profile
     profile: "프로필",

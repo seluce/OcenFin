@@ -95,7 +95,7 @@ export default {
     resetPrefsDesc: "Nur dieses Profil, zurück auf die Standardwerte.",
     resetPrefsDone: "Alle Einstellungen stehen wieder auf Standard.",
     resetPrefsTitle: "Alle Einstellungen zurücksetzen?",
-    resetPrefsText: "Jede Einstellung dieses Profils kehrt zu ihrem Standardwert zurück. Es bleiben: die Sprache, Gemeinsam schauen, das gespeicherte Passwort und der Bildschirmschoner, der für den ganzen Fernseher gilt.",
+    resetPrefsText: "Jede Einstellung dieses Profils kehrt zu ihrem Standardwert zurück. Es bleiben: die Sprache, Gemeinsam schauen und das gespeicherte Passwort.",
     resetPrefsConfirm: "Zurücksetzen",
     subtitleSize: "Untertitelgröße",
     subtitleSizeDesc: "Gilt für Text- und Bild-Untertitel. Gestaltete ASS-Untertitel behalten ihre eigene Größe.",
@@ -349,7 +349,7 @@ export default {
     // Settings — OLED
     screensaverSection: "Bildschirmschoner",
     screensaverTitle: "Bildschirmschoner",
-    screensaverDesc: "Schützt das OLED-Display vor Einbrennen bei Inaktivität.",
+    screensaverDesc: "Schützt das OLED-Display vor Einbrennen. Ausgeschaltet übernimmt der Bildschirmschoner des Fernsehers.",
     screensaverAfter: "Aktivierung nach",
     screensaverStyle: "Stil",
     screensaverModeClock: "Uhr",
@@ -360,6 +360,7 @@ export default {
     screensaverArtWatched: "Gesehen / angefangen",
     screensaverArtUnwatched: "Noch nicht gesehen",
     screensaverArtRandom: "Zufällig",
+    screensaverArtFavorites: "Favoriten / Merkliste",
 
     // Settings — Profile
     profile: "Profil",

@@ -95,7 +95,7 @@ export default {
     resetPrefsDesc: "Tylko ten profil, z powrotem do wartości domyślnych.",
     resetPrefsDone: "Wszystkie ustawienia wróciły do wartości domyślnych.",
     resetPrefsTitle: "Przywrócić wszystkie ustawienia?",
-    resetPrefsText: "Każde ustawienie tego profilu wraca do wartości domyślnej. Bez zmian pozostają: język, Wspólne oglądanie, zapisane hasło i wygaszacz ekranu, który dotyczy całego telewizora.",
+    resetPrefsText: "Każde ustawienie tego profilu wraca do wartości domyślnej. Bez zmian pozostają: język, Wspólne oglądanie i zapisane hasło.",
     resetPrefsConfirm: "Przywróć",
     subtitleSize: "Rozmiar napisów",
     subtitleSizeDesc: "Dotyczy napisów tekstowych i graficznych. Stylizowane napisy ASS zachowują własny rozmiar.",
@@ -349,7 +349,7 @@ export default {
     // Settings — OLED
     screensaverSection: "Wygaszacz ekranu",
     screensaverTitle: "Wygaszacz ekranu",
-    screensaverDesc: "Chroni OLED przed wypaleniem podczas bezczynności.",
+    screensaverDesc: "Chroni OLED przed wypaleniem podczas bezczynności. Po wyłączeniu zadanie przejmuje wygaszacz telewizora.",
     screensaverAfter: "Aktywuj po",
     screensaverStyle: "Styl",
     screensaverModeClock: "Zegar",
@@ -360,6 +360,7 @@ export default {
     screensaverArtWatched: "Obejrzane / w trakcie",
     screensaverArtUnwatched: "Jeszcze nieobejrzane",
     screensaverArtRandom: "Losowo",
+    screensaverArtFavorites: "Ulubione / do obejrzenia",
 
     // Settings — Profile
     profile: "Profil",

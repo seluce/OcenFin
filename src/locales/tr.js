@@ -95,7 +95,7 @@ export default {
     resetPrefsDesc: "Yalnızca bu profil, varsayılan değerlere döner.",
     resetPrefsDone: "Tüm ayarlar varsayılan değerlerine döndü.",
     resetPrefsTitle: "Tüm ayarlar sıfırlansın mı?",
-    resetPrefsText: "Bu profilin her ayarı varsayılan değerine döner. Korunanlar: dil, Birlikte izle, kayıtlı şifre ve tüm televizyon için geçerli olan ekran koruyucu.",
+    resetPrefsText: "Bu profilin her ayarı varsayılan değerine döner. Korunanlar: dil, Birlikte izle ve kayıtlı şifre.",
     resetPrefsConfirm: "Sıfırla",
     subtitleSize: "Altyazı boyutu",
     subtitleSizeDesc: "Metin ve görüntü altyazıları için geçerlidir. Biçimlendirilmiş ASS altyazıları kendi boyutlarını korur.",
@@ -349,7 +349,7 @@ export default {
     // Settings — OLED
     screensaverSection: "Ekran koruyucu",
     screensaverTitle: "Ekran koruyucu",
-    screensaverDesc: "Hareketsizlik sırasında OLED ekranı iz kalmasına karşı korur.",
+    screensaverDesc: "Hareketsizlik sırasında OLED ekranı iz kalmasına karşı korur. Kapalıyken televizyonun kendi ekran koruyucusu devreye girer.",
     screensaverAfter: "Etkinleşme süresi",
     screensaverStyle: "Stil",
     screensaverModeClock: "Saat",
@@ -360,6 +360,7 @@ export default {
     screensaverArtWatched: "İzlenen / izlenmekte olan",
     screensaverArtUnwatched: "Henüz izlenmemiş",
     screensaverArtRandom: "Rastgele",
+    screensaverArtFavorites: "Favoriler / izleme listesi",
 
     // Settings — Profile
     profile: "Profil",

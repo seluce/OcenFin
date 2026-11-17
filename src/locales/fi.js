@@ -95,7 +95,7 @@ export default {
     resetPrefsDesc: "Vain tämä profiili, takaisin oletuksiin.",
     resetPrefsDone: "Kaikki asetukset ovat taas oletusarvoissa.",
     resetPrefsTitle: "Palautetaanko kaikki asetukset?",
-    resetPrefsText: "Profiilin jokainen asetus palaa oletusarvoonsa. Ennallaan pysyvät kieli, Yhteiskatselu, tallennettu salasana ja näytönsäästäjä, joka koskee koko televisiota.",
+    resetPrefsText: "Profiilin jokainen asetus palaa oletusarvoonsa. Ennallaan pysyvät kieli, Yhteiskatselu ja tallennettu salasana.",
     resetPrefsConfirm: "Palauta",
     subtitleSize: "Tekstityksen koko",
     subtitleSizeDesc: "Koskee teksti- ja kuvatekstityksiä. Tyylitellyt ASS-tekstitykset pitävät oman kokonsa.",
@@ -349,7 +349,7 @@ export default {
     // Settings — OLED
     screensaverSection: "Näytönsäästäjä",
     screensaverTitle: "Näytönsäästäjä",
-    screensaverDesc: "Suojaa OLED-näyttöä kiinnipalamiselta käyttötauon aikana.",
+    screensaverDesc: "Suojaa OLED-näyttöä kiinnipalamiselta käyttötauon aikana. Pois päältä ollessa television oma näytönsäästäjä hoitaa sen.",
     screensaverAfter: "Käynnistysviive",
     screensaverStyle: "Tyyli",
     screensaverModeClock: "Kello",
@@ -360,6 +360,7 @@ export default {
     screensaverArtWatched: "Katsotut / kesken",
     screensaverArtUnwatched: "Katsomattomat",
     screensaverArtRandom: "Satunnainen",
+    screensaverArtFavorites: "Suosikit / katselulista",
 
     // Settings — Profile
     profile: "Profiili",

@@ -2,12 +2,13 @@
   import { i18n } from '../i18n.svelte.js';
   import { authHeaders } from '../utils.js';
   import { session } from '../session.svelte.js';
+  import { watchlist } from '../watchlist.svelte.js';
   import { onMount, onDestroy } from 'svelte';
 
   let {
     use24h    = true,            // time format (derived from the setting)
     mode      = 'clock',         // 'clock' | 'art'
-    artSource = 'watched',       // 'watched' | 'unwatched' | 'random'
+    artSource = 'random',        // 'random' | 'favorites' | 'watched' | 'unwatched'
     brightness = 0.45,           // art-mode brightness (0.45 dimmed = OLED default)
     userId    = '',
     onDismiss,                   // callback prop
@@ -95,6 +96,18 @@
       }));
   }
 
+  // Favourites + watchlist = the profile's own picks. The watchlist holds episodes (a series is added as one), so its
+  // SERIES is shown, as with Next Up; one query for those IDs brings backdrop and logo the same way as the rest.
+  async function fetchPicks() {
+    const ids = [...new Set(watchlist.items.map(it => it.SeriesId || it.Id).filter(Boolean))];
+    shuffle(ids);
+    const [favorites, listed] = await Promise.all([
+      fetchBackdrops('&Filters=IsFavorite'),
+      ids.length ? fetchBackdrops(`&Ids=${ids.slice(0, 80).join(',')}`) : [],
+    ]);
+    return [...favorites, ...listed];
+  }
+
   // Fisher-Yates, in-place
   function shuffle(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
@@ -119,15 +132,20 @@
         list = [...nextUp, ...resuming, ...played];
       } else if (artSource === 'unwatched') {
         list = await fetchBackdrops('&Filters=IsUnplayed');
+      } else if (artSource === 'favorites') {
+        list = await fetchPicks();
       } else {
         list = await fetchBackdrops('');
       }
+      // Nothing in the chosen selection (no favourites yet, nothing watched yet, everything watched) → random titles
+      // instead of the clock: whoever chose the gallery wants pictures (§115). A SHORT list is not topped up, though.
+      if (!list.length && artSource !== 'random') list = await fetchBackdrops('');
       // Deduplicate by ID across ALL sources: the same series / the same movie never appears
       // twice in the rotation (the first, higher-prioritized occurrence stays).
       const seen = new Set();
       list = list.filter(x => x.id && !seen.has(x.id) && seen.add(x.id));
-      // Shuffle for a varied order. NO topping up with random titles — the selection
-      // (watched/unwatched) is respected strictly; if it's empty → clock fallback.
+      // Shuffle for a varied order. NO topping up with random titles — a selection that has anything is
+      // respected strictly; the clock only when the library has no backdrops at all (or the request failed).
       shuffle(list);
       artlist = list;
     } catch {

@@ -95,7 +95,7 @@ export default {
     resetPrefsDesc: "Only this profile, back to the defaults.",
     resetPrefsDone: "All settings are back to their defaults.",
     resetPrefsTitle: "Reset all settings?",
-    resetPrefsText: "Every setting of this profile goes back to its default. Kept: the language, Watch Together, the saved password and the screen saver, which applies to the whole TV.",
+    resetPrefsText: "Every setting of this profile goes back to its default. Kept: the language, Watch Together and the saved password.",
     resetPrefsConfirm: "Reset",
     subtitleSize: "Subtitle size",
     subtitleSizeDesc: "Applies to text and image subtitles. Styled ASS subtitles keep their own size.",
@@ -349,7 +349,7 @@ export default {
     // Settings — OLED
     screensaverSection: "Screen saver",
     screensaverTitle: "Screensaver",
-    screensaverDesc: "Protects OLED from burn-in during inactivity.",
+    screensaverDesc: "Protects OLED from burn-in during inactivity. When off, the TV's own screen saver takes over.",
     screensaverAfter: "Activate after",
     screensaverStyle: "Style",
     screensaverModeClock: "Clock",
@@ -360,6 +360,7 @@ export default {
     screensaverArtWatched: "Watched / watching",
     screensaverArtUnwatched: "Not yet watched",
     screensaverArtRandom: "Random",
+    screensaverArtFavorites: "Favorites / watchlist",
 
     // Settings — Profile
     profile: "Profile",

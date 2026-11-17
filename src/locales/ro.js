@@ -95,7 +95,7 @@ export default {
     resetPrefsDesc: "Doar acest profil, înapoi la valorile implicite.",
     resetPrefsDone: "Toate setările au revenit la valorile implicite.",
     resetPrefsTitle: "Resetezi toate setările?",
-    resetPrefsText: "Fiecare setare a acestui profil revine la valoarea implicită. Rămân neschimbate: limba, Vizionare împreună, parola salvată și protectorul de ecran, care se aplică întregului televizor.",
+    resetPrefsText: "Fiecare setare a acestui profil revine la valoarea implicită. Rămân neschimbate: limba, Vizionare împreună și parola salvată.",
     resetPrefsConfirm: "Resetează",
     subtitleSize: "Mărimea subtitrării",
     subtitleSizeDesc: "Se aplică subtitrărilor text și imagine. Subtitrările ASS stilizate își păstrează propria mărime.",
@@ -349,7 +349,7 @@ export default {
     // Settings — OLED
     screensaverSection: "Protector de ecran",
     screensaverTitle: "Protector de ecran",
-    screensaverDesc: "Protejează ecranul OLED de arderea imaginii în timpul inactivității.",
+    screensaverDesc: "Protejează ecranul OLED de arderea imaginii în timpul inactivității. Dezactivat, preia protectorul de ecran al televizorului.",
     screensaverAfter: "Pornește după",
     screensaverStyle: "Stil",
     screensaverModeClock: "Ceas",
@@ -360,6 +360,7 @@ export default {
     screensaverArtWatched: "Vizionate / începute",
     screensaverArtUnwatched: "Încă nevizionate",
     screensaverArtRandom: "Aleatoriu",
+    screensaverArtFavorites: "Favorite / lista mea",
 
     // Settings — Profile
     profile: "Profil",
