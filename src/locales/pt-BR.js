@@ -142,6 +142,12 @@ export default {
 
     // Settings — Profile
     savePasswords: "Salvar a senha para trocar de usuário rapidamente",
+    resetPrefs: "Redefinir configurações",
+    resetPrefsDesc: "Só este perfil, de volta ao padrão.",
+    resetPrefsDone: "Todas as configurações voltaram ao padrão.",
+    resetPrefsTitle: "Redefinir todas as configurações?",
+    resetPrefsText: "Cada configuração deste perfil volta ao padrão. Continuam como estão: o idioma, Ver juntos, a senha salva e o protetor de tela, que vale para a TV inteira.",
+    resetPrefsConfirm: "Redefinir",
     fastSwitchDesc: "Permite entrar sem digitar a senha neste dispositivo.",
 
     // Settings — Security

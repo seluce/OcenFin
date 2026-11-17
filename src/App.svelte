@@ -373,6 +373,22 @@
     saveUserPrefs();
   }
 
+  // Settings → Profile & Account → "Reset settings" (CODE-HEALTH §112): this profile's own settings back to the
+  // defaults a new profile starts with. Kept: the language (a new profile takes the device's current one too),
+  // watch together (signed-in members, not a setting), the saved password, the search history and the per-series
+  // track memory (history, not settings); the screensaver is device-wide anyway. Library reads sort and filters only
+  // when a library opens, so the mounted one is dropped and comes back fresh on the next visit — as after a
+  // profile switch.
+  function resetUserPrefs() {
+    displaySettings  = defaultDisplaySettings();
+    playbackPrefs    = defaultPlaybackPrefs();
+    reduceAnimations = false;
+    librarySorts     = {};
+    libraryFilters   = {};
+    libraryMounted   = false;
+    saveUserPrefs();
+  }
+
   // One source for the defaults: the initializer here and the merge on load (onMount) — the same
   // paste-twice trap as the profile prefs above.
   const defaultScreensaverSettings = () => ({ enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45 });
@@ -2538,6 +2554,7 @@
             onProfileImageChanged={refreshSelectedUser}
             onPlaybackPrefsChange={onPlaybackPrefsChange}
             onClearCache={clearCache}
+            onResetPrefs={resetUserPrefs}
           />
           {/await}
         {:else if viewState === 'details' && currentDetailItem}

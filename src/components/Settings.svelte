@@ -30,7 +30,7 @@
     onSharedRemoveMember = () => {},
     // Callback props
     onToggleSave, onSwitchUser, onLogout, onScreensaverChange, onReduceAnimationsChange,
-    onDisplayChange, onReorderingChange, onProfileImageChanged, onPlaybackPrefsChange, onClearCache,
+    onDisplayChange, onReorderingChange, onProfileImageChanged, onPlaybackPrefsChange, onClearCache, onResetPrefs,
   } = $props();
 
 
@@ -218,6 +218,21 @@
     if (modalTimeout) clearTimeout(modalTimeout);
     cancelSharedQuickConnect();   // back/cancel leaves the dialog — the poll must not survive it
     activeModal = null;
+  }
+
+  // Reset this profile's settings (CODE-HEALTH §112) — asked first, the dialog lands on Cancel. Both buttons ignore
+  // a held OK: its repeated click would answer the dialog the same press opened. The tile says it was done for a
+  // few seconds; with nothing visible changing (settings already at default) there is no other sign.
+  let resetDone = $state(false);
+  let resetDoneTimer = null;
+  onDestroy(() => clearTimeout(resetDoneTimer));
+  function confirmResetPrefs() {
+    if (isRepeatedEnter()) return;
+    closeModal();
+    onResetPrefs?.();
+    resetDone = true;
+    clearTimeout(resetDoneTimer);
+    resetDoneTimer = setTimeout(() => { resetDone = false; }, 4000);
   }
 
   // ── Watch together ─────────────────────────────────────────────────────────
@@ -2023,18 +2038,39 @@
           </div>
         {/if}
 
-        <!-- Clear cache (directly below the server address) -->
-        <button onclick={() => onClearCache?.()}
-          class="bg-gray-800/80 border border-gray-700 rounded-2xl shadow-xl flex items-center justify-between w-full p-6
-                 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-4 focus:ring-white text-left">
-          <div>
-            <span class="text-xl text-white font-bold block">{i18n.t.clearCache}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.clearCacheDesc}</span>
-          </div>
-          <svg class="w-7 h-7 text-gray-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-          </svg>
-        </button>
+        <!-- Clear cache (directly below the server address) and, beside it, this profile's settings back to their
+             defaults (§112) — two upkeep buttons side by side. -->
+        <div class="grid grid-cols-2 gap-5">
+          <button onclick={() => onClearCache?.()}
+            class="bg-gray-800/80 border border-gray-700 rounded-2xl shadow-xl flex items-center justify-between gap-4 w-full p-6
+                   hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-4 focus:ring-white text-left">
+            <div>
+              <span class="text-xl text-white font-bold block">{i18n.t.clearCache}</span>
+              <span class="text-gray-400 mt-1 block text-sm">{i18n.t.clearCacheDesc}</span>
+            </div>
+            <svg class="w-7 h-7 text-gray-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+          </button>
+
+          <button onclick={() => openModal('resetPrefs')}
+            class="bg-gray-800/80 border border-gray-700 rounded-2xl shadow-xl flex items-center justify-between gap-4 w-full p-6
+                   hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-4 focus:ring-white text-left">
+            <div>
+              <span class="text-xl text-white font-bold block">{i18n.t.resetPrefs}</span>
+              <span class="mt-1 block text-sm {resetDone ? 'text-gray-100' : 'text-gray-400'}">{resetDone ? i18n.t.resetPrefsDone : i18n.t.resetPrefsDesc}</span>
+            </div>
+            {#if resetDone}
+              <svg class="w-7 h-7 text-white shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+              </svg>
+            {:else}
+              <svg class="w-7 h-7 text-gray-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"/>
+              </svg>
+            {/if}
+          </button>
+        </div>
 
         <!-- Switch user / sign out -->
         <div class="grid grid-cols-2 gap-5">
@@ -2423,6 +2459,18 @@
           class="w-full bg-blue-600 text-white font-bold text-2xl py-6 rounded-xl
                  focus:outline-none focus:ring-4 focus:ring-white mt-2 disabled:opacity-50">{i18n.t.save}</button>
 
+      {:else if activeModal === 'resetPrefs'}
+        <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.resetPrefsTitle}</h2>
+        <p class="text-gray-300 text-lg">{i18n.t.resetPrefsText}</p>
+        <div class="flex gap-4 mt-2">
+          <button data-modal-current onclick={() => { if (!isRepeatedEnter()) closeModal(); }}
+            class="flex-1 bg-gray-700 text-white font-bold text-2xl py-5 rounded-xl hover:bg-gray-600
+                   focus:outline-none focus:ring-4 focus:ring-white">{i18n.t.cancel}</button>
+          <button onclick={confirmResetPrefs}
+            class="flex-1 bg-red-600 text-white font-bold text-2xl py-5 rounded-xl hover:bg-red-500
+                   focus:outline-none focus:ring-4 focus:ring-white">{i18n.t.resetPrefsConfirm}</button>
+        </div>
+
       {:else if activeModal === 'quickConnect'}
         <h2 class="text-4xl text-white font-bold mb-2">{i18n.t.quickConnect}</h2>
         <p class="text-gray-400 text-lg">{i18n.t.qcAuthInstruction}</p>
@@ -2503,9 +2551,12 @@
                  focus:outline-none focus:ring-4 focus:ring-white mt-2 disabled:opacity-50">{i18n.t.confirm}</button>
       {/if}
 
+      <!-- The reset question has its own Cancel beside Reset, as the exit dialog does. -->
+      {#if activeModal !== 'resetPrefs'}
       <button onclick={closeModal}
         class="w-full bg-transparent hover:bg-gray-700 focus:bg-gray-700 text-gray-400 font-bold text-xl py-4 rounded-xl
                border border-gray-600 focus:outline-none focus:ring-4 focus:ring-white mt-2">{i18n.t.cancel}</button>
+      {/if}
 
     </div>
   </div>
