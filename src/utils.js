@@ -749,9 +749,9 @@ export function asSubPosition(v) {
   return SUB_POSITIONS.includes(n) ? n : 7;
 }
 // The look of TEXT subtitles (WebVTT/SRT) — ONE rule for the Player's overlay and the live preview in Settings
-// (CODE-HEALTH §109), so the preview cannot show something the Player does not. PGS/VobSub are bitmaps (only
+// (CODE-HEALTH §109/§110), so the preview cannot show something the Player does not. PGS/VobSub are bitmaps (only
 // scalable, SUB_STEPS[…][1]), ASS brings its own styling. Every length is in vh, i.e. relative to the SCREEN — the
-// preview, drawn at the screen's bottom edge, is therefore true to size and position.
+// preview scales a whole screen down (§110), so size and position stay in proportion to the picture.
 // Size in steps from normal (asSubSize, CODE-HEALTH §95): [text height in vh, libbitsub scale for PGS/VobSub].
 // The outer steps are the old small/large; the inner ones sit at the geometric middle.
 export const SUB_STEPS = { '-2': [2.6, 0.85], '-1': [3.0, 0.92], '0': [3.4, 1.0], '1': [4.0, 1.12], '2': [4.8, 1.25] };

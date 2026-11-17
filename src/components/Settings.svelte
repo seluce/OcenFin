@@ -3,7 +3,7 @@
   import { startQuickConnect as startQC } from '../quickconnect.js';
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, uploadLog, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter, UI_SIZES, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS, orderHomeRows, SUB_POSITIONS, asSubPosition, subtitleTextStyle } from '../utils.js';
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, uploadLog, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter, UI_SIZES, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS, orderHomeRows, SUB_POSITIONS, asSubPosition, asSubSize, subtitleTextStyle } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { focusFromPointer } from '../spatialnav.js';
   import { startPlatformDiagnostics } from '../diag.js';
@@ -104,10 +104,7 @@
     onPlaybackPrefsChange?.({ ...playbackPrefs, [key]: !playbackPrefs[key] });
   }
 
-  function setSubtitleSize(size) {
-    onPlaybackPrefsChange?.({ ...playbackPrefs, subtitleSize: size });
-  }
-  // Generic for the text styling selectors (color/edge/background).
+  // The subtitle style rows (size, height, font, colour, edge, background).
   function setSubtitlePref(key, val) {
     onPlaybackPrefsChange?.({ ...playbackPrefs, [key]: val });
   }
@@ -698,11 +695,66 @@
   // Two-column navigation: pick the category on the left, content on the right (no long scrolling)
   let activeCategory = $state('appearance');
 
-  // Subtitle preview (CODE-HEALTH §109) — shown with the style rows, i.e. unless everything is burned in.
-  // Height in vh: the highest position (20) plus two lines at the largest size (2 × 4.8 × 1.35 ≈ 13.4 with the
-  // background's padding) plus the label — 38 left the label touching the line at 120 % interface size.
-  const SUB_PREVIEW_VH = 40;
-  let subPreviewShown = $derived(activeCategory === 'subtitles' && !playbackPrefs.burnSubtitles);
+  // The style rows of Settings → Subtitles, one list: the template draws them from it and the preview card takes the
+  // labels of "before" and "after" from it. `value` is the stored setting as the Player reads it.
+  let subStyleRows = $derived([
+    { key: 'subtitleSize', title: i18n.t.subtitleSize, desc: i18n.t.subtitleSizeDesc, value: asSubSize(playbackPrefs.subtitleSize),
+      options: [[-2, i18n.t.sizeXSmall], [-1, i18n.t.sizeSmall], [0, i18n.t.sizeNormal], [1, i18n.t.sizeLarge], [2, i18n.t.sizeXLarge]] },
+    // Height — text subtitles only (the overlay); PGS/VobSub and ASS bring their own position (§100).
+    { key: 'subtitlePosition', title: i18n.t.subtitlePosition, desc: i18n.t.subtitlePositionDesc, value: asSubPosition(playbackPrefs.subtitlePosition),
+      options: SUB_POSITIONS.map(v => [v, i18n.t[SUB_POSITION_LABELS[v]]]) },
+    // Font — text subtitles only, deliberately separate from the UI font (appearance). The buttons show themselves
+    // in their own font; Tinos (serif) is selectable only here.
+    { key: 'subtitleFont', title: i18n.t.subtitleFont, desc: i18n.t.subtitleFontDesc, value: playbackPrefs.subtitleFont || 'system',
+      options: [['system', i18n.t.fontSystem, ''], ['arimo', 'Arimo', "'Arimo', sans-serif"], ['noto', 'Noto Sans', "'Noto Sans', sans-serif"], ['tinos', 'Tinos', "'Tinos', serif"]] },
+    // Colour, edge, background — WebVTT/SRT only, not PGS/VobSub (the hint under "colour" says so for all three).
+    { key: 'subtitleColor', title: i18n.t.subtitleColor, desc: i18n.t.subtitleStyleHint, value: playbackPrefs.subtitleColor || 'white',
+      options: [['white', i18n.t.colorWhite], ['yellow', i18n.t.colorYellow], ['green', i18n.t.colorGreen], ['cyan', i18n.t.colorCyan]] },
+    { key: 'subtitleEdge', title: i18n.t.subtitleEdge, value: playbackPrefs.subtitleEdge || 'shadow',
+      options: [['none', i18n.t.styleNone], ['shadow', i18n.t.edgeShadow], ['outline', i18n.t.edgeOutline]] },
+    { key: 'subtitleBackground', title: i18n.t.subtitleBackground, value: playbackPrefs.subtitleBackground || 'none',
+      options: [['none', i18n.t.styleNone], ['semi', i18n.t.bgSemi], ['solid', i18n.t.bgSolid]] },
+  ]);
+
+  // Subtitle preview (CODE-HEALTH §109/§110): a small card beside the style row that holds focus, and only then.
+  // Left "before" — the row's value when focus came into it, so it stays put after OK — right "after", the
+  // focused choice. Each shows the lower middle of a whole screen scaled down (SUB_PANE_SCALE), drawn with the
+  // Player's own rule, so size and height keep their proportions to the picture.
+  let subPreview = $state(null);   // { key, base, baseLabel, val, label, top }
+  let subPreviewEl = $state();
+  let subPreviewRow = null;        // the row the card belongs to — a late placement for another one is dropped
+  function showSubPreview(row, val, label, btn) {
+    const same = subPreview?.key === row.key;
+    subPreview = {
+      key: row.key, val, label,
+      base: same ? subPreview.base : row.value,
+      baseLabel: same ? subPreview.baseLabel : (row.options.find(o => o[0] === row.value)?.[1] ?? ''),
+      top: subPreview?.top ?? null,
+    };
+    const rowEl = btn.closest('[data-sub-row]');
+    subPreviewRow = rowEl;
+    // Placed one frame later: spatial navigation scrolls the row into view AFTER the focus event.
+    requestAnimationFrame(() => placeSubPreview(rowEl));
+  }
+  function hideSubPreview(e) {
+    if (e.currentTarget.contains(e.relatedTarget)) return;
+    subPreview = null;
+    subPreviewRow = null;
+  }
+  // Above the row when it fits on screen (moving down, the row just left is the one covered), else below. The
+  // margin to the screen edge is the rows' own scroll-padding (4rem) — less, and the clock at the top right sat
+  // on the card at 120 % interface size.
+  function placeSubPreview(rowEl) {
+    if (rowEl !== subPreviewRow || !subPreview || !subPreviewEl?.offsetParent || !contentEl) return;
+    const r = rowEl.getBoundingClientRect(), view = contentEl.getBoundingClientRect(), cs = getComputedStyle(contentEl);
+    const h = subPreviewEl.offsetHeight, gap = 12;
+    const roomAbove = r.top - view.top - parseFloat(cs.scrollPaddingTop), roomBelow = view.bottom - r.bottom - parseFloat(cs.scrollPaddingBottom);
+    const above = roomAbove >= h + gap || roomAbove >= roomBelow;
+    subPreview.top = (above ? r.top - h - gap : r.bottom + gap) - subPreviewEl.offsetParent.getBoundingClientRect().top;
+  }
+  // Each pane: a crop 50 % of the screen wide and 35 % high (the highest position with two lines at the largest
+  // size ends at 33.4 %), at this scale. In vw/vh, not rem — it stands for the screen, whatever the interface size.
+  const SUB_PANE_SCALE = 0.52;
   // Behind the line: one backdrop of the library, fetched the first time the category opens (UserId, so an
   // age-restricted profile gets one of its own titles). None or an error: a neutral gradient, light towards the
   // bottom so edge and background still show what they do.
@@ -717,15 +769,13 @@
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
         const it = d?.Items?.[0];
+        // 1000 px: the whole screen is drawn at SUB_PANE_SCALE, i.e. about 1000 px wide on a 1920 screen.
         if (it?.BackdropImageTags?.length)
-          previewBackdrop = `${session.serverUrl}/Items/${it.Id}/Images/Backdrop/0?tag=${it.BackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
+          previewBackdrop = `${session.serverUrl}/Items/${it.Id}/Images/Backdrop/0?tag=${it.BackdropImageTags[0]}&maxWidth=1000&quality=80&format=webp`;
       })
       .catch(() => {});   // optional — the gradient stays
   });
-  // The backdrop as the full screen would show it (16:9 at screen height), cut to the strip's bottom and middle.
-  let previewBg = $derived(previewBackdrop
-    ? `url("${previewBackdrop}") center bottom / calc(100vh * 16 / 9) 100vh no-repeat, ${PREVIEW_FALLBACK}`
-    : PREVIEW_FALLBACK);
+  let previewBg = $derived(previewBackdrop ? `url("${previewBackdrop}") center / cover no-repeat, ${PREVIEW_FALLBACK}` : PREVIEW_FALLBACK);
   let contentEl = $state();
   // Reset the content scroll position on category switch, so a new category always starts at the
   // top instead of inheriting the previous category's scroll depth.
@@ -773,6 +823,24 @@
   {/each}
 {/snippet}
 
+<!-- One pane of the subtitle preview card: a whole screen (100vw × 100vh) scaled down around its bottom middle, cut
+     to the lower middle. Same rule as the Player, so position and size are in proportion to the picture. -->
+{#snippet subPane(caption, valueLabel, prefs)}
+  <div class="min-w-0" style="width:{50 * SUB_PANE_SCALE}vw">
+    <div class="flex items-baseline gap-2 mb-2 text-sm whitespace-nowrap">
+      <span class="font-bold uppercase tracking-wider text-gray-400">{caption}</span>
+      <span class="font-semibold text-gray-100 truncate">{valueLabel}</span>
+    </div>
+    <div class="relative overflow-hidden rounded-lg" style="height:{35 * SUB_PANE_SCALE}vh">
+      <div class="absolute bottom-0 origin-bottom" style="left:calc(50% - 50vw);width:100vw;height:100vh;transform:scale({SUB_PANE_SCALE});background:{previewBg}">
+        <div class="absolute inset-x-0 flex justify-center px-[8%]" style="bottom:{asSubPosition(prefs.subtitlePosition)}vh">
+          <span class="subtitle-box" style={subtitleTextStyle(prefs)}>{i18n.t.subtitlePreviewText}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+{/snippet}
+
 <!-- ambient on the whole page, not the content column: there it began hard at the category bar's edge -->
 <div class="flex h-full ambient">
 
@@ -806,10 +874,8 @@
        in the app, the setting rows carry no scroll-margin of their own, so the container has to
        provide the breathing room — otherwise a row revealed downwards (e.g. the profile picker
        appearing under "watch together") sits right on the bottom edge with its ring clipped. -->
-  <!-- With the subtitle preview the bottom padding grows by its height, so a row moved to never lands under it (§109). -->
-  <div bind:this={contentEl} data-enter-top class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16 [scroll-padding-top:4rem] [scroll-padding-bottom:4rem]"
-       style={subPreviewShown ? `scroll-padding-bottom:calc(${SUB_PREVIEW_VH}vh + 1.5rem)` : null}>
-    <div class="max-w-4xl flex flex-col gap-10 {subPreviewShown ? '' : 'pb-32'}">
+  <div bind:this={contentEl} data-enter-top class="flex-1 overflow-y-auto hide-scrollbar p-10 pt-16 [scroll-padding-top:4rem] [scroll-padding-bottom:4rem]">
+    <div class="max-w-4xl flex flex-col gap-10 pb-32">
     <!-- ══════════════════════════════════════════
          APPEARANCE
     ══════════════════════════════════════════ -->
@@ -1599,7 +1665,8 @@
     {/if}
 
     {#if activeCategory === 'subtitles'}
-    <section class="flex flex-col gap-4">
+    <!-- relative: the preview card is placed against this section -->
+    <section class="relative flex flex-col gap-4">
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2">{i18n.t.subtitles}</h2>
       <!-- Group: which subtitle -->
       <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupSelection}</h3>
@@ -1703,112 +1770,37 @@
       {#if !playbackPrefs.burnSubtitles}
         <!-- Group: look of text subtitles — gone with burn-in, which draws them into the picture -->
         <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupAppearance}</h3>
-        <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
-
-        <div class="p-6 last:rounded-b-2xl">
-          <span class="text-2xl text-white font-medium block">{i18n.t.subtitleSize}</span>
-          <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleSizeDesc}</span>
-          <div class="flex gap-3">
-            {#each [[-2, i18n.t.sizeXSmall], [-1, i18n.t.sizeSmall], [0, i18n.t.sizeNormal], [1, i18n.t.sizeLarge], [2, i18n.t.sizeXLarge]] as [val, label]}
-              <button onclick={() => setSubtitleSize(val)}
-                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                       {playbackPrefs.subtitleSize === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                {label}
-              </button>
-            {/each}
-          </div>
+        <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl" onfocusout={hideSubPreview}>
+          {#each subStyleRows as row, i (row.key)}
+            <div data-sub-row class="p-6 last:rounded-b-2xl {i ? 'border-t border-gray-700/50' : ''}">
+              <span class="text-2xl text-white font-medium block {row.desc ? '' : 'mb-4'}">{row.title}</span>
+              {#if row.desc}<span class="text-gray-400 mt-1 mb-4 block text-sm">{row.desc}</span>{/if}
+              <div class="flex gap-3">
+                {#each row.options as [val, label, fam]}
+                  <button onclick={() => setSubtitlePref(row.key, val)} onfocus={(e) => showSubPreview(row, val, label, e.currentTarget)}
+                    class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
+                           {row.value === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}"
+                    style={fam ? `font-family: ${fam}` : ''}>
+                    {label}
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/each}
         </div>
 
-        <!-- Height — text subtitles only (the overlay); PGS/VobSub and ASS bring their own position (§100). -->
-        <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
-          <span class="text-2xl text-white font-medium block">{i18n.t.subtitlePosition}</span>
-          <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitlePositionDesc}</span>
-          <div class="flex gap-3">
-            {#each SUB_POSITIONS as val}
-              <button onclick={() => setSubtitlePref('subtitlePosition', val)}
-                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                       {asSubPosition(playbackPrefs.subtitlePosition) === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                {i18n.t[SUB_POSITION_LABELS[val]]}
-              </button>
-            {/each}
+        <!-- Preview card (CODE-HEALTH §110): only while a style row holds focus, beside it, never over it. Not
+             focusable and transparent to the pointer — a Magic Remote pointing at a row underneath reaches it, and
+             the card moves away from that row. No transition: it repaints with its shadow in every frame. As wide as
+             the column, or wider where the panes need it (80 % interface size: the column is narrower than the panes). -->
+        {#if subPreview}
+          <div bind:this={subPreviewEl} aria-hidden="true"
+            class="absolute left-0 min-w-full z-20 pointer-events-none flex justify-center gap-4 p-4 rounded-2xl bg-gray-900 border border-gray-600 shadow-2xl"
+            class:invisible={subPreview.top == null} style="top:{subPreview.top ?? 0}px">
+            {@render subPane(i18n.t.subtitleBefore, subPreview.baseLabel, { ...playbackPrefs, [subPreview.key]: subPreview.base })}
+            {@render subPane(i18n.t.subtitleAfter, subPreview.label, { ...playbackPrefs, [subPreview.key]: subPreview.val })}
           </div>
-        </div>
-
-        <!-- VTT font — text subtitles only, deliberately separate from the UI font (appearance).
-             Buttons show themselves in their own font (preview); Tinos = serif, selectable only here. -->
-        <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
-          <span class="text-2xl text-white font-medium block">{i18n.t.subtitleFont}</span>
-          <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleFontDesc}</span>
-          <div class="flex gap-3">
-            {#each [['system', i18n.t.fontSystem, ''], ['arimo', 'Arimo', "'Arimo', sans-serif"], ['noto', 'Noto Sans', "'Noto Sans', sans-serif"], ['tinos', 'Tinos', "'Tinos', serif"]] as [val, label, fam]}
-              <button onclick={() => setSubtitlePref('subtitleFont', val)}
-                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                       {(playbackPrefs.subtitleFont || 'system') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}"
-                style={fam ? `font-family: ${fam}` : ''}>
-                {label}
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <!-- Text subtitle styling (color/edge/background) — only WebVTT/SRT, not PGS/VobSub -->
-        <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
-          <span class="text-2xl text-white font-medium block">{i18n.t.subtitleColor}</span>
-          <span class="text-gray-400 mt-1 mb-4 block text-sm">{i18n.t.subtitleStyleHint}</span>
-          <div class="flex gap-3">
-            {#each [['white', i18n.t.colorWhite], ['yellow', i18n.t.colorYellow], ['green', i18n.t.colorGreen], ['cyan', i18n.t.colorCyan]] as [val, label]}
-              <button onclick={() => setSubtitlePref('subtitleColor', val)}
-                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                       {(playbackPrefs.subtitleColor || 'white') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                {label}
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
-          <span class="text-2xl text-white font-medium block mb-4">{i18n.t.subtitleEdge}</span>
-          <div class="flex gap-3">
-            {#each [['none', i18n.t.styleNone], ['shadow', i18n.t.edgeShadow], ['outline', i18n.t.edgeOutline]] as [val, label]}
-              <button onclick={() => setSubtitlePref('subtitleEdge', val)}
-                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                       {(playbackPrefs.subtitleEdge || 'shadow') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                {label}
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
-          <span class="text-2xl text-white font-medium block mb-4">{i18n.t.subtitleBackground}</span>
-          <div class="flex gap-3">
-            {#each [['none', i18n.t.styleNone], ['semi', i18n.t.bgSemi], ['solid', i18n.t.bgSolid]] as [val, label]}
-              <button onclick={() => setSubtitlePref('subtitleBackground', val)}
-                class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
-                       {(playbackPrefs.subtitleBackground || 'none') === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
-                {label}
-              </button>
-            {/each}
-          </div>
-        </div>
-        </div>
-
-        <!-- Live preview (CODE-HEALTH §109): the lower part of the screen at ACTUAL size and position. It draws
-             with the Player's own rule (subtitleTextStyle, vh units, bottom in % of the screen height) and sticks to
-             the screen's bottom edge — so the line sits exactly where and as big as it will in a film. Last in the
-             section with the bottom paddings taken out (pb-32 dropped, -mb-10 eats the scroller's), so it never
-             lifts off that edge at the end of the page; -bottom-10, not bottom-0, because Chromium sticks to the
-             scrollport MINUS its padding (p-10) — at bottom-0 the strip floated 2.5rem above the edge. FIXED height (the highest position with two lines at the
-             largest size, plus the label): a strip growing with the setting would push the focused button
-             under itself. Text subtitles only, like every row above it but size. -->
-        <div aria-hidden="true"
-          class="sticky -bottom-10 -mb-10 shrink-0 overflow-hidden rounded-t-2xl border border-b-0 border-gray-700 shadow-2xl"
-          style="height:{SUB_PREVIEW_VH}vh;background:{previewBg}">
-          <span class="absolute top-3 left-4 px-2.5 py-1 rounded-md bg-black/60 text-gray-200 text-xs font-bold uppercase tracking-wider">{i18n.t.subtitlePreview}</span>
-          <div class="absolute inset-x-0 flex justify-center px-[8%]" style="bottom:{asSubPosition(playbackPrefs.subtitlePosition)}vh">
-            <span class="subtitle-box" style={subtitleTextStyle(playbackPrefs)}>{i18n.t.subtitlePreviewText}</span>
-          </div>
-        </div>
+        {/if}
       {/if}
     </section>
     {/if}
