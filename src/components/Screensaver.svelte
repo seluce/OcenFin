@@ -2,19 +2,20 @@
   import { i18n } from '../i18n.svelte.js';
   import { authHeaders } from '../utils.js';
   import { session } from '../session.svelte.js';
+  import { watchlist } from '../watchlist.svelte.js';
   import { onMount, onDestroy } from 'svelte';
 
   let {
     use24h    = true,            // time format (derived from the setting)
     mode      = 'clock',         // 'clock' | 'art'
-    artSource = 'watched',       // 'watched' | 'unwatched' | 'random'
+    artSource = 'random',        // 'random' | 'favorites' | 'watched' | 'unwatched'
     brightness = 0.45,           // art-mode brightness (0.45 dimmed = OLED default)
     userId    = '',
     onDismiss,                   // callback prop
   } = $props();
 
   let timeString = $state(''), dateString = $state('');
-  let clockTick, moveTimer, firstMove, artTimer, firstArtTimeout;
+  let clockTick, moveTimer, firstMove, artTimer, firstArtTimeout, artWaitCap;
   let destroyed = false;
 
   function updateClock() {
@@ -46,10 +47,17 @@
 
   // ── ART MODE ───────────────────────────────────────────────────────────────
   let artlist  = [];                          // [{ id, url, title, logo }] — internal data (not in the template)
+  let ownPick  = null, fill = [], fillAt = 0;  // a ONE-title selection and the random titles it alternates with (loadArt)
   let slots    = $state([{ url: '', title: '', logo: null }, { url: '', title: '', logo: null }]);  // two crossfade layers
   let front    = $state(0);                   // visible layer
   let artIdx   = 0;
   let artReady = $state(false);               // true → show backdrops instead of the clock fallback
+  // Gallery: BLACK while the list and the first picture load, then the picture fades in — no clock flashing up
+  // first and giving way a moment later (CODE-HEALTH §114). The clock only when there is nothing to show, or
+  // when the server has not delivered within ART_WAIT_CAP (a hanging request must not leave the screen empty
+  // for good); should the pictures still arrive after that, the gallery takes over.
+  let clockFallback = $state(false);          // art mode: true once the clock stands in (see startClock)
+  const ART_WAIT_CAP = 5000;
 
   // Title logo (lettering) of the movie/series — like in the hero banner. maxHeight a bit larger for fullscreen.
   const logoUrl = (id, tag) => `${session.serverUrl}/Items/${id}/Images/Logo?tag=${tag}&maxHeight=240&quality=90&format=webp&ApiKey=${session.token}`;
@@ -89,6 +97,18 @@
       }));
   }
 
+  // Favourites + watchlist = the profile's own picks. The watchlist holds episodes (a series is added as one), so its
+  // SERIES is shown, as with Next Up; one query for those IDs brings backdrop and logo the same way as the rest.
+  async function fetchPicks() {
+    const ids = [...new Set(watchlist.items.map(it => it.SeriesId || it.Id).filter(Boolean))];
+    shuffle(ids);
+    const [favorites, listed] = await Promise.all([
+      fetchBackdrops('&Filters=IsFavorite'),
+      ids.length ? fetchBackdrops(`&Ids=${ids.slice(0, 80).join(',')}`) : [],
+    ]);
+    return [...favorites, ...listed];
+  }
+
   // Fisher-Yates, in-place
   function shuffle(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
@@ -100,7 +120,7 @@
   async function loadArt() {
     if (!session.serverUrl || !userId || !session.token) return;
     try {
-      let list;
+      let list, random = artSource === 'random';
       if (artSource === 'watched') {
         // "Watched / current" = ongoing series (Next Up) + started titles (Resume) + fully
         // watched, merged. The order prioritizes the current, deduplicated by ID.
@@ -113,16 +133,30 @@
         list = [...nextUp, ...resuming, ...played];
       } else if (artSource === 'unwatched') {
         list = await fetchBackdrops('&Filters=IsUnplayed');
+      } else if (artSource === 'favorites') {
+        list = await fetchPicks();
       } else {
         list = await fetchBackdrops('');
       }
+      // Nothing in the chosen selection (no favourites yet, nothing watched yet, everything watched) → random titles
+      // instead of the clock: whoever chose the gallery wants pictures (§115). A SHORT list is not topped up, though —
+      // except a single title, below.
+      if (!list.length && !random) { list = await fetchBackdrops(''); random = true; }
       // Deduplicate by ID across ALL sources: the same series / the same movie never appears
       // twice in the rotation (the first, higher-prioritized occurrence stays).
       const seen = new Set();
       list = list.filter(x => x.id && !seen.has(x.id) && seen.add(x.id));
-      // Shuffle for a varied order. NO topping up with random titles — the selection
-      // (watched/unwatched) is respected strictly; if it's empty → clock fallback.
+      // Shuffle for a varied order. NO topping up with random titles — a selection of two or more is respected
+      // strictly; the clock only when the library has no backdrops at all (or the request failed).
       shuffle(list);
+      // ONE title cannot change the picture, and a picture standing still for hours is what a screen saver is there to
+      // prevent (§116). It alternates with random titles then, a fresh one each round (newRound). Nothing to alternate
+      // with (the library has this one backdrop) → the clock, which moves.
+      if (list.length === 1) {
+        fill = random ? [] : (await fetchBackdrops('')).filter(x => x.id !== list[0].id);
+        if (fill.length) { ownPick = list[0]; list = [ownPick, fill[0]]; }
+        else list = [];
+      }
       artlist = list;
     } catch {
       artlist = [];
@@ -130,6 +164,14 @@
   }
 
   function preload(u) { if (u) { const im = new Image(); im.src = u; } }
+
+  // The next round. A one-title selection: that title, then the next random one — strictly alternating. Otherwise all
+  // of them reshuffled, so one order does not recur 1:1, and never starting with the picture on screen.
+  function newRound(shown) {
+    if (ownPick) { fillAt = (fillAt + 1) % fill.length; artlist = [ownPick, fill[fillAt]]; return; }
+    shuffle(artlist);
+    if (artlist.length > 1 && artlist[0] === shown) [artlist[0], artlist[1]] = [artlist[1], artlist[0]];
+  }
 
   // Put backdrop i into the hidden layer and fade that to the front (CSS opacity).
   function applyArt(i) {
@@ -140,11 +182,23 @@
     front = back;
   }
 
+  function startClock() {
+    if (destroyed || firstMove) return;
+    clockFallback = true;
+    firstMove = setTimeout(moveClock, CLOCK_FIRST_MOVE);
+    moveTimer = setInterval(moveClock, CLOCK_INTERVAL);
+  }
+  function stopClock() {
+    clearTimeout(firstMove); clearInterval(moveTimer); clearTimeout(clockMoveTimeout);
+    firstMove = moveTimer = clockMoveTimeout = null;
+  }
+
   onMount(async () => {
     updateClock();
     clockTick = setInterval(updateClock, 1000);
 
     if (mode === 'art') {
+      artWaitCap = setTimeout(() => { if (!artReady) startClock(); }, ART_WAIT_CAP);
       await loadArt();
       // Dismissed while the list was loading? Then onDestroy has ALREADY run and cleared timer
       // handles that don't exist yet — everything created below would live forever. The art path
@@ -153,30 +207,25 @@
       // accumulating over weeks of use.
       if (destroyed) return;
       if (artlist.length) {
-        // Preload the first backdrop and only then switch to art mode. Until then the clock shows
-        // as a calm placeholder (no "bare title over black"); then the image from the cache
-        // fades in immediately. This doesn't shorten the network time but makes it feel intentional.
+        // Preload the first backdrop and only then switch to art mode — picture and title appear together
+        // (no "bare title over black"), the picture from the cache. Until then the screen stays black.
         const startArt = () => {
           if (artReady || destroyed) return;
           clearTimeout(firstArtTimeout);
-          applyArt(0);
-          artIdx = 0;
+          clearTimeout(artWaitCap);
+          stopClock();                 // the cap may have put the clock up meanwhile
+          // Show picture i and line up the next: on a round's last picture the next round is drawn NOW, so the preload
+          // fetches the picture that really comes next (it used to fetch the old round's first, then reshuffle).
+          const show = (i) => {
+            applyArt(i);
+            artIdx = i;
+            if (artIdx + 1 >= artlist.length) { newRound(artlist[artIdx]); artIdx = -1; }
+            preload(artlist[artIdx + 1]?.url);
+          };
+          show(0);
           artReady = true;
-          preload(artlist[1]?.url);
           const tick = () => {
-            if (artIdx + 1 >= artlist.length) {
-              // All backdrops shown once → reshuffle the repeat round so the
-              // same order doesn't recur 1:1. Then make sure the just-shown image
-              // doesn't land right back at position 0 (no immediate double).
-              const lastShown = artlist[artIdx];
-              shuffle(artlist);
-              if (artlist.length > 1 && artlist[0] === lastShown) [artlist[0], artlist[1]] = [artlist[1], artlist[0]];
-              artIdx = 0;
-            } else {
-              artIdx++;
-            }
-            applyArt(artIdx);
-            preload(artlist[(artIdx + 1) % artlist.length]?.url);
+            show(artIdx + 1);
             artTimer = setTimeout(tick, 30000 + Math.random() * 30000);   // 30–60 s
           };
           artTimer = setTimeout(tick, 30000 + Math.random() * 30000);
@@ -186,14 +235,14 @@
         pre.onerror = startArt;          // start anyway – the DOM <img> retries
         pre.src = artlist[0].url;
         firstArtTimeout = setTimeout(startArt, 4000);   // safety net in case the preload hangs
-        return;                          // the clock runs as a placeholder until the first image is there
+        return;                          // black until the first image is there
       }
-      // no backdrops available → clock fallback (below)
+      // no backdrops, or one with nothing to alternate with (loadArt) → clock fallback (below)
+      clearTimeout(artWaitCap);
     }
 
     // Clock mode (also fallback)
-    firstMove = setTimeout(moveClock, CLOCK_FIRST_MOVE);
-    moveTimer = setInterval(moveClock, CLOCK_INTERVAL);
+    startClock();
   });
 
   onDestroy(() => {
@@ -204,6 +253,7 @@
     clearTimeout(clockMoveTimeout);
     clearTimeout(artTimer);
     clearTimeout(firstArtTimeout);
+    clearTimeout(artWaitCap);
   });
 
   function dismiss() { onDismiss?.(); }
@@ -224,7 +274,8 @@
      onclick={dismiss} onkeydown={dismiss} onpointermove={(e) => { if (e.target === e.currentTarget) dismiss(); }} tabindex="-1">
 
   {#if useArt}
-    <!-- Two layers for a smooth crossfade -->
+    <!-- The gallery fades in from black once (ss-in: opacity only, on the compositor); then two layers crossfade. -->
+    <div class="absolute inset-0 ss-in">
     {#each slots as slot, i}
       <div class="absolute inset-0 ss-fade pointer-events-none" style="opacity:{front === i ? 1 : 0}">
         {#if slot.url}
@@ -244,8 +295,9 @@
       {/if}
       <p class="text-white/55 tabular-nums mt-2" style="font-size: clamp(1.2rem, 2vw, 2rem); letter-spacing:0.1em">{timeString} · {dateString}</p>
     </div>
+    </div>
 
-  {:else}
+  {:else if mode !== 'art' || clockFallback}
     <!-- CLOCK MODE: fades away and reappears at a new spot -->
     <div class="absolute pointer-events-none ss-clock" style="left:{posX}%; top:{posY}%; opacity:{clockOn ? 1 : 0}">
       <p class="text-gray-300 font-thin tabular-nums text-center" style="font-size: clamp(3rem, 8vw, 7rem); letter-spacing:0.15em">{timeString}</p>
@@ -258,4 +310,7 @@
 <style>
   .ss-fade  { transition: opacity 2s ease-in-out; }
   .ss-clock { transform: translate(-50%, -50%); transition: opacity 1.1s ease-in-out; }
+  /* "Reduce animations" zeroes it (App) — then the gallery is simply there, which is its end state anyway. */
+  .ss-in    { animation: ss-in 1.2s ease-out; }
+  @keyframes ss-in { from { opacity: 0; } to { opacity: 1; } }
 </style>

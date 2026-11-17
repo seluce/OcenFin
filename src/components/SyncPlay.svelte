@@ -53,7 +53,7 @@
     {:else}
       <!-- Not in a group: create or join -->
       <button onclick={() => onCreate?.()} {@attach focusOnMount()}
-        class="w-full bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 text-white font-bold text-xl py-4 rounded-xl
+        class="w-full bg-blue-600 text-white font-bold text-xl py-4 rounded-xl
                focus:outline-none focus:ring-4 focus:ring-white transition-colors flex items-center justify-center gap-3">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>

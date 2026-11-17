@@ -574,7 +574,7 @@
           <button
             onclick={discoverJellyfinServers}
             disabled={isDiscovering}
-            class="w-full flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900
+            class="w-full flex items-center justify-center gap-3 bg-blue-600 disabled:bg-blue-900
                    text-white font-bold text-lg py-4 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-300 transition-colors"
           >
             {#if isDiscovering}
@@ -688,7 +688,7 @@
             {@attach focusOnMount()}
           />
           <button onclick={() => authenticateUser(pendingUser.Name, password)}
-            class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xl py-4 rounded-xl mb-4
+            class="w-full bg-blue-600 text-white font-bold text-xl py-4 rounded-xl mb-4
                    focus:outline-none focus:ring-4 focus:ring-white">
             {i18n.t.loginText}
           </button>
@@ -732,7 +732,7 @@
                    focus:outline-none focus:ring-4 focus:ring-blue-500"
           />
           <button onclick={() => authenticateUser(manualUsername, manualPassword)}
-            class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xl py-4 rounded-xl mb-4
+            class="w-full bg-blue-600 text-white font-bold text-xl py-4 rounded-xl mb-4
                    focus:outline-none focus:ring-4 focus:ring-white">
             {i18n.t.loginText}
           </button>

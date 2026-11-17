@@ -1,10 +1,10 @@
 <script>
-  import { i18n, LANGUAGES } from '../i18n.svelte.js';
+  import { i18n, LANGUAGES, plural, baseLang } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
   import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
   import { pickDefaultTracks, rememberChoice } from '../trackmemory.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
-  import { buildPlayQueue, playableFor } from '../playback.js';
+  import { buildPlayQueue, playableFor, hasEarlierEpisodes, markEarlierPlayed } from '../playback.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
@@ -22,6 +22,7 @@
     focusItemId = null, focusScrollTop = 0,   // where to land when App brings us back (person page)
     takeResume = null,          // App: hands back, ONCE, what was on screen when we were left for a collection, a person page or the player
     onClose, onLibChanged, onOpenPerson, onOpenCollection, onPlayVideo,   // callback props
+    onProgressChanged,          // episodes were marked watched in bulk → App refreshes Next Up on the dashboard
   } = $props();
 
   let fullItem     = $state(null);
@@ -37,6 +38,8 @@
   let nextToPlay = $state(null);
   // The episode the row's description panel shows: the one under the focus, else the next one.
   let focusedEpisode = $state(null);
+  // "Mark earlier episodes as watched" in the ⋮ menu: null | 'busy' | { n } — see markEarlier().
+  let earlier = $state(null);
   const epCode = (ep) => `S${ep?.ParentIndexNumber ?? '?'}:E${ep?.IndexNumber ?? '?'}`;
   const epMinutes = (ep) => ep?.RunTimeTicks ? `${Math.round(ep.RunTimeTicks / 600000000)} ${i18n.t.mins}` : '';
   let similarItems = $state([]);
@@ -113,17 +116,25 @@
 
   // Choose default audio/subtitle for a source — the shared rule in trackmemory.js, which the Player
   // applies to every start that does not come through this page (series play button, play-all, …).
+  let subtitleByHand = false;   // plain let: nothing renders from it
   function applySourceDefaults(src) {
     const t = pickDefaultTracks(src, { seriesId: fullItem?.SeriesId, prefs: playbackPrefs });
     selectedAudioIndex    = t.audio;
     selectedSubtitleIndex = t.subtitle;
+    subtitleByHand = false;
   }
 
   // A track picked here counts like one picked in the Player's menu: it becomes the series' memory.
   // The Player re-applies that memory on its first setup, and used to overrule this page's choice
   // with an older one — "subtitles off" remembered, English picked here, played without subtitles.
+  // With "only for foreign audio" the subtitle depends on the audio, so another audio track picks it
+  // again — unless a subtitle was picked here by hand (subtitleByHand, above applySourceDefaults).
   function pickTrack(kind, index) {
-    if (kind === 'audio') selectedAudioIndex = index; else selectedSubtitleIndex = index;
+    if (kind === 'audio') {
+      selectedAudioIndex = index;
+      if (playbackPrefs.subtitleSmart && !subtitleByHand && selectedSource)
+        selectedSubtitleIndex = pickDefaultTracks(selectedSource, { seriesId: fullItem?.SeriesId, prefs: playbackPrefs, audio: index }).subtitle;
+    } else { selectedSubtitleIndex = index; subtitleByHand = true; }
     rememberChoice(fullItem?.SeriesId, kind, index, getMediaStreams(kind === 'audio' ? 'Audio' : 'Subtitle'), playbackPrefs);
   }
 
@@ -149,7 +160,7 @@
     });
   }
   // The language to search first: the profile's subtitle language, else the app's.
-  const subtitleSearchLang = $derived(LANGUAGES.some(l => l.key === playbackPrefs.subtitleLanguage) ? playbackPrefs.subtitleLanguage : i18n.lang);
+  const subtitleSearchLang = $derived(LANGUAGES.some(l => l.key === playbackPrefs.subtitleLanguage) ? playbackPrefs.subtitleLanguage : baseLang(i18n.lang));
   // The server reads a downloaded subtitle in with a refresh it queues — wait for the new track (a
   // stream this version did not have before, by content, since indexes of external files can shift)
   // and pick it. Bounded; false when it is not there yet, and the dialog says it will turn up.
@@ -244,16 +255,32 @@
   $effect(() => { if (!showShare && shareFocus.pending) shareFocus.restore(); });
   $effect(() => { if (!showMediaInfo && !pickerMode && menuReturn.pending) menuReturn.restore(); });
   let shareQrSvg = $state(null);
-  // Public link (IMDb/TMDb) of an item — or null if no own ID exists.
-  function buildShareUrl(item) {
+  // Public link (IMDb/TMDb) of an item — or null if none can be built. A season has no public ID of its
+  // own and an episode only sometimes (IMDb), so both go through their SERIES' IDs: on IMDb the season's
+  // episode list, on TMDb the season or episode page. They used to fall back to the plain series page.
+  // An episode prefers TMDb's own page over IMDb's season list, a season IMDb's list; season 0 (specials)
+  // has no list on IMDb → its series page.
+  function buildShareUrl(item, series) {
     const p = item?.ProviderIds || {};
-    if (p.Imdb) return `https://www.imdb.com/title/${p.Imdb}/`;
-    if (p.Tmdb && (item.Type === 'Movie' || item.Type === 'Series'))
-      return `https://www.themoviedb.org/${item.Type === 'Series' ? 'tv' : 'movie'}/${p.Tmdb}`;
-    return null;
+    if (item?.Type !== 'Season' && p.Imdb) return `https://www.imdb.com/title/${p.Imdb}/`;
+    if (item?.Type !== 'Season' && item?.Type !== 'Episode')
+      return p.Tmdb && (item?.Type === 'Movie' || item?.Type === 'Series')
+        ? `https://www.themoviedb.org/${item.Type === 'Series' ? 'tv' : 'movie'}/${p.Tmdb}` : null;
+    const sp = series?.ProviderIds || {};
+    const sn = item.Type === 'Season' ? item.IndexNumber : item.ParentIndexNumber;
+    const en = item.Type === 'Episode' ? item.IndexNumber : null;
+    const imdb = sp.Imdb ? `https://www.imdb.com/title/${sp.Imdb}/${sn >= 1 ? `episodes/?season=${sn}` : ''}` : null;
+    const tmdb = sp.Tmdb && sn != null ? `https://www.themoviedb.org/tv/${sp.Tmdb}/season/${sn}${en != null ? `/episode/${en}` : ''}` : null;
+    return (en != null ? tmdb || imdb : imdb || tmdb) || null;
   }
-  // Title as a readable fallback (a scan shows the name to look up, never a dead link).
+  // Title as a readable fallback (a scan shows the name to look up, never a dead link). A season or an
+  // episode carries its series — "Season 2" alone finds nothing — and an episode the S02E01 form a search
+  // understands.
   function shareTitleText(item) {
+    const two = (n) => String(n).padStart(2, '0');
+    if (item?.SeriesName && item.Type === 'Episode' && item.ParentIndexNumber != null && item.IndexNumber != null)
+      return `${item.SeriesName} S${two(item.ParentIndexNumber)}E${two(item.IndexNumber)} – ${item.Name}`;
+    if (item?.SeriesName && (item.Type === 'Season' || item.Type === 'Episode')) return `${item.SeriesName} – ${item.Name}`;
     return item?.ProductionYear ? `${item.Name} (${item.ProductionYear})` : (item?.Name || '');
   }
   async function openShare() {
@@ -261,15 +288,16 @@
     showShare = true;
     shareQrSvg = null;
     try {
-      let target = buildShareUrl(fullItem);
-      // No own public link (e.g. season/episode without an ID) → fall back to the series link.
-      if (!target && fullItem.SeriesId) {
+      // A season, or an episode without its own IMDb ID, links through its series (see buildShareUrl).
+      let series = null;
+      if ((fullItem.Type === 'Season' || fullItem.Type === 'Episode') && fullItem.SeriesId && !fullItem.ProviderIds?.Imdb) {
         try {
           const res = await fetch(`${session.serverUrl}/Items/${fullItem.SeriesId}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
-          if (res.ok) target = buildShareUrl(await res.json());
+          if (res.ok) series = await res.json();
         } catch { /* series unreachable → title fallback below */ }
       }
-      target = target || shareTitleText(fullItem);
+      const target = buildShareUrl(fullItem, series) || shareTitleText(fullItem);
+      dlog('[share]', fullItem.Type, '→', target);
       const { renderSVG } = await import('uqr');   // dynamically loaded, zero-dependency
       shareQrSvg = renderSVG(target || ' ', { ecc: 'M', border: 1 });   // vector instead of PNG → razor sharp
     } catch (e) { console.warn('[OcenFin] share QR failed', e); }
@@ -292,10 +320,30 @@
   // The trailer button, for the way back: the overlay takes the focus and closing it removed the
   // focused element with nothing to land on, so the next key opened the sidebar.
   let trailerOpener = null;
+
+  // Which of the title's trailers: the first whose NAME says the app's language, else the first one.
+  // Jellyfin keeps no language per trailer, only URL and name, and a normal metadata refresh APPENDS
+  // what it fetched to the trailers it had (MetadataService: Concat … DistinctBy Url). A library once
+  // read in English, or an NFO file from Radarr/Sonarr, therefore keeps its English trailer IN FRONT of
+  // the German ones TMDb returns now — and the first one was all that ever played. TMDb's German
+  // trailers mostly say so in the name ("Trailer Deutsch German", CODE-HEALTH §90). Matched at a word
+  // start: the language's own name cut to five letters (Русск… also finds "на русском") and its English
+  // name. No language codes — "DE", "IT" or "ES" turn up in titles for other reasons.
+  function pickTrailer(list) {
+    const lang = baseLang(i18n.lang);   // pt-BR looks for "Portu…"/"Portuguese", not "Brazilian"
+    const names = [LANGUAGES.find(l => l.key === lang)?.name?.slice(0, 5)];
+    try { names.push(new Intl.DisplayNames(['en'], { type: 'language' }).of(lang).split(' ')[0]); } catch { /* own name only */ }
+    // Letters only (language names), so nothing in them needs escaping for the RegExp.
+    const words = names.filter(Boolean).map(n => new RegExp(`(^|[^\\p{L}])${n}`, 'iu'));
+    const i = Math.max(0, list.findIndex(t => words.some(w => w.test(t?.Name || ''))));
+    dlog('[trailer]', list.length, 'trailer(s) · playing', i, `"${list[i]?.Name || ''}"`, '· app language', lang);
+    return list[i];
+  }
+
   function openTrailer() {
     if (!fullItem?.RemoteTrailers?.length) return;
     trailerOpener = document.activeElement;
-    const url     = fullItem.RemoteTrailers[0].Url;
+    const url     = pickTrailer(fullItem.RemoteTrailers).Url;
     const match   = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([^&?\s]{11})/);
     const videoId = match ? match[1] : null;
 
@@ -410,6 +458,7 @@
     similarItems = [];
     collections  = [];
     extras = [];
+    earlier = null;
     selectedAudioIndex    = -1;
     selectedSubtitleIndex = -1;
     selectedMediaSourceId = null;
@@ -590,6 +639,27 @@
       console.warn('[OcenFin] played-status toggle failed, rolled back:', e);
       shown.UserData = { ...shown.UserData, Played: !willBePlayed };
       if (carry) item.UserData = { ...item.UserData, Played: !willBePlayed };
+    }
+  }
+
+  // "Mark earlier episodes as watched" (playback.js) from the ⋮ menu of an episode or a season. The entry
+  // reports in place — how many, or that everything before was watched already — and the menu stays
+  // open; episodes in the row below that were marked get their tick at once. Bound to the title it
+  // started on: after a step along the chain meanwhile, the new page is left alone. State: `earlier`, above.
+  async function markEarlier() {
+    if (earlier) return;
+    const on = fullItem;
+    earlier = 'busy';
+    try {
+      const { found, done } = await markEarlierPlayed(on, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+      if (done.length) onProgressChanged?.();
+      if (fullItem !== on) return;
+      const marked = new Set(done);
+      for (const ep of relatedItems) if (marked.has(ep.Id)) ep.UserData = { ...ep.UserData, Played: true, PlaybackPositionTicks: 0 };
+      earlier = found && !done.length ? null : { n: done.length };
+    } catch (e) {
+      console.warn('[details] mark earlier episodes:', e?.message || e);
+      if (fullItem === on) earlier = null;
     }
   }
 
@@ -847,7 +917,13 @@
           {/if}
         </div>
 
-        <div class="flex-1 max-w-4xl">
+        <!-- The width cap sits on the text (title, meta, description), not on this column: the action
+             row may run past the text into the free space on the right. Capped, it was 1120px wide
+             and its labelled buttons shrank until "Von Anfang an" wrapped; the widest rows (Russian,
+             series with a trailer) need 1241px of the 1320px there are. Where even that is not
+             enough (UI size "large", nearly every language) the row wraps: the icon buttons move to
+             a second line instead of a label breaking into three lines or the row running off screen. -->
+        <div class="flex-1 min-w-0">
           <!-- line-clamp-2: an unbounded title wraps and pushes the description and the action
                buttons down, and the hero area is capped at 95vh — so they can leave the screen. -->
           <!-- Off by default on purpose: the poster to the left already carries the title as
@@ -863,7 +939,7 @@
                  opened. min-h (not a fixed h) keeps the common cases identical while still letting
                  a rare two-line fallback title have its second line, and costs nothing when the
                  option is off. items-end pins the baseline, so the gap below is always the same. -->
-            <div class="min-h-28 flex items-end mb-4">
+            <div class="min-h-28 max-w-4xl flex items-end mb-4">
               {#if getItemLogoUrl(fullItem)}
                 <img src={getItemLogoUrl(fullItem)} alt={fullItem.Name}
                      class="max-h-28 max-w-full w-auto object-contain object-left-bottom drop-shadow-lg" />
@@ -872,11 +948,11 @@
               {/if}
             </div>
           {:else}
-            <h1 class="text-6xl font-bold text-white mb-4 drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
+            <h1 class="max-w-4xl text-6xl font-bold text-white mb-4 drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
           {/if}
 
           <!-- META -->
-          <div class="flex items-center flex-wrap gap-4 text-lg font-semibold text-gray-200 mb-6 [text-shadow:0_1px_4px_rgba(0,0,0,0.75)]">
+          <div class="max-w-4xl flex items-center flex-wrap gap-4 text-lg font-semibold text-gray-200 mb-6 [text-shadow:0_1px_4px_rgba(0,0,0,0.75)]">
             {#if fullItem.ProductionYear}
               <span class="text-blue-400">{fullItem.ProductionYear}</span>
             {/if}
@@ -926,13 +1002,13 @@
           <!-- Nothing rather than "No description available": seasons rarely have one, and the filler
                line read like an error. -->
           {#if fullItem.Overview}
-            <p class="text-xl text-gray-300 mb-10 line-clamp-4 leading-relaxed">{fullItem.Overview}</p>
+            <p class="max-w-4xl text-xl text-gray-300 mb-10 line-clamp-4 leading-relaxed">{fullItem.Overview}</p>
           {:else}
             <div class="mb-6"></div>
           {/if}
 
           <!-- ACTION BUTTONS -->
-          <div class="flex items-center gap-4 mb-12">
+          <div class="flex flex-wrap items-center gap-4 mb-12">
             <button onclick={handlePlay} {@attach focusUnlessRestoring} data-primary-action
               class="bg-white hover:bg-gray-200 focus:bg-gray-200 text-black font-bold text-2xl px-12 py-4 rounded-xl
                      focus:outline-none focus:ring-4 focus:ring-blue-500 flex items-center gap-3 shadow-lg">
@@ -1014,6 +1090,14 @@
                 </button>
                 {#if openDropdown === 'kebab'}
                   <div class="absolute right-0 mt-2 z-50 w-80 max-h-[70vh] overflow-y-auto hide-scrollbar flex flex-col gap-1 bg-gray-900 rounded-xl border border-gray-700 p-2 shadow-2xl">
+                    {#if hasEarlierEpisodes(fullItem)}
+                      <!-- Stays open on purpose: the entry itself reports the result (see markEarlier). -->
+                      <button onclick={markEarlier}
+                        class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3 {earlier === 'busy' ? 'opacity-60' : ''}">
+                        <svg class="w-6 h-6 shrink-0 {earlier?.n >= 0 ? 'text-green-400' : 'text-gray-400'}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M1.5 12.5l4.5 4.5 9-10M11 16.5l.5.5 9-10"/></svg>
+                        {earlier?.n > 0 ? plural('earlierMarked', earlier.n) : earlier?.n === 0 ? i18n.t.earlierAllWatched : i18n.t.markEarlierWatched}
+                      </button>
+                    {/if}
                     {#if fullItem.MediaSources?.length > 0}
                       <button onclick={() => { menuReturn.capture(kebabBtnEl); closeDropdown(false); showMediaInfo = true; }}
                         class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
@@ -1445,7 +1529,16 @@
         <div class="rounded-xl bg-white p-3 [&>svg]:block [&>svg]:w-full [&>svg]:h-full"
              style="width:320px;height:320px;max-width:40vh;max-height:40vh;">{@html shareQrSvg}</div>
       {/if}
-      <p class="text-white font-bold text-center break-words">{fullItem?.Name}</p>
+      <!-- A season or an episode alone read "Season 2" / "Episode 1": the series first, then which part
+           of it, in the episode row's own form ("S2:E1 · title"). -->
+      {#if fullItem?.SeriesName && (fullItem.Type === 'Season' || fullItem.Type === 'Episode')}
+        <div class="text-center break-words">
+          <p class="text-white font-bold">{fullItem.SeriesName}</p>
+          <p class="text-gray-300 font-semibold mt-1">{fullItem.Type === 'Episode' ? `${epCode(fullItem)} · ${fullItem.Name}` : fullItem.Name}</p>
+        </div>
+      {:else}
+        <p class="text-white font-bold text-center break-words">{fullItem?.Name}</p>
+      {/if}
       <p class="text-gray-400 text-base text-center max-w-md">{i18n.t.shareHint}</p>
     </div>
   </div>

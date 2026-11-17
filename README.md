@@ -30,12 +30,12 @@ OcenFin plays your movies and shows as they are: Direct Play with Dolby Vision a
 **Plays it as it is**
 
 - Direct Play for 4K HEVC, AV1 and VP9 with Dolby Vision and HDR10, Dolby Atmos, TrueHD and DTS — the server only steps in when the TV really cannot play a file.
-- Subtitles on the TV, not burned in: Blu-ray (PGS) and DVD (VobSub) pictures, ASS/SSA exactly as made thanks to libass, plain text in your own style.
-- Skip intro, recap and credits (automatically if you like), a countdown to the next episode, “Are you still watching?” and preview pictures while seeking.
+- Subtitles on the TV, not burned in: Blu-ray (PGS) and DVD (VobSub) pictures, ASS/SSA exactly as made thanks to libass, plain text in your own style, with a live preview in the settings.
+- Skip intro, recap and credits (automatically if you like), a countdown to the next episode, the next part of a film series at the credits, “Are you still watching?” and preview pictures while seeking.
 
 **Finding something to watch**
 
-- A home screen with Continue Watching, Next Up, recent additions, “Because you watched …”, collections and your watchlist.
+- A home screen with Continue Watching, Next Up, recent additions, “Because you watched …”, collections and your watchlist, in the order you choose.
 - Libraries with an A–Z jump, filters for genre and audio or subtitle language, sorting and “Surprise me”.
 - Search across titles and people; title pages with cast, similar titles and the collections a title belongs to.
 - Spoiler protection blurs the pictures of episodes you have not seen yet.
@@ -45,7 +45,7 @@ OcenFin plays your movies and shows as they are: Direct Play with Dolby Vision a
 - Everything works with the D-pad and the Magic Remote pointer, and Back always takes you to where you were.
 - Remote shortcuts: colour buttons, channel keys to jump between episodes, number keys to jump in the timeline.
 - Accent colours, interface size and font, an OLED-friendly screensaver and “Reduce animations” for a calmer screen.
-- In English, German, Spanish, French, Italian, Dutch, Portuguese, Romanian, Polish, Czech, Hungarian, Swedish, Danish, Norwegian, Finnish, Turkish, Ukrainian, Russian and Korean.
+- In English, German, Spanish, French, Italian, Dutch, Portuguese (Portugal and Brazil), Romanian, Polish, Czech, Hungarian, Swedish, Danish, Norwegian, Finnish, Turkish, Ukrainian, Russian and Korean.
 
 **Profiles and watching together**
 

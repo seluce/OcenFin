@@ -1,11 +1,12 @@
 <script>
-  import { i18n } from '../i18n.svelte.js';
+  import { i18n, plural } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, authHeaders } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
+  import { hasEarlierEpisodes, markEarlierPlayed } from '../playback.js';
   import { onMount, onDestroy, untrack } from 'svelte';
 
-  let { item, userId, selectedUser, onChanged, onOpenDetails, onPlay, onAddToList, onAddToCollection, onPlayAll, onClose } = $props();
+  let { item, userId, selectedUser, onChanged, onProgressChanged, onOpenDetails, onPlay, onAddToList, onAddToCollection, onPlayAll, onClose } = $props();
 
   // Play is the menu's first entry for anything that can be watched — the most common thing to do
   // with a card, and it was only reachable through the details page. A series or season plays its
@@ -86,6 +87,20 @@
     }
     onChanged?.();
   }
+  // "Mark earlier episodes as watched" (playback.js). The entry reports in place what it did — how many,
+  // or that everything before was watched already — and stays inert after that. If the list could not
+  // be fetched or not one episode was taken, it goes back to its label, ready for another try.
+  const canMarkEarlier = hasEarlierEpisodes(untrack(() => item));
+  let earlier = $state(null);   // null | 'busy' | { n }
+  async function markEarlier() {
+    if (!armed || earlier) return;
+    earlier = 'busy';
+    try {
+      const { found, done } = await markEarlierPlayed(item, { serverUrl: session.serverUrl, userId, headers: headers() });
+      earlier = found && !done.length ? null : { n: done.length };
+      if (done.length) onProgressChanged?.();   // Next Up of that series has moved on
+    } catch (e) { console.warn('mark earlier episodes:', e?.message || e); earlier = null; }
+  }
   function openDetails() { if (!armed) return; onOpenDetails?.(item); onClose?.(); }
   function playAll()     { if (!armed) return; onPlayAll?.(item); onClose?.(); }
   function play()        { if (!armed) return; onPlay?.(item); }
@@ -152,6 +167,17 @@
         </svg>
         {played ? i18n.t.markUnwatched : i18n.t.markWatched}
       </button>
+
+      {#if canMarkEarlier}
+        <button onclick={markEarlier}
+          class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
+                 hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors {earlier === 'busy' ? 'opacity-60' : ''}">
+          <svg class="w-6 h-6 shrink-0 {earlier?.n >= 0 ? 'text-green-400' : 'text-gray-400'}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M1.5 12.5l4.5 4.5 9-10M11 16.5l.5.5 9-10"/>
+          </svg>
+          {earlier?.n > 0 ? plural('earlierMarked', earlier.n) : earlier?.n === 0 ? i18n.t.earlierAllWatched : i18n.t.markEarlierWatched}
+        </button>
+      {/if}
 
       <button onclick={toggleFavorite}
         class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg

@@ -1,6 +1,6 @@
 <script>
   import { i18n, plural } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount, authHeaders, dlog, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS } from '../utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS, asSubSize, asSubPosition, SUB_STEPS, subtitleTextStyle } from '../utils.js';
   import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks } from '../trackmemory.js';
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
@@ -21,7 +21,8 @@
     use24h = true,   // time format (from the setting) for the clock in the Player
     showClock = true, // show the clock in the Player (follows the display setting)
     showChapters = false, // chapter markers on the bar (opt-in)
-    seekStep = 30,        // jump distance of the forward/back buttons in seconds (per profile)
+    seekBack = 10,        // jump of ◄ and the rewind button in seconds (per profile, CODE-HEALTH §97)
+    seekForward = 30,     // jump of ► and the forward button
     autoPlayStreak = 0,   // "still watching?": episodes auto-started without interaction (from App)
     syncPlayOpen = false, // SyncPlay modal open (from App) → pause playback meanwhile …
     inSyncGroup  = false, // … except in an active group: then do NOT pause locally
@@ -362,8 +363,8 @@
     }
     // Same path as the HUD's own jump buttons: the profile's step, the preview, presses in quick
     // succession adding up to one jump.
-    else if (cmd === 'rewind')      skip(-seekStep);
-    else if (cmd === 'fastforward') skip(seekStep);
+    else if (cmd === 'rewind')      skip(-seekBack);
+    else if (cmd === 'fastforward') skip(seekForward);
     else if (cmd === 'nexttrack') { if (nextEpisode) goToNextEpisode(true); }
     else if (cmd === 'previoustrack') { goToPrevEpisode(); }
   }
@@ -582,7 +583,7 @@
           if (src.MediaStreams?.length) titleStreams = src.MediaStreams;
           picked = true;
           dlog('[tracks] picked', { audio: t.audio, subtitle: t.subtitle, audioPref: playbackPrefs.audioLanguage,
-               subtitlePref: playbackPrefs.subtitleLanguage, serverDefault: src.DefaultAudioStreamIndex });
+               subtitlePref: playbackPrefs.subtitleLanguage, smart: !!playbackPrefs.subtitleSmart, serverDefault: src.DefaultAudioStreamIndex });
         }
       }
       if (!titleStreams.length && item?.Id) {
@@ -760,35 +761,16 @@
   let assActive   = $state(false);  // ASS overlay live → the offset control applies
   let clientAssRender = $derived(playbackPrefs.assRendering && !playbackPrefs.burnSubtitles);
 
-  // Text subtitle styling (ONLY for the .subtitle-box overlay = WebVTT/SRT). PGS/VobSub are bitmaps
-  // (only scalable), ASS brings its own styling.
-  let subColor = $derived(({ white:'#ffffff', yellow:'#ffe14d', green:'#6dff6d', cyan:'#66e0ff' })[playbackPrefs.subtitleColor || 'white'] || '#ffffff');
-  let subEdgeCss = $derived((playbackPrefs.subtitleEdge === 'outline')
-        ? '-webkit-text-stroke:0.35vh #000;paint-order:stroke fill;text-shadow:0 0 3px rgba(0,0,0,.55);'
-        : (playbackPrefs.subtitleEdge === 'none')
-        ? 'text-shadow:none;'
-        : 'text-shadow:0 1px 2px #000,0 2px 8px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.9);');
-  let subBgCss = $derived((playbackPrefs.subtitleBackground === 'solid')
-        ? 'background:#000;padding:0.05em 0.5em;border-radius:0.5vh;'
-        : (playbackPrefs.subtitleBackground === 'semi')
-        ? 'background:rgba(0,0,0,.6);padding:0.05em 0.5em;border-radius:0.5vh;'
-        : 'background:transparent;');
-  // VTT font — deliberately ALWAYS set explicitly (even for 'system' → browser default stack),
-  // so the UI font choice (html level) doesn't inherit through into the subtitles. ASS is untouched.
-  let subFontCss = $derived(({ arimo: "font-family:'Arimo',sans-serif;",
-                               noto:  "font-family:'Noto Sans',sans-serif;",
-                               tinos: "font-family:'Tinos',serif;" })[playbackPrefs.subtitleFont]
-        ?? 'font-family:ui-sans-serif,system-ui,sans-serif;');
-  // -webkit-text-fill-color in addition to color: with -webkit-text-stroke set, on webOS the
-  // FILL color determines the rendering and falsely falls back to black there instead of inheriting color → subtitles
-  // otherwise black despite the color choice. Setting it explicitly forces the chosen color (a no-op on desktop anyway).
-  let subStyle = $derived(`color:${subColor};-webkit-text-fill-color:${subColor};${subFontCss}${subEdgeCss}${subBgCss}`);
+  // Text subtitle styling (ONLY for the .subtitle-box overlay = WebVTT/SRT): subtitleTextStyle() in utils.js, the one
+  // rule the Settings preview uses too (CODE-HEALTH §109). PGS/VobSub take only the size, as a libbitsub scale.
+  let subStep = $derived(SUB_STEPS[asSubSize(playbackPrefs.subtitleSize)]);
+  // Height (asSubPosition, CODE-HEALTH §100): the box's bottom edge in % of the screen. With the control bar
+  // up it never sits lower than above the bar (11rem), so a higher setting stays where it is.
+  let subBottom = $derived(asSubPosition(playbackPrefs.subtitlePosition));
+  let subStyle = $derived(subtitleTextStyle(playbackPrefs));
 
   // Subtitle size → libbitsub scaling (applies to PGS AND VobSub, not just VTT).
-  function graphicSubScale() {
-    const s = playbackPrefs.subtitleSize || 'normal';
-    return s === 'small' ? 0.85 : s === 'large' ? 1.25 : 1.0;
-  }
+  function graphicSubScale() { return subStep[1]; }
 
   // Apply subtitle – routes by codec: PGS/VobSub → libbitsub overlay, text → VTT overlay.
   // The offset belongs to the TRACK: reset when another one is chosen, kept when the same track is
@@ -1111,8 +1093,7 @@
       .catch((e) => { prefetchedSubs.delete(stream.Index); dlog('[OcenFin] subtitle prefetch failed:', stream.Index, codec, e?.message); });   // failed → allow a retry
   }
   // Apply a size change at runtime live to the running renderer.
-  $effect(() => { if (graphicRenderer && (playbackPrefs.subtitleSize || 'normal')) {
-    const sc = graphicSubScale();
+  $effect(() => { const sc = subStep[1]; if (graphicRenderer) {
     try { graphicRenderer.setDisplaySettings({ scale: sc }); } catch {}
   } });
 
@@ -1245,9 +1226,9 @@
     showSkipCredits || (duration - currentTime) <= OUTRO_FALLBACK
   ));
   // An interactive overlay is open → OK should trigger its focused button, not pause.
-  let overlayActive = $derived(!!activeSkip || showStillWatching || (outroPromptActive && !!nextEpisode));
+  let overlayActive = $derived(!!activeSkip || showStillWatching || (outroPromptActive && !!upNext));
   // Exactly then ONE outro decision prompt is visible (timer OR manual) → trap focus there.
-  let outroPromptShowing = $derived(!showStillWatching && !!nextEpisode && (nextCountdown !== null || (outroPromptActive && !outroDismissed)));
+  let outroPromptShowing = $derived(!showStillWatching && !!upNext && (nextCountdown !== null || (outroPromptActive && !outroDismissed)));
   // !showStillWatching is essential: when the countdown expires it sets nextCountdown back to null,
   // which would re-trigger this effect and restart the countdown behind the open prompt.
   $effect(() => { if (playbackPrefs.autoPlayNext && !stopAfterThis && nextEpisode && !playbackPrefs.autoSkipCredits
@@ -1388,7 +1369,45 @@
   let nextByIndex = $derived(queueActive ? queueNext : (episodeIndex >= 0 && episodeIndex < seriesEpisodes.length - 1
                    ? seriesEpisodes[episodeIndex + 1] : null));
   let nextEpisode = $derived(nextByIndex);   // auto-play/outro use the same sequential next episode (also into the next season)
-  let nextEpisodeImage = $derived(nextEpisode ? getItemImageUrl(nextEpisode, 'landscape') : null);   // still for the compact "up next" thumbnail
+
+  // A film started on its own that belongs to a collection: the collection's next film, offered ONLY
+  // by the outro card (CODE-HEALTH §93). Never by the countdown, the end of the video, auto-skip
+  // credits, the HUD button, the channel rocker or a colour key — all of those keep reading
+  // nextEpisode: a film is a choice, not a continuation, and no one asleep should be handed a
+  // three-hour sequel. Asked for once, when the outro begins, so a film start costs nothing.
+  // Several collections (a trilogy and a "Marvel" one): the SMALLEST one holding the film decides —
+  // it is the actual series. Last film there → no card. Watched or not does not matter: whoever
+  // watches part 1 again wants part 2 next. The order is the collection's own (§92), so no SortBy.
+  let nextFilm = $state(null);
+  let nextFilmAsked = false;
+  $effect(() => { if (outroPromptActive && !nextFilmAsked && item.Type === 'Movie' && !queueActive && !inSyncGroup) {
+    nextFilmAsked = true;
+    fetchNextFilm();
+  } });
+  async function fetchNextFilm() {
+    const t0 = performance.now();
+    try {
+      const r = await fetch(`${session.serverUrl}/Items/${item.Id}/Collections?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
+      if (!r.ok || destroyed) return;
+      const cols = ((await r.json()).Items || []).filter(c => c.Type === 'BoxSet').slice(0, 4);
+      const lists = await Promise.all(cols.map(c =>
+        fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${c.Id}&Fields=PrimaryImageAspectRatio&Limit=100&EnableTotalRecordCount=false`,
+              { headers: getAuthHeaders() })
+          .then(res => res.ok ? res.json() : null).then(d => d?.Items || []).catch(() => [])));
+      if (destroyed) return;
+      const list = lists.filter(l => l.some(x => x.Id === item.Id)).sort((a, b) => a.length - b.length)[0];
+      const after = list ? list.slice(list.findIndex(x => x.Id === item.Id) + 1) : [];
+      nextFilm = after.find(x => x.Type === 'Movie') || null;   // a series inside a collection is skipped
+      dlog('[player] next film', nextFilm?.Id ?? '(none)', 'from', cols.length, 'collections in', Math.round(performance.now() - t0), 'ms');
+    } catch { /* optional card */ }
+  }
+  // What the outro card offers: the next episode/queue title, else the collection's next film.
+  let upNext = $derived(nextEpisode ?? nextFilm);
+  // A film is never called an episode: countdown, card, the ◄|/►| tooltips and the "only this one"
+  // switch say "film" whenever the title they name is one — a play-all queue of films included.
+  // ◄|/►| name their neighbour, or the title on screen when there is none (disabled button).
+  const isFilm = (x) => x?.Type === 'Movie';
+  let nextEpisodeImage = $derived(upNext ? getItemImageUrl(upNext, 'landscape') : null);   // still for the compact "up next" thumbnail
 
   // "Only this episode" — one-shot sleep switch (opt-in via playbackPrefs.sleepButton).
   // Blocks ONLY the automatic transitions (outro countdown, video end, auto-skip credits);
@@ -1411,11 +1430,12 @@
 
   // Info line for the next episode: "S2 · E1 · 52 min · ends at 11:59"
   let nextEpisodeMeta = $derived.by(() => {
-    if (!nextEpisode) return '';
+    if (!upNext) return '';
     const parts = [];
-    if (nextEpisode.ParentIndexNumber != null && nextEpisode.IndexNumber != null)
-      parts.push(`S${nextEpisode.ParentIndexNumber} · E${nextEpisode.IndexNumber}`);
-    const mins = nextEpisode.RunTimeTicks ? Math.round(nextEpisode.RunTimeTicks / 600000000) : 0;
+    if (upNext.ParentIndexNumber != null && upNext.IndexNumber != null)
+      parts.push(`S${upNext.ParentIndexNumber} · E${upNext.IndexNumber}`);
+    else if (upNext.Type === 'Movie' && upNext.ProductionYear) parts.push(String(upNext.ProductionYear));
+    const mins = upNext.RunTimeTicks ? Math.round(upNext.RunTimeTicks / 600000000) : 0;
     if (mins) {
       parts.push(`${mins} ${i18n.t.mins}`);
       const end = new Date(Date.now() + mins * 60000);
@@ -1815,7 +1835,9 @@
   }
 
   // manual=true → triggered by the user (button/prompt); manual=false → auto-play (countdown/end/credits).
-  function goToNextEpisode(manual = false) {
+  // next: only the outro card passes upNext (which may be a collection's next film); every other
+  // caller moves along the series/queue.
+  function goToNextEpisode(manual = false, next = nextEpisode) {
     // Already handing off (prev zap / colour key / admin previoustrack): this instance is being
     // replaced — its still-ticking countdown interval must not fire a SECOND navigation that
     // would override the first one (pressing "previous" and landing on the next episode).
@@ -1825,7 +1847,7 @@
     // press has meanwhile marked the user as awake. Only the prompt's button moves on (it calls
     // onNext directly); no answer at all lets the timeout close the player.
     if (showStillWatching) return;
-    if (!nextEpisode) return;
+    if (!next) return;
     const awake = manual || interacted;
     // Sleep protection: only for series auto-play, when the user hasn't done anything for a while.
     // autoPlayStreak counts episodes already auto-started; this call would start the next one, so
@@ -1842,7 +1864,7 @@
     // resetStreak: awake → counter in App to 0; otherwise increment.
     if (outroPromptActive) finishedAtOutro = true;   // came from the outro → this one is watched
     handingOff = true;
-    onNext?.({ episode: nextEpisode, resetStreak: awake });
+    onNext?.({ episode: next, resetStreak: awake });
   }
 
   // Mirror of goToNextEpisode for the four "previous" callers (HUD button, channel rocker, colour
@@ -2096,12 +2118,33 @@
     }
   }
 
-  // Slider: Left/Right seek (±10 s), Up/Down leaves the bar
+  // ◄► seek by the profile's steps (seekBack / seekForward); held down they scrub faster the longer they
+  // are held (CODE-HEALTH §97). "Held" = a keydown with no keyup since the previous one, as for OK in
+  // installEnterRepeatGuard — e.repeat alone is not trusted on webOS; the 1 s cut-off only guards against
+  // a keyup that went missing. Each repeat adds speed × time since the previous event, so the scrub does
+  // not depend on the TV's key-repeat rate. Everything lands in skip(), i.e. ONE seek on release.
+  const SCRUB_SPEEDS = [[1.5, 120], [4, 480], [Infinity, 1200]];   // [held up to s, video s per s held]
+  let holdKey = null, holdSince = 0, holdLast = 0;
+  function arrowSeek(key) {
+    const now = performance.now();
+    if (holdKey === key && now - holdLast < 1000) {
+      const held = (now - holdSince) / 1000;
+      const dt = Math.min(0.25, (now - holdLast) / 1000);
+      const speed = SCRUB_SPEEDS.find(([upTo]) => held <= upTo)[1];
+      skip((key === 'ArrowLeft' ? -1 : 1) * Math.max(1, speed * dt));
+    } else {
+      holdKey = key; holdSince = now;
+      skip(key === 'ArrowLeft' ? -seekBack : seekForward);
+    }
+    holdLast = now;
+  }
+  function onArrowUp(e) { if (e.key === holdKey) holdKey = null; }
+
+  // Slider: Left/Right seek, Up/Down leaves the bar
   // (the native value change on Up/Down is suppressed; the group navigation
   // takes over the jump to the control buttons).
   function onSeekKey(e) {
-    if (e.key === 'ArrowLeft')      { e.preventDefault(); e.stopPropagation(); skip(-10); resetControlsTimeout(); }
-    else if (e.key === 'ArrowRight'){ e.preventDefault(); e.stopPropagation(); skip(10);  resetControlsTimeout(); }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); arrowSeek(e.key); resetControlsTimeout(); }
     // OK on the bar: apply the pending jump immediately, then toggle play/pause.
     else if (e.key === 'Enter' || e.keyCode === 13) {
       e.preventDefault(); e.stopPropagation();
@@ -2214,7 +2257,7 @@
       e.preventDefault(); e.stopPropagation();
       resetControlsTimeout();
       seekBarEl?.focus();
-      skip(e.key === 'ArrowLeft' ? -10 : 10);
+      arrowSeek(e.key);
       return;
     }
     // HUD hidden + Up/Down → just reveal the HUD and land on play/pause. Without this, spatial
@@ -2265,6 +2308,7 @@
   class="w-full h-screen bg-black relative overflow-hidden flex items-center justify-center focus:outline-none {showControls ? '' : 'cursor-none'}"
   onpointermove={resetControlsTimeout}
   onkeydown={handleKeyDown}
+  onkeyup={onArrowUp}
 >
 
   <video
@@ -2488,7 +2532,8 @@
           <button onclick={goToPrevEpisode}
             disabled={!prevEpisode}
             class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none disabled:opacity-30"
-            title={i18n.t.prevEpisode} aria-label={i18n.t.prevEpisode} {@attach hint()}>
+            title={isFilm(prevEpisode ?? item) ? i18n.t.prevFilm : i18n.t.prevEpisode}
+            aria-label={isFilm(prevEpisode ?? item) ? i18n.t.prevFilm : i18n.t.prevEpisode} {@attach hint()}>
             <!-- |◄ : bar on the left + triangle points LEFT -->
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/>
@@ -2506,8 +2551,8 @@
             </button>
           {/if}
 
-          <button onclick={() => skip(-seekStep)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none"
-            title={i18n.t.rewindBy.replace('{n}', seekStep)} aria-label={i18n.t.rewindBy.replace('{n}', seekStep)} {@attach hint()}>
+          <button onclick={() => skip(-seekBack)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none"
+            title={i18n.t.rewindBy.replace('{n}', seekBack)} aria-label={i18n.t.rewindBy.replace('{n}', seekBack)} {@attach hint()}>
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.334 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z"/>
             </svg>
@@ -2522,8 +2567,8 @@
             {/if}
           </button>
 
-          <button onclick={() => skip(seekStep)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none"
-            title={i18n.t.forwardBy.replace('{n}', seekStep)} aria-label={i18n.t.forwardBy.replace('{n}', seekStep)} {@attach hint()}>
+          <button onclick={() => skip(seekForward)} class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none"
+            title={i18n.t.forwardBy.replace('{n}', seekForward)} aria-label={i18n.t.forwardBy.replace('{n}', seekForward)} {@attach hint()}>
             <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M11.934 12.8a1 1 0 000-1.6l-5.334-4A1 1 0 005 8v8a1 1 0 001.6.8l5.334-4zM19.934 12.8a1 1 0 000-1.6l-5.334-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.334-4z"/>
             </svg>
@@ -2544,7 +2589,8 @@
           <button onclick={() => goToNextEpisode(true)}
             disabled={!nextByIndex}
             class="p-3 text-gray-400 hover:text-white focus:text-white focus:outline-none disabled:opacity-30"
-            title={i18n.t.nextEpisode} aria-label={i18n.t.nextEpisode} {@attach hint()}>
+            title={isFilm(nextEpisode ?? item) ? i18n.t.nextFilm : i18n.t.nextEpisode}
+            aria-label={isFilm(nextEpisode ?? item) ? i18n.t.nextFilm : i18n.t.nextEpisode} {@attach hint()}>
             <!-- ►| : triangle points RIGHT + bar on the right -->
             <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M16 6h2v12h-2zm-10 0l9 6-9 6V6z"/>
@@ -2557,7 +2603,7 @@
           <!-- ONLY THIS EPISODE — one-shot sleep switch (opt-in), first of the right group.
                Only visible when enabled AND an auto-advance is active (otherwise pointless). -->
           {#if playbackPrefs.sleepButton && autoAdvanceOn}
-            <button onclick={(e) => { e.stopPropagation(); toggleStopAfter(); }} title={i18n.t.stopAfterEpisode} aria-label={i18n.t.stopAfterEpisode} {@attach hint()}
+            <button onclick={(e) => { e.stopPropagation(); toggleStopAfter(); }} title={isFilm(item) ? i18n.t.stopAfterFilm : i18n.t.stopAfterEpisode} aria-label={isFilm(item) ? i18n.t.stopAfterFilm : i18n.t.stopAfterEpisode} {@attach hint()}
               class="p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-white transition-colors
                      {stopAfterThis ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white focus:text-white'}">
               <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -2693,9 +2739,9 @@
   <!-- SUBTITLE OVERLAY — our own VTT renderer (native track display is unreliable on webOS).
        Moves up when the control bar is visible so nothing is covered. -->
   {#if currentSubtitleText}
-    <div class="absolute inset-x-0 z-[65] flex justify-center px-[8%] pointer-events-none transition-all duration-200
-                {showControls ? 'bottom-44' : 'bottom-[7%]'}">
-      <span class="subtitle-box sub-{playbackPrefs.subtitleSize || 'normal'}" style={subStyle}>{currentSubtitleText}</span>
+    <div class="absolute inset-x-0 z-[65] flex justify-center px-[8%] pointer-events-none transition-all duration-200"
+         style="bottom:{showControls ? `max(11rem, ${subBottom}%)` : `${subBottom}%`}">
+      <span class="subtitle-box" style={subStyle}>{currentSubtitleText}</span>
     </div>
   {/if}
 
@@ -2729,7 +2775,7 @@
               class="w-32 aspect-video object-cover rounded-lg shrink-0 bg-gray-800" />
           {/if}
           <div class="min-w-0 flex-1 flex flex-col gap-1">
-            <span class="text-sm font-semibold text-gray-400 uppercase tracking-wider">{plural('nextEpisodeCountdown', nextCountdown)}</span>
+            <span class="text-sm font-semibold text-gray-400 uppercase tracking-wider">{isFilm(upNext) ? plural('nextFilmCountdown', nextCountdown) : plural('nextEpisodeCountdown', nextCountdown)}</span>
             <span class="text-xl font-bold text-white truncate">{nextEpisode.Name}</span>
             {#if nextEpisodeMeta}<span class="text-base text-gray-400">{nextEpisodeMeta}</span>{/if}
           </div>
@@ -2762,7 +2808,7 @@
 
   <!-- Manual "next episode" prompt (no countdown): appears with auto-play disabled OR after
        cancelling the timer. The user decides — "Cancel" stays on the current episode (outro). -->
-  {#if outroPromptActive && nextEpisode && nextCountdown === null && !outroDismissed && !showStillWatching}
+  {#if outroPromptActive && upNext && nextCountdown === null && !outroDismissed && !showStillWatching}
     <div transition:uiFade onoutrostart={releaseOverlay} data-focus-trap class="absolute bottom-12 right-12 z-[70] transition-transform duration-300 {showControls ? '-translate-y-32' : ''}">
       <div class="bg-gray-900/95 border border-gray-700 rounded-2xl shadow-2xl p-6 w-[30rem] flex flex-col gap-3">
         <div class="flex items-center gap-3">
@@ -2771,13 +2817,13 @@
               class="w-32 aspect-video object-cover rounded-lg shrink-0 bg-gray-800" />
           {/if}
           <div class="min-w-0 flex-1 flex flex-col gap-1">
-            <span class="text-sm font-semibold text-gray-400 uppercase tracking-wider">{i18n.t.nextEpisode}</span>
-            <span class="text-xl font-bold text-white truncate">{nextEpisode.Name}</span>
+            <span class="text-sm font-semibold text-gray-400 uppercase tracking-wider">{isFilm(upNext) ? i18n.t.nextFilm : i18n.t.nextEpisode}</span>
+            <span class="text-xl font-bold text-white truncate">{upNext.Name}</span>
             {#if nextEpisodeMeta}<span class="text-base text-gray-400">{nextEpisodeMeta}</span>{/if}
           </div>
         </div>
         <div class="flex gap-3">
-          <button onclick={() => goToNextEpisode(true)} {@attach focusOnMount()}
+          <button onclick={() => goToNextEpisode(true, upNext)} {@attach focusOnMount()}
             class="flex-1 bg-white text-black font-bold text-lg py-3 rounded-lg flex items-center justify-center gap-2
                    focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-200 transition-colors">
             <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -2863,20 +2909,11 @@
   }
   :global(.seekbar:focus::-webkit-slider-thumb) {
     width: 24px; height: 24px;
-    box-shadow: 0 0 0 5px var(--color-blue-500, #3b82f6), 0 0 16px 3px rgba(59,130,246,.55);
+    box-shadow: 0 0 0 5px var(--color-blue-500, #3b82f6), 0 0 16px 3px color-mix(in oklab, var(--color-blue-500, #3b82f6) 55%, transparent);
   }
   :global(.seekbar:focus::-moz-range-thumb) {
     width: 24px; height: 24px;
-    box-shadow: 0 0 0 5px var(--color-blue-500, #3b82f6), 0 0 16px 3px rgba(59,130,246,.55);
+    box-shadow: 0 0 0 5px var(--color-blue-500, #3b82f6), 0 0 16px 3px color-mix(in oklab, var(--color-blue-500, #3b82f6) 55%, transparent);
   }
 
-  /* Our own subtitle overlay renderer (external VTT): layout and size only — colour, edge and
-     background come from subStyle (the subtitle prefs). */
-  .subtitle-box {
-    white-space: pre-line; text-align: center; font-weight: 600; line-height: 1.35;
-    max-width: 100%;
-  }
-  .sub-small  { font-size: 2.6vh; }
-  .sub-normal { font-size: 3.4vh; }
-  .sub-large  { font-size: 4.8vh; }
 </style>

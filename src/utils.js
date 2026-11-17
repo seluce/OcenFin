@@ -711,6 +711,68 @@ export function asNumber(v, fb, min = -Infinity, max = Infinity) {
   const n = typeof v === 'number' ? v : parseFloat(v);
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fb;
 }
+// Interface size, in percent of the 20px TV baseline (CODE-HEALTH §94). Before 2026-11 it was
+// small/medium/large = 80/100/120 — a stored one keeps its size.
+export const UI_SIZES = [80, 90, 100, 110, 120];
+export function asUiSize(v) {
+  const n = ({ small: 80, medium: 100, large: 120 })[v] ?? Number(v);
+  return UI_SIZES.includes(n) ? n : 100;
+}
+// Home-screen rows in their default order (CODE-HEALTH §103). `displaySettings.homeOrder` holds a profile's
+// own order; orderHomeRows() turns whatever is stored into the complete list: unknown or repeated keys are
+// dropped, and a row the stored order does not name (one added in a later version) goes right after its
+// default predecessor — so it appears where it would by default, not at the very end.
+export const HOME_ROWS = ['libraries', 'resume', 'nextUp', 'watchlist', 'history', 'sharedSuggestions', 'recommendations', 'latest', 'collections'];
+export function orderHomeRows(order) {
+  const rows = Array.isArray(order) ? order.filter((k, i) => HOME_ROWS.includes(k) && order.indexOf(k) === i) : [];
+  for (const k of HOME_ROWS) {
+    if (rows.includes(k)) continue;
+    const prev = HOME_ROWS.slice(0, HOME_ROWS.indexOf(k)).reverse().find(p => rows.includes(p));
+    rows.splice(prev ? rows.indexOf(prev) + 1 : 0, 0, k);
+  }
+  return rows;
+}
+// Seek steps in seconds (CODE-HEALTH §97): ◄ and the rewind button jump back, ► and the forward button ahead.
+export const SEEK_BACK_STEPS = [5, 10, 15, 30];
+export const SEEK_FORWARD_STEPS = [10, 15, 30, 60];
+// Subtitle size, in steps from normal: -2 … 2 (CODE-HEALTH §95; the Player maps a step to sizes). Before
+// 2026-11 it was small/normal/large — the outer steps and the middle, so a stored one keeps its size.
+export function asSubSize(v) {
+  const n = ({ small: -2, normal: 0, large: 2 })[v] ?? Number(v);
+  return Number.isInteger(n) && n >= -2 && n <= 2 ? n : 0;
+}
+// Height of text subtitles: the bottom of the box in percent of the screen height (CODE-HEALTH §100) — lowest
+// (two lines fit into the black bar of a 2.39:1 film), normal (where they always sat), a bit higher, higher.
+export const SUB_POSITIONS = [2, 7, 13, 20];
+export function asSubPosition(v) {
+  const n = Number(v);
+  return SUB_POSITIONS.includes(n) ? n : 7;
+}
+// The look of TEXT subtitles (WebVTT/SRT) — ONE rule for the Player's overlay and the live preview in Settings
+// (CODE-HEALTH §109–§111), so the preview cannot show something the Player does not. PGS/VobSub are bitmaps (only
+// scalable, SUB_STEPS[…][1]), ASS brings its own styling. Every length is in vh, i.e. relative to the SCREEN — the
+// preview scales a whole screen down (§111), so size and position stay in proportion to the picture.
+// Size in steps from normal (asSubSize, CODE-HEALTH §95): [text height in vh, libbitsub scale for PGS/VobSub].
+// The outer steps are the old small/large; the inner ones sit at the geometric middle.
+export const SUB_STEPS = { '-2': [2.6, 0.85], '-1': [3.0, 0.92], '0': [3.4, 1.0], '1': [4.0, 1.12], '2': [4.8, 1.25] };
+const SUB_COLORS = { white: '#ffffff', yellow: '#ffe14d', green: '#6dff6d', cyan: '#66e0ff' };
+// Font — deliberately ALWAYS set explicitly (even for 'system' → browser default stack), so the UI font choice
+// (html level) doesn't inherit through into the subtitles.
+const SUB_FONTS = { arimo: "font-family:'Arimo',sans-serif;", noto: "font-family:'Noto Sans',sans-serif;", tinos: "font-family:'Tinos',serif;" };
+export function subtitleTextStyle(p) {
+  const color = SUB_COLORS[p.subtitleColor || 'white'] || '#ffffff';
+  const edge = p.subtitleEdge === 'outline' ? '-webkit-text-stroke:0.35vh #000;paint-order:stroke fill;text-shadow:0 0 3px rgba(0,0,0,.55);'
+             : p.subtitleEdge === 'none' ? 'text-shadow:none;'
+             : 'text-shadow:0 1px 2px #000,0 2px 8px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.9);';
+  const bg = p.subtitleBackground === 'solid' ? 'background:#000;padding:0.05em 0.5em;border-radius:0.5vh;'
+           : p.subtitleBackground === 'semi' ? 'background:rgba(0,0,0,.6);padding:0.05em 0.5em;border-radius:0.5vh;'
+           : 'background:transparent;';
+  const font = SUB_FONTS[p.subtitleFont] ?? 'font-family:ui-sans-serif,system-ui,sans-serif;';
+  // -webkit-text-fill-color in addition to color: with -webkit-text-stroke set, on webOS the FILL color determines
+  // the rendering and falsely falls back to black there instead of inheriting color → subtitles otherwise black
+  // despite the color choice. Setting it explicitly forces the chosen color (a no-op on desktop anyway).
+  return `font-size:${SUB_STEPS[asSubSize(p.subtitleSize)][0]}vh;color:${color};-webkit-text-fill-color:${color};${font}${edge}${bg}`;
+}
 
 // --- Performance instrumentation (opt-in, shares the debug switch) ---------------------------
 // Inert while debug is off: every entry point tests _debug FIRST, so a normal session pays one

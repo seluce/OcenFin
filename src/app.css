@@ -34,3 +34,10 @@
   background-repeat: no-repeat;
   background-attachment: local;
 }
+
+/* The text-subtitle box — the Player's overlay and the Settings preview (CODE-HEALTH §109). Layout only: size,
+   colour, font, edge and background come from subtitleTextStyle() in utils.js. */
+.subtitle-box {
+  white-space: pre-line; text-align: center; font-weight: 600; line-height: 1.35;
+  max-width: 100%;
+}

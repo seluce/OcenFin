@@ -1,0 +1,227 @@
+// Português (Brasil) — only what Brazil says differently. Layered over pt.js (European Portuguese),
+// which is layered over en, so a key missing here shows the pt text, never English.
+export default {
+    // App / Server
+    errOffline: "Falha na conexão. IP errado ou servidor offline?",
+    loading: "Carregando…",
+
+    // Server management
+    savedServers: "Servidores salvos",
+    discovering: "Procurando na rede local…",
+    serverManualEntry: "ou digitar manualmente",
+    serverAddressPlaceholder: "ex.: 192.168.1.100:8096",
+    insecureHttpHint: "Conexão não criptografada. Prefira HTTPS se o seu servidor oferecer — caso contrário, a senha e o token trafegam em texto simples na rede.",
+    connectedServer: "Servidor conectado",
+
+    // Login
+    selectUser: "Quem está assistindo?",
+    passwordPrompt: "Digite a senha de",
+    loginText: "Entrar",
+    errLogin: "Senha inválida ou falha no login.",
+    manualLogin: "Login manual",
+    username: "Nome de usuário",
+
+    // Navigation
+    settings: "Configurações",
+    switchUser: "Trocar de usuário",
+    logout: "Sair da conta",
+
+    // Dashboard
+    myMedia: "Minhas mídias",
+    continueWatchingRow: "Continuar assistindo",
+    becauseSeen: "Porque você assistiu {x}",
+
+    // Library / Filter
+    status: "Status",
+    mediaInfo: "Informações de mídia",
+    collectionPermissionDenied: "Sem permissão para gerenciar coleções",
+    stillWatching: "Ainda está assistindo?",
+    continueWatching: "Continuar assistindo",
+    actionFailed: "Algo deu errado",
+    miFramerate: "Taxa de quadros",
+    subtitleSizeDesc: "Vale para legendas de texto e de imagem. Legendas ASS com estilo mantêm o próprio tamanho.",
+    filterUnplayed: "Não assistidos",
+    filterPlayed: "Assistidos",
+    sortRating: "Avaliação",
+    genres: "Gêneros",
+    ageRating: "Classificação indicativa",
+
+    // Details
+    rewindBy: "Voltar {n} s",
+    playFromStart: "Do início",
+    markWatched: "Marcar como assistido",
+    markUnwatched: "Marcar como não assistido",
+    markEarlierWatched: "Marcar episódios anteriores como assistidos",
+    earlierMarked: { one: "{n} episódio marcado como assistido", other: "{n} episódios marcados como assistidos" },
+    earlierAllWatched: "Todos os episódios anteriores já foram assistidos",
+    watchlist: "Minha lista",
+    resetProgress: "Redefinir progresso",
+    subtitleSearchNone: "Nada encontrado. Para isso o servidor precisa de um provedor de legendas, como o plugin OpenSubtitles.",
+    subtitleDownloading: "Baixando…",
+    subtitleApplying: "Baixado — adicionando ao título…",
+    subtitleAddedLater: "Salvo. Vai aparecer aqui assim que o servidor ler o arquivo.",
+
+    // Player
+    nextEpisode: "Próximo episódio",
+    nextFilm: "Próximo filme",
+    playbackErrorHint: "Não foi possível reproduzir este título. Pode ser um formato não suportado ou um problema de conexão.",
+    playbackRateLimit: "O servidor está no limite de reprodução no momento. Tente novamente daqui a pouco.",
+    autoPlayNext: "Reproduzir automaticamente o próximo episódio",
+    autoPlayNextDesc: "Inicia o próximo episódio automaticamente com uma contagem regressiva.",
+    burnSubtitles: "Incorporar legendas na imagem",
+    burnSubtitlesDesc: "Ativado: o servidor incorpora as legendas na imagem. Isso dá mais trabalho a ele e avançar ou voltar fica mais lento. Desativado: a própria TV as exibe.",
+    pgsRenderingDesc: "Ativado: a própria TV desenha as legendas de Blu-ray e DVD (PGS, VobSub) e o filme é reproduzido sem alterações. Desativado: o servidor as incorpora na imagem.",
+    assRenderingDesc: "Ativado: as legendas com estilo, comuns em anime, mantêm fontes, posições e efeitos. Efeitos muito elaborados podem deixar a TV mais lenta. Desativado: exibidas como texto simples. Em ambos os casos o filme é reproduzido sem alterações.",
+    seekIntervalDesc: "Quanto ◄► e os botões de voltar/avançar pulam. Mantendo pressionado, ◄► percorrem cada vez mais rápido.",
+    seekBack: "Voltar",
+    navEditHint: "OK para pegar uma entrada, ▲▼ para movê-la, OK para soltá-la. As entradas ocultas não aparecem na barra lateral.",
+    homeEditHint: "OK para pegar uma linha, ▲▼ para movê-la, OK para soltá-la. O interruptor à direita a mostra ou oculta.",
+    navGrabbedHint: "▲▼ mover · OK soltar",
+    profilePicture: "Foto do perfil",
+    avatarTabRecent: "Assistidos recentemente",
+    avatarRecentEmpty: "Você ainda não assistiu a nada. Assim que assistir a um filme ou série, o pôster aparece aqui para usar como avatar.",
+    saving: "Salvando…",
+    saved: "Salvo",
+    exitMessage: "Deseja fechar o aplicativo?",
+    skipIntro: "Pular abertura",
+    skipRecap: "Pular resumo",
+    audioLanguage: "Idioma de áudio padrão",
+    themeMusic: "Música tema",
+    themeMusicDesc: "Toca a música tema de um título na página de detalhes (requer músicas tema na biblioteca).",
+    settingsRemote: "Controle remoto",
+    remoteDigitSeek: "Pular com os botões numéricos",
+    remoteDigitSeekDesc: "Os botões numéricos pulam para 0–90 % da duração durante a reprodução (5 = metade).",
+    remoteChannelZap: "Zapping com os botões de canal",
+    remoteChannelZapDesc: "Canal para cima/baixo muda para o próximo episódio ou o anterior.",
+    remoteColorButtons: "Botões coloridos",
+    remoteColorButtonsDesc: "Ativos apenas durante a reprodução. Fora dela, os botões coloridos não fazem nada.",
+    remoteButtonAction: "Ação do botão",
+    remoteActionPlayPause: "Reproduzir/Pausar",
+    subtitleLanguage: "Legendas padrão",
+    subtitlePositionDesc: "Só para legendas de texto. Bem embaixo, cabem quase sempre na barra preta dos filmes muito largos.",
+    positionLowest: "Bem embaixo",
+    subtitleSmart: "Só com áudio em outro idioma",
+    autoSkipIntro: "Pular abertura automaticamente",
+    autoSkipDesc: "Pula as aberturas automaticamente (requer o plugin Intro Skipper).",
+    autoSkipRecap: "Pular resumo automaticamente",
+    autoSkipRecapDesc: "Pula automaticamente o resumo dos episódios anteriores (requer o plugin Intro Skipper).",
+    autoSkipOutro: "Pular créditos automaticamente",
+    autoSkipOutroDesc: "Pula automaticamente para o próximo episódio durante os créditos.",
+
+    // Search
+    searchPlaceholder: "Digite para pesquisar…",
+
+    // Settings — Display
+    settingsDisplay: "Aparência",
+    displayEpisodeCount: "Episódios não assistidos",
+    episodesLeft: "para ver",
+    displayLibraries: "Minhas mídias",
+    displayHistory: "Assistidos recentemente",
+    displayRecommendations: "Recomendações (“Porque você assistiu…”)",
+    displayBackdropPreview: "Prévia do fundo",
+    groupHome: "Tela inicial",
+    groupWatchTogether: "Assistir juntos",
+    groupPlayer: "Player",
+    displayDetailsLogo: "Título como logotipo em vez de texto",
+    uiSizeDesc: "Dimensiona o texto, os cartões e o menu em todo o aplicativo.",
+    accentColorDesc: "Altera a cor de destaque usada em todo o aplicativo.",
+    uiFontDesc: "Muda a fonte de todo o app. As legendas têm a sua própria configuração.",
+    chapterNext: "Próximo capítulo",
+    recentlyWatched: "Assistidos recentemente",
+    displayLogo: "Logotipo",
+
+    // Settings — OLED
+    screensaverSection: "Protetor de tela",
+    clockDesc: "Mostra a hora no canto superior direito, também no player.",
+    clockFormatDesc: "Vale também para o protetor de tela e o horário de término na página de detalhes.",
+    screensaverTitle: "Protetor de tela",
+    screensaverDesc: "Protege a tela OLED contra a retenção de imagem durante a inatividade. Desligado, o protetor de tela da própria TV assume.",
+    screensaverModeArtDesc: "Fundos desfocados que se fundem, com o título.",
+    screensaverArtWatched: "Assistidos / assistindo",
+    screensaverArtUnwatched: "Ainda não assistidos",
+    screensaverArtFavorites: "Favoritos / minha lista",
+
+    // Settings — Profile
+    savePasswords: "Salvar a senha para trocar de usuário rapidamente",
+    resetPrefs: "Redefinir configurações",
+    resetPrefsDesc: "Só este perfil, de volta ao padrão.",
+    resetPrefsDone: "Todas as configurações voltaram ao padrão.",
+    resetPrefsTitle: "Redefinir todas as configurações?",
+    resetPrefsText: "Cada configuração deste perfil volta ao padrão. Continuam como estão: o idioma, Ver juntos e a senha salva.",
+    resetPrefsConfirm: "Redefinir",
+    screensaverPreview: "Prévia",
+    screensaverPreviewDesc: "Inicia agora com estas configurações. Qualquer tecla encerra.",
+    fastSwitchDesc: "Permite entrar sem digitar a senha neste dispositivo.",
+
+    // Settings — Security
+    sharedWatching: "Perfil compartilhado",
+    sharedNeedsLogin: "Login necessário",
+    sharedQuickConnect: "Confirmar no outro celular",
+    sharedInvalidChoice: "Este perfil não serve aqui: é o seu ou já foi escolhido.",
+    password: "Senha",
+    watchTogetherEmpty: "Não há nada de novo para os dois aqui.",
+    syncPlayIntro: "Assista em sincronia com outras pessoas — a reprodução fica sincronizada para todo o grupo.",
+    joinGroup: "Entrar",
+    changePassword: "Alterar senha",
+    currentPassword: "Senha atual",
+    newPassword: "Nova senha",
+    save: "Salvar",
+    pwChangedSuccess: "Senha alterada com sucesso!",
+    pwChangedError: "Erro ao alterar a senha.",
+    changePwDesc: "Atualize a sua senha do Jellyfin.",
+
+    // Quick Connect
+    quickConnect: "Conexão rápida",
+    qcInstruction: "Digite este código no seu aplicativo Jellyfin (celular/web) em “Conexão rápida”:",
+    qcQrHint: "Escaneie com um celular conectado ao Jellyfin.",
+    qcAuthInstruction: "Digite um código de 6 dígitos de outro dispositivo para autorizá-lo:",
+    qcPlaceholder: "ex.: 123456",
+
+    // Settings — Account
+    statusSection: "Status / Registros",
+    debugLogging: "Registro de diagnóstico",
+    debugLoggingDesc: "Registra diagnósticos detalhados sobre reprodução, legendas e SyncPlay — útil para relatar um problema. Desativado por padrão; vale para todos os perfis nesta TV.",
+    statusAppVersion: "Versão do app",
+
+    renamePlaylist: "Renomear lista",
+    deletePlaylist: "Excluir lista de reprodução",
+    deletePlaylistConfirm: "Excluir esta lista de reprodução permanentemente?",
+
+    playbackInfo: "Informações de reprodução",
+    playbackInfoDesc: "Adiciona ao player um botão que mostra como o título está sendo reproduzido (direto ou convertido, codec, taxa de bits).",
+    infoDropped: "Quadros perdidos",
+
+    statusTv: "TV",
+    statusCodecsBrowser: "Codecs (decodificador do navegador)",
+    statusOnlyOnTv: "Disponível apenas na TV",
+
+    statusAtmosHint: "Com uma soundbar via (e)ARC pode aparecer Não mesmo que o Atmos funcione — a TV encaminha o som para a soundbar.",
+
+    // In-App-Log-Viewer
+    logShow: "Mostrar registro",
+    logShowDesc: "Ver o registro atual, compartilhar as últimas linhas como código QR ou enviá-lo para o seu servidor Jellyfin.",
+    helpFaqHint: "Escaneie com o celular para abrir a wiki e as FAQ do OcenFin.",
+    logTitle: "Registro",
+    logEmpty: "Nenhuma entrada ainda.",
+    logSending: "Enviando…",
+    logSent: "Enviado. Está no servidor como {file} — um administrador o encontra no painel do Jellyfin, em Logs.",
+    logSendDisabled: "O servidor não aceita registros de aplicativos. Um administrador pode permitir isso no painel do Jellyfin.",
+    logSendFailed: "Não foi possível enviar o registro.",
+    logQrHint: "Escaneie com o celular para baixar as últimas linhas (ex.: por e-mail).",
+
+    // Subtitle styling (text only)
+    subtitleStyleHint: "Só para legendas de texto. As legendas de imagem mantêm a sua aparência e só podem ser redimensionadas.",
+    subtitlePreviewText: "Onde você estava ontem?\nNo velho farol.",
+    subtitleFontDesc: "Só para legendas de texto, independentemente da fonte do app. As legendas ASS com estilo trazem as suas próprias fontes.",
+
+    // Share
+    share: "Compartilhar",
+    shareHint: "Escaneie com o celular para ver ou compartilhar o título.",
+
+    // Subtitle offset
+    subtitleOffset: "Atraso",
+
+    // Show/hide password
+    showPassword: "Mostrar senha",
+    hidePassword: "Ocultar senha",
+};

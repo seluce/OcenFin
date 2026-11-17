@@ -363,6 +363,40 @@ export async function firstEpisodeOfSeries(seriesId, { serverUrl, userId, header
   } catch (e) { console.error('firstEpisodeOfSeries:', e); return null; }
 }
 
+// "Mark earlier episodes as watched" — for someone who starts a series in the middle or watched part
+// of it elsewhere. Earlier = every regular episode before this one (or before this season), across
+// seasons; specials (season 0) and placeholders for missing episodes stay out, as everywhere else.
+// Offered only where something can come before: not on S1E1, season 1 or a special.
+export function hasEarlierEpisodes(it) {
+  if (!it?.SeriesId) return false;
+  if (it.Type === 'Season') return it.IndexNumber > 1;
+  if (it.Type === 'Episode') return it.ParentIndexNumber >= 1 && it.IndexNumber >= 1 && (it.ParentIndexNumber > 1 || it.IndexNumber > 1);
+  return false;
+}
+
+// Marks them, returns the IDs the server took and how many there were to mark. Jellyfin has no bulk
+// call, so one POST per episode, four at a time — and only for the ones not watched yet, so a title
+// already watched keeps its date and count. A season POST would be fewer requests but may also mark
+// the specials a profile shows inside that season. Throws when the episode list cannot be fetched.
+export async function markEarlierPlayed(it, { serverUrl, userId, headers }) {
+  const S = it.Type === 'Season' ? it.IndexNumber : it.ParentIndexNumber;
+  const E = it.Type === 'Season' ? 0 : it.IndexNumber;
+  const res = await fetch(`${serverUrl}/Items?UserId=${userId}&ParentId=${it.SeriesId}&IncludeItemTypes=Episode&Recursive=true`
+    + `&Filters=IsUnplayed&IsMissing=false&EnableImages=false&EnableTotalRecordCount=false`, { headers });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const todo = ((await res.json()).Items || []).filter(e => e.Type === 'Episode' && e.ParentIndexNumber >= 1
+    && e.IndexNumber != null && (e.ParentIndexNumber < S || (e.ParentIndexNumber === S && e.IndexNumber < E)));
+  const done = [];
+  for (let i = 0; i < todo.length; i += 4) {
+    const batch = todo.slice(i, i + 4);
+    const ok = await Promise.all(batch.map(e =>
+      fetch(`${serverUrl}/UserPlayedItems/${e.Id}?UserId=${userId}`, { method: 'POST', headers }).then(r => r.ok, () => false)));
+    batch.forEach((e, k) => { if (ok[k]) done.push(e.Id); });
+  }
+  if (done.length < todo.length) console.warn('markEarlierPlayed:', todo.length - done.length, 'of', todo.length, 'not taken');
+  return { found: todo.length, done };
+}
+
 // What "play" means for a title: a series → its Next Up, else its first episode; a season → its
 // first unwatched episode, else its first; anything else → itself. One rule for the details page,
 // the home screen's banner, a card's menu and the watchlist's stand-in episode. null when a series

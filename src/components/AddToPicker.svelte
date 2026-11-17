@@ -150,7 +150,7 @@
              failed request it stayed there — Back then bypassed this picker and went to App (in the
              player: playback ended). createNew/addTo ignore a press while busy anyway. -->
         <button onclick={createNew} disabled={!newName.trim()}
-          class="bg-blue-600 hover:bg-blue-500 focus:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold px-6 py-3 rounded-lg focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+          class="bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold px-6 py-3 rounded-lg focus:outline-none focus:ring-4 focus:ring-white transition-colors">
           {i18n.t.create}
         </button>
       </div>

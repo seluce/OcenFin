@@ -1,7 +1,7 @@
 <script>
   import { onMount, tick, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, makeFocusReturn, installConnectionGuard, installEnterRepeatGuard, perfMark, startPerfSampler, asArray, asObject, asNumber } from './utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, makeFocusReturn, installConnectionGuard, installEnterRepeatGuard, isRepeatedEnter, perfMark, startPerfSampler, asArray, asObject, asNumber, asUiSize, asSubSize, asSubPosition, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS } from './utils.js';
   import { startPlatformDiagnostics } from './diag.js';
   import { buildPlayQueue, playableFor } from './playback.js';
   import { session } from './session.svelte.js';
@@ -69,7 +69,10 @@
       }
       const main   = document.querySelector('[data-focus-group="main"]');
       const shown  = main ? [...main.querySelectorAll(CONTENT_FOCUSABLE)].filter(isShown) : [];
-      const target = shown.find(el => !el.closest('[data-hero]')) || shown[0];
+      // The hero only as the last resort — not while the view is still building (aria-busy: the dashboard
+      // holds rows back, §106), or start focus lands on the banner a moment before the first row appears.
+      const target = shown.find(el => !el.closest('[data-hero]'))
+                  || (main?.querySelector('[aria-busy="true"]') ? null : shown[0]);
       if (target) { target.focus(); dlog('[focus]', why, '→', (target.textContent || '').trim().slice(0, 24)); return; }
       if (++tries < maxTries) { setTimeout(attempt, gap); return; }
       onGiveUp?.();
@@ -221,18 +224,17 @@
   // existing profiles (their stored prefs are spread over the OTHER copy) — that paste-twice trap
   // fired once already (theme music). Functions, not shared literals: navOrder/navHidden/navIcons
   // must be fresh references on every call.
-  const defaultDisplaySettings = () => ({ clock: true, hero: true, episodeCount: true, letterBar: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 'medium', theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, seekStep: 30, navOrder: [], navHidden: [], navIcons: {} });
-  const defaultPlaybackPrefs   = () => ({ audioLanguage: 'default', subtitleLanguage: 'default', rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipRecap: false, autoSkipCredits: false, subtitleSize: 'normal', subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
+  const defaultDisplaySettings = () => ({ clock: true, hero: true, episodeCount: true, letterBar: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 100, theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, homeOrder: [], seekBack: 10, seekForward: 30, navOrder: [], navHidden: [], navIcons: {} });
+  const defaultPlaybackPrefs   = () => ({ audioLanguage: 'default', subtitleLanguage: 'default', subtitleSmart: false, rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipRecap: false, autoSkipCredits: false, subtitleSize: 0, subtitlePosition: 7, subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
   let displaySettings = $state(defaultDisplaySettings());
 
   // Playback and subtitle preferences
   let playbackPrefs = $state(defaultPlaybackPrefs());
 
   // ── Profile-specific settings ───────────────────────────────
-  // Language + display + playback + animations are stored PER USER.
-  // Before login (server/user selection) there is no profile yet — there the
-  // last chosen device language ('app_language') applies. The screensaver
-  // stays device-wide (protects the physical OLED panel, user-independent).
+  // Language + display + playback + animations + screensaver are stored PER USER (the screensaver since
+  // 2026-11-17, §115). Before login (server/user selection) there is no profile yet — there the last
+  // chosen device language ('app_language') applies, and the TV's own screensaver.
   let activeUserId = $state(null);
 
   // Load (or reset) the user's watchlist whenever the active profile changes.
@@ -275,7 +277,8 @@
       reduceAnimations,
       librarySorts,
       libraryFilters,
-      sharedProfile
+      sharedProfile,
+      screensaver: screensaverSettings
     }));
   }
 
@@ -297,8 +300,20 @@
     displaySettings.navOrder  = asArray(displaySettings.navOrder);
     displaySettings.navHidden = asArray(displaySettings.navHidden);
     displaySettings.navIcons  = asObject(displaySettings.navIcons);
+    displaySettings.uiSize    = asUiSize(displaySettings.uiSize);   // small/medium/large → percent
+    // Until 2026-11 one step for both directions (seekStep, the HUD buttons only — ◄► were a fixed 10 s):
+    // it becomes the forward step; back starts at 10, as far as ◄ always jumped (CODE-HEALTH §97).
+    const _storedDs = asObject(p.displaySettings);
+    if (_storedDs.seekForward == null && _storedDs.seekStep != null) displaySettings.seekForward = Number(_storedDs.seekStep);
+    delete displaySettings.seekStep;
+    if (!SEEK_BACK_STEPS.includes(Number(displaySettings.seekBack)))       displaySettings.seekBack = 10;
+    if (!SEEK_FORWARD_STEPS.includes(Number(displaySettings.seekForward))) displaySettings.seekForward = 30;
+    displaySettings.seekBack = Number(displaySettings.seekBack); displaySettings.seekForward = Number(displaySettings.seekForward);
     playbackPrefs    = { ...defaultPlaybackPrefs(), ...asObject(p.playbackPrefs) };
+    playbackPrefs.subtitleSize = asSubSize(playbackPrefs.subtitleSize);   // small/normal/large → step
+    playbackPrefs.subtitlePosition = asSubPosition(playbackPrefs.subtitlePosition);
     reduceAnimations = p.reduceAnimations ?? false;
+    screensaverSettings = asScreensaver(p.screensaver);   // per profile since 2026-11-17 (CODE-HEALTH §115)
     librarySorts     = asObject(p.librarySorts);   // remembered sort per library
     libraryFilters   = asObject(p.libraryFilters); // remembered filters per library (Library checks each field)
     sharedProfile    = p.sharedProfile && Array.isArray(p.sharedProfile.members)
@@ -335,8 +350,7 @@
   // entire UI (Tailwind computes in rem), data-theme switches the accent color.
   // Runs reactively on every change of displaySettings (login, toggling, startup).
   $effect.pre(() => { if (typeof document !== 'undefined') {
-    const sizes = { small: '16px', medium: '20px', large: '24px' };
-    document.documentElement.style.fontSize = sizes[displaySettings.uiSize] || '20px';
+    document.documentElement.style.fontSize = `${asUiSize(displaySettings.uiSize) / 5}px`;   // 100 % = 20px
     document.documentElement.setAttribute('data-theme', displaySettings.theme || 'blue');
     // UI font: set on the root, everything inherits (font-mono spots deliberately stay mono).
     // 'system' → remove the inline style → Chromium/webOS default as before. Does NOT apply to
@@ -360,9 +374,38 @@
     saveUserPrefs();
   }
 
-  // One source for the defaults: the initializer here and the merge on load (onMount) — the same
-  // paste-twice trap as the profile prefs above.
-  const defaultScreensaverSettings = () => ({ enabled: true, timeout: 90, mode: 'clock', artSource: 'watched', brightness: 0.45 });
+  // Settings → Profile & Account → "Reset settings" (CODE-HEALTH §112): this profile's own settings back to the
+  // defaults a new profile starts with. Kept: the language (a new profile takes the device's current one too),
+  // watch together (signed-in members, not a setting), the saved password, the search history and the per-series
+  // track memory (history, not settings). The screensaver goes back too — it is per profile since §115. Library reads
+  // sort and filters only when a library opens, so the mounted one is dropped and comes back fresh on the next visit —
+  // as after a profile switch.
+  function resetUserPrefs() {
+    displaySettings  = defaultDisplaySettings();
+    playbackPrefs    = defaultPlaybackPrefs();
+    reduceAnimations = false;
+    screensaverSettings = defaultScreensaverSettings();
+    librarySorts     = {};
+    libraryFilters   = {};
+    libraryMounted   = false;
+    saveUserPrefs();
+  }
+
+  // The screensaver is PER PROFILE (CODE-HEALTH §115): each profile chooses OcenFin's own or — switched off — the TV's,
+  // and a new profile starts with these defaults instead of whatever another one set. Before any sign-in (server and
+  // profile selection) OcenFin's never runs and the TV's takes over, see scheduleScreensaver and the Luna veto.
+  // One source for the defaults: the initializer here and the merge in applyUserPrefs — the same paste-twice trap
+  // as the profile prefs above.
+  const defaultScreensaverSettings = () => ({ enabled: true, timeout: 90, mode: 'clock', artSource: 'random', brightness: 0.45 });
+  // timeout drives setTimeout: a non-numeric value makes that NaN, which fires IMMEDIATELY and then again on every
+  // reschedule — a screensaver flashing over the whole interface, hard to escape with a remote. Clamped rather than
+  // merely defaulted, so an absurd stored number cannot disable it either. brightness likewise, since it reaches CSS.
+  function asScreensaver(v) {
+    const s = { ...defaultScreensaverSettings(), ...asObject(v) };
+    s.timeout    = asNumber(s.timeout, 90, 10, 3600);
+    s.brightness = asNumber(s.brightness, 0.45, 0, 1);
+    return s;
+  }
   let screensaverSettings = $state(defaultScreensaverSettings());
   let showScreensaver     = $state(false);
   // Theme music yields to the screensaver: silence while it is up, resume when it goes.
@@ -407,17 +450,38 @@
 
   // While the screensaver is running, use the first keypress ONLY to wake and swallow it
   // (capture phase + stopImmediatePropagation) so it doesn't also e.g. toggle the paused playback
-  // or trigger something under the screensaver.
+  // or trigger something under the screensaver. A held OK's repeats are swallowed WITHOUT waking: they
+  // belong to the press that started the preview (a timed screensaver never meets one — any held key
+  // keeps resetting the timer).
   $effect(() => {
     if (!showScreensaver) return;
-    const swallow = (e) => { e.preventDefault(); e.stopImmediatePropagation(); resetActivity(); };
+    const swallow = (e) => { e.preventDefault(); e.stopImmediatePropagation(); if (!isRepeatedEnter()) resetActivity(); };
     window.addEventListener('keydown', swallow, true);
     return () => window.removeEventListener('keydown', swallow, true);
   });
 
+  // Settings → Screen saver → "Preview" (CODE-HEALTH §113): the real screensaver, now, with the current settings.
+  // Started after the click has run its course — it bubbles on to the window's onclick, which would wake it in the
+  // same moment. Pointer movement counts only after a moment: the Magic Remote's pointer trembles in the hand that
+  // just pressed. Keys and clicks wake it at once, as always; focus is still on the button afterwards (the
+  // screensaver takes none).
+  let screensaverPointerQuietUntil = 0;
+  function previewScreensaver() {
+    setTimeout(() => {
+      if (appPhase !== 'app') return;
+      screensaverPointerQuietUntil = Date.now() + 1500;
+      showScreensaver = true;
+      screensaverShownAt = Date.now();
+    }, 0);
+  }
+  function pointerActivity() {
+    if (showScreensaver && Date.now() < screensaverPointerQuietUntil) return;
+    resetActivity();
+  }
+
   function onScreensaverSettingsChange(v) {
     screensaverSettings = v;
-    localStorage.setItem('screensaver_settings', JSON.stringify(screensaverSettings));
+    saveUserPrefs();
     scheduleScreensaver();
   }
 
@@ -513,6 +577,7 @@
   // ── Shared suggestions (dashboard row "For you both") ──────────────────────
   let sharedSuggestions = $state([]);
   let _loadedSugKey     = null;
+  let sharedSugDoneKey  = $state('');   // the members the row was computed for — the dashboard holds the rows below it until it matches (§106)
   let sharedSugKey = $derived((sharedReady && displaySettings.sharedSuggestions)
                     ? sharedProfile.members.filter(m => m?.id).map(m => m.id).join('|') : '');
   $effect(() => { if (!sharedSugKey && sharedSuggestions.length) sharedSuggestions = []; });
@@ -849,8 +914,24 @@
   function persistSharedTokens() {
     localStorage.setItem('jellyfin_shared_tokens_v1', JSON.stringify(sharedTokens));
   }
-  function loadScreensaverSettings() {
-    try { return asObject(JSON.parse(localStorage.getItem('screensaver_settings') || '{}')); } catch { return {}; }
+  // Until 2026-11-17 the screensaver was one device-wide record (`screensaver_settings`). It goes, once, into every
+  // profile that has signed in here and has no screensaver of its own yet — each keeps exactly what it saw — and the
+  // key is removed. A profile that never signed in on this TV starts with the defaults (§115).
+  function migrateScreensaverSettings() {
+    const raw = localStorage.getItem('screensaver_settings');
+    if (raw == null) return;
+    let old = {};
+    try { old = asObject(JSON.parse(raw)); } catch { }
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k?.startsWith('user_prefs_')) continue;
+      let p;
+      try { p = asObject(JSON.parse(localStorage.getItem(k) || '{}')); } catch { continue; }
+      if (p.screensaver) continue;
+      p.screensaver = old;
+      localStorage.setItem(k, JSON.stringify(p));
+    }
+    localStorage.removeItem('screensaver_settings');
   }
 
   /**
@@ -953,13 +1034,7 @@
     savedServers        = loadSavedServers();
     savedTokens         = loadSavedTokens();
     sharedTokens        = loadSharedTokens();
-    screensaverSettings = { ...defaultScreensaverSettings(), ...loadScreensaverSettings() };
-    // timeout drives setTimeout: a non-numeric value makes that NaN, which fires IMMEDIATELY and
-    // then again on every reschedule — a screensaver flashing over the whole interface, hard to
-    // escape with a remote. Clamped rather than merely defaulted, so an absurd stored number
-    // cannot disable it either. brightness likewise, since it reaches CSS.
-    screensaverSettings.timeout    = asNumber(screensaverSettings.timeout, 90, 10, 3600);
-    screensaverSettings.brightness = asNumber(screensaverSettings.brightness, 0.45, 0, 1);
+    migrateScreensaverSettings();   // device-wide → per profile, once (§115); applyUserPrefs loads it
     setDebug(localStorage.getItem('ocenfin_debug') === '1');   // device-wide diagnostic logging (opt-in)
     startPlatformDiagnostics();   // "[diag]" lines for the move to webOS 26 — debug only, changes nothing (§71)
 
@@ -1416,7 +1491,7 @@
       } catch { return null; }
     }))).filter(Boolean);
     if (_loadedSugKey !== myKey || activeUserId !== myUser) return;   // superseded meanwhile
-    if (!memberData.length) { sharedSuggestions = []; return; }
+    if (!memberData.length) { sharedSuggestions = []; sharedSugDoneKey = myKey; return; }
 
     // Genre weights: genres that ALL members have watched (product of the counts → "both like it").
     const allGenres = new Set();
@@ -1447,6 +1522,7 @@
       .sort((a, b) => b.score - a.score || (b.it.CommunityRating || 0) - (a.it.CommunityRating || 0))
       .slice(0, 12)   // uniform dashboard row length (ROW_LIMIT in Dashboard.svelte)
       .map(x => ({ ...x.it, UserData: {} }));   // clear UserData → no progress bar of a member
+    sharedSugDoneKey = myKey;
     dlog('[Shared] suggestions:', sharedSuggestions.length);
   }
 
@@ -1533,7 +1609,7 @@
     // one's dashboard until that one's own scan replaced it.
     contextItem = null; contextPickerMode = null; contextPickerItem = null;
     showExitConfirm = false; exitFocus.cancel();
-    sharedSuggestions = []; _loadedSugKey = null;
+    sharedSuggestions = []; _loadedSugKey = null; sharedSugDoneKey = '';
     _partnersSeq++; partnersPlayedIds = null;   // an in-flight library scan must not publish
     viewState = 'dashboard';
     apiCache.dashboard = null;   // clear cache (property mutation instead of reassignment → shared reference stays)
@@ -2225,8 +2301,8 @@
 
 <svelte:window
   onkeydown={resetActivity}
-  onmousemove={resetActivity}
-  onpointermove={resetActivity}
+  onmousemove={pointerActivity}
+  onpointermove={pointerActivity}
   onclick={resetActivity}
 />
 
@@ -2272,30 +2348,33 @@
 
   /* TV scaling (10-foot UI): raises the rem-based base size so text and
      spacing look larger from couch distance. Standard browsers are 16px; 20px = +25%.
-     The baseline before the appearance effect applies uiSize (small/medium/large) inline. */
+     The baseline before the appearance effect applies uiSize (80–120 %) inline. */
   :global(html) { font-size: 20px; }
 
   /* Accent color themes: in Tailwind v4 all blue utilities use CSS variables.
      We override only these → the whole accent color switches without touching 100+
      classes. Red (favorite) and green (watched) stay untouched. The tones are
-     chosen to be OLED-friendly (vivid, slightly desaturated, good on deep black). */
+     chosen to be OLED-friendly (vivid, slightly desaturated, good on deep black).
+     600 carries white text (buttons, labels, selected states), so it must reach 4.5:1 against white:
+     emerald, amber, sky, teal and orange therefore use the lightest tone between their 600 and 700 that
+     reaches 4.6:1 (OKLab mix, CODE-HEALTH §96) — darker would dull them for nothing. */
   :global(html[data-theme="emerald"]) {
-    --color-blue-300:#6ee7b7; --color-blue-400:#34d399; --color-blue-500:#10b981; --color-blue-600:#059669; --color-blue-900:#064e3b;
+    --color-blue-300:#6ee7b7; --color-blue-400:#34d399; --color-blue-500:#10b981; --color-blue-600:#04855f; --color-blue-900:#064e3b;
   }
   :global(html[data-theme="violet"]) {
     --color-blue-300:#c4b5fd; --color-blue-400:#a78bfa; --color-blue-500:#8b5cf6; --color-blue-600:#7c3aed; --color-blue-900:#4c1d95;
   }
   :global(html[data-theme="amber"]) {
-    --color-blue-300:#fcd34d; --color-blue-400:#fbbf24; --color-blue-500:#f59e0b; --color-blue-600:#d97706; --color-blue-900:#78350f;
+    --color-blue-300:#fcd34d; --color-blue-400:#fbbf24; --color-blue-500:#f59e0b; --color-blue-600:#bb5909; --color-blue-900:#78350f;
   }
   :global(html[data-theme="rose"]) {
     --color-blue-300:#fda4af; --color-blue-400:#fb7185; --color-blue-500:#f43f5e; --color-blue-600:#e11d48; --color-blue-900:#881337;
   }
   :global(html[data-theme="sky"]) {
-    --color-blue-300:#7dd3fc; --color-blue-400:#38bdf8; --color-blue-500:#0ea5e9; --color-blue-600:#0284c7; --color-blue-900:#0c4a6e;
+    --color-blue-300:#7dd3fc; --color-blue-400:#38bdf8; --color-blue-500:#0ea5e9; --color-blue-600:#027bbb; --color-blue-900:#0c4a6e;
   }
   :global(html[data-theme="teal"]) {
-    --color-blue-300:#5eead4; --color-blue-400:#2dd4bf; --color-blue-500:#14b8a6; --color-blue-600:#0d9488; --color-blue-900:#134e4a;
+    --color-blue-300:#5eead4; --color-blue-400:#2dd4bf; --color-blue-500:#14b8a6; --color-blue-600:#0f837a; --color-blue-900:#134e4a;
   }
   :global(html[data-theme="indigo"]) {
     --color-blue-300:#a5b4fc; --color-blue-400:#818cf8; --color-blue-500:#6366f1; --color-blue-600:#4f46e5; --color-blue-900:#312e81;
@@ -2304,7 +2383,12 @@
     --color-blue-300:#f0abfc; --color-blue-400:#e879f9; --color-blue-500:#d946ef; --color-blue-600:#c026d3; --color-blue-900:#701a75;
   }
   :global(html[data-theme="orange"]) {
-    --color-blue-300:#fdba74; --color-blue-400:#fb923c; --color-blue-500:#f97316; --color-blue-600:#ea580c; --color-blue-900:#7c2d12;
+    --color-blue-300:#fdba74; --color-blue-400:#fb923c; --color-blue-500:#f97316; --color-blue-600:#ce480c; --color-blue-900:#7c2d12;
+  }
+  /* Graphite: no colour at all, the UI's own gray family one step lighter than its surfaces — 600 = gray-500
+     (white text 4.83:1), 500 = gray-400, clearly above a switched-off toggle's gray-600 (CODE-HEALTH §96). */
+  :global(html[data-theme="graphite"]) {
+    --color-blue-300:#e5e7eb; --color-blue-400:#d1d5db; --color-blue-500:#9ca3af; --color-blue-600:#6b7280; --color-blue-900:#374151;
   }
 
   /* Splash screen: logo pulses gently, overlay fades out */
@@ -2477,8 +2561,10 @@
             recommendationRows={displaySettings.recommendationRows}
             showLatest={displaySettings.latest}
             showCollections={displaySettings.collections}
+            homeOrder={displaySettings.homeOrder}
             {sharedSuggestions}
             showSharedSuggestions={sharedReady && displaySettings.sharedSuggestions}
+            sharedSuggestionsReady={sharedSugDoneKey === sharedSugKey}
             onOpenLibrary={(lib) => navigateToLibrary(lib, true)}
             onLibrariesLoaded={(libs) => navLibraries = libs}
             onOpenDetails={(item) => showItemDetails(item)}
@@ -2507,12 +2593,14 @@
             onSwitchUser={handleSwitchUser}
             onLogout={handleLogout}
             onScreensaverChange={onScreensaverSettingsChange}
+            onPreviewScreensaver={previewScreensaver}
             onReduceAnimationsChange={onReduceAnimationsChange}
             onDisplayChange={onDisplayChange}
             onReorderingChange={(v) => navReordering = v}
             onProfileImageChanged={refreshSelectedUser}
             onPlaybackPrefsChange={onPlaybackPrefsChange}
             onClearCache={clearCache}
+            onResetPrefs={resetUserPrefs}
           />
           {/await}
         {:else if viewState === 'details' && currentDetailItem}
@@ -2528,6 +2616,7 @@
             onOpenPerson={(person) => openPerson(person)}
             onOpenCollection={(col) => openCollection(col)}
             onLibChanged={refreshLibraries}
+            onProgressChanged={() => resumeStale = true}
             onPlayVideo={startPlayback}
           />
 
@@ -2602,7 +2691,8 @@
           {selectedUser} {playbackPrefs} {use24h}
           showClock={displaySettings.clock}
           showChapters={displaySettings.showChapters}
-          seekStep={displaySettings.seekStep}
+          seekBack={displaySettings.seekBack}
+          seekForward={displaySettings.seekForward}
           selectedAudioIndex={activeAudioIndex}
           selectedSubtitleIndex={activeSubtitleIndex}
           mediaSourceId={activeMediaSourceId}
@@ -2652,6 +2742,7 @@
       userId={activeUserId}
       onClose={() => contextItem = null}
       onChanged={onContextChanged}
+      onProgressChanged={() => resumeStale = true}
       onOpenDetails={contextOpenDetails}
       onPlay={contextPlay}
       onAddToList={contextAddToList}
@@ -2695,7 +2786,7 @@
   {#if showScreensaver}
     <Screensaver {use24h} userId={activeUserId}
       mode={screensaverSettings.mode} artSource={screensaverSettings.artSource} brightness={screensaverSettings.brightness}
-      onDismiss={resetActivity} />
+      onDismiss={pointerActivity} />
   {/if}
 
 </main>

@@ -3,6 +3,77 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## 2026.11.17
+
+### Added
+
+- **Mark earlier episodes as watched.** For a series started in the middle or partly watched elsewhere, the
+  menu of an episode or a season marks every episode before it in one go, leaving specials out.
+- **Brazilian Portuguese.** A language of its own in the menu, next to European Portuguese, and a TV set to
+  Portuguese (Brazil) starts in it.
+- **The next film of a collection.** At the credits of a film that belongs to a collection, a card offers the
+  next part, the same card as for the next episode, but a film never starts on its own.
+- **Interface size in five steps.** The setting now goes from 80 to 120 percent in steps of ten, with a step
+  between each of the old small, medium and large.
+- **Skipping back and forward on their own, faster when held.** ◄► now jump as far as set, with separate
+  steps for back and forward, and held down they scrub faster the longer they are held.
+- **Graphite accent.** A neutral grey next to the ten colours, for an interface without any colour.
+- **Subtitle size in five steps.** From very small to very large, with a step between normal and each end; a
+  size chosen before stays as it was.
+- **Height of text subtitles.** Four steps from lowest to higher; at the lowest, two lines fit into the black
+  bar of very wide films.
+- **Subtitles only for foreign-language audio.** With a subtitle language chosen, a new switch shows them only
+  when the audio is in another language, and otherwise just the forced ones, as Jellyfin's "Smart" mode does.
+- **Home screen rows in your own order.** Under Settings → Content → Home screen the rows move the same way as
+  the menu entries, and each can still be switched off there; only the banner stays on top.
+- **Subtitle preview.** Under Settings → Subtitles, choosing a style option opens a small window for a few seconds
+  in which a sample line turns from the old look into the new one, over a coast at sunset drawn so that every
+  style shows its difference.
+- **Reset settings.** Next to Clear cache under Settings → Profile & Account, one button puts every setting of your
+  profile back to its default after asking; the language, watch together and the saved password stay.
+- **Screen saver preview.** A last row in the screen saver settings starts it right away with what you chose; any
+  key ends it.
+- **Favourites and watchlist in the gallery.** The screen saver's pictures can now come from the titles you marked
+  yourself; the four sources sit in two rows, and random titles are the new default.
+
+### Changed
+
+- **Settings in a clearer order.** Content now covers the home screen, library and details page, theme music and
+  watch together included; the clock moved to Appearance, the logo to Navigation, and the two account
+  categories became one, Profile & Account.
+- **Gallery screen saver straight away.** It stays black for the moment the first picture needs and then fades
+  into it, instead of showing the clock first; the clock only stands in when there are no pictures.
+- **Screen saver per profile.** Each profile chooses its own, or switches it off and lets the TV's screen saver take
+  over; what was set so far stays with every profile, a new one starts fresh.
+- **No clock in place of an empty gallery.** If the chosen source has nothing yet, such as no favourites or nothing
+  watched, the gallery shows random titles instead.
+- **No still picture from a single title.** If the chosen source holds just one title, it takes turns with random
+  ones, so the picture keeps changing.
+
+### Fixed
+
+- **"Recently watched" without repeats.** A series you are in the middle of stood there and under "Up next" at
+  the same time; the row now keeps to what you finished, and the rest stays in the rows above.
+- **Screensaver times all in minutes.** The choices read 1 min, 90 sec, 2 min and 5 min; the second one is now
+  1.5 min, written the way the language writes decimals.
+- **The full subtitle track of the chosen language.** When a film has the language twice, the full track now
+  wins over the forced one, which often comes first and only translates signs and foreign lines.
+- **White text readable on every accent colour.** Buttons and labels in emerald, amber, sky, teal and orange
+  are a little deeper now, and a focused button no longer turns paler.
+- **The accent colour everywhere.** The glow around the seek bar's handle and a small text in the screensaver
+  settings stayed blue, whatever colour was chosen.
+- **A film is called a film in the player.** Playing a collection with "Play all", the countdown, the end card
+  and the buttons spoke of the next episode; they now say film.
+- **Collections in the right order.** A film series is listed and played by release date, or in the order set
+  on the server, instead of alphabetically, which put part 3 of a trilogy before part 2.
+- **Trailers in the app's language.** When Jellyfin knows several trailers for a title, the one whose name
+  says the app's language plays, instead of always the first, which was often an older English one.
+- **Sharing a season or an episode names the series.** The share dialog shows the series above "Season 2" or
+  "S2:E1 · title", and the QR code opens that season's or episode's own page instead of just the series.
+- **Buttons on a details page stay on one line.** "From start" and "Shuffle" no longer break into
+  two or three lines in longer languages; at the larger interface sizes the round buttons move to a second row
+  if needed.
+
 ## 2026.11.14
 
 ### Added

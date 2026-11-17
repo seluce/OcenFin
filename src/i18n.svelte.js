@@ -11,6 +11,7 @@ import nl from './locales/nl.js';
 import es from './locales/es.js';
 import it from './locales/it.js';
 import pt from './locales/pt.js';
+import ptBR from './locales/pt-BR.js';
 import ro from './locales/ro.js';
 import pl from './locales/pl.js';
 import cs from './locales/cs.js';
@@ -35,6 +36,8 @@ export const translations = {
   es: withFallback(es),
   it: withFallback(it),
   pt: withFallback(pt),
+  // A regional variant holds only what it says differently and lies over its base, then en.
+  'pt-BR': withFallback({ ...pt, ...ptBR }),
   ro: withFallback(ro),
   pl: withFallback(pl),
   cs: withFallback(cs),
@@ -77,8 +80,21 @@ export const LANGUAGES = [
   { key: 'ko', name: '한국어',      flag: '🇰🇷', codes: ['kor', 'ko'] },
 ];
 
+// Interface variants of a language listed above — a second text, not a second language. Audio and
+// subtitle preferences and the subtitle search stay on LANGUAGES: a stream tagged "por" is Portuguese
+// either way. Only the app-language menu lists these, right after their base, which is also where the
+// own-name order puts them ("Português" < "Português (Brasil)").
+const VARIANTS = [
+  { key: 'pt-BR', base: 'pt', name: 'Português (Brasil)', flag: '🇧🇷' },
+];
+export const UI_LANGUAGES = LANGUAGES.flatMap(l => [l, ...VARIANTS.filter(v => v.base === l.key)]);
+
+// The LANGUAGES key an interface language belongs to: "pt-BR" → "pt", "de" → "de". For anything that
+// looks the app language up in LANGUAGES (subtitle search, trailer choice).
+export const baseLang = (code) => VARIANTS.find(v => v.key === code)?.base ?? code;
+
 // Detects the UI language at startup: last chosen language → otherwise the device language of the
-// TV/browser (e.g. "de-DE" → "de") → otherwise English. Matched against the EXISTING
+// TV/browser (a variant by its full tag, "pt-BR"; else the base, "de-DE" → "de") → otherwise English. Matched against the EXISTING
 // translations (Object.keys(translations)) so newly added languages take effect automatically
 // and anything unknown falls back cleanly to English.
 export function detectUiLang() {
@@ -92,7 +108,10 @@ export function detectUiLang() {
     : [];
   for (const raw of navLangs) {
     if (!raw) continue;
-    const sub = String(raw).toLowerCase().split('-')[0];          // "de-DE" -> "de"
+    const tag = String(raw).toLowerCase();
+    const exact = supported.find(k => k.toLowerCase() === tag);   // "pt-BR" -> the variant
+    if (exact) return exact;
+    const sub = tag.split('-')[0];                                // "de-DE" -> "de"
     if (supported.includes(sub)) return sub;                      // direct hit (2 letters)
     const viaCode = LANGUAGES.find(l => l.codes.includes(sub));   // map 3-letter codes (ger/eng ...)
     if (viaCode && supported.includes(viaCode.key)) return viaCode.key;
