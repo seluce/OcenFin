@@ -9,6 +9,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 - **Outlined subtitles readable on the TV.** With the outline style, the black edge covered most of each letter
   on webOS 25; it now runs around the letters, as it always did in a desktop browser.
+- **Menu no longer opens by itself with webOS 26's engine.** In tests with that browser engine, a pointer that
+  had not moved opened the menu at start; the menu and hints now react only when the pointer really moves.
 
 ### Internal
 

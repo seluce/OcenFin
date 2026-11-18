@@ -586,10 +586,16 @@ export function hint(delay = 350) {
     });
     observer.observe(node, { attributes: true, attributeFilter: ['aria-label'] });
 
+    // The pointer counts only when a hand moves it (§122, as spatialnav's focus): Chromium 132 (webOS 26) reports a
+    // resting cursor as entering whatever lands under it, as a trusted mouseenter — the hint would open by itself.
+    let hovered = false;
+    function onPointerMove(e) { if (!hovered && (e.movementX || e.movementY)) { hovered = true; show(); } }
+    function onLeave() { hovered = false; destroy(); }
+
     node.addEventListener('focus', show);
     node.addEventListener('blur', destroy);
-    node.addEventListener('mouseenter', show);
-    node.addEventListener('mouseleave', destroy);
+    node.addEventListener('pointermove', onPointerMove, { passive: true });
+    node.addEventListener('mouseleave', onLeave);
     window.addEventListener(HIDE_HINTS, destroy);
     return () => {
       window.removeEventListener(HIDE_HINTS, destroy);
@@ -597,8 +603,8 @@ export function hint(delay = 350) {
       destroy();
       node.removeEventListener('focus', show);
       node.removeEventListener('blur', destroy);
-      node.removeEventListener('mouseenter', show);
-      node.removeEventListener('mouseleave', destroy);
+      node.removeEventListener('pointermove', onPointerMove);
+      node.removeEventListener('mouseleave', onLeave);
     };
   };
 }
