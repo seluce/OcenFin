@@ -16,6 +16,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 - **Updated ASS subtitle engine.** JASSUB 2.5.38 brings a newer libass that lays out text faster and reads damaged
   subtitle files more safely.
+- **Updated Svelte.** Svelte 5.58.0 brings small fixes to the order in which the interface updates itself; nothing
+  changes on screen.
 
 ## 2026.11.17
 
