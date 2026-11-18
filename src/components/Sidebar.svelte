@@ -70,8 +70,9 @@
 <!-- The sidebar expands on focus/hover of its child buttons (a container-level enhancement) and
      delegates D-pad keys to the nav manager. It stays a <nav> landmark; an interactive role would
      misrepresent a navigation region that holds multiple buttons.
-     Hover = a pointer that really MOVES over it, not mouseenter (CODE-HEALTH §122): Chromium 132 (webOS 26) reports a
-     resting cursor as entering whatever lands under it — right at start, at (0,0), which is this bar. -->
+     Hover = a pointer that really MOVES over it, not mouseenter (CODE-HEALTH §122): Chrome for Testing 132 (webOS 26's
+     engine) reports a resting cursor as entering whatever lies at (0,0) right at start, which is this bar. LG's own
+     webOS 26 build (simulator) does not, but a hover is a moving pointer either way, as for spatialnav's focus. -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <nav
   data-focus-group="sidebar"

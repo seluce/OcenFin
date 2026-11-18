@@ -586,8 +586,8 @@ export function hint(delay = 350) {
     });
     observer.observe(node, { attributes: true, attributeFilter: ['aria-label'] });
 
-    // The pointer counts only when a hand moves it (§122, as spatialnav's focus): Chromium 132 (webOS 26) reports a
-    // resting cursor as entering whatever lands under it, as a trusted mouseenter — the hint would open by itself.
+    // The pointer counts only when a hand moves it (§122, as spatialnav's focus): Chrome for Testing 132 (webOS 26's
+    // engine) reports a resting cursor as entering, as a trusted mouseenter — the hint would open by itself there.
     let hovered = false;
     function onPointerMove(e) { if (!hovered && (e.movementX || e.movementY)) { hovered = true; show(); } }
     function onLeave() { hovered = false; destroy(); }
