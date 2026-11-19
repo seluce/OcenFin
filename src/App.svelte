@@ -1688,7 +1688,7 @@
     else if (viewState === 'details')  { if (!detailsRef?.handleBackKey()) returnFromDetails(); e.preventDefault(); }
     else if (viewState === 'person')   { returnFromPerson();           e.preventDefault(); }
     else if (viewState === 'collection') { if (!collectionRef?.handleBackKey()) returnFromCollection(); e.preventDefault(); }
-    else if (viewState === 'library')  { backToDashboard('library');   e.preventDefault(); }
+    else if (viewState === 'library')  { if (!libraryRef?.handleBackKey()) backToDashboard('library'); e.preventDefault(); }
     else if (viewState === 'settings') { backToDashboard('settings');  e.preventDefault(); }
     else if (viewState === 'search')   { backToDashboard('search');    e.preventDefault(); }
     else if (viewState === 'favorites') { backToDashboard('favorites'); e.preventDefault(); }

@@ -7,8 +7,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Added
 
-- **Info preview in the library.** Optional: resting on a title for two seconds shows its rating, genres and plot
-  next to the poster, without opening the details page.
+- **Info preview in the library.** Optional: two seconds on a title show its rating, genres and plot next to the
+  poster, and single steps with the arrows then take the box along from title to title.
 
 ### Fixed
 

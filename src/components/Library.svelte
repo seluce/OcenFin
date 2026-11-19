@@ -103,68 +103,115 @@
   // ── Info preview (opt-in, CODE-HEALTH §124) ─────────────────
   // Two seconds at rest on a card: rating, genres and plot in a box beside it, the rest of the library dimmed — the
   // card stays bright. A key before the two seconds are up starts them again, so it never shows while a key is held —
-  // not even one that moves nothing, like ▼ in the last row. Once shown, any key, a focus change or a scroll takes it
-  // away at once (the key still does its job). Not focusable, never catches the pointer.
+  // not even one that moves nothing, like ▼ in the last row. Once it is open, ONE calm arrow step takes it along to
+  // the next title at once (reading a row); a held or hurried arrow, any other key, the pointer or a scroll close it,
+  // and Back closes only the box (App asks handleBackKey). Not focusable, never catches the pointer.
   const INFO_DELAY = 2000;
+  const FOLLOW_GAP = 300;           // ms: arrows closer than this are scrolling, not reading
   const INFO_TYPES = new Set(['Movie', 'Series', 'BoxSet']);
-  let info = $state(null);          // { item, extra, x, w, top, minTop, maxBottom, hole: {x,y,w,h} } while shown
+  const ARROWS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
+  const NO_EXTRA = { Overview: '', Genres: [] };
+  let info = $state(null);          // { item, extra, follow, x, w, top, minTop, maxBottom, scrollTop, hole } while shown
   let rootEl;
   let infoTimer, infoPrefetch, infoToken = 0;
   let infoFor = null;               // { item, card } from the focus until hideInfo(): waiting or shown
+  let followArmed = false, lastStep = 0;
   const infoCache = new Map();      // id → { Overview, Genres }, bounded: browsing 500 titles must not keep 500 plots
+  const infoLoading = new Map();    // id → promise of its entry, while a request for it runs
   function infoExtra(item) {
-    const hit = infoCache.get(item.Id);
-    if (hit) return Promise.resolve(hit);
-    // Overview and Genres are not in the list query (every 25-card page would carry 25 plots); one small request,
-    // started a second before the box shows.
-    return fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&Ids=${item.Id}&Fields=Overview,Genres&EnableTotalRecordCount=false`, authOpts())
-      .then(r => r.ok ? r.json() : null)
+    if (infoCache.has(item.Id)) return Promise.resolve(infoCache.get(item.Id));
+    if (!infoLoading.has(item.Id)) loadExtras(item);
+    return infoLoading.get(item.Id);
+  }
+  // Overview and Genres are not in the list query (every page would carry its plots): ONE request for the title and
+  // the ones around it in the grid — where a reader steps next — leaving out what is cached or already on its way.
+  function loadExtras(item) {
+    const i = visibleLibraryItems.findIndex(x => x.Id === item.Id);
+    const ids = [...new Set([item, ...visibleLibraryItems.slice(Math.max(0, i - 24), i + 36)]
+      .filter(x => INFO_TYPES.has(x.Type) && !infoCache.has(x.Id) && !infoLoading.has(x.Id)).map(x => x.Id))];
+    if (!ids.length) return;
+    const req = fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&Ids=${ids.join(',')}&Fields=Overview,Genres&EnableTotalRecordCount=false`, authOpts())
+      .then(r => r.ok ? r.json() : null).catch(() => null)
       .then(d => {
-        const it = d?.Items?.[0];
-        const extra = { Overview: it?.Overview || '', Genres: (it?.Genres || []).slice(0, 3) };
-        if (infoCache.size >= 200) infoCache.delete(infoCache.keys().next().value);
-        infoCache.set(item.Id, extra);
-        return extra;
-      })
-      .catch(() => ({ Overview: '', Genres: [] }));
+        const got = new Map((d?.Items || []).map(it => [it.Id, it]));
+        for (const id of ids) {
+          const it = got.get(id);
+          if (it) {
+            if (infoCache.size >= 200) infoCache.delete(infoCache.keys().next().value);
+            infoCache.set(id, { Overview: it.Overview || '', Genres: (it.Genres || []).slice(0, 3) });
+          }
+          infoLoading.delete(id);   // a failed one is asked again next time
+        }
+      });
+    for (const id of ids) infoLoading.set(id, req.then(() => infoCache.get(id) || NO_EXTRA));
   }
   function scheduleInfo(item, card) {
+    const follow = followArmed;
+    followArmed = false;
     hideInfo();
     if (!displaySettings.infoPreview || !INFO_TYPES.has(item.Type)) return;
     infoFor = { item, card };
     window.addEventListener('keydown', onInfoKey, true);
     const token = infoToken;
-    let pending = null;
-    infoPrefetch = setTimeout(() => { pending = infoExtra(item); }, INFO_DELAY / 2);
-    infoTimer = setTimeout(async () => {
-      const extra = await (pending || infoExtra(item));
-      if (token !== infoToken || document.activeElement !== card || !card.isConnected || !rootEl) return;
-      if (!extra.Overview && !item.CommunityRating && !item.ProductionYear) return;   // nothing worth a box
-      const frame = (card.firstElementChild || card).getBoundingClientRect();   // the poster, scaled as focused
-      const area  = (libraryScrollContainer || rootEl).getBoundingClientRect();
-      const root  = rootEl.getBoundingClientRect();
-      if (frame.bottom < area.top || frame.top > area.bottom) return;   // the wheel moved it away meanwhile
-      const rem   = parseFloat(getComputedStyle(document.documentElement).fontSize) || 20;
-      const gap   = 2 * rem;
-      const right = frame.left + frame.width / 2 < area.left + area.width / 2;   // card on the left half → box right
-      const room  = right ? area.right - gap - (frame.right + gap) : (frame.left - gap) - (area.left + gap);
-      const w     = Math.min(34 * rem, room);
-      if (w < 16 * rem) return;
-      const x = right ? frame.right + gap : frame.left - gap - w;
-      const pad = 0.5 * rem;
-      info = {
-        item, extra, w,
-        x: x - root.left,
-        top: frame.top - root.top,
-        minTop: area.top - root.top + gap, maxBottom: area.bottom - root.top - gap,
-        hole: { x: frame.left - root.left - pad, y: frame.top - root.top - pad, w: frame.width + 2 * pad, h: frame.height + 2 * pad },
-      };
-    }, INFO_DELAY);
+    if (follow) {
+      // A reading step: this runs inside spatialnav's keydown, so the microtask comes after its scrollIntoView and
+      // still before the next frame — the box is redrawn beside the new card without a frame in between.
+      queueMicrotask(async () => showInfo(item, card, token, await infoExtra(item), true));
+      return;
+    }
+    infoPrefetch = setTimeout(() => infoExtra(item), INFO_DELAY / 2);
+    infoTimer = setTimeout(async () => showInfo(item, card, token, await infoExtra(item), false), INFO_DELAY);
+  }
+  // The poster as it looks once focused: its layout size times the card's focus scale (Tailwind's --tw-scale-x is
+  // registered as not animatable, so it already holds the end value while the scale transition runs), around its
+  // centre. A box placed mid-transition — a reading step — frames it like one placed after two seconds.
+  function posterRect(card) {
+    const f = card.firstElementChild || card;
+    const r = f.getBoundingClientRect();
+    const v = getComputedStyle(f).getPropertyValue('--tw-scale-x').trim();
+    const sc = (v.endsWith('%') ? parseFloat(v) / 100 : parseFloat(v)) || 1;
+    const w = f.offsetWidth * sc, h = f.offsetHeight * sc;
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    return { left: cx - w / 2, top: cy - h / 2, right: cx + w / 2, bottom: cy + h / 2, width: w, height: h };
+  }
+  function showInfo(item, card, token, extra, follow) {
+    if (token !== infoToken || document.activeElement !== card || !card.isConnected || !rootEl) return;
+    if (!extra.Overview && !item.CommunityRating && !item.ProductionYear) return;   // nothing worth a box
+    const frame = posterRect(card);
+    const area  = (libraryScrollContainer || rootEl).getBoundingClientRect();
+    const root  = rootEl.getBoundingClientRect();
+    if (frame.bottom < area.top || frame.top > area.bottom) return;   // the wheel moved it away meanwhile
+    const rem   = parseFloat(getComputedStyle(document.documentElement).fontSize) || 20;
+    const gap   = 2 * rem;
+    const right = frame.left + frame.width / 2 < area.left + area.width / 2;   // card on the left half → box right
+    const room  = right ? area.right - gap - (frame.right + gap) : (frame.left - gap) - (area.left + gap);
+    const w     = Math.min(34 * rem, room);
+    if (w < 16 * rem) return;
+    const x = right ? frame.right + gap : frame.left - gap - w;
+    const pad = 0.5 * rem;
+    info = {
+      item, extra, follow, w,
+      x: x - root.left,
+      top: frame.top - root.top,
+      minTop: area.top - root.top + gap, maxBottom: area.bottom - root.top - gap,
+      scrollTop: libraryScrollContainer?.scrollTop ?? 0,   // the scroll a reading step brought along is no reason to close
+      hole: { x: frame.left - root.left - pad, y: frame.top - root.top - pad, w: frame.width + 2 * pad, h: frame.height + 2 * pad },
+    };
+    // keep the neighbourhood loaded as a reader moves on, before a step lands on a title nobody asked for yet
+    const i = visibleLibraryItems.findIndex(x => x.Id === item.Id);
+    if (visibleLibraryItems.slice(Math.max(0, i - 12), i + 24).some(x => INFO_TYPES.has(x.Type) && !infoCache.has(x.Id) && !infoLoading.has(x.Id))) loadExtras(item);
   }
   // Capture, before spatialnav moves focus: a key that moves on is answered by blur/focus anyway.
-  function onInfoKey() {
-    if (info || document.activeElement !== infoFor?.card) hideInfo();   // shown: closed for this card
-    else scheduleInfo(infoFor.item, infoFor.card);                       // waiting: the two seconds start again
+  function onInfoKey(e) {
+    if (info && isBackKey(e)) return;                         // App asks handleBackKey(): only the box closes
+    if (document.activeElement !== infoFor?.card) { hideInfo(); return; }
+    if (!info) { scheduleInfo(infoFor.item, infoFor.card); return; }   // waiting: the two seconds start again
+    const now = performance.now();
+    const calm = ARROWS.has(e.key) && !e.repeat && now - lastStep >= FOLLOW_GAP;
+    lastStep = now;
+    if (!calm) { hideInfo(); return; }                        // shown: closed for this card
+    followArmed = true;                                       // the focus that follows brings its box at once;
+    setTimeout(() => { followArmed = false; }, 0);            // an arrow that moves nothing leaves the box as it is
   }
   function hideInfo() {
     infoToken++;
@@ -172,6 +219,11 @@
     infoFor = null;
     window.removeEventListener('keydown', onInfoKey, true);
     info = null;
+  }
+  export function handleBackKey() {
+    if (!info) return false;
+    hideInfo();
+    return true;
   }
   // The box's height is known only once drawn: keep it inside the visible area, beside the card where it fits.
   function placeInfo(node) {
@@ -649,7 +701,9 @@
     // Fallback for older Chromium (webOS 25 / Chromium 120): an IntersectionObserver inside an
     // inner scroll container can fail to fire there, so also trigger loading straight from the
     // scroll position. Both load functions guard against concurrent calls, so this never double-loads.
-    if (info) hideInfo();   // only a shown box: the scroll that follows a focus change must not cancel the wait
+    // Only a shown box, and only a REAL scroll (the wheel): the one a focus move or a reading step caused left the
+    // offset where the box was measured.
+    if (info && (libraryScrollContainer?.scrollTop ?? 0) !== info.scrollTop) hideInfo();
     const sc = libraryScrollContainer;
     if (sc) {
       if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 2000) { diagCount('library paging by scroll position (fallback)'); loadMoreLibraryItems(); }
@@ -960,7 +1014,7 @@
        tinted glass, not a card on top), a crisp edge and a 1 px light line on top — no blur, no accent glow beside the
        focused card's. Both ignore the pointer; z-20 over the grid and the A–Z bar. -->
   {#if info}
-    <div class="absolute inset-0 z-20 overflow-hidden pointer-events-none info-fade">
+    <div class="absolute inset-0 z-20 overflow-hidden pointer-events-none" class:info-fade={!info.follow} data-info-layer>
       <div class="absolute rounded-xl"
         style="left:{info.hole.x}px;top:{info.hole.y}px;width:{info.hole.w}px;height:{info.hole.h}px;box-shadow:0 0 0 200vmax rgb(3 7 18 / .5)"></div>
       <div {@attach placeInfo} class="absolute bg-gray-900 border border-white/20 rounded-2xl p-7 shadow-[inset_0_1px_0_rgb(255_255_255/0.08)]"
