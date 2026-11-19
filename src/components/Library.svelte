@@ -100,7 +100,7 @@
     clearTimer = setTimeout(() => { previewBackdrop = ''; }, 150);
   }
 
-  // ── Info preview (opt-in, CODE-HEALTH §124) ─────────────────
+  // ── Info preview (on by default, CODE-HEALTH §124) ──────────
   // Two seconds at rest on a card: rating, genres and plot in a box beside it, the rest of the library dimmed — the
   // card stays bright. A key before the two seconds are up starts them again, so it never shows while a key is held —
   // not even one that moves nothing, like ▼ in the last row. Once it is open, ONE calm arrow step takes it along to
@@ -1009,7 +1009,7 @@
     {/if}
   </div>
 
-  <!-- Info preview (opt-in, §124): the dim is ONE element over the focused poster whose spread shadow covers the rest
+  <!-- Info preview (§124): the dim is ONE element over the focused poster whose spread shadow covers the rest
        (no blur, painted once); the box beside the card, OPAQUE (at 95 % the posters below showed through and it read as
        tinted glass, not a card on top), a crisp edge and a 1 px light line on top — no blur, no accent glow beside the
        focused card's. Both ignore the pointer; z-20 over the grid and the A–Z bar. -->

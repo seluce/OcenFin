@@ -701,7 +701,7 @@
     { key: 'episodeCount',    label: i18n.t.displayEpisodeCount },
     { key: 'letterBar',       label: i18n.t.displayLetterBar },
     { key: 'backdropPreview', label: i18n.t.displayBackdropPreview },
-    { key: 'infoPreview',     label: i18n.t.displayInfoPreview, desc: i18n.t.displayInfoPreviewDesc },   // opt-in, §124
+    { key: 'infoPreview',     label: i18n.t.displayInfoPreview, desc: i18n.t.displayInfoPreviewDesc },   // on by default, §124
   ]);
   let detailToggles = $derived([
     { key: 'detailsBackdrop',   label: i18n.t.displayDetailsBackdrop },

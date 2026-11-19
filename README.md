@@ -36,7 +36,7 @@ OcenFin plays your movies and shows as they are: Direct Play with Dolby Vision a
 **Finding something to watch**
 
 - A home screen with Continue Watching, Next Up, recent additions, “Because you watched …”, collections and your watchlist, in the order you choose.
-- Libraries with an A–Z jump, filters for genre and audio or subtitle language, sorting and “Surprise me”.
+- Libraries with an A–Z jump, filters for genre and audio or subtitle language, sorting and “Surprise me”; stop on a poster for a moment and its rating and plot appear beside it.
 - Search across titles and people; title pages with cast, similar titles and the collections a title belongs to.
 - Spoiler protection blurs the pictures of episodes you have not seen yet.
 
@@ -64,7 +64,7 @@ OcenFin talks to your Jellyfin server and nothing else: no tracking, no analytic
 <table>
   <tr>
     <td width="50%"><img src="docs/screenshots/rows.webp" alt="Home screen rows"><br><sub><b>Home</b> — what to watch next, and suggestions based on what you watched</sub></td>
-    <td width="50%"><img src="docs/screenshots/library.webp" alt="Library"><br><sub><b>Library</b> — posters, A–Z jump, filters and sorting</sub></td>
+    <td width="50%"><img src="docs/screenshots/library.webp" alt="Library"><br><sub><b>Library</b> — rating and plot at a glance, A–Z jump, filters and sorting</sub></td>
   </tr>
   <tr>
     <td><img src="docs/screenshots/details.webp" alt="Title page"><br><sub><b>Title page</b> — picture and sound at a glance, audio and subtitle choice</sub></td>
