@@ -169,6 +169,7 @@ export default {
     subtitleMachine: "Maskinöversatt",
     episodes: "Avsnitt",
     episodeCount: { one: "{n} avsnitt", other: "{n} avsnitt" },
+    seasonCount: { one: "{n} säsong", other: "{n} säsonger" },
     mins: "min",
 
     // Player
@@ -301,6 +302,8 @@ export default {
     displayRecommendations: "Rekommendationer (”Eftersom du såg …”)",
     displayLatest: "Nyligen tillagda",
     displayBackdropPreview: "Förhandsvisning av bakgrund",
+    displayInfoPreview: "Förhandsvisning av info",
+    displayInfoPreviewDesc: "Efter två sekunder på en titel: betyg, genrer och handling i ett ögonkast.",
     displayChapters: "Kapitelmarkeringar",
     displayChaptersDesc: "Visar eller döljer kapitelmarkeringar på tidslinjen och knapparna för att hoppa mellan kapitel.",
     spoilerProtection: "Spoilerskydd för avsnitt",

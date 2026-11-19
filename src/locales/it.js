@@ -169,6 +169,7 @@ export default {
     subtitleMachine: "Traduzione automatica",
     episodes: "Episodi",
     episodeCount: { one: "{n} episodio", other: "{n} episodi" },
+    seasonCount: { one: "{n} stagione", other: "{n} stagioni" },
     mins: "min",
 
     // Player
@@ -301,6 +302,8 @@ export default {
     displayRecommendations: "Consigliati («Perché hai guardato…»)",
     displayLatest: "Aggiunti di recente",
     displayBackdropPreview: "Anteprima sfondo",
+    displayInfoPreview: "Anteprima informazioni",
+    displayInfoPreviewDesc: "Dopo due secondi su un titolo: valutazione, generi e trama a colpo d'occhio.",
     displayChapters: "Marcatori di capitolo",
     displayChaptersDesc: "Mostra o nasconde i marcatori di capitolo sulla barra di riproduzione e i pulsanti dei capitoli.",
     spoilerProtection: "Protezione anti-spoiler episodi",

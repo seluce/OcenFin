@@ -701,6 +701,7 @@
     { key: 'episodeCount',    label: i18n.t.displayEpisodeCount },
     { key: 'letterBar',       label: i18n.t.displayLetterBar },
     { key: 'backdropPreview', label: i18n.t.displayBackdropPreview },
+    { key: 'infoPreview',     label: i18n.t.displayInfoPreview, desc: i18n.t.displayInfoPreviewDesc },   // on by default, §124
   ]);
   let detailToggles = $derived([
     { key: 'detailsBackdrop',   label: i18n.t.displayDetailsBackdrop },
@@ -852,7 +853,14 @@
     <button onclick={() => toggleDisplay(tg.key)}
       class="flex items-center justify-between w-full px-6 py-4 hover:bg-gray-700 focus:bg-gray-700
              focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-      <span class="text-lg text-gray-200">{tg.label}</span>
+      {#if tg.desc}
+        <div class="pr-6">
+          <span class="text-lg text-gray-200 block">{tg.label}</span>
+          <span class="text-gray-400 mt-0.5 block text-sm">{tg.desc}</span>
+        </div>
+      {:else}
+        <span class="text-lg text-gray-200">{tg.label}</span>
+      {/if}
       <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
                   {displaySettings[tg.key] ? 'bg-blue-500' : 'bg-gray-600'}">
         <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
@@ -865,7 +873,7 @@
 <!-- One line of the subtitle preview, inside its scaled screen; "from" and "to" lie on top of each other while it turns. -->
 {#snippet subLine(prefs, layer)}
   <div class="absolute inset-x-0 flex justify-center px-[8%]" style="bottom:{asSubPosition(prefs.subtitlePosition)}vh">
-    <span data-sub-layer={layer} class="subtitle-box" style={subtitleTextStyle(prefs)}>{i18n.t.subtitlePreviewText}</span>
+    <span data-sub-layer={layer} class="subtitle-box" data-text={i18n.t.subtitlePreviewText} style={subtitleTextStyle(prefs)}>{i18n.t.subtitlePreviewText}</span>
   </div>
 {/snippet}
 

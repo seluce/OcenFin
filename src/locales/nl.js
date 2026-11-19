@@ -169,6 +169,7 @@ export default {
     subtitleMachine: "Machinaal vertaald",
     episodes: "Afleveringen",
     episodeCount: { one: "{n} aflevering", other: "{n} afleveringen" },
+    seasonCount: { one: "{n} seizoen", other: "{n} seizoenen" },
     mins: "min",
 
     // Player
@@ -301,6 +302,8 @@ export default {
     displayRecommendations: "Aanbevelingen (‘Omdat je … hebt gekeken’)",
     displayLatest: "Onlangs toegevoegd",
     displayBackdropPreview: "Achtergrondvoorbeeld",
+    displayInfoPreview: "Infovoorbeeld",
+    displayInfoPreviewDesc: "Na twee seconden op een titel: beoordeling, genres en verhaal in één oogopslag.",
     displayChapters: "Hoofdstukmarkeringen",
     displayChaptersDesc: "Toont of verbergt de hoofdstukmarkeringen op de afspeelbalk en de hoofdstukknoppen.",
     spoilerProtection: "Spoilerbescherming voor afleveringen",

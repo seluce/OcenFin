@@ -119,6 +119,8 @@ export default {
     displayHistory: "Assistidos recentemente",
     displayRecommendations: "Recomendações (“Porque você assistiu…”)",
     displayBackdropPreview: "Prévia do fundo",
+    displayInfoPreview: "Prévia de informações",
+    displayInfoPreviewDesc: "Após dois segundos em um título: avaliação, gêneros e sinopse de relance.",
     groupHome: "Tela inicial",
     groupWatchTogether: "Assistir juntos",
     groupPlayer: "Player",

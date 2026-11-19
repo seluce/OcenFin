@@ -169,6 +169,7 @@ export default {
     subtitleMachine: "Konekäännetty",
     episodes: "Jaksot",
     episodeCount: { one: "{n} jakso", other: "{n} jaksoa" },
+    seasonCount: { one: "{n} kausi", other: "{n} kautta" },
     mins: "min",
 
     // Player
@@ -301,6 +302,8 @@ export default {
     displayRecommendations: "Suositukset (”Koska katsoit …”)",
     displayLatest: "Viimeksi lisätyt",
     displayBackdropPreview: "Taustakuvan esikatselu",
+    displayInfoPreview: "Tietojen esikatselu",
+    displayInfoPreviewDesc: "Kahden sekunnin jälkeen nimikkeen kohdalla: arvio, tyylilajit ja juoni yhdellä silmäyksellä.",
     displayChapters: "Lukumerkit",
     displayChaptersDesc: "Näyttää tai piilottaa lukumerkit aikajanalla ja lukujen ohituspainikkeet.",
     spoilerProtection: "Jaksojen spoilerisuoja",

@@ -169,6 +169,7 @@ export default {
     subtitleMachine: "Traducere automată",
     episodes: "Episoade",
     episodeCount: { one: "{n} episod", few: "{n} episoade", other: "{n} de episoade" },
+    seasonCount: { one: "{n} sezon", few: "{n} sezoane", other: "{n} de sezoane" },
     mins: "min",
 
     // Player
@@ -301,6 +302,8 @@ export default {
     displayRecommendations: "Recomandări („Pentru că ai vizionat…”)",
     displayLatest: "Adăugate recent",
     displayBackdropPreview: "Previzualizare fundal",
+    displayInfoPreview: "Previzualizare informații",
+    displayInfoPreviewDesc: "După două secunde pe un titlu: evaluarea, genurile și acțiunea dintr-o privire.",
     displayChapters: "Marcaje de capitole",
     displayChaptersDesc: "Afișează sau ascunde marcajele de capitole pe bara de derulare și butoanele de salt între capitole.",
     spoilerProtection: "Protecție anti-spoiler pentru episoade",

@@ -169,6 +169,7 @@ export default {
     subtitleMachine: "Машинний переклад",
     episodes: "Серії",
     episodeCount: { one: "{n} серія", few: "{n} серії", many: "{n} серій", other: "{n} серії" },
+    seasonCount: { one: "{n} сезон", few: "{n} сезони", many: "{n} сезонів", other: "{n} сезону" },
     mins: "хв",
 
     // Player
@@ -301,6 +302,8 @@ export default {
     displayRecommendations: "Рекомендації («Тому що ви дивилися…»)",
     displayLatest: "Нещодавно додані",
     displayBackdropPreview: "Попередній перегляд фону",
+    displayInfoPreview: "Попередній перегляд інформації",
+    displayInfoPreviewDesc: "Через дві секунди на назві: рейтинг, жанри та сюжет одним поглядом.",
     displayChapters: "Позначки розділів",
     displayChaptersDesc: "Показує або приховує позначки розділів на шкалі часу та кнопки переходу між розділами.",
     spoilerProtection: "Захист від спойлерів у серіях",

@@ -586,10 +586,16 @@ export function hint(delay = 350) {
     });
     observer.observe(node, { attributes: true, attributeFilter: ['aria-label'] });
 
+    // The pointer counts only when a hand moves it (§122, as spatialnav's focus): Chrome for Testing 132 (webOS 26's
+    // engine) reports a resting cursor as entering, as a trusted mouseenter — the hint would open by itself there.
+    let hovered = false;
+    function onPointerMove(e) { if (!hovered && (e.movementX || e.movementY)) { hovered = true; show(); } }
+    function onLeave() { hovered = false; destroy(); }
+
     node.addEventListener('focus', show);
     node.addEventListener('blur', destroy);
-    node.addEventListener('mouseenter', show);
-    node.addEventListener('mouseleave', destroy);
+    node.addEventListener('pointermove', onPointerMove, { passive: true });
+    node.addEventListener('mouseleave', onLeave);
     window.addEventListener(HIDE_HINTS, destroy);
     return () => {
       window.removeEventListener(HIDE_HINTS, destroy);
@@ -597,8 +603,8 @@ export function hint(delay = 350) {
       destroy();
       node.removeEventListener('focus', show);
       node.removeEventListener('blur', destroy);
-      node.removeEventListener('mouseenter', show);
-      node.removeEventListener('mouseleave', destroy);
+      node.removeEventListener('pointermove', onPointerMove);
+      node.removeEventListener('mouseleave', onLeave);
     };
   };
 }
@@ -761,16 +767,18 @@ const SUB_COLORS = { white: '#ffffff', yellow: '#ffe14d', green: '#6dff6d', cyan
 const SUB_FONTS = { arimo: "font-family:'Arimo',sans-serif;", noto: "font-family:'Noto Sans',sans-serif;", tinos: "font-family:'Tinos',serif;" };
 export function subtitleTextStyle(p) {
   const color = SUB_COLORS[p.subtitleColor || 'white'] || '#ffffff';
-  const edge = p.subtitleEdge === 'outline' ? '-webkit-text-stroke:0.35vh #000;paint-order:stroke fill;text-shadow:0 0 3px rgba(0,0,0,.55);'
+  // Outline: a black copy of the line BEHIND it (.subtitle-box::before in app.css, CODE-HEALTH §120) — NOT a stroke on
+  // the line itself: `paint-order: stroke fill` works on HTML text only from Chromium 123, webOS 25 (120) drew the
+  // stroke OVER the letters and left a thin core of colour inside a black word.
+  const edge = p.subtitleEdge === 'outline' ? '--sub-outline:block;isolation:isolate;text-shadow:none;'
              : p.subtitleEdge === 'none' ? 'text-shadow:none;'
              : 'text-shadow:0 1px 2px #000,0 2px 8px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.9);';
   const bg = p.subtitleBackground === 'solid' ? 'background:#000;padding:0.05em 0.5em;border-radius:0.5vh;'
            : p.subtitleBackground === 'semi' ? 'background:rgba(0,0,0,.6);padding:0.05em 0.5em;border-radius:0.5vh;'
            : 'background:transparent;';
   const font = SUB_FONTS[p.subtitleFont] ?? 'font-family:ui-sans-serif,system-ui,sans-serif;';
-  // -webkit-text-fill-color in addition to color: with -webkit-text-stroke set, on webOS the FILL color determines
-  // the rendering and falsely falls back to black there instead of inheriting color → subtitles otherwise black
-  // despite the color choice. Setting it explicitly forces the chosen color (a no-op on desktop anyway).
+  // -webkit-text-fill-color in addition to color: added when the outline made webOS subtitles look black. The cause
+  // was most likely the stroke drawn over the letters (above); kept, a no-op everywhere (§39 A9).
   return `font-size:${SUB_STEPS[asSubSize(p.subtitleSize)][0]}vh;color:${color};-webkit-text-fill-color:${color};${font}${edge}${bg}`;
 }
 

@@ -169,6 +169,7 @@ export default {
     subtitleMachine: "Maschinell übersetzt",
     episodes: "Folgen",
     episodeCount: { one: "{n} Folge", other: "{n} Folgen" },
+    seasonCount: { one: "{n} Staffel", other: "{n} Staffeln" },
     mins: "Min.",
 
     // Player
@@ -301,6 +302,8 @@ export default {
     displayRecommendations: "Empfehlungen („Weil du … gesehen hast“)",
     displayLatest: "Zuletzt hinzugefügt",
     displayBackdropPreview: "Hintergrundbild-Vorschau",
+    displayInfoPreview: "Info-Vorschau",
+    displayInfoPreviewDesc: "Nach zwei Sekunden auf einem Titel: Bewertung, Genres und Handlung auf einen Blick.",
     displayChapters: "Kapitelmarken",
     displayChaptersDesc: "Blendet die Kapitelmarken in der Wiedergabeleiste und die Kapitel-Buttons ein oder aus.",
     spoilerProtection: "Spoilerschutz f\u00fcr Folgen",

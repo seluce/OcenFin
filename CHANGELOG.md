@@ -3,6 +3,27 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## 2026.11.19
+
+### Added
+
+- **Info preview in the library.** Two seconds on a title show its rating, genres and plot next to the poster, and
+  single steps with the arrows then take the box along from title to title; it can be switched off in the settings.
+
+### Fixed
+
+- **Outlined subtitles readable on the TV.** With the outline style, the black edge covered most of each letter
+  on webOS 25; it now runs around the letters, as it always did in a desktop browser.
+
+### Internal
+
+- **Updated ASS subtitle engine.** JASSUB 2.5.38 brings a newer libass that lays out text faster and reads damaged
+  subtitle files more safely.
+- **Menu and hints follow only a moving pointer.** A precaution from testing webOS 26's browser engine, where a
+  pointer that had not moved could open the menu at start; LG's own webOS 26 simulator does not do this.
+- **Updated Svelte.** Svelte 5.58.0 brings small fixes to the order in which the interface updates itself; nothing
+  changes on screen.
+
 ## 2026.11.17
 
 ### Added

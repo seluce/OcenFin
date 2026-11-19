@@ -39,5 +39,13 @@
    colour, font, edge and background come from subtitleTextStyle() in utils.js. */
 .subtitle-box {
   white-space: pre-line; text-align: center; font-weight: 600; line-height: 1.35;
-  max-width: 100%;
+  max-width: 100%; position: relative;
+}
+/* The outline (§120): the same text again from data-text, stroked black, under the line and above its background
+   (the box isolates). Half the stroke hides behind the letters — the look of `paint-order: stroke fill`, which
+   webOS 25 ignores on HTML text. Switched on by subtitleTextStyle() (--sub-outline), otherwise no box at all. */
+.subtitle-box::before {
+  content: attr(data-text); display: var(--sub-outline, none);
+  position: absolute; inset: 0; padding: inherit; z-index: -1;
+  -webkit-text-stroke: 0.35vh #000; -webkit-text-fill-color: #000; text-shadow: 0 0 3px rgba(0, 0, 0, .55);
 }

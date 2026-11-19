@@ -224,7 +224,7 @@
   // existing profiles (their stored prefs are spread over the OTHER copy) — that paste-twice trap
   // fired once already (theme music). Functions, not shared literals: navOrder/navHidden/navIcons
   // must be fresh references on every call.
-  const defaultDisplaySettings = () => ({ clock: true, hero: true, episodeCount: true, letterBar: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 100, theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, homeOrder: [], seekBack: 10, seekForward: 30, navOrder: [], navHidden: [], navIcons: {} });
+  const defaultDisplaySettings = () => ({ clock: true, hero: true, episodeCount: true, letterBar: true, libraries: true, history: true, nextUp: true, watchlist: true, recommendations: true, latest: true, collections: true, sharedSuggestions: true, backdropPreview: true, infoPreview: true, dashboardBackdrop: true, spoilerProtection: true, detailsBackdrop: true, detailsLogo: false, showChapters: true, clockFormat: 'auto', uiSize: 100, theme: 'blue', uiFont: 'system', showLogo: true, recommendationRows: 1, homeOrder: [], seekBack: 10, seekForward: 30, navOrder: [], navHidden: [], navIcons: {} });
   const defaultPlaybackPrefs   = () => ({ audioLanguage: 'default', subtitleLanguage: 'default', subtitleSmart: false, rememberAudioTrack: true, rememberSubtitleTrack: true, autoSkipIntro: false, autoSkipRecap: false, autoSkipCredits: false, subtitleSize: 0, subtitlePosition: 7, subtitleColor: 'white', subtitleEdge: 'shadow', subtitleBackground: 'none', subtitleFont: 'system', autoPlayNext: true, burnSubtitles: false, pgsRendering: true, assRendering: true, stillWatching: true, stillWatchingEpisodes: 3, showPlaybackInfo: false, sleepButton: false, trickplay: true, themeMusic: false, themeMusicScope: 'both', themeMusicVolume: 40, remoteDigitSeek: true, remoteChannelZap: true, remoteColorRed: 'off', remoteColorGreen: 'off', remoteColorYellow: 'off', remoteColorBlue: 'off' });
   let displaySettings = $state(defaultDisplaySettings());
 
@@ -1688,7 +1688,7 @@
     else if (viewState === 'details')  { if (!detailsRef?.handleBackKey()) returnFromDetails(); e.preventDefault(); }
     else if (viewState === 'person')   { returnFromPerson();           e.preventDefault(); }
     else if (viewState === 'collection') { if (!collectionRef?.handleBackKey()) returnFromCollection(); e.preventDefault(); }
-    else if (viewState === 'library')  { backToDashboard('library');   e.preventDefault(); }
+    else if (viewState === 'library')  { if (!libraryRef?.handleBackKey()) backToDashboard('library'); e.preventDefault(); }
     else if (viewState === 'settings') { backToDashboard('settings');  e.preventDefault(); }
     else if (viewState === 'search')   { backToDashboard('search');    e.preventDefault(); }
     else if (viewState === 'favorites') { backToDashboard('favorites'); e.preventDefault(); }

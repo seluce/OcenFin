@@ -169,6 +169,7 @@ export default {
     subtitleMachine: "Машинный перевод",
     episodes: "Серии",
     episodeCount: { one: "{n} серия", few: "{n} серии", many: "{n} серий", other: "{n} серии" },
+    seasonCount: { one: "{n} сезон", few: "{n} сезона", many: "{n} сезонов", other: "{n} сезона" },
     mins: "мин",
 
     // Player
@@ -301,6 +302,8 @@ export default {
     displayRecommendations: "Рекомендации («Потому что вы смотрели…»)",
     displayLatest: "Недавно добавленные",
     displayBackdropPreview: "Предпросмотр фона",
+    displayInfoPreview: "Предпросмотр информации",
+    displayInfoPreviewDesc: "Через две секунды на названии: рейтинг, жанры и сюжет с первого взгляда.",
     displayChapters: "Отметки глав",
     displayChaptersDesc: "Показывает или скрывает отметки глав на шкале времени и кнопки перехода между главами.",
     spoilerProtection: "Защита от спойлеров в сериях",
