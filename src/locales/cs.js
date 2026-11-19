@@ -169,6 +169,7 @@ export default {
     subtitleMachine: "Strojový překlad",
     episodes: "Díly",
     episodeCount: { one: "{n} díl", few: "{n} díly", other: "{n} dílů" },
+    seasonCount: { one: "{n} série", few: "{n} série", other: "{n} sérií" },
     mins: "min",
 
     // Player
@@ -301,6 +302,8 @@ export default {
     displayRecommendations: "Doporučení („Protože jste sledovali…“)",
     displayLatest: "Nově přidané",
     displayBackdropPreview: "Náhled pozadí",
+    displayInfoPreview: "Náhled informací",
+    displayInfoPreviewDesc: "Po dvou sekundách na titulu: hodnocení, žánry a děj na první pohled.",
     displayChapters: "Značky kapitol",
     displayChaptersDesc: "Zobrazí nebo skryje značky kapitol na časové ose a tlačítka pro přeskakování kapitol.",
     spoilerProtection: "Ochrana proti spoilerům u dílů",

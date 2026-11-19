@@ -169,6 +169,7 @@ export default {
     subtitleMachine: "Maskinoversatt",
     episodes: "Episoder",
     episodeCount: { one: "{n} episode", other: "{n} episoder" },
+    seasonCount: { one: "{n} sesong", other: "{n} sesonger" },
     mins: "min",
 
     // Player
@@ -301,6 +302,8 @@ export default {
     displayRecommendations: "Anbefalinger («Fordi du så …»)",
     displayLatest: "Nylig lagt til",
     displayBackdropPreview: "Forhåndsvisning av bakgrunn",
+    displayInfoPreview: "Forhåndsvisning av info",
+    displayInfoPreviewDesc: "Etter to sekunder på en tittel: vurdering, sjangre og handling med ett blikk.",
     displayChapters: "Kapittelmarkeringer",
     displayChaptersDesc: "Viser eller skjuler kapittelmarkeringer på tidslinjen og knappene for å hoppe mellom kapitler.",
     spoilerProtection: "Spoilerbeskyttelse for episoder",

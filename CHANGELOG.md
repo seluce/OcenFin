@@ -5,6 +5,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ## [Unreleased]
 
+### Added
+
+- **Info preview in the library.** Optional: resting on a title for two seconds shows its rating, genres and plot
+  next to the poster, without opening the details page.
+
 ### Fixed
 
 - **Outlined subtitles readable on the TV.** With the outline style, the black edge covered most of each letter

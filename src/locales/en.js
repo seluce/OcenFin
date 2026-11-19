@@ -169,6 +169,7 @@ export default {
     subtitleMachine: "Machine-translated",
     episodes: "Episodes",
     episodeCount: { one: "{n} episode", other: "{n} episodes" },
+    seasonCount: { one: "{n} season", other: "{n} seasons" },
     mins: "min",
 
     // Player
@@ -301,6 +302,8 @@ export default {
     displayRecommendations: "Recommendations ('Because you watched…')",
     displayLatest: "Recently Added",
     displayBackdropPreview: "Backdrop Preview",
+    displayInfoPreview: "Info Preview",
+    displayInfoPreviewDesc: "After two seconds on a title: rating, genres and plot at a glance.",
     displayChapters: "Chapter markers",
     displayChaptersDesc: "Shows or hides chapter marks on the seek bar and the chapter skip buttons.",
     spoilerProtection: "Episode spoiler guard",

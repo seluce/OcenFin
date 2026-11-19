@@ -7,7 +7,7 @@
   import CardStatus from './CardStatus.svelte';
   import { diagCount } from '../diag.js';
   import { session } from '../session.svelte.js';
-  import { i18n } from '../i18n.svelte.js';
+  import { i18n, plural } from '../i18n.svelte.js';
   import { itemProgress, getItemSubtitle, getItemImageUrl, blurUp, itemBlurHash, longPress,
            focusOnMount, isBackKey, makeFocusReturn, authHeaders, uiFade, dropTrapOnOutro, dlog, markContentChange } from '../utils.js';
 
@@ -23,7 +23,7 @@
                                // Filtering them out leaves what is new to both. (App loads, Library filters.)
     librarySorts = {},         // remembered sort per library
     libraryFilters = {},       // remembered filters per library
-    displaySettings = {},      // backdropPreview, episodeCount, letterBar
+    displaySettings = {},      // backdropPreview, episodeCount, letterBar, infoPreview
     onOpenDetails,             // (item) => void
     onContextMenu,             // (item) => void
     onSortPersist,             // (libId, sort) => void — App saves into the profile
@@ -99,6 +99,90 @@
     clearTimeout(clearTimer);
     clearTimer = setTimeout(() => { previewBackdrop = ''; }, 150);
   }
+
+  // ── Info preview (opt-in, CODE-HEALTH §124) ─────────────────
+  // Two seconds at rest on a card: rating, genres and plot in a box beside it, the rest of the library dimmed — the
+  // card stays bright. A key before the two seconds are up starts them again, so it never shows while a key is held —
+  // not even one that moves nothing, like ▼ in the last row. Once shown, any key, a focus change or a scroll takes it
+  // away at once (the key still does its job). Not focusable, never catches the pointer.
+  const INFO_DELAY = 2000;
+  const INFO_TYPES = new Set(['Movie', 'Series', 'BoxSet']);
+  let info = $state(null);          // { item, extra, x, w, top, minTop, maxBottom, hole: {x,y,w,h} } while shown
+  let rootEl;
+  let infoTimer, infoPrefetch, infoToken = 0;
+  let infoFor = null;               // { item, card } from the focus until hideInfo(): waiting or shown
+  const infoCache = new Map();      // id → { Overview, Genres }, bounded: browsing 500 titles must not keep 500 plots
+  function infoExtra(item) {
+    const hit = infoCache.get(item.Id);
+    if (hit) return Promise.resolve(hit);
+    // Overview and Genres are not in the list query (every 25-card page would carry 25 plots); one small request,
+    // started a second before the box shows.
+    return fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&Ids=${item.Id}&Fields=Overview,Genres&EnableTotalRecordCount=false`, authOpts())
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        const it = d?.Items?.[0];
+        const extra = { Overview: it?.Overview || '', Genres: (it?.Genres || []).slice(0, 3) };
+        if (infoCache.size >= 200) infoCache.delete(infoCache.keys().next().value);
+        infoCache.set(item.Id, extra);
+        return extra;
+      })
+      .catch(() => ({ Overview: '', Genres: [] }));
+  }
+  function scheduleInfo(item, card) {
+    hideInfo();
+    if (!displaySettings.infoPreview || !INFO_TYPES.has(item.Type)) return;
+    infoFor = { item, card };
+    window.addEventListener('keydown', onInfoKey, true);
+    const token = infoToken;
+    let pending = null;
+    infoPrefetch = setTimeout(() => { pending = infoExtra(item); }, INFO_DELAY / 2);
+    infoTimer = setTimeout(async () => {
+      const extra = await (pending || infoExtra(item));
+      if (token !== infoToken || document.activeElement !== card || !card.isConnected || !rootEl) return;
+      if (!extra.Overview && !item.CommunityRating && !item.ProductionYear) return;   // nothing worth a box
+      const frame = (card.firstElementChild || card).getBoundingClientRect();   // the poster, scaled as focused
+      const area  = (libraryScrollContainer || rootEl).getBoundingClientRect();
+      const root  = rootEl.getBoundingClientRect();
+      if (frame.bottom < area.top || frame.top > area.bottom) return;   // the wheel moved it away meanwhile
+      const rem   = parseFloat(getComputedStyle(document.documentElement).fontSize) || 20;
+      const gap   = 2 * rem;
+      const right = frame.left + frame.width / 2 < area.left + area.width / 2;   // card on the left half → box right
+      const room  = right ? area.right - gap - (frame.right + gap) : (frame.left - gap) - (area.left + gap);
+      const w     = Math.min(34 * rem, room);
+      if (w < 16 * rem) return;
+      const x = right ? frame.right + gap : frame.left - gap - w;
+      const pad = 0.5 * rem;
+      info = {
+        item, extra, w,
+        x: x - root.left,
+        top: frame.top - root.top,
+        minTop: area.top - root.top + gap, maxBottom: area.bottom - root.top - gap,
+        hole: { x: frame.left - root.left - pad, y: frame.top - root.top - pad, w: frame.width + 2 * pad, h: frame.height + 2 * pad },
+      };
+    }, INFO_DELAY);
+  }
+  // Capture, before spatialnav moves focus: a key that moves on is answered by blur/focus anyway.
+  function onInfoKey() {
+    if (info || document.activeElement !== infoFor?.card) hideInfo();   // shown: closed for this card
+    else scheduleInfo(infoFor.item, infoFor.card);                       // waiting: the two seconds start again
+  }
+  function hideInfo() {
+    infoToken++;
+    clearTimeout(infoTimer); clearTimeout(infoPrefetch);
+    infoFor = null;
+    window.removeEventListener('keydown', onInfoKey, true);
+    info = null;
+  }
+  // The box's height is known only once drawn: keep it inside the visible area, beside the card where it fits.
+  function placeInfo(node) {
+    const h = node.offsetHeight;
+    node.style.top = `${Math.max(info.minTop, Math.min(info.top, info.maxBottom - h))}px`;
+  }
+  $effect(() => () => hideInfo());
+  // Second item of the meta line: a series counts its seasons, anything else gives its running time.
+  const infoLength = (it) => it.Type === 'Series'
+    ? (it.ChildCount ? plural('seasonCount', it.ChildCount) : '')
+    : (it.RunTimeTicks ? `${Math.round(it.RunTimeTicks / 600000000)} ${i18n.t.mins}` : '');
 
   // ── Filters ─────────────────────────────────────────────────
   let showFilterMenu  = $state(false);
@@ -565,6 +649,7 @@
     // Fallback for older Chromium (webOS 25 / Chromium 120): an IntersectionObserver inside an
     // inner scroll container can fail to fire there, so also trigger loading straight from the
     // scroll position. Both load functions guard against concurrent calls, so this never double-loads.
+    if (info) hideInfo();   // only a shown box: the scroll that follows a focus change must not cancel the wait
     const sc = libraryScrollContainer;
     if (sc) {
       if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 2000) { diagCount('library paging by scroll position (fallback)'); loadMoreLibraryItems(); }
@@ -699,7 +784,7 @@
   $effect(() => { if (!sharedReady) sharedWatchMode = false; });
 </script>
 
-<div class="flex h-full w-full relative">
+<div bind:this={rootEl} class="flex h-full w-full relative">
 
   <!-- Backdrop preview -->
   {#if previewBackdrop}
@@ -809,7 +894,7 @@
       {:else}
         {#each visibleLibraryItems as item (item.Id)}
           <button onclick={() => openDetails(item)} data-item-id={item.Id}
-            onfocus={() => previewItem(item)} onblur={cancelPreview}
+            onfocus={(e) => { previewItem(item); scheduleInfo(item, e.currentTarget); }} onblur={() => { cancelPreview(); hideInfo(); }}
             {@attach longPress()} onlongpress={() => onContextMenu?.(item)}
             class="group focus:outline-none text-left scroll-my-4">
             <!-- transition-transform (not -all): animating border-color alongside the scale would
@@ -869,6 +954,55 @@
       </div>
     {/if}
   </div>
+
+  <!-- Info preview (opt-in, §124): the dim is ONE element over the focused poster whose spread shadow covers the rest
+       (no blur, painted once); the box beside the card, OPAQUE (at 95 % the posters below showed through and it read as
+       tinted glass, not a card on top), a crisp edge and a 1 px light line on top — no blur, no accent glow beside the
+       focused card's. Both ignore the pointer; z-20 over the grid and the A–Z bar. -->
+  {#if info}
+    <div class="absolute inset-0 z-20 overflow-hidden pointer-events-none info-fade">
+      <div class="absolute rounded-xl"
+        style="left:{info.hole.x}px;top:{info.hole.y}px;width:{info.hole.w}px;height:{info.hole.h}px;box-shadow:0 0 0 200vmax rgb(3 7 18 / .5)"></div>
+      <div {@attach placeInfo} class="absolute bg-gray-900 border border-white/20 rounded-2xl p-7 shadow-[inset_0_1px_0_rgb(255_255_255/0.08)]"
+        style="left:{info.x}px;top:{info.top}px;width:{info.w}px">
+        <h2 class="text-3xl font-bold text-white line-clamp-2">{info.item.Name}</h2>
+        <div class="flex items-center flex-wrap gap-x-3 gap-y-2 mt-3 text-lg font-semibold text-gray-200">
+          {#if getItemSubtitle(info.item, i18n.t.today)}<span class="text-blue-400">{getItemSubtitle(info.item, i18n.t.today)}</span>{/if}
+          {#if infoLength(info.item)}<span>• {infoLength(info.item)}</span>{/if}
+          {#if info.item.OfficialRating}
+            <span class="px-2 py-0.5 rounded border border-gray-400/80 text-gray-100 text-base font-bold leading-none">{info.item.OfficialRating}</span>
+          {/if}
+          {#if info.item.CommunityRating}
+            <span class="flex items-center gap-1 text-gray-100">
+              •
+              <svg class="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+              </svg>
+              {info.item.CommunityRating.toFixed(1)}
+            </span>
+          {/if}
+          {#if info.item.CriticRating}
+            <span class="flex items-center gap-1 text-gray-100">
+              •
+              <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="14" r="7.5" fill="#ef4444"/>
+                <ellipse cx="9.5" cy="6.5" rx="2.5" ry="1.3" fill="#22c55e" transform="rotate(-25 9.5 6.5)"/>
+                <ellipse cx="14.5" cy="6.5" rx="2.5" ry="1.3" fill="#22c55e" transform="rotate(25 14.5 6.5)"/>
+                <rect x="11.3" y="4.5" width="1.4" height="3" rx="0.7" fill="#22c55e"/>
+              </svg>
+              {info.item.CriticRating}%
+            </span>
+          {/if}
+        </div>
+        {#if info.extra.Genres.length}
+          <div class="mt-2 text-base text-gray-400 truncate">{info.extra.Genres.join(' · ')}</div>
+        {/if}
+        {#if info.extra.Overview}
+          <p class="mt-4 text-lg text-gray-300 leading-relaxed line-clamp-5">{info.extra.Overview}</p>
+        {/if}
+      </div>
+    </div>
+  {/if}
 
   <!-- A-Z (only with name sorting) -->
   <!-- No backdrop-blur here: the bar sits on top of the scrolling grid, so the blur would be
@@ -994,6 +1128,10 @@
   /* Backdrop preview: fade in gently instead of switching hard ({#key} remounts the <img>) */
   .preview-fade { animation: previewFadeIn 0.5s ease-out; }
   @keyframes previewFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  /* Info preview: fades in (opacity only — the compositor's job); leaves at once, no fade out */
+  .info-fade { animation: infoFade 0.25s ease-out; }
+  @keyframes infoFade { from { opacity: 0; } to { opacity: 1; } }
 
   /* A-Z jump overlay: a brief pop (scale + fade in) */
   .jump-overlay { animation: jumpPop 0.18s ease-out; }

@@ -169,6 +169,7 @@ export default {
     subtitleMachine: "기계 번역",
     episodes: "에피소드",
     episodeCount: { other: "에피소드 {n}개" },
+    seasonCount: { other: "시즌 {n}개" },
     mins: "분",
 
     // Player
@@ -301,6 +302,8 @@ export default {
     displayRecommendations: "추천(“… 시청 기반 추천”)",
     displayLatest: "최근 추가",
     displayBackdropPreview: "배경 미리보기",
+    displayInfoPreview: "정보 미리보기",
+    displayInfoPreviewDesc: "제목에서 2초가 지나면 평점, 장르, 줄거리를 한눈에 보여줍니다.",
     displayChapters: "챕터 표시",
     displayChaptersDesc: "탐색 바의 챕터 표시와 챕터 건너뛰기 버튼을 표시하거나 숨깁니다.",
     spoilerProtection: "에피소드 스포일러 방지",

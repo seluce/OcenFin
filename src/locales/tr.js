@@ -169,6 +169,7 @@ export default {
     subtitleMachine: "Makine çevirisi",
     episodes: "Bölümler",
     episodeCount: { one: "{n} bölüm", other: "{n} bölüm" },
+    seasonCount: { one: "{n} sezon", other: "{n} sezon" },
     mins: "dk",
 
     // Player
@@ -301,6 +302,8 @@ export default {
     displayRecommendations: "Öneriler (“… izlediğiniz için”)",
     displayLatest: "Yeni eklenenler",
     displayBackdropPreview: "Arka plan önizlemesi",
+    displayInfoPreview: "Bilgi önizlemesi",
+    displayInfoPreviewDesc: "Bir başlıkta iki saniye sonra: puan, türler ve konu bir bakışta.",
     displayChapters: "Kısım işaretleri",
     displayChaptersDesc: "Zaman çubuğundaki kısım işaretlerini ve kısım atlama düğmelerini gösterir veya gizler.",
     spoilerProtection: "Bölümler için spoiler koruması",

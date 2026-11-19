@@ -169,6 +169,7 @@ export default {
     subtitleMachine: "Tłumaczenie maszynowe",
     episodes: "Odcinki",
     episodeCount: { one: "{n} odcinek", few: "{n} odcinki", many: "{n} odcinków", other: "{n} odcinka" },
+    seasonCount: { one: "{n} sezon", few: "{n} sezony", many: "{n} sezonów", other: "{n} sezonu" },
     mins: "min",
 
     // Player
@@ -301,6 +302,8 @@ export default {
     displayRecommendations: "Rekomendacje („Na podstawie…”)",
     displayLatest: "Ostatnio dodane",
     displayBackdropPreview: "Podgląd tła",
+    displayInfoPreview: "Podgląd informacji",
+    displayInfoPreviewDesc: "Po dwóch sekundach na tytule: ocena, gatunki i fabuła w jednym miejscu.",
     displayChapters: "Znaczniki rozdziałów",
     displayChaptersDesc: "Pokazuje lub ukrywa znaczniki rozdziałów na pasku odtwarzania oraz przyciski rozdziałów.",
     spoilerProtection: "Ochrona przed spoilerami odcinków",

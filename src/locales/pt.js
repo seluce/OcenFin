@@ -169,6 +169,7 @@ export default {
     subtitleMachine: "Tradução automática",
     episodes: "Episódios",
     episodeCount: { one: "{n} episódio", other: "{n} episódios" },
+    seasonCount: { one: "{n} temporada", other: "{n} temporadas" },
     mins: "min",
 
     // Player
@@ -301,6 +302,8 @@ export default {
     displayRecommendations: "Recomendações («Porque viu…»)",
     displayLatest: "Adicionados recentemente",
     displayBackdropPreview: "Pré-visualização de fundo",
+    displayInfoPreview: "Pré-visualização de informações",
+    displayInfoPreviewDesc: "Após dois segundos num título: classificação, géneros e sinopse num relance.",
     displayChapters: "Marcadores de capítulo",
     displayChaptersDesc: "Mostra ou oculta os marcadores de capítulo na barra de reprodução e os botões de capítulo.",
     spoilerProtection: "Proteção contra spoilers de episódios",

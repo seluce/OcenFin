@@ -169,6 +169,7 @@ export default {
     subtitleMachine: "Gépi fordítás",
     episodes: "Epizódok",
     episodeCount: { one: "{n} epizód", other: "{n} epizód" },
+    seasonCount: { one: "{n} évad", other: "{n} évad" },
     mins: "perc",
 
     // Player
@@ -301,6 +302,8 @@ export default {
     displayRecommendations: "Ajánlások („Mert megnézted: …”)",
     displayLatest: "Nemrég hozzáadott",
     displayBackdropPreview: "Háttérkép-előnézet",
+    displayInfoPreview: "Információs előnézet",
+    displayInfoPreviewDesc: "Két másodperc után egy címen: értékelés, műfajok és cselekmény egy pillantásra.",
     displayChapters: "Fejezetjelölők",
     displayChaptersDesc: "Megjeleníti vagy elrejti a fejezetjelölőket az idősávon és a fejezetugró gombokat.",
     spoilerProtection: "Spoilervédelem epizódoknál",
