@@ -3,6 +3,18 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## Unreleased
+
+### Changed
+
+- **Quicker steps from title to title, most of all in large libraries.** Each move takes the TV less work on every
+  screen, and a library answers a thousand titles down as quickly as at its top, where it used to slow with every page.
+
+### Internal
+
+- **Lighter library requests.** The library asks the server only for the pictures its cards show, and the info
+  preview's plots come without watched states and artwork it never uses.
+
 ## 2026.11.19
 
 ### Added

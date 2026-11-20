@@ -40,6 +40,13 @@
   // 187 and at 340) — it is near constant, and its cause is still open. Don't tune this constant
   // hoping to move it.
   const libraryItemLimit = 25;
+  // What a card reads (§126): SortName for the A–Z highlight, EndDate/Status for a series' years, ChildCount for an
+  // empty playlist and the info box's seasons, RecursiveItemCount for a series' watched share. PrimaryImageAspectRatio
+  // is gone — nothing reads it, and the server works it out per title. Images: the poster and ONE backdrop (the
+  // preview behind the grid) — without the limit every title brings the tags and BlurHashes of all its pictures
+  // (logo, thumb, banner, disc, every backdrop), which a list of thousands keeps in memory for nothing.
+  const LIST_FIELDS = 'SortName,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags';
+  const LIST_IMAGES = '&ImageTypeLimit=1&EnableImageTypes=Primary,Backdrop';
 
   // ── Grid state ──────────────────────────────────────────────
   let currentItems        = $state([]);
@@ -130,7 +137,7 @@
     const ids = [...new Set([item, ...visibleLibraryItems.slice(Math.max(0, i - 24), i + 36)]
       .filter(x => INFO_TYPES.has(x.Type) && !infoCache.has(x.Id) && !infoLoading.has(x.Id)).map(x => x.Id))];
     if (!ids.length) return;
-    const req = fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&Ids=${ids.join(',')}&Fields=Overview,Genres&EnableTotalRecordCount=false`, authOpts())
+    const req = fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&Ids=${ids.join(',')}&Fields=Overview,Genres&EnableUserData=false&EnableImages=false&EnableTotalRecordCount=false`, authOpts())
       .then(r => r.ok ? r.json() : null).catch(() => null)
       .then(d => {
         const got = new Map((d?.Items || []).map(it => [it.Id, it]));
@@ -557,7 +564,7 @@
     if (myToken !== loadToken) return;   // a newer request arrived during the count query
     firstLoadedIndex = startIndex;
 
-    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${lib.Id}&Fields=PrimaryImageAspectRatio,SortName,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
+    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${lib.Id}&Fields=${LIST_FIELDS}${LIST_IMAGES}&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
     url += getFilterQuery();
 
     const t0 = performance.now();
@@ -605,7 +612,7 @@
     isFetchingMore = true;
     const myToken = loadToken;   // belongs to the CURRENT list — don't append anymore after a reload
     const start = firstLoadedIndex + currentItems.length;
-    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,SortName,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}&EnableTotalRecordCount=false`;
+    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=${LIST_FIELDS}${LIST_IMAGES}&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}&EnableTotalRecordCount=false`;
     url += getFilterQuery();
     try {
       const res = await fetch(url, authOpts());
@@ -641,7 +648,7 @@
     const myToken = loadToken;   // belongs to the CURRENT list — don't prepend anymore after a reload
     const newStart = Math.max(0, firstLoadedIndex - libraryItemLimit);
     const count    = firstLoadedIndex - newStart;
-    const url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,SortName,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}&EnableTotalRecordCount=false`;
+    const url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=${LIST_FIELDS}${LIST_IMAGES}&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}&EnableTotalRecordCount=false`;
     try {
       const res = await fetch(url, authOpts());
       if (res.ok && myToken === loadToken) {
@@ -939,7 +946,8 @@
       <div {@attach infiniteScrollUp} class="h-2 w-full"></div>
     {/if}
 
-    <div bind:this={libraryGrid}
+    <!-- data-focus-grid: spatialnav looks for the next card among its neighbours first (§126) -->
+    <div bind:this={libraryGrid} data-focus-grid
       class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4">
       {#if isLoading}
         {#each Array(14).fill(0) as _}
@@ -950,12 +958,17 @@
           <button onclick={() => openDetails(item)} data-item-id={item.Id}
             onfocus={(e) => { previewItem(item); scheduleInfo(item, e.currentTarget); }} onblur={() => { cancelPreview(); hideInfo(); }}
             {@attach longPress()} onlongpress={() => onContextMenu?.(item)}
-            class="group focus:outline-none text-left scroll-my-4">
+            class="group isolate focus:outline-none text-left scroll-my-4">
             <!-- transition-transform (not -all): animating border-color alongside the scale would
                  invalidate paint on every interpolation step, re-rasterizing the card incl. its
                  shadow-xl per frame (B4). With transform-only the card rasterizes once and the
-                 scale runs purely on the compositor; the focus border switches instantly. -->
-            <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
+                 scale runs purely on the compositor; the focus border switches instantly.
+                 scale-100 at rest and `isolate` on the button (CODE-HEALTH §126): a card going from NO scale to 105 %
+                 changes what it is to the browser (stacking context, containing block) — that relaid out the whole
+                 grid on every press — and the grid's cards shared ONE stacking context, so the paint step before
+                 drawing walked all of them. Scaled from 100 % and each card its own context, a press touches two
+                 cards; 1000 cards deep that was most of the frame. Both look exactly as before. -->
+            <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent scale-100 group-focus:border-white group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
               {#if item.Type === 'Playlist' && item.ChildCount === 0}
                 <div class="w-full h-full flex items-center justify-center text-gray-600">
                   <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>

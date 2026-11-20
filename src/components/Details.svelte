@@ -1277,8 +1277,8 @@
             {#each relatedItems as ep (ep.Id)}
               <button onclick={() => navigateTo(ep.Id)} data-item-id={ep.Id}
                 onfocus={() => { if (ep.Type === 'Episode') focusedEpisode = ep; }}
-                class="shrink-0 scroll-m-4 group flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
-                <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
+                class="shrink-0 scroll-m-4 group isolate flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
+                <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
                   {#if getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')}
                     <img src={getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')} {@attach blurUp(itemBlurHash(ep))} alt={ep.Name} loading="lazy"
                       class="w-full h-full object-cover transition-all duration-200 {epSpoiler(ep) ? 'blur-md scale-110' : ''}" />
@@ -1326,8 +1326,8 @@
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each extras as ex (ex.Id)}
               <button onclick={() => onPlayVideo?.({ item: ex, audioIndex: -1, subtitleIndex: -1 })}
-                class="shrink-0 w-80 scroll-m-4 group flex flex-col focus:outline-none text-left">
-                <div class="aspect-video w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
+                class="shrink-0 w-80 scroll-m-4 group isolate flex flex-col focus:outline-none text-left">
+                <div class="aspect-video w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
                   {#if getItemImageUrl(ex, 'landscape')}
                     <img src={getItemImageUrl(ex, 'landscape')} {@attach blurUp(itemBlurHash(ex))} alt={ex.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}
@@ -1350,8 +1350,8 @@
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.cast}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each castMembers as person (person.Id)}
-              <button onclick={() => onOpenPerson?.(person)} data-item-id={person.Id} class="shrink-0 w-36 scroll-m-4 group focus:outline-none text-center">
-                <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
+              <button onclick={() => onOpenPerson?.(person)} data-item-id={person.Id} class="shrink-0 w-36 scroll-m-4 group isolate focus:outline-none text-center">
+                <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
                   {#if personImageUrl(session.serverUrl, person)}
                     <img src={personImageUrl(session.serverUrl, person)} {@attach blurUp(itemBlurHash(person))} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}
@@ -1374,8 +1374,8 @@
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.includedIn}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each collections as col (col.Id)}
-              <button onclick={() => onOpenCollection?.(col)} data-item-id={col.Id} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
+              <button onclick={() => onOpenCollection?.(col)} data-item-id={col.Id} class="shrink-0 w-48 scroll-m-4 group isolate flex flex-col focus:outline-none text-left">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
                   {#if getItemImageUrl(col, 'portrait')}
                     <img src={getItemImageUrl(col, 'portrait')} {@attach blurUp(itemBlurHash(col))} alt={col.Name} class="w-full h-full object-cover" loading="lazy" />
                   {/if}
@@ -1393,8 +1393,8 @@
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.similar}</h2>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each similarItems as si (si.Id)}
-              <button onclick={() => navigateTo(si.Id)} data-item-id={si.Id} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
+              <button onclick={() => navigateTo(si.Id)} data-item-id={si.Id} class="shrink-0 w-48 scroll-m-4 group isolate flex flex-col focus:outline-none text-left">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
                   {#if getItemImageUrl(si, 'portrait')}
                     <img src={getItemImageUrl(si, 'portrait')} {@attach blurUp(itemBlurHash(si))} alt={si.Name} class="w-full h-full object-cover" loading="lazy" />
                   {/if}

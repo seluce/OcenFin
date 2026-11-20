@@ -696,9 +696,9 @@
     {@const sub = getItemSubtitle(item, i18n.t.today)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
       onfocus={() => previewItem(item)} onblur={cancelPreview}
-      class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
+      class="shrink-0 w-80 group isolate flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
-                  border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow
+                  border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow
                   transition-transform duration-200 shadow-xl relative">
         {#if img}
           <img src={img} {@attach blurUp(itemBlurHash(item, 'Backdrop'))} alt={item.Name}
@@ -725,9 +725,9 @@
     {@const sub = getItemSubtitle(item, i18n.t.today)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
       onfocus={() => previewItem(item)} onblur={cancelPreview}
-      class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
+      class="shrink-0 w-48 group isolate flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                  border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow
+                  border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow
                   transition-transform duration-200 shadow-xl">
         {#if img}
           <img src={img} {@attach blurUp(blur)} alt={item.Name}
@@ -754,9 +754,9 @@
     <!-- data-item-id: Back from the collection returns to this card (focusCardAgain). The row comes
          from the cache on the way back, so it is there in time. -->
     <button onclick={() => onOpenCollection?.(col)} onfocus={() => previewItem(col)} onblur={cancelPreview} data-item-id={col.Id}
-      class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
+      class="shrink-0 w-48 group isolate flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                  border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow
+                  border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow
                   transition-transform duration-200 shadow-xl">
         {#if img}
           <img src={img} {@attach blurUp(itemBlurHash(col))} alt={col.Name}
@@ -899,9 +899,9 @@
                      comes out of the first response round, so it satisfies the rule that only rows which
                      arrive quickly carry the attribute. -->
                 <button onclick={() => onOpenLibrary?.(library)} data-item-id={library.Id}
-                  class="shrink-0 scroll-mt-24 scroll-mx-4 group flex flex-col items-center focus:outline-none">
+                  class="shrink-0 scroll-mt-24 scroll-mx-4 group isolate flex flex-col items-center focus:outline-none">
                   <div class="w-64 h-36 bg-gray-800 rounded-xl flex items-center justify-center
-                              border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow group-hover:border-gray-400
+                              border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow group-hover:border-gray-400
                               transition-transform duration-200 shadow-lg overflow-hidden">
                     {#if getItemImageUrl(library)}
                       <img src={getItemImageUrl(library)} {@attach blurUp(itemBlurHash(library))} alt={library.Name}

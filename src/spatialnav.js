@@ -92,6 +92,27 @@ function focusableBoxes(root) {
   });
 }
 
+// Big grids (data-focus-grid on the container, the library's: thousands of cards deep in a library). Their cards
+// stand in document order, row by row, so the card next to the focused one in ANY direction is a near sibling —
+// the row above, the row below, the one beside it. Measuring the whole group instead (every card's rect, and the
+// group-wide query that finds them) was most of a press's script time 1000 cards deep: ~12 of 15 ms at 4× CPU
+// throttle (CODE-HEALTH §126). The pick tries these neighbours first; only when none lies that way — the grid's
+// edge, a row still loading, the A–Z bar to the right — does it fall back to the whole group, exactly as before.
+// 60 either side are ten rows at six columns: always more than one row, so a hit is the same card the full pick
+// would choose.
+const GRID_NEAR = 60;
+function gridNeighbours(active) {
+  const grid = active?.parentElement;
+  if (!grid || !grid.hasAttribute('data-focus-grid')) return null;
+  const out = [];
+  const keep = (el) => { if (el.matches(FOCUSABLE)) { const r = rectOf(el); if (r.width !== 0 && r.height !== 0) out.push(el); } };
+  let el = active;
+  for (let i = 0; i < GRID_NEAR && (el = el.previousElementSibling); i++) keep(el);
+  el = active;
+  for (let i = 0; i < GRID_NEAR && (el = el.nextElementSibling); i++) keep(el);
+  return out;
+}
+
 // First genuinely visible focusable. Iterates lazily and stops at the first hit — the previous
 // focusablesIn(root)[0] ran the CSS check over EVERY element just to keep one of them.
 function firstFocusable(root) {
@@ -374,6 +395,13 @@ export function createFocusManager(isEnabled) {
 
     // 1) Within the current group / modal
     if (scope) {
+      // 1a) A big grid: the neighbours first (gridNeighbours). A card found there needs none of the jump-bar and
+      //     start-at-top handling below — it is a card in the same grid.
+      const near = gridNeighbours(active);
+      if (near) {
+        const hit = pickVisible(e.key, from, near, active, true, true);
+        if (hit) { focusEl(hit); return; }
+      }
       const scopeCands = focusableBoxes(scope);
       let within = pickVisible(e.key, from, scopeCands, active, true, true);
       // Fallback for entering a "start-at-top" area (data-enter-top): if the strict
