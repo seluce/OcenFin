@@ -416,7 +416,8 @@
       dlog('[details] mount', id, resume ? `→ shows ${resume.id}, ${resume.stack.length} step(s) back` : '(fresh)');
       navStack = resume ? [...resume.stack] : [];
       restorePending = !!focusItemId;   // set BEFORE the load, so the play button holds back
-      loadFullDetails(resume?.id ?? id);
+      if (resume) loadFullDetails(resume.id, resume.card);
+      else        loadFullDetails(id, cardOf(item));
       restoreSpot({ focusId: focusItemId, scrollTop: focusScrollTop });
     });
   });
@@ -457,7 +458,35 @@
   // suggestion), no access any more, or the server did not answer. The page used to stay EMPTY —
   // no message, nothing focusable, the next key opened the sidebar.
   let loadError = $state(false);
-  async function loadFullDetails(itemId) {
+  // What the rows under a title ask for: the type decides, and for an episode or a season so do its
+  // series and season. All of that comes with every LIST item too, so the card a title was opened
+  // from already knows it — and the rows can be asked for together with the title instead of a round
+  // trip after it (§132). `cardOf` keeps only those fields, for the way back as well.
+  const cardOf = (it) => (it?.Id && it.Type) ? { Id: it.Id, Type: it.Type, SeriesId: it.SeriesId, SeasonId: it.SeasonId } : null;
+  function rowsFor(it) {
+    const t = it.Type;
+    return {
+      similar: (t === 'Season' || t === 'Episode') ? (it.SeriesId || it.Id) : it.Id,
+      related: t === 'Episode' ? (it.SeasonId || null) : (t === 'Series' || t === 'Season') ? it.Id : null,
+      next:    (t === 'Series' || t === 'Season') ? it.Id : null,
+    };
+  }
+  // What is in flight for the title being loaded. An answer for anything else is dropped — that is
+  // how a row asked for on the card's word is corrected once the title says otherwise.
+  let asked = { similar: null, related: null, next: null };
+  // A row that comes in with the title waits for the frame AFTER the one that first draws it: drawn in
+  // the same frame, the rows cost the title 9 ms on a throttled CPU (§132), and the title is what a
+  // page is judged by. One frame later is still a whole round trip earlier than they used to come.
+  // Not the next episode: it names the play button, which belongs to the title.
+  let titleDrawn = Promise.resolve();
+  function askRows(it, myToken) {
+    const want = rowsFor(it);
+    if (want.similar !== asked.similar) { asked.similar = want.similar; similarItems = []; loadSimilarItems(want.similar, myToken); }
+    if (want.related !== asked.related) { asked.related = want.related; relatedItems = []; if (want.related) loadRelatedItems(want.related, myToken); }
+    if (want.next !== asked.next)       { asked.next = want.next; nextToPlay = null; if (want.next) loadNextToPlay(it, myToken); }
+  }
+
+  async function loadFullDetails(itemId, card = null) {
     const myToken = ++detailToken;
     loadStartedAt = performance.now();
     isLoading    = true;
@@ -473,6 +502,15 @@
     selectedAudioIndex    = -1;
     selectedSubtitleIndex = -1;
     selectedMediaSourceId = null;
+    asked = { similar: null, related: null, next: null };
+    let drawn;
+    titleDrawn = new Promise(r => { drawn = r; });
+
+    // The rows go out WITH the title, not after it. They stay off screen until it is there
+    // ({:else if fullItem}), so a quick one cannot land first.
+    loadCollections(itemId, myToken);
+    loadExtras(itemId, myToken);
+    if (card?.Id === itemId) askRows(card, myToken);
 
     try {
       const res = await fetch(
@@ -483,6 +521,8 @@
         const data = await res.json();
         if (myToken !== detailToken) return;   // a different item was opened meanwhile → discard
         fullItem = data;
+        // The rows now share the server with this request (§132) — this tells whether a server keeps the title quick.
+        dlog('[details] title in', Math.round(performance.now() - loadStartedAt), 'ms', card?.Id === itemId ? '(rows asked along)' : '');
 
         if (fullItem.MediaSources?.length > 0) {
           const src = fullItem.MediaSources[0];
@@ -490,28 +530,20 @@
           applySourceDefaults(src);
         }
 
-        // Load in parallel
-        // Query "similar" for season/episode via the SERIES (otherwise the server returns
-        // similar seasons of different series). For a series, its ID directly.
-        const similarId = (fullItem.Type === 'Season' || fullItem.Type === 'Episode')
-          ? (fullItem.SeriesId || itemId)
-          : itemId;
-        loadSimilarItems(similarId, myToken);
-        loadCollections(itemId, myToken);
-        loadExtras(itemId, myToken);
-        if (fullItem.Type === 'Episode' && fullItem.SeasonId) {
-          loadRelatedItems(fullItem.SeasonId, myToken);
-        } else if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
-          loadRelatedItems(fullItem.Id, myToken);
-          loadNextToPlay(fullItem, myToken);
-        }
+        // "Similar" for a season or an episode goes through the SERIES (otherwise the server returns
+        // similar seasons of other series). Asked again only where the title says something else than
+        // the card did — or when there was no card to go by.
+        askRows(fullItem, myToken);
       } else {
         console.warn('[details] item', itemId, '→ HTTP', res.status);
         if (myToken === detailToken) loadError = true;
       }
     } catch (e) { console.error(e); if (myToken === detailToken) loadError = true; }
     // Only clear the spinner if we're still current — otherwise an old response kills the new one's.
-    finally     { if (myToken === detailToken) isLoading = false; }
+    finally {
+      if (myToken === detailToken) isLoading = false;
+      requestAnimationFrame(() => requestAnimationFrame(drawn));   // the first frame draws the title
+    }
   }
 
   // Extras / special features of the opened item (movie, series or season).
@@ -522,7 +554,7 @@
         `${session.serverUrl}/Items/${itemId}/SpecialFeatures?userId=${selectedUser.Id}`,
         { headers: getAuthHeaders() }
       );
-      if (res.ok) { const d = await res.json(); if (myToken !== detailToken) return; extras = Array.isArray(d) ? d : (d.Items || []); }
+      if (res.ok) { const d = await res.json(); await titleDrawn; if (myToken !== detailToken) return; extras = Array.isArray(d) ? d : (d.Items || []); }
     } catch { /* extras are optional */ }
   }
 
@@ -538,6 +570,7 @@
       );
       if (!res.ok) return;
       const d = await res.json();
+      await titleDrawn;
       if (myToken !== detailToken) return;
       collections = d.Items || [];
       dlog('[details] collections', collections.length, 'in', Math.round(performance.now() - t0), 'ms');
@@ -553,7 +586,8 @@
       );
       if (res.ok) {
         const d = await res.json();
-        if (myToken !== detailToken) return;
+        await titleDrawn;
+        if (myToken !== detailToken || asked.similar !== itemId) return;
         similarItems = d.Items || [];
         // The way back onto a suggestion card relies on this row arriving inside restoreSpot's
         // ~1.2 s (CODE-HEALTH §40) — this line tells whether a server still manages that.
@@ -567,7 +601,7 @@
   async function loadNextToPlay(it, myToken) {
     try {
       const ep = await playableFor(it, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
-      if (myToken === detailToken) nextToPlay = ep;
+      if (myToken === detailToken && asked.next === it.Id) nextToPlay = ep;
     } catch { /* the button just says "Play"; handlePlay resolves it again */ }
   }
 
@@ -577,7 +611,7 @@
         `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${parentId}&Fields=Overview&ImageTypeLimit=1&SortBy=SortName&IsMissing=false&EnableTotalRecordCount=false`,
         { headers: getAuthHeaders() }
       );
-      if (res.ok) { const d = await res.json(); if (myToken !== detailToken) return; relatedItems = d.Items || []; }
+      if (res.ok) { const d = await res.json(); await titleDrawn; if (myToken !== detailToken || asked.related !== parentId) return; relatedItems = d.Items || []; }
     } catch (e) { console.error(e); }
   }
 
@@ -706,6 +740,7 @@
   // the app.
   let navStack = [];
   let scrollEl = $state();
+  let rootEl;               // the page's root — restoreSpot watches it for the card to appear
   // While a spot is being restored the play button must NOT grab focus on mount, or it would win
   // the race against the card, which only exists once its row has loaded.
   //
@@ -732,11 +767,12 @@
   // That row used to be the one exception (§19/§28): /Items/{id}/Similar came too late for
   // restoreSpot on Jellyfin 10.x. On 12.1 it was measured on the B4 at 215–296 ms after the page
   // started (CODE-HEALTH §40), well inside the window, so it is restored like every other row.
-  function navigateTo(id) {
+  function navigateTo(id, card = null) {
     restorePending = false;   // going forward: the play button is the right landing spot again
     if (fullItem?.Id) {
       navStack.push({
         id: fullItem.Id,
+        card: cardOf(fullItem),
         focusId: document.activeElement?.getAttribute?.('data-item-id') ?? null,
         scrollTop: scrollEl?.scrollTop || 0,
       });
@@ -744,13 +780,13 @@
     }
     isLoading = true;
     fullItem  = null;   // show the spinner immediately
-    loadFullDetails(id);
+    loadFullDetails(id, cardOf(card));
   }
 
   // For App, before it leaves for a view that unmounts us: the title on screen and the chain behind
   // it, since both live only in this component. Handed back through takeResume.
   export function snapshot() {
-    return fullItem?.Id ? { id: fullItem.Id, stack: navStack.map(s => ({ ...s })) } : null;
+    return fullItem?.Id ? { id: fullItem.Id, card: cardOf(fullItem), stack: navStack.map(s => ({ ...s })) } : null;
   }
 
   // Back: one level up inside the page first. Returns false once the chain is empty, which is the
@@ -761,7 +797,7 @@
     restorePending = !!prev.focusId;
     isLoading = true;
     fullItem  = null;
-    loadFullDetails(prev.id);
+    loadFullDetails(prev.id, prev.card);
     restoreSpot(prev);
     return true;
   }
@@ -780,11 +816,12 @@
     // missing below it gets clamped (900 became 602 in a measurement) and with a row arriving above
     // the card slides down. So it re-applies until the card's position and the offset hold still.
     const attempt = () => {
-      if (myToken !== detailToken) return;             // a newer navigation took over
+      if (myToken !== detailToken) return sighting?.disconnect();   // a newer navigation took over
       const card = scrollEl?.querySelector(`[data-item-id="${focusId}"]`);
       const active = document.activeElement;
-      if (active && active !== document.body && active !== card) return;   // focus moved on
+      if (active && active !== document.body && active !== card) return sighting?.disconnect();   // focus moved on
       if (card) {
+        sighting?.disconnect();
         scrollEl.scrollTop = scrollTop;                // the view first, then the focus
         card.focus();
         const pos = card.offsetTop;
@@ -793,6 +830,7 @@
         if (settled >= 3) return;                      // nothing moved any more — done
       }
       if (++tries < 24) { setTimeout(attempt, 50); return; }   // ~1.2 s, ample for those rows
+      sighting?.disconnect();
       // Gave up without the card: its row never came (a server under load) or the card is gone.
       // The play button held back its own focus for this restore, so without this nothing would be
       // focused and the next key press would open the sidebar. Land where a fresh page lands.
@@ -801,6 +839,22 @@
       }
     };
     await tick();
+    // The card's row lands BETWEEN two steps, and for up to 50 ms the page stood there unscrolled with
+    // nothing focused (§132). So the moment the card appears, the spot is applied once — before that
+    // frame is painted. Only that first sighting: whether things hold still is still judged by the
+    // steps above, which count from their own first sighting exactly as before.
+    // Watched on the root: the scroller itself is still missing while the spinner shows.
+    const sighting = rootEl && new MutationObserver(() => {
+      if (myToken !== detailToken) { sighting.disconnect(); return; }
+      const card = scrollEl?.querySelector(`[data-item-id="${focusId}"]`);
+      if (!card) return;
+      sighting.disconnect();
+      const active = document.activeElement;
+      if (active && active !== document.body && active !== card) return;
+      scrollEl.scrollTop = scrollTop;
+      card.focus();
+    });
+    sighting?.observe(rootEl, { childList: true, subtree: true });
     attempt();
   }
 
@@ -849,7 +903,7 @@
   }
 </script>
 
-<div class="flex flex-col h-full relative overflow-hidden" style:background-color={tint?.bg}>
+<div bind:this={rootEl} class="flex flex-col h-full relative overflow-hidden" style:background-color={tint?.bg}>
   {#if isLoading}
     <div class="flex-1 flex items-center justify-center">
       <div class="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
@@ -894,16 +948,16 @@
         </button>
         {#if fullItem.Type === 'Episode'}
           <div class="flex items-center text-xl font-semibold text-gray-400 gap-2">
-            <button onclick={() => navigateTo(fullItem.SeriesId)}
+            <button onclick={() => navigateTo(fullItem.SeriesId, { Id: fullItem.SeriesId, Type: 'Series' })}
               class="hover:text-white focus:text-white focus:outline-none">{fullItem.SeriesName}</button>
             <span>/</span>
-            <button onclick={() => navigateTo(fullItem.SeasonId)}
+            <button onclick={() => navigateTo(fullItem.SeasonId, { Id: fullItem.SeasonId, Type: 'Season', SeriesId: fullItem.SeriesId })}
               class="hover:text-white focus:text-white focus:outline-none">{fullItem.SeasonName}</button>
           </div>
         {:else if fullItem.Type === 'Season' && fullItem.SeriesId}
           <!-- A season page said only "Season 2" — which series, the page did not tell. -->
           <div class="flex items-center text-xl font-semibold text-gray-400 gap-2">
-            <button onclick={() => navigateTo(fullItem.SeriesId)}
+            <button onclick={() => navigateTo(fullItem.SeriesId, { Id: fullItem.SeriesId, Type: 'Series' })}
               class="hover:text-white focus:text-white focus:outline-none">{fullItem.SeriesName}</button>
           </div>
         {/if}
@@ -1286,7 +1340,7 @@
           </h2>
           <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each relatedItems as ep (ep.Id)}
-              <button onclick={() => navigateTo(ep.Id)} data-item-id={ep.Id}
+              <button onclick={() => navigateTo(ep.Id, ep)} data-item-id={ep.Id}
                 onfocus={() => { if (ep.Type === 'Episode') focusedEpisode = ep; }}
                 class="shrink-0 scroll-m-4 group isolate flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
                 <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
@@ -1404,7 +1458,7 @@
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.similar}</h2>
           <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each similarItems as si (si.Id)}
-              <button onclick={() => navigateTo(si.Id)} data-item-id={si.Id} class="shrink-0 w-48 scroll-m-4 group isolate flex flex-col focus:outline-none text-left">
+              <button onclick={() => navigateTo(si.Id, si)} data-item-id={si.Id} class="shrink-0 w-48 scroll-m-4 group isolate flex flex-col focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
                   {#if getItemImageUrl(si, 'portrait')}
                     <img src={getItemImageUrl(si, 'portrait')} {@attach blurUp(itemBlurHash(si))} alt={si.Name} class="w-full h-full object-cover" loading="lazy" />

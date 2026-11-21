@@ -117,19 +117,37 @@
 
   async function performSearch() {
     const myToken = ++searchToken;
+    const stale = () => myToken !== searchToken;   // a new search meanwhile → discard this response
+    // The titles show as soon as THEY are in. They used to wait for the people, which take a second
+    // round (a count per person, below) and sit at the very bottom anyway, so those now follow when
+    // they are ready (§132). Without titles the spinner stays until the people are known, so a
+    // people-only hit never flashes "nothing found" first.
+    let shown = false;
+    const show = () => {
+      if (shown || stale()) return;
+      shown = true;
+      isLoading = false;
+      // Started from the history: nothing on screen holds focus, so the results take it over. The
+      // field is the fallback for a term that finds nothing — there is no third place to stand.
+      if (focusResults) {
+        focusResults = false;
+        tick().then(() => { if (!stale()) (scrollEl?.querySelector('[data-item-id]') || searchInput)?.focus(); });
+      }
+    };
     try {
-      // Search titles + people in parallel
-      const [itemsRes, peopleRes] = await Promise.all([
-        fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&searchTerm=${encodeURIComponent(query)}&Recursive=true&IncludeItemTypes=Movie,Series,Episode&Limit=24&Fields=Overview&ImageTypeLimit=1&SortBy=SortName&EnableTotalRecordCount=false`,
-          { headers: getAuthHeaders() }),
-        fetch(`${session.serverUrl}/Persons?searchTerm=${encodeURIComponent(query)}&Limit=10&userId=${selectedUser.Id}`,
-          { headers: getAuthHeaders() })
-      ]);
-      if (myToken !== searchToken) return;   // a new search meanwhile → discard this response
+      // Titles + people in parallel
+      const pItems = fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&searchTerm=${encodeURIComponent(query)}&Recursive=true&IncludeItemTypes=Movie,Series,Episode&Limit=24&Fields=Overview&ImageTypeLimit=1&SortBy=SortName&EnableTotalRecordCount=false`,
+        { headers: getAuthHeaders() });
+      const pPeople = fetch(`${session.serverUrl}/Persons?searchTerm=${encodeURIComponent(query)}&Limit=10&userId=${selectedUser.Id}`,
+        { headers: getAuthHeaders() });
+      pPeople.catch(() => {});   // awaited below — only so a failure before that is not reported as unhandled
+      const itemsRes = await pItems;
+      if (stale()) return;
       if (itemsRes.ok) {
         const items = (await itemsRes.json()).Items || [];
-        if (myToken !== searchToken) return;
+        if (stale()) return;
         results = items;
+        if (items.length) { people = []; show(); }   // the previous term's people must not linger below
       }
 
       // People: keep only those that actually appear in the library.
@@ -139,6 +157,8 @@
       // consecutive debounced searches mostly return the same people —
       // without a cache that's a full query burst each time. The title search is independent
       // and always fresh; errors are deliberately NOT cached.
+      const peopleRes = await pPeople;
+      if (stale()) return;
       if (peopleRes.ok) {
         const found = (await peopleRes.json()).Items || [];
         const checked = await Promise.all(found.map(async p => {
@@ -153,22 +173,15 @@
             return has ? p : null;
           } catch { return null; }
         }));
-        if (myToken !== searchToken) return;
+        if (stale()) return;
         people = checked.filter(Boolean);
       }
 
       if (query.trim().length >= 2 && (results.length > 0 || people.length > 0)) saveToHistory(query);
     } catch (e) { console.error("search failed:", e); }
-    // Only reset isLoading if we're still the current search — otherwise an
-    // old response would clear the spinner of the already-running new search prematurely.
-    finally     { if (myToken === searchToken) isLoading = false; }
-    // Started from the history: nothing on screen holds focus, so the results take it over. The
-    // field is the fallback for a term that finds nothing — there is no third place to stand.
-    if (focusResults && myToken === searchToken) {
-      focusResults = false;
-      await tick();
-      (scrollEl?.querySelector('[data-item-id]') || searchInput)?.focus();
-    }
+    // Only the current search may end the spinner — an old response would otherwise clear the one
+    // of the search already running.
+    finally { show(); }
   }
 
 

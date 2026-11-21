@@ -59,26 +59,51 @@
   // while a sidebar selection has to take focus OUT of the sidebar and may only stop for focus that
   // has gone somewhere else entirely.
   function focusContent({ why, heldByOther, maxTries = 12, gap = 100, onGiveUp }) {
-    let cancelled = false, tries = 0;
+    let done = false, tries = 0, timer = 0, frame = 0, watcher = null;
+    const stop = () => { done = true; clearTimeout(timer); cancelAnimationFrame(frame); watcher?.disconnect(); };
     const attempt = () => {
-      if (cancelled) return;
+      if (done) return;
       const active = document.activeElement;
       if (heldByOther(active)) {
+        stop();
         dlog('[focus]', why, '· stood down, already on', (active.textContent || '').trim().slice(0, 24));
         return;
       }
-      const main   = document.querySelector('[data-focus-group="main"]');
-      const shown  = main ? [...main.querySelectorAll(CONTENT_FOCUSABLE)].filter(isShown) : [];
+      const main = document.querySelector('[data-focus-group="main"]');
       // The hero only as the last resort — not while the view is still building (aria-busy: the dashboard
       // holds rows back, §106), or start focus lands on the banner a moment before the first row appears.
-      const target = shown.find(el => !el.closest('[data-hero]'))
-                  || (main?.querySelector('[aria-busy="true"]') ? null : shown[0]);
-      if (target) { target.focus(); dlog('[focus]', why, '→', (target.textContent || '').trim().slice(0, 24)); return; }
-      if (++tries < maxTries) { setTimeout(attempt, gap); return; }
+      let target = null, first = null;
+      for (const el of main ? main.querySelectorAll(CONTENT_FOCUSABLE) : []) {
+        if (!isShown(el)) continue;
+        if (!el.closest('[data-hero]')) { target = el; break; }
+        first ??= el;
+      }
+      target ??= main?.querySelector('[aria-busy="true"]') ? null : first;
+      if (target) { stop(); target.focus(); dlog('[focus]', why, '→', (target.textContent || '').trim().slice(0, 24)); }
+    };
+    const step = () => {
+      attempt();
+      if (done) return;
+      if (++tries < maxTries) { timer = setTimeout(step, gap); return; }
+      stop();
       onGiveUp?.();
     };
-    tick().then(attempt);
-    return () => { cancelled = true; };
+    tick().then(() => {
+      if (done) return;
+      // The view usually appears BETWEEN two timer steps, and the wait for the next one was the
+      // slowest part of the start and of opening Settings (§132). So try again as soon as the content
+      // area changes too — at most once per frame, before it is painted. The timer stays: it bounds
+      // the whole wait and gives up in the end.
+      const main = document.querySelector('[data-focus-group="main"]');
+      if (main) {
+        watcher = new MutationObserver(() => {
+          frame ||= requestAnimationFrame(() => { frame = 0; attempt(); });
+        });
+        watcher.observe(main, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-busy', 'class', 'disabled'] });
+      }
+      step();
+    });
+    return stop;
   }
 
   // Stand-down rule for everything except the app start. A HIDDEN element never counts as holding
