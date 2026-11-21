@@ -372,8 +372,19 @@
     }
   }
 
-  // Cast: actors (max. 20) from the People data
-  let castMembers = $derived((fullItem?.People || []).filter(p => p.Type === 'Actor').slice(0, 20));
+  // Cast: actors (max. 20) from the People data, ONE card per person. Jellyfin lists a person once per role — a voice
+  // actor with three characters, as anime metadata names each one — and the row is keyed by Id: the repeated Id threw
+  // each_key_duplicate and the page never finished loading (CODE-HEALTH §131). The roles go onto the one card.
+  let castMembers = $derived.by(() => {
+    const byId = new Map();
+    for (const p of fullItem?.People || []) {
+      if (p.Type !== 'Actor') continue;
+      const seen = byId.get(p.Id);
+      if (!seen) byId.set(p.Id, { ...p });
+      else if (p.Role && !(seen.Role || '').split(' / ').includes(p.Role)) seen.Role = seen.Role ? `${seen.Role} / ${p.Role}` : p.Role;
+    }
+    return [...byId.values()].slice(0, 20);
+  });
 
   function closeTrailer() {
     trailerEmbedUrl = null;

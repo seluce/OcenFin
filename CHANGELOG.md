@@ -17,6 +17,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 - **No half-watched titles in the home banner.** When the server answered in a certain order, a title from Continue
   watching could turn up in the banner as well.
+- **Title pages with one actor in several roles open again.** Such a page, common with anime, kept loading forever;
+  the person now shows once, with all their roles.
 
 ### Internal
 
