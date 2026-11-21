@@ -395,36 +395,70 @@
   // UNWATCHED, well-rated titles with a backdrop from them — instead of "newest additions, random".
   // Returns the candidate pool (rating-sorted). Empty = no signal / error → the caller
   // falls back to the previous new-additions logic so the hero never looks empty.
+  //
+  // Two round trips by nature (taste seeds, then the pool), and the seeds are the slower of the two — so the pool
+  // goes out at once with the genres the LAST load found, kept per profile, and this load's seeds only update them
+  // for the next one (CODE-HEALTH §130). Taste moves slowly: the top four genres of the last 25 titles rarely change
+  // with one more film. No genres kept yet (first start, new profile) or their pool too thin: the old chain.
   async function loadHeroForYou(uId, opts, pPlayed) {
+    const t0 = performance.now();
     try {
-      // 1) Taste signal: recently watched movies/series with their genres (loadRecentlyPlayed).
-      const seeds = await pPlayed;
-      if (!seeds) return;
-
-      // 2) Count genres weighted — recently watched (higher up in the DatePlayed list) counts a bit more.
-      const counts = new Map();
-      seeds.forEach((it, idx) => {
-        const weight = 1 + (seeds.length - idx) / seeds.length;
-        (it.Genres || []).forEach(g => counts.set(g, (counts.get(g) || 0) + weight));
-      });
-      if (counts.size === 0) return [];   // no signal (new profile) → fallback at the caller
-
-      const topGenres = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([g]) => g);
-
-      // 3) "For You" pool: unwatched, well-rated titles from these genres, with a backdrop.
-      //    Genres= is pipe-separated (OR combination).
-      const genreParam = topGenres.map(encodeURIComponent).join('|');
-      const poolRes = await fetch(
-        `${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=Movie,Series&Recursive=true` +
-        `&Filters=IsUnplayed&Genres=${genreParam}&SortBy=CommunityRating&SortOrder=Descending` +
-        `&Limit=40&Fields=${FIELDS}&EnableImageTypes=Backdrop,Primary,Logo&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts
-      );
-      if (!poolRes.ok) { console.warn('hero pool: HTTP', poolRes.status); return []; }
-      const pool = ((await poolRes.json()).Items || []).filter(i => i.BackdropImageTags?.length > 0);
+      const known = knownHeroGenres(uId);
+      const pKnown = known.length ? loadHeroPool(uId, opts, known) : null;
+      // Taste signal: recently watched movies/series with their genres (loadRecentlyPlayed).
+      const pTaste = pPlayed.then(seeds => seeds ? topGenresOf(seeds) : null);
+      pTaste.then(g => { if (g) keepHeroGenres(uId, g); }).catch(() => {});
+      if (pKnown) {
+        const pool = await pKnown;
+        dlog('[dashboard] hero pool (kept genres)', pool.length, 'in', Math.round(performance.now() - t0), 'ms');
+        if (pool.length >= HERO_MIN) return pool;
+      }
+      const fresh = await pTaste;
+      if (!fresh?.length) return [];   // no signal (new profile) or no answer → fallback at the caller
+      if (pKnown && fresh.join('|') === known.join('|')) return [];   // that pool was just asked for: too thin
+      const pool = await loadHeroPool(uId, opts, fresh);
+      dlog('[dashboard] hero pool (seeds first)', pool.length, 'in', Math.round(performance.now() - t0), 'ms');
       return pool;
     } catch {
       return [];   // error → new-additions fallback at the caller
     }
+  }
+
+  // Count genres weighted — recently watched (higher up in the DatePlayed list) counts a bit more. Top four.
+  function topGenresOf(seeds) {
+    const counts = new Map();
+    seeds.forEach((it, idx) => {
+      const weight = 1 + (seeds.length - idx) / seeds.length;
+      (it.Genres || []).forEach(g => counts.set(g, (counts.get(g) || 0) + weight));
+    });
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([g]) => g);
+  }
+
+  // "For You" pool: unwatched, well-rated titles from these genres, with a backdrop. Genres= is pipe-separated (OR).
+  function loadHeroPool(uId, opts, genres) {
+    return fetch(
+      `${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=Movie,Series&Recursive=true` +
+      `&Filters=IsUnplayed&Genres=${genres.map(encodeURIComponent).join('|')}&SortBy=CommunityRating&SortOrder=Descending` +
+      `&Limit=40&Fields=${FIELDS}&EnableImageTypes=Backdrop,Primary,Logo&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts
+    ).then(res => {
+      if (!res.ok) { console.warn('hero pool: HTTP', res.status); return []; }
+      return res.json().then(d => (d.Items || []).filter(i => i.BackdropImageTags?.length > 0));
+    }).catch(() => []);
+  }
+
+  // The hero's genres per profile, device-local like the search history (removed with the server's profiles, App).
+  const heroGenresKey = (uId) => `ocenfin:herogenres:${uId}`;
+  function knownHeroGenres(uId) {
+    try {
+      const g = JSON.parse(localStorage.getItem(heroGenresKey(uId)) || 'null');
+      return Array.isArray(g) && g.every(x => typeof x === 'string') ? g.slice(0, 4) : [];
+    } catch { return []; }
+  }
+  function keepHeroGenres(uId, genres) {
+    try {
+      if (genres.length) localStorage.setItem(heroGenresKey(uId), JSON.stringify(genres));
+      else localStorage.removeItem(heroGenresKey(uId));   // history emptied: no taste to start from next time
+    } catch { /* storage full or off — the next load takes the old chain */ }
   }
 
   async function loadDashboardData() {
@@ -468,6 +502,8 @@
 
     isLoading   = true;
     heroLoading = true;   // reserve the hero space from the first paint until the featured data is there
+    let resumeKnown;   // opened once continueWatching holds this load's answer — or none is coming (every exit below)
+    const pResumeKnown = new Promise(r => { resumeKnown = r; });
     try {
       const uId   = selectedUser.Id;
       const opts  = { headers: getAuthHeaders() };
@@ -487,8 +523,12 @@
       // and not Movie,Episode, so a half-watched extra still comes back.
       const pResume       = fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&MediaTypes=Video&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts);
       heroForYouPending = true;
+      // The hero leaves out what Continue watching shows, so it is built only once that row is known. With the pool
+      // now often back first (kept genres) it would have taken a half-watched title along; before, the seeds' round
+      // trip merely happened to outlast Resume. Costs nothing on screen: the banner shows with the rows anyway.
       const pPlayed     = loadRecentlyPlayed(uId, opts);   // shared by the hero and the recommendations
       const pHeroForYou = loadHeroForYou(uId, opts, pPlayed)
+        .then(pool => pResumeKnown.then(() => pool))
         .then(pool => { heroForYouPending = false; if (!heroBuilt && !applyHeroPool(pool)) buildHero(); })
         .catch(() => { heroForYouPending = false; if (!heroBuilt) buildHero(); });
       // Derive recommendations ("Because you watched X") from recently watched — independent of
@@ -529,13 +569,14 @@
       // next visit loads again. A revoked token is App's to handle (session.authLost).
       if (!resViews.ok || !resResume.ok) {
         console.warn('dashboard: HTTP', resViews.status, resResume.status);
-        isLoading = false; heroLoading = false;
+        isLoading = false; heroLoading = false; resumeKnown();
         answer(...HOME_ROWS);   // nothing else is coming — no placeholder rows
         return;
       }
       // The same libraries as the sidebar (isShownLibrary: films, series, collections, playlists, mixed).
       libraries        = ((await resViews.json()).Items || []).filter(isShownLibrary);
       continueWatching = (await resResume.json()).Items || [];
+      resumeKnown();
       answer('libraries', 'resume');
       isLoading        = false;
       session.connectionLost = false;   // server reachable
@@ -615,6 +656,7 @@
       console.error("Dashboard load failed:", err);
       isLoading   = false;
       heroLoading = false;
+      resumeKnown();
       answer(...HOME_ROWS);
       session.connectionLost = true;   // server unreachable → banner
     }

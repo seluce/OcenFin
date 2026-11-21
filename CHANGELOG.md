@@ -10,6 +10,13 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Quicker steps from title to title, most of all in large libraries.** Each move takes the TV less work on every
   screen, and a library answers a thousand titles down as quickly as at its top, where it used to slow with every page.
 - **Quicker start.** Of the twenty languages on board, the app now prepares only the one it shows.
+- **Home banner together with the first rows.** It no longer waits for the watch history before it looks for titles,
+  so its placeholder is gone at the same moment as the rest.
+
+### Fixed
+
+- **No half-watched titles in the home banner.** When the server answered in a certain order, a title from Continue
+  watching could turn up in the banner as well.
 
 ### Internal
 

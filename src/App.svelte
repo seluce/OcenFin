@@ -1205,6 +1205,7 @@
         localStorage.removeItem(userPrefsKey(uid));
         localStorage.removeItem(`search_history_${uid}`);
         localStorage.removeItem(`ocenfin:trackmem:${uid}`);
+        localStorage.removeItem(`ocenfin:herogenres:${uid}`);   // the hero's kept taste (Dashboard, §130)
         n++;
       } catch {}
     }
