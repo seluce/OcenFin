@@ -40,12 +40,13 @@
   // 187 and at 340) — it is near constant, and its cause is still open. Don't tune this constant
   // hoping to move it.
   const libraryItemLimit = 25;
-  // What a card reads (§126): SortName for the A–Z highlight, EndDate/Status for a series' years, ChildCount for an
-  // empty playlist and the info box's seasons, RecursiveItemCount for a series' watched share. PrimaryImageAspectRatio
-  // is gone — nothing reads it, and the server works it out per title. Images: the poster and ONE backdrop (the
+  // What a card reads (§126): SortName for the A–Z highlight, ChildCount for an empty playlist and the info box's
+  // seasons, RecursiveItemCount for a series' watched share — the three of them only come when asked. A series' years
+  // (EndDate, Status) come anyway: they are no ItemFields, and the server drops such a name unread (§129).
+  // PrimaryImageAspectRatio is gone — nothing reads it, and the server works it out per title. Images: the poster and ONE backdrop (the
   // preview behind the grid) — without the limit every title brings the tags and BlurHashes of all its pictures
   // (logo, thumb, banner, disc, every backdrop), which a list of thousands keeps in memory for nothing.
-  const LIST_FIELDS = 'SortName,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags';
+  const LIST_FIELDS = 'SortName,ChildCount,RecursiveItemCount';
   const LIST_IMAGES = '&ImageTypeLimit=1&EnableImageTypes=Primary,Backdrop';
 
   // ── Grid state ──────────────────────────────────────────────
@@ -316,7 +317,7 @@
   // ── Loading ─────────────────────────────────────────────────
   async function loadGenres(libraryId) {
     try {
-      const res = await fetch(`${session.serverUrl}/Genres?ParentId=${libraryId}&UserId=${selectedUser.Id}&EnableTotalRecordCount=false`, authOpts());
+      const res = await fetch(`${session.serverUrl}/Genres?ParentId=${libraryId}&UserId=${selectedUser.Id}&EnableImages=false&EnableTotalRecordCount=false`, authOpts());
       // Same guard as loadLanguages: after a quick A → B switch, A's genres arrived last and filled
       // B's filter menu.
       if (res.ok) { const d = await res.json(); if (currentLibraryId === libraryId) { availableGenres = d.Items || []; dropUnknownFilters('genres'); } }
@@ -326,7 +327,8 @@
   // Which audio and subtitle languages the library's titles carry. The server only fills these for
   // Movie/Series/Episode types, and adds the episodes itself when Series is asked for, so one request
   // covers film, series and mixed libraries. Older servers answer without the fields → no sections.
-  async function loadLanguages(libraryId) {
+  // withGenres: the answer's Genres (Name + Id, the same GetGenres over these types) fill the genre menu too.
+  async function loadLanguages(libraryId, withGenres = false) {
     audioLangsRaw = []; subtitleLangsRaw = [];
     const t0 = performance.now();
     try {
@@ -334,6 +336,7 @@
       if (!res.ok) return;
       const d = await res.json();
       if (currentLibraryId !== libraryId) return;   // switched library meanwhile
+      if (withGenres) { availableGenres = d.Genres || []; dropUnknownFilters('genres'); }
       audioLangsRaw    = d.AudioLanguages    || [];
       subtitleLangsRaw = d.SubtitleLanguages || [];
       dropUnknownFilters('languages');
@@ -533,8 +536,12 @@
       previewBackdrop = '';
       clearTimeout(previewTimer);
       clearTimeout(clearTimer);
-      loadGenres(lib.Id);
-      loadLanguages(lib.Id);
+      // A film or series library's genres come with its languages: Filters2 works them out for the same titles
+      // anyway, and /Genres had the server build the list a second time (§129). A mixed library still asks /Genres,
+      // whose list also holds what only its other titles carry (home videos, music videos).
+      const typed = !!LIBRARY_ITEM_TYPES[(lib.CollectionType || '').toLowerCase()];
+      if (!typed) loadGenres(lib.Id);
+      loadLanguages(lib.Id, typed);
       currentLibraryType = (lib.CollectionType || '').toLowerCase();
     }
     currentLibraryName = lib.Name;

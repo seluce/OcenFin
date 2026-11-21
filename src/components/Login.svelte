@@ -28,7 +28,7 @@
     clientAuthHeader = '',        // auth header without a user reference (Quick Connect Initiate)
     authHeaderFor,                // (name) => auth header with a user-specific DeviceId
     getStoredToken,               // (serverId, userId) => token | undefined (quick switch)
-    onValidateToken,              // (token) => Promise<true | false | null> — null: no verdict (unreachable)
+    onValidateToken,              // (token) => Promise<UserDto | true | false | null> — truthy: valid, null: no verdict (unreachable)
     onServerConnected,            // (server) => void — App sets selectedServer
     onFetchUsers,                 // () => Promise<void> — fills users (App state)
     onSaveServer,                 // (server) => void — append + persist

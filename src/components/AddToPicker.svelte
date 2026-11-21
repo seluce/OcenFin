@@ -49,8 +49,8 @@
     await Promise.all(items.map(async (target) => {
       try {
         const url = m === 'collection'
-          ? `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${target.Id}&Fields=&Limit=300&EnableTotalRecordCount=false`
-          : `${session.serverUrl}/Playlists/${target.Id}/Items?UserId=${selectedUser.Id}&Limit=300`;
+          ? `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${target.Id}&EnableImages=false&EnableUserData=false&Limit=300&EnableTotalRecordCount=false`
+          : `${session.serverUrl}/Playlists/${target.Id}/Items?UserId=${selectedUser.Id}&EnableImages=false&EnableUserData=false&Limit=300`;
         const r = await fetch(url, { headers: getAuthHeaders() });
         if (r.ok) {
           const kids = (await r.json()).Items || [];

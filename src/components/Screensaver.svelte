@@ -64,7 +64,7 @@
 
   async function fetchBackdrops(filter) {
     const url = `${session.serverUrl}/Items?UserId=${userId}&Recursive=true&IncludeItemTypes=Movie,Series`
-              + `${filter}&SortBy=Random&Limit=80&Fields=BackdropImageTags&ImageTypeLimit=1`
+              + `${filter}&SortBy=Random&Limit=80&ImageTypeLimit=1`
               + `&EnableImageTypes=Backdrop,Logo&EnableTotalRecordCount=false`;
     const res = await fetch(url, { headers: authHeaders(session.token) });
     if (!res.ok) return [];
@@ -82,7 +82,7 @@
   // Next Up = the next episode of ongoing series → for "current". Returns episodes; shown is the
   // SERIES backdrop (via SeriesId + inherited ParentBackdropImageTags) with the series title.
   async function fetchNextUp() {
-    const url = `${session.serverUrl}/Shows/NextUp?UserId=${userId}&Limit=40&Fields=ParentBackdropImageTags`
+    const url = `${session.serverUrl}/Shows/NextUp?UserId=${userId}&Limit=40`
               + `&ImageTypeLimit=1&EnableImageTypes=Backdrop,Logo&EnableTotalRecordCount=false`;
     const res = await fetch(url, { headers: authHeaders(session.token) });
     if (!res.ok) return [];

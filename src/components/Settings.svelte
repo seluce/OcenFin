@@ -565,7 +565,7 @@
     recentLoading = true;
     try {
       const base = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&Recursive=true&IncludeItemTypes=Movie,Episode`
-        + `&Fields=SeriesId,SeriesPrimaryImageTag,UserData&EnableImageTypes=Primary&ImageTypeLimit=1`
+        + `&EnableImageTypes=Primary&ImageTypeLimit=1`
         + `&SortBy=DatePlayed&SortOrder=Descending&EnableTotalRecordCount=false&Limit=72`;
       const [played, resume] = await Promise.all([
         fetch(`${base}&Filters=IsPlayed`,    { headers: getAuthHeaders() }).then(r => r.ok ? r.json() : { Items: [] }),

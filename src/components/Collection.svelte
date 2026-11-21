@@ -90,7 +90,8 @@
     canEdit = canDelete = true;
     const norm = (v) => String(v || '').replace(/-/g, '').toLowerCase();
     try {
-      const r = await fetch(`${session.serverUrl}/Items/${id}?UserId=${selectedUser.Id}&Fields=CanDelete`, { headers: getAuthHeaders() });
+      // One title by id always comes with every field, CanDelete included (the route has no Fields parameter, §129).
+      const r = await fetch(`${session.serverUrl}/Items/${id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
       if (!r.ok || id !== loadedId) return;
       const owner = (await r.json()).CanDelete;
       if (id !== loadedId || owner !== false) return;   // owner/admin, or unknown → leave everything on

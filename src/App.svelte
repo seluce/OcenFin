@@ -1137,12 +1137,16 @@
               return;
             }
             if (valid) {
-              const res = await fetch(`${server.url}/Users/${saved.userId}`, {
+              // /Users/Me already brought the user; asking /Users/{id} for the same one cost a second round trip
+              // before the app could open (§129). Only if it is somebody else (or unreadable) the old way.
+              const sameId = (a, b) => String(a || '').replace(/-/g, '').toLowerCase() === String(b || '').replace(/-/g, '').toLowerCase();
+              const me = valid !== true && sameId(valid.Id, saved.userId) ? valid : null;
+              const res = me ? null : await fetch(`${server.url}/Users/${saved.userId}`, {
                 headers: getAuthHeaders()
               });
-              dlog('[restore] /Users/{id} HTTP', res.status);
-              if (res.ok) {
-                selectedUser = await res.json();
+              if (res) dlog('[restore] /Users/{id} HTTP', res.status);
+              if (me || res.ok) {
+                selectedUser = me || await res.json();
                 isLoggedIn   = true;
                 appPhase     = 'app';
                 applyUserPrefs(selectedUser.Id);   // load profile settings
@@ -1413,7 +1417,7 @@
       try {
         const res = await fetch(
           `${session.serverUrl}/Items?UserId=${m.id}&ParentId=${libraryId}&Recursive=true` +
-          `&IncludeItemTypes=Movie,Series&Fields=UserData&EnableImages=false` +
+          `&IncludeItemTypes=Movie,Series&EnableImages=false` +
           `&Limit=100000&EnableTotalRecordCount=false`,
           { headers: authHeaders(token) }
         );
@@ -1471,7 +1475,7 @@
       try {
         const res = await fetch(
           `${session.serverUrl}/Items?UserId=${m.id}&Recursive=true&IncludeItemTypes=Movie,Series` +
-          `&Fields=Genres,CommunityRating,UserData&EnableImageTypes=Primary&Limit=100000&EnableTotalRecordCount=false`,
+          `&Fields=Genres&EnableImageTypes=Primary&Limit=100000&EnableTotalRecordCount=false`,
           { headers: authHeaders(token) }
         );
         if (!res.ok) return null;
@@ -1529,15 +1533,16 @@
   // baseUrl can be passed explicitly: on auto-login the reactive session.serverUrl ($:) is not yet
   // updated (Svelte flushes reactivity only after the synchronous block), so
   // `${session.serverUrl}` would point to '' there → relative fetch to the app origin instead of the server.
-  // Three answers, not two: true = valid, false = the server REJECTED it (401/403), null = no verdict
+  // Three answers, not two: truthy = valid, false = the server REJECTED it (401/403), null = no verdict
   // (unreachable, or the server erred). Callers delete tokens and tear sessions down only on false —
   // a Wi-Fi that is not up yet after standby, or a NAS still waking, used to count as "rejected" and
-  // cost the saved sign-in.
+  // cost the saved sign-in. Valid comes back as the token's UserDto (/Users/Me builds it the same way as
+  // /Users/{id}, §129) — true only if its body could not be read; every caller tests truthiness or === false/null.
   async function validateToken(token, baseUrl = session.serverUrl) {
     try {
       const res = await fetch(`${baseUrl}/Users/Me`, { headers: authHeaders(token) });
       if (!res.ok) dlog('[auth] token validation failed — HTTP', res.status);
-      if (res.ok) return true;
+      if (res.ok) return (await res.json().catch(() => null)) || true;
       return (res.status === 401 || res.status === 403) ? false : null;
     } catch (e) { dlog('[auth] token validation — network error:', e?.message || e); return null; }
   }

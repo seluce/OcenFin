@@ -15,6 +15,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 - **Lighter requests.** Every list asks the server only for the pictures its cards show, and the info preview's
   plots come without watched states and artwork it never uses.
+- **Fewer requests, checked against Jellyfin 12.4.** The automatic sign-in, the home screen's suggestions and a
+  library's genre list each ask the server once where they asked twice, and nothing the app sends is outdated there.
 
 ## 2026.11.19
 

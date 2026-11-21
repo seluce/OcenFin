@@ -316,8 +316,9 @@
   const getAuthHeaders = () => authHeaders(session.token);
   // Only the first picture of each type is ever shown, so every list asks for that one alone (ImageTypeLimit=1) —
   // a title with a dozen backdrops brought every tag and BlurHash along (CODE-HEALTH §126/§128). /Items/{id}/Similar
-  // has no such parameter in 12.2.
-  const FIELDS = "Overview,BackdropImageTags";
+  // has no such parameter in 12.2. Fields carries ItemFields only: everything else (BackdropImageTags, SeriesName,
+  // ProductionYear, UserData …) comes anyway, and the server drops an unknown name without a word (§129).
+  const FIELDS = "Overview";
   const ROW_LIMIT = 12;   // uniform row length: rows are teasers, the catalog is the library
   const HERO_MIN = 3;     // use the "For You" pool only from this many usable titles on, otherwise new-additions fallback
                           // (exceptions deliberate: hero = 5-item rotation, collections = curated, their own cap)
@@ -352,17 +353,25 @@
     } catch { /* the flag stays set → the next dashboard visit tries again */ }
   }
 
+  // Recently watched films and series, newest first, WITH genres — one query for two readers: the For-You hero counts
+  // the genres of all 25, the recommendations take the first two as seeds. It used to go out twice, as Limit=25 and
+  // Limit=4, same filter, same order (CODE-HEALTH §129). null = the server answered with an error.
+  function loadRecentlyPlayed(uId, opts) {
+    return fetch(
+      `${session.serverUrl}/Items?UserId=${uId}&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
+      `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=25&Fields=Genres&EnableImages=false&EnableTotalRecordCount=false`, opts
+    ).then(res => {
+      if (!res.ok) { console.warn('recently played: HTTP', res.status); return null; }
+      return res.json().then(d => d.Items || []);
+    });
+  }
+
   // Recommendations: seeds from recently watched items, then /Items/{id}/Similar.
   // Best practice: shown right in the dashboard, no separate tab.
-  async function loadRecommendations(uId, opts, fields, cache) {
+  async function loadRecommendations(uId, opts, fields, cache, pPlayed) {
     try {
-      // Fetch recently played movies/series as the hook
-      const res = await fetch(
-        `${session.serverUrl}/Items?UserId=${uId}&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
-        `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=4&EnableImages=false&EnableTotalRecordCount=false`, opts
-      );
-      if (!res.ok) { console.warn('recommendations: HTTP', res.status); return; }
-      const seeds = (await res.json()).Items || [];
+      const seeds = await pPlayed;   // the hook: recently played movies/series
+      if (!seeds) return;
 
       // Up to two rows of similar titles (cached). Depending on the
       // setting, 1 or 2 are rendered — so switching feels instant without a reload.
@@ -386,15 +395,11 @@
   // UNWATCHED, well-rated titles with a backdrop from them — instead of "newest additions, random".
   // Returns the candidate pool (rating-sorted). Empty = no signal / error → the caller
   // falls back to the previous new-additions logic so the hero never looks empty.
-  async function loadHeroForYou(uId, opts) {
+  async function loadHeroForYou(uId, opts, pPlayed) {
     try {
-      // 1) Taste signal: recently watched movies/series WITH genres (a separate fetch, since FIELDS carries none).
-      const seedRes = await fetch(
-        `${session.serverUrl}/Items?UserId=${uId}&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
-        `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=25&Fields=Genres&EnableImages=false&EnableTotalRecordCount=false`, opts
-      );
-      if (!seedRes.ok) { console.warn('taste seeds: HTTP', seedRes.status); return; }
-      const seeds = (await seedRes.json()).Items || [];
+      // 1) Taste signal: recently watched movies/series with their genres (loadRecentlyPlayed).
+      const seeds = await pPlayed;
+      if (!seeds) return;
 
       // 2) Count genres weighted — recently watched (higher up in the DatePlayed list) counts a bit more.
       const counts = new Map();
@@ -482,13 +487,14 @@
       // and not Movie,Episode, so a half-watched extra still comes back.
       const pResume       = fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&MediaTypes=Video&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts);
       heroForYouPending = true;
-      const pHeroForYou = loadHeroForYou(uId, opts)
+      const pPlayed     = loadRecentlyPlayed(uId, opts);   // shared by the hero and the recommendations
+      const pHeroForYou = loadHeroForYou(uId, opts, pPlayed)
         .then(pool => { heroForYouPending = false; if (!heroBuilt && !applyHeroPool(pool)) buildHero(); })
         .catch(() => { heroForYouPending = false; if (!heroBuilt) buildHero(); });
       // Derive recommendations ("Because you watched X") from recently watched — independent of
       // Views/Resume, so it also goes out before the await.
       const cache = myCache = { libraries: [], continueWatching: [], nextUp: [], latestMovies: [], latestSeries: [], recentlyWatched: [], recommendations: [], collections: [], heroItems: [], answered: {} };
-      const pRecs = loadRecommendations(uId, opts, fields, cache).then(() => answer('recommendations'));
+      const pRecs = loadRecommendations(uId, opts, fields, cache, pPlayed).then(() => answer('recommendations'));
       const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts);
       // Both "recently added" rows ask by DateCreated rather than through /Items/Latest. Measured
       // against a real library, that endpoint answers in 504 ms for Movie but 9951 ms for Series —
@@ -558,7 +564,7 @@
         const seriesIds = items.filter(i => i.Type === 'Series').map(i => i.Id);
         if (seriesIds.length) {
           try {
-            const r2 = await fetch(`${session.serverUrl}/Items?UserId=${uId}&Ids=${seriesIds.join(',')}&Fields=ProductionYear,Status,EndDate&EnableImages=false&EnableTotalRecordCount=false`, opts);
+            const r2 = await fetch(`${session.serverUrl}/Items?UserId=${uId}&Ids=${seriesIds.join(',')}&EnableImages=false&EnableTotalRecordCount=false`, opts);
             // Enrichment only — on an error response keep the items we already have rather than
             // letting res.json() throw and lose the whole row.
             const info = r2.ok ? new Map(((await r2.json()).Items || []).map(s => [s.Id, s])) : new Map();

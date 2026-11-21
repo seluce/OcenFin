@@ -50,7 +50,7 @@
         fetch(
           `${session.serverUrl}/Items?UserId=${selectedUser.Id}&Filters=IsFavorite&Recursive=true` +
           `&IncludeItemTypes=Movie,Series,BoxSet,Season,Episode&SortBy=SortName&SortOrder=Ascending` +
-          `&Fields=ProductionYear,SeriesName,ParentIndexNumber,IndexNumber,SeriesId&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`,
+          `&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`,
           { headers: getAuthHeaders() }
         ),
         fetch(

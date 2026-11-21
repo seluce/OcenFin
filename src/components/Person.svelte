@@ -65,7 +65,7 @@
     // so a long-running series' episodes can never crowd movies/series out of a single limit.
     const base = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&PersonIds=${person.Id}` +
       `&Recursive=true&SortBy=PremiereDate&SortOrder=Descending` +
-      `&Fields=SeriesName&ImageTypeLimit=1&EnableTotalRecordCount=false`;
+      `&ImageTypeLimit=1&EnableTotalRecordCount=false`;
     try {
       const [mainRes, epRes] = await Promise.all([
         fetch(`${base}&IncludeItemTypes=Movie,Series&Limit=100`, { headers: getAuthHeaders() }),
