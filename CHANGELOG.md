@@ -9,6 +9,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 - **Genres and director on the title page.** A quiet line above the plot names them, as the library's info preview
   already did for the genres.
+- **The whole plot on the title page.** Where the description is cut short, you can select it and OK shows all of it.
+- **Episode pages say which episode they are.** Season and episode number and the air date stand next to the runtime.
 
 ### Changed
 

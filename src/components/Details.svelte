@@ -301,6 +301,25 @@
   let showMediaInfo   = $state(false);   // media info modal
   let mediaInfoScroll = $state();           // the modal's scroll container (bind:this, for D-pad scrolling)
 
+  // The plot stays clamped to four lines (the hero must leave room for the buttons). Where that cuts it, the text is a
+  // button and OK shows all of it in a dialog (CODE-HEALTH §136) — on a TV there was no other way to read the rest.
+  // Not cut → the button is disabled, which takes it out of the D-pad and the pointer: no extra stop for nothing.
+  let overviewClamped = $state(false);
+  let showOverview    = $state(false);
+  let overviewScroll  = $state();
+  let overviewBtn     = $state();
+  const overviewFocus = makeFocusReturn();
+  $effect(() => { if (!showOverview && overviewFocus.pending) overviewFocus.restore(); });
+  // Measured by a ResizeObserver: its first call comes after layout, and it calls again when the box changes (UI size,
+  // font). Reading the text makes the attachment start over for another title — a cut and an uncut plot can fill
+  // the same four lines, so the box alone would not tell.
+  function measureOverview(node) {
+    void fullItem?.Overview;
+    const ro = new ResizeObserver(() => { overviewClamped = node.scrollHeight > node.clientHeight + 1; });
+    ro.observe(node);
+    return () => ro.disconnect();
+  }
+
   // Share: QR code with a public title link (IMDb/TMDb) — anyone can scan it, no server access needed.
   let showShare = $state(false);
   let kebabBtnEl = $state();                 // three-dots button (bind:this)
@@ -451,6 +470,16 @@
   // Genres and direction, one quiet line above the plot (CODE-HEALTH §135): the genres the library's info preview
   // shows, plus who directed it — both come with /Items/{id}. Three at most each (an anthology names a dozen
   // directors); a director is listed once per Id, like the cast. Writers and studios left out on purpose.
+  // An episode's place and air date for the meta row (CODE-HEALTH §136): "S1:E2", "S1:E2–3" for a double episode, the
+  // date in the UI language. In UTC: PremiereDate is midnight UTC, and local time west of Greenwich showed the day before.
+  let episodeMeta = $derived.by(() => {
+    if (fullItem?.Type !== 'Episode') return null;
+    const s = fullItem.ParentIndexNumber, e = fullItem.IndexNumber, end = fullItem.IndexNumberEnd;
+    const code = e == null ? '' : `${s != null ? `S${s}:` : ''}E${e}${end != null && end !== e ? '–' + end : ''}`;
+    const d = fullItem.PremiereDate ? new Date(fullItem.PremiereDate) : null;
+    const date = d && !isNaN(d) ? d.toLocaleDateString(i18n.lang, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
+    return { code, date };
+  });
   let genreLine = $derived((fullItem?.Genres || []).slice(0, 3).join(' · '));
   let directors = $derived.by(() => {
     const names = [...new Map((fullItem?.People || []).filter(p => p.Type === 'Director' && p.Name)
@@ -1100,7 +1129,11 @@
 
           <!-- META -->
           <div class="max-w-4xl flex items-center flex-wrap gap-4 text-lg font-semibold text-gray-200 mb-6 [text-shadow:0_1px_4px_rgba(0,0,0,0.75)]">
-            {#if fullItem.ProductionYear}
+            {#if episodeMeta}
+              <!-- An episode page named its season in the breadcrumb, but not which episode it is (§136) -->
+              {#if episodeMeta.code}<span class="text-blue-400">{episodeMeta.code}</span>{/if}
+              {#if episodeMeta.date}<span>{episodeMeta.date}</span>{:else if fullItem.ProductionYear}<span>{fullItem.ProductionYear}</span>{/if}
+            {:else if fullItem.ProductionYear}
               <span class="text-blue-400">{fullItem.ProductionYear}</span>
             {/if}
             {#if fullItem.RunTimeTicks}
@@ -1156,7 +1189,13 @@
           <!-- Nothing rather than "No description available": seasons rarely have one, and the filler
                line read like an error. -->
           {#if fullItem.Overview}
-            <p class="max-w-4xl text-xl text-gray-300 mb-10 line-clamp-4 leading-relaxed">{fullItem.Overview}</p>
+            <!-- The padding sits outside the text (negative margins, max width + 1.5rem): it wraps and clamps exactly
+                 as the plain paragraph did, and the focus ring gets room around it. -->
+            <button bind:this={overviewBtn} disabled={!overviewClamped}
+              onclick={() => { overviewFocus.capture(overviewBtn); showOverview = true; }}
+              class="block max-w-[57.5rem] text-left -mx-3 -mt-2 px-3 py-2 mb-8 rounded-xl focus:outline-none focus:ring-4 focus:ring-white">
+              <span {@attach measureOverview} class="text-xl text-gray-300 line-clamp-4 leading-relaxed">{fullItem.Overview}</span>
+            </button>
           {:else}
             <div class="mb-6"></div>
           {/if}
@@ -1662,6 +1701,27 @@
           {/each}
         </div>
       {/each}
+    </div>
+  </div>
+{/if}
+
+<!-- THE WHOLE PLOT — opened from the clamped text in the hero (overviewClamped); ▲▼ scroll a long one -->
+{#if showOverview && fullItem?.Overview}
+  <div data-focus-trap role="dialog" tabindex="-1" transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8"
+    onkeydown={(e) => {
+      if (isBackKey(e)) { e.stopPropagation(); showOverview = false; return; }
+      if (e.key === 'ArrowDown')    { e.preventDefault(); e.stopPropagation(); overviewScroll?.scrollBy({ top: 160, behavior: 'smooth' }); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); overviewScroll?.scrollBy({ top: -160, behavior: 'smooth' }); }
+    }}>
+    <div bind:this={overviewScroll} class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-4xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl">
+      <div class="flex justify-between items-start gap-6 p-8 pb-4 sticky top-0 bg-gray-800 z-10">
+        <h2 class="text-4xl text-white font-bold line-clamp-2">{fullItem.Name}</h2>
+        <button onclick={() => showOverview = false} {@attach focusOnMount()} aria-label={i18n.t.close}
+          class="shrink-0 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
+          <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <p class="px-8 pb-8 text-2xl text-gray-200 leading-relaxed whitespace-pre-line">{fullItem.Overview}</p>
     </div>
   </div>
 {/if}
