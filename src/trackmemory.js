@@ -139,12 +139,12 @@ function audioLanguageOf(streams, audioIndex) {
 // used to win — on many releases that is "Deutsch (Forced)", signs only. Ranked instead: a full track
 // before a forced one, one the app shows without a transcode before one that costs Direct Play,
 // plain before SDH; the file's order among equals. null when the language has no track.
+const subtitleRank = (s, prefs) => (s.IsForced ? 4 : 0) + (subtitleAutoEligible(s, prefs) ? 0 : 2) + (s.IsHearingImpaired ? 1 : 0);
 function matchSubtitleLanguage(streams, lang, prefs) {
-  const rank = (s) => (s.IsForced ? 4 : 0) + (subtitleAutoEligible(s, prefs) ? 0 : 2) + (s.IsHearingImpaired ? 1 : 0);
   let best = null;
   for (const s of streams) {
     if (s.Type !== 'Subtitle' || !lang.codes.includes(langOf(s))) continue;
-    if (!best || rank(s) < rank(best)) best = s;
+    if (!best || subtitleRank(s, prefs) < subtitleRank(best, prefs)) best = s;
   }
   return best ? best.Index : null;
 }
@@ -199,4 +199,28 @@ export function pickDefaultTracks(source, { seriesId = null, prefs = {}, audio =
     else subtitle = source?.DefaultSubtitleStreamIndex ?? -1;
   }
   return { audio, subtitle };
+}
+
+// ── The order a track LIST shows (Details' dropdowns, the Player's menu) ─────────────────────────────
+// The file's own order hid the two or three tracks anyone wants among 25 (CODE-HEALTH §134). Grouped by
+// language: the profile's languages first — for audio its audio language, then the app's; for subtitles
+// its subtitle language, the app's, then its audio language — then every other language where it first
+// turns up in the file (no language at all is a group of its own). Inside a language audio keeps the
+// file's order; subtitles follow the rank the preselection uses (matchSubtitleLanguage), so the track it
+// would pick heads its language. Display only: the indexes, the preselection and the memory are untouched.
+// uiLang: the app language's LANGUAGES key (baseLang(i18n.lang)).
+export function orderTracks(streams, type, prefs = {}, uiLang = null) {
+  const list = (streams || []).filter(s => s.Type === type);
+  const groupOf = (s) => {
+    const code = langOf(s);
+    if (!code || UNDEFINED_LANGS.includes(code)) return '';
+    return LANGUAGES.find(l => l.codes.includes(code))?.key ?? code;
+  };
+  const preferred = (type === 'Audio' ? [prefs.audioLanguage, uiLang] : [prefs.subtitleLanguage, uiLang, prefs.audioLanguage])
+    .filter(k => k && LANGUAGES.some(l => l.key === k));
+  const first = new Map();
+  const rows = list.map((s, i) => { const g = groupOf(s); if (!first.has(g)) first.set(g, i); return { s, i, g }; });
+  const groupRank = (g) => { const p = preferred.indexOf(g); return p >= 0 ? p - preferred.length : first.get(g); };
+  const within = type === 'Subtitle' ? (s) => subtitleRank(s, prefs) : () => 0;
+  return rows.sort((a, b) => groupRank(a.g) - groupRank(b.g) || within(a.s) - within(b.s) || a.i - b.i).map(r => r.s);
 }

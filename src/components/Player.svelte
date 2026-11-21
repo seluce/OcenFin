@@ -1,7 +1,7 @@
 <script>
-  import { i18n, plural } from '../i18n.svelte.js';
+  import { i18n, plural, baseLang } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, authHeaders, dlog, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS, asSubSize, asSubPosition, SUB_STEPS, subtitleTextStyle } from '../utils.js';
-  import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks } from '../trackmemory.js';
+  import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks, orderTracks } from '../trackmemory.js';
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady, syncNow } from '../syncplay.js';
@@ -471,8 +471,9 @@
     if (!sources?.length) return null;
     return (mediaSourceId && sources.find(s => s.Id === mediaSourceId)) || sources[0];
   }
-  let audioStreams = $derived(mediaStreams.filter(s => s.Type === 'Audio'));
-  let subtitleStreams = $derived(mediaStreams.filter(s => s.Type === 'Subtitle'));
+  // The track menu, in the order Details' lists use — the profile's languages first (trackmemory.js, §134)
+  let audioMenu    = $derived(orderTracks(mediaStreams, 'Audio', playbackPrefs, baseLang(i18n.lang)));
+  let subtitleMenu = $derived(orderTracks(mediaStreams, 'Subtitle', playbackPrefs, baseLang(i18n.lang)));
 
   // --- Playback info overlay (opt-in via playbackPrefs.showPlaybackInfo) ----------------------
   let showInfoOverlay = $state(false);
@@ -2688,7 +2689,7 @@
         <div class="overflow-y-auto hide-scrollbar flex flex-col gap-2">
 
           {#if settingsTab === 'audio'}
-            {#each audioStreams as stream (stream.Index)}
+            {#each audioMenu as stream (stream.Index)}
               <button onclick={() => changeTrack('audio', stream.Index)}
                 class="text-left p-3 rounded-lg font-medium text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors
                        {selectedAudioIndex === stream.Index ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
@@ -2703,7 +2704,7 @@
                      {selectedSubtitleIndex === -1 ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
               {i18n.t.subtitleOff}
             </button>
-            {#each subtitleStreams as stream (stream.Index)}
+            {#each subtitleMenu as stream (stream.Index)}
               <button onclick={() => changeTrack('subtitle', stream.Index)}
                 onfocus={() => prefetchSubtitle(stream)} onmouseenter={() => prefetchSubtitle(stream)}
                 class="text-left p-3 rounded-lg font-medium text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors

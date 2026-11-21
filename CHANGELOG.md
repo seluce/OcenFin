@@ -18,6 +18,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   follow below them.
 - **Info preview waits for your first move.** A freshly opened library no longer shows the box on its first title by
   itself, so a single Back leaves it again.
+- **Versions you can tell apart.** A title with several versions lists each with its name and picture format, and two
+  that would still read the same with their size.
+- **Audio and subtitle lists start with your languages.** On the title page and in the player alike; on the title page
+  they now open over the page instead of pushing it down.
 
 ### Fixed
 

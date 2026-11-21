@@ -2,7 +2,7 @@
   import { i18n, LANGUAGES, plural, baseLang } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
   import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
-  import { pickDefaultTracks, rememberChoice } from '../trackmemory.js';
+  import { pickDefaultTracks, rememberChoice, orderTracks } from '../trackmemory.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
   import { buildPlayQueue, playableFor, hasEarlierEpisodes, markEarlierPlayed } from '../playback.js';
   import { session } from '../session.svelte.js';
@@ -69,17 +69,10 @@
     // premium=true → standout capabilities (brighter badge); baseline stays dimmer.
     const r = resLabel(v);
     if (r) out.push({ label: r, premium: r === '4K' });
-    const range = (v.VideoRangeType || v.VideoRange || '').toUpperCase();
-    if (range.includes('DOVI') || range.includes('DOLBY')) out.push({ label: 'Dolby Vision', premium: true });
-    else if (range.includes('HDR10PLUS') || range.includes('HDR10+')) out.push({ label: 'HDR10+', premium: true });
-    else if (range.includes('HDR10')) out.push({ label: 'HDR10', premium: true });
-    else if (range.includes('HLG')) out.push({ label: 'HLG', premium: true });
-    else if (range === 'HDR') out.push({ label: 'HDR', premium: true });
-    const c = (v.Codec || '').toLowerCase();
-    if (c === 'hevc' || c === 'h265') out.push({ label: 'HEVC', premium: false });
-    else if (c === 'av1') out.push({ label: 'AV1', premium: false });
-    else if (c === 'h264' || c === 'avc') out.push({ label: 'H.264', premium: false });
-    else if (c) out.push({ label: c.toUpperCase(), premium: false });
+    const range = rangeLabel(v);
+    if (range) out.push({ label: range, premium: true });
+    const codec = codecLabel(v);
+    if (codec) out.push({ label: codec, premium: false });
     // Premium audio of the SELECTED track (fallback: source default, then first audio)
     const audio = streams.find(s => s.Type === 'Audio' && s.Index === selectedAudioIndex)
                || streams.find(s => s.Type === 'Audio' && s.Index === selectedSource?.DefaultAudioStreamIndex)
@@ -106,13 +99,63 @@
          : (h ? h + 'p' : '');
   }
 
-  // Label for the resolution selection, e.g. "4K HEVC" / "1080p HEVC"
-  function sourceLabel(src) {
-    const v = (src?.MediaStreams || []).find(s => s.Type === 'Video');
-    const res = resLabel(v);
-    const codec = (v?.Codec || '').toUpperCase();
-    return [res, codec].filter(Boolean).join(' ') || src?.Name || i18n.t.source;
+  // Dynamic range and codec as the badges and the version list name them; '' for SDR / no codec.
+  function rangeLabel(v) {
+    const range = (v?.VideoRangeType || v?.VideoRange || '').toUpperCase();
+    return range.includes('DOVI') || range.includes('DOLBY') ? 'Dolby Vision'
+         : range.includes('HDR10PLUS') || range.includes('HDR10+') ? 'HDR10+'
+         : range.includes('HDR10') ? 'HDR10'
+         : range.includes('HLG') ? 'HLG'
+         : range === 'HDR' ? 'HDR' : '';
   }
+  function codecLabel(v) {
+    const c = (v?.Codec || '').toLowerCase();
+    return c === 'hevc' || c === 'h265' ? 'HEVC' : c === 'av1' ? 'AV1' : c === 'h264' || c === 'avc' ? 'H.264' : c.toUpperCase();
+  }
+
+  // A version's own name (§134). Jellyfin names an alternate version after what its file adds to the folder's name
+  // ("2160p Remux", "Director's Cut"); the main file, and a version grouped in by hand, after the whole file name,
+  // which starts with the title — that prefix and a year after it say nothing here. A name that is only the
+  // resolution ("1080p", "2160p", "4K") repeats the technical part and is dropped too.
+  const RES_WORDS = { '4K': ['4k', '2160p', 'uhd'], '1080p': ['1080p', 'fhd', 'full hd'], '720p': ['720p', 'hd'] };
+  function versionName(src, res) {
+    let n = (src?.Name || '').trim();
+    const t = (fullItem?.Name || '').trim();
+    if (t && n.toLowerCase().startsWith(t.toLowerCase()))
+      n = n.slice(t.length).replace(/^[\s._-]*(?:\(?(?:19|20)\d{2}\)?(?=[\s._)-]|$))?[\s._)-]*/, '').trim();
+    const plain = n.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    return !plain || (RES_WORDS[res] || [res.toLowerCase()]).includes(plain) ? '' : n;
+  }
+  // Every version's label: { name, tech, extra }. Two versions that still read the same (two 1080p encodes, a
+  // version named like the title) get their size, and where even that does not tell them apart, a number —
+  // the list used to show "4K HEVC" twice for a Dolby Vision remux and an HDR10 director's cut.
+  let sourceLabels = $derived.by(() => {
+    const srcs = fullItem?.MediaSources || [];
+    const gb = new Intl.NumberFormat(i18n.lang, { style: 'unit', unit: 'gigabyte', maximumFractionDigits: 1 });
+    const labels = new Map(srcs.map(src => {
+      const v = (src.MediaStreams || []).find(s => s.Type === 'Video');
+      const res = resLabel(v);
+      const tech = [res, rangeLabel(v), codecLabel(v)].filter(Boolean).join(' ');
+      const name = versionName(src, res);
+      return [src.Id, { name: name || (tech ? '' : src.Name || i18n.t.source), tech, extra: '' }];
+    }));
+    const alike = (key) => srcs.reduce((m, src) => { const k = key(labels.get(src.Id)); m.set(k, (m.get(k) || 0) + 1); return m; }, new Map());
+    const base = (l) => `${l.name}|${l.tech}`;
+    let counts = alike(base);
+    for (const src of srcs) { const l = labels.get(src.Id); if (counts.get(base(l)) > 1 && src.Size > 0) l.extra = gb.format(src.Size / 1e9); }
+    const full = (l) => `${base(l)}|${l.extra}`;
+    counts = alike(full);
+    const nth = new Map();
+    for (const src of srcs) {
+      const l = labels.get(src.Id), k = full(l);
+      if (counts.get(k) > 1) { nth.set(k, (nth.get(k) || 0) + 1); l.extra = [l.extra, `#${nth.get(k)}`].filter(Boolean).join(' · '); }
+    }
+    return labels;
+  });
+
+  // The audio and subtitle lists in the order orderTracks gives them (the profile's languages first).
+  let audioChoices    = $derived(orderTracks(selectedSource?.MediaStreams, 'Audio', playbackPrefs, baseLang(i18n.lang)));
+  let subtitleChoices = $derived(orderTracks(selectedSource?.MediaStreams, 'Subtitle', playbackPrefs, baseLang(i18n.lang)));
 
   // Choose default audio/subtitle for a source — the shared rule in trackmemory.js, which the Player
   // applies to every start that does not come through this page (series play button, play-all, …).
@@ -208,7 +251,26 @@
     const panel = e.currentTarget.closest('[data-dropdown]');
     await tick();
     const active = panel?.querySelector('[data-opt][data-active="true"]');
-    (active || panel?.querySelector('[data-opt]'))?.focus();
+    // preventScroll: a list scrolls itself to its active entry (placeList), the page stays where it is
+    (active || panel?.querySelector('[data-opt]'))?.focus({ preventScroll: true });
+  }
+  // The open version/audio/subtitle list floats over the page (§134): below its field, or above it where the room
+  // below is short and above is larger, as tall as its entries, that room or 60 % of the screen allow, scrolling in
+  // itself with the active entry in the middle. Opened above, ▼ from its last entry lands on the field below it —
+  // the same as ▲ from the first entry of a list below (and of the inline lists before). Opened inline, 25 subtitles pushed the page along until the field itself was gone.
+  function placeList(node) {
+    const field = node.previousElementSibling;
+    if (!field || !scrollEl) return;
+    const area = scrollEl.getBoundingClientRect(), r = field.getBoundingClientRect();
+    const gap = 0.5 * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 20);
+    const below = area.bottom - r.bottom - 3 * gap, above = r.top - area.top - 3 * gap;
+    const h = node.offsetHeight;   // border box, like the max-height it is compared with
+    const up = h > below && above > below;
+    // at most 60 % of the screen, like the Player's track panel: the page around it stays readable
+    node.style.maxHeight = `${Math.max(Math.min(h, up ? above : below, 0.6 * area.height), 8 * gap)}px`;
+    if (up) node.style.bottom = `calc(100% + ${gap}px)`; else node.style.top = `calc(100% + ${gap}px)`;
+    const active = node.querySelector('[data-active="true"]');
+    if (active) node.scrollTop = active.offsetTop - (node.clientHeight - active.offsetHeight) / 2;
   }
   function closeDropdown(refocus = true) {
     const t = openTrigger;
@@ -903,6 +965,12 @@
   }
 </script>
 
+<!-- A version as the list and its field name it: its own name, then resolution, range and codec dimmer (sourceLabels) -->
+{#snippet versionLabel(src)}
+  {@const l = sourceLabels.get(src?.Id)}
+  {#if l}{#if l.name}{l.name}{#if l.tech}<span class="opacity-70">{' · ' + l.tech}</span>{/if}{:else}{l.tech}{/if}{#if l.extra}<span class="opacity-70">{' · ' + l.extra}</span>{/if}{/if}
+{/snippet}
+
 <div bind:this={rootEl} class="flex flex-col h-full relative overflow-hidden" style:background-color={tint?.bg}>
   {#if isLoading}
     <div class="flex-1 flex items-center justify-center">
@@ -1203,18 +1271,18 @@
                   <svg class="w-6 h-6 text-gray-500 shrink-0 mt-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/>
                   </svg>
-                  <div class="flex-1" data-dropdown data-focus-trap={openDropdown === 'resolution' || undefined}>
+                  <div class="flex-1 min-w-0 relative" data-dropdown data-focus-trap={openDropdown === 'resolution' || undefined}>
                     <button onclick={(e) => toggleDropdown('resolution', e)}
                       class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
-                      <span>{sourceLabel(selectedSource)}</span>
+                      <span class="truncate">{@render versionLabel(selectedSource)}</span>
                       <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'resolution' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                     </button>
                     {#if openDropdown === 'resolution'}
-                      <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
+                      <div {@attach placeList} class="absolute inset-x-0 z-30 overflow-y-auto hide-scrollbar flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1 shadow-2xl">
                         {#each fullItem.MediaSources as src (src.Id)}
                           <button onclick={() => { selectedMediaSourceId = src.Id; onSourceChange(); closeDropdown(); }} data-opt data-active={src.Id === selectedMediaSourceId || undefined}
-                            class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {src.Id === selectedMediaSourceId ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
-                            {sourceLabel(src)}
+                            class="text-left text-sm px-3 py-2 scroll-my-1 rounded focus:outline-none focus:ring-2 focus:ring-white {src.Id === selectedMediaSourceId ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
+                            {@render versionLabel(src)}
                           </button>
                         {/each}
                       </div>
@@ -1238,17 +1306,17 @@
                   <svg class="w-6 h-6 text-gray-500 shrink-0 mt-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
                   </svg>
-                  <div class="flex-1" data-dropdown data-focus-trap={openDropdown === 'audio' || undefined}>
+                  <div class="flex-1 min-w-0 relative" data-dropdown data-focus-trap={openDropdown === 'audio' || undefined}>
                     <button onclick={(e) => toggleDropdown('audio', e)}
                       class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
-                      <span>{audioLabel(getMediaStreams('Audio').find(s => s.Index === selectedAudioIndex))}</span>
+                      <span class="truncate">{audioLabel(getMediaStreams('Audio').find(s => s.Index === selectedAudioIndex))}</span>
                       <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'audio' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                     </button>
                     {#if openDropdown === 'audio'}
-                      <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
-                        {#each getMediaStreams('Audio') as stream (stream.Index)}
+                      <div {@attach placeList} class="absolute inset-x-0 z-30 overflow-y-auto hide-scrollbar flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1 shadow-2xl">
+                        {#each audioChoices as stream (stream.Index)}
                           <button onclick={() => { pickTrack('audio', stream.Index); closeDropdown(); }} data-opt data-active={stream.Index === selectedAudioIndex || undefined}
-                            class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedAudioIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
+                            class="text-left text-sm px-3 py-2 scroll-my-1 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedAudioIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                             {audioLabel(stream)}
                           </button>
                         {/each}
@@ -1271,27 +1339,27 @@
                   <svg class="w-6 h-6 text-gray-500 shrink-0 mt-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
                   </svg>
-                  <div class="flex-1" data-dropdown data-focus-trap={openDropdown === 'subtitle' || undefined}>
+                  <div class="flex-1 min-w-0 relative" data-dropdown data-focus-trap={openDropdown === 'subtitle' || undefined}>
                     <button onclick={(e) => toggleDropdown('subtitle', e)} data-subtitle-trigger
                       class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
-                      <span>{selectedSubtitleIndex === -1 ? i18n.t.subtitleOff : subtitleLabel(getMediaStreams('Subtitle').find(s => s.Index === selectedSubtitleIndex))}</span>
+                      <span class="truncate">{selectedSubtitleIndex === -1 ? i18n.t.subtitleOff : subtitleLabel(getMediaStreams('Subtitle').find(s => s.Index === selectedSubtitleIndex))}</span>
                       <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'subtitle' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                     </button>
                     {#if openDropdown === 'subtitle'}
-                      <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
+                      <div {@attach placeList} class="absolute inset-x-0 z-30 overflow-y-auto hide-scrollbar flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1 shadow-2xl">
                         <button onclick={() => { pickTrack('subtitle', -1); closeDropdown(); }} data-opt data-active={selectedSubtitleIndex === -1 || undefined}
-                          class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {selectedSubtitleIndex === -1 ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
+                          class="text-left text-sm px-3 py-2 scroll-my-1 rounded focus:outline-none focus:ring-2 focus:ring-white {selectedSubtitleIndex === -1 ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                           {i18n.t.subtitleOff}
                         </button>
-                        {#each getMediaStreams('Subtitle') as stream (stream.Index)}
+                        {#each subtitleChoices as stream (stream.Index)}
                           <button onclick={() => { pickTrack('subtitle', stream.Index); closeDropdown(); }} data-opt data-active={stream.Index === selectedSubtitleIndex || undefined}
-                            class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedSubtitleIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
+                            class="text-left text-sm px-3 py-2 scroll-my-1 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedSubtitleIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                             {subtitleLabel(stream)}
                           </button>
                         {/each}
                         {#if canSearchSubtitles}
                           <button onclick={openSubtitleSearch} data-opt
-                            class="text-left text-sm px-3 py-2 mt-1 rounded border-t border-gray-700/70 text-blue-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white">
+                            class="text-left text-sm px-3 py-2 mt-1 scroll-my-1 rounded border-t border-gray-700/70 text-blue-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white">
                             {i18n.t.subtitleSearch}
                           </button>
                         {/if}
