@@ -280,6 +280,7 @@ export default {
     people: "Személyek",
     appearsIn: "Szerepel ezekben",
     cast: "Szereplők",
+    directedBy: "Rendező: {names}",
     searchHistory: "Legutóbbi keresések",
     clearHistory: "Előzmények törlése",
 

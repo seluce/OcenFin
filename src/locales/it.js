@@ -280,6 +280,7 @@ export default {
     people: "Persone",
     appearsIn: "Appare in",
     cast: "Cast",
+    directedBy: "Regia di {names}",
     searchHistory: "Ricerche recenti",
     clearHistory: "Cancella cronologia",
 

@@ -5,6 +5,11 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ## Unreleased
 
+### Added
+
+- **Genres and director on the title page.** A quiet line above the plot names them, as the library's info preview
+  already did for the genres.
+
 ### Changed
 
 - **Quicker steps from title to title, most of all in large libraries.** Each move takes the TV less work on every

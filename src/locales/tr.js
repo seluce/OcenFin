@@ -280,6 +280,7 @@ export default {
     people: "Kişiler",
     appearsIn: "Yer aldığı yapımlar",
     cast: "Oyuncular",
+    directedBy: "Yönetmen: {names}",
     searchHistory: "Son aramalar",
     clearHistory: "Geçmişi temizle",
 

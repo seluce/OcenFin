@@ -280,6 +280,7 @@ export default {
     people: "Henkilöt",
     appearsIn: "Esiintyy nimikkeissä",
     cast: "Näyttelijät",
+    directedBy: "Ohjaus: {names}",
     searchHistory: "Viimeisimmät haut",
     clearHistory: "Tyhjennä historia",
 

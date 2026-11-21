@@ -280,6 +280,7 @@ export default {
     people: "Personer",
     appearsIn: "Medverkar i",
     cast: "Rollista",
+    directedBy: "Regi: {names}",
     searchHistory: "Senaste sökningar",
     clearHistory: "Rensa historik",
 

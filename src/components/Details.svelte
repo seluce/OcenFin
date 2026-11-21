@@ -448,6 +448,20 @@
     return [...byId.values()].slice(0, 20);
   });
 
+  // Genres and direction, one quiet line above the plot (CODE-HEALTH §135): the genres the library's info preview
+  // shows, plus who directed it — both come with /Items/{id}. Three at most each (an anthology names a dozen
+  // directors); a director is listed once per Id, like the cast. Writers and studios left out on purpose.
+  let genreLine = $derived((fullItem?.Genres || []).slice(0, 3).join(' · '));
+  let directors = $derived.by(() => {
+    const names = [...new Map((fullItem?.People || []).filter(p => p.Type === 'Director' && p.Name)
+      .map(p => [p.Id || p.Name, p.Name])).values()];
+    if (!names.length) return null;
+    const list = names.length > 3 ? names.slice(0, 3).join(', ') + ' …'
+      : new Intl.ListFormat(i18n.lang, { type: 'conjunction' }).format(names);
+    const [pre, post = ''] = i18n.t.directedBy.split('{names}');
+    return { pre, list, post };
+  });
+
   function closeTrailer() {
     trailerEmbedUrl = null;
     const el = trailerOpener;
@@ -1129,6 +1143,13 @@
               {#each techBadges as badge (badge.label)}
                 <span class="px-2.5 py-1 rounded text-sm font-bold tracking-wide border {badge.premium ? 'bg-white/15 border-white/30 text-white' : 'bg-black/40 border-white/15 text-gray-300'}">{badge.label}</span>
               {/each}
+            </div>
+          {/if}
+
+          {#if genreLine || directors}
+            <div class="max-w-4xl flex flex-wrap gap-x-8 gap-y-1 text-lg text-gray-300 mb-4 [text-shadow:0_1px_4px_rgba(0,0,0,0.75)]">
+              {#if genreLine}<span>{genreLine}</span>{/if}
+              {#if directors}<span><span class="text-gray-400">{directors.pre}</span>{directors.list}<span class="text-gray-400">{directors.post}</span></span>{/if}
             </div>
           {/if}
 

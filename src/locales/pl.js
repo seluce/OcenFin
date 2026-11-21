@@ -280,6 +280,7 @@ export default {
     people: "Osoby",
     appearsIn: "Występuje w",
     cast: "Obsada",
+    directedBy: "Reżyseria: {names}",
     searchHistory: "Ostatnie wyszukiwania",
     clearHistory: "Wyczyść historię",
 

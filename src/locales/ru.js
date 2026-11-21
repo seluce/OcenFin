@@ -280,6 +280,7 @@ export default {
     people: "Люди",
     appearsIn: "Фильмография",
     cast: "Актёры",
+    directedBy: "Режиссёр: {names}",
     searchHistory: "Недавние запросы",
     clearHistory: "Очистить историю",
 

@@ -280,6 +280,7 @@ export default {
     people: "Persoane",
     appearsIn: "Apare în",
     cast: "Distribuție",
+    directedBy: "Regia: {names}",
     searchHistory: "Căutări recente",
     clearHistory: "Șterge istoricul",
 

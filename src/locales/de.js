@@ -280,6 +280,7 @@ export default {
     people: "Personen",
     appearsIn: "Mitwirkung",
     cast: "Besetzung",
+    directedBy: "Regie: {names}",
     searchHistory: "Suchverlauf",
     clearHistory: "Verlauf löschen",
 

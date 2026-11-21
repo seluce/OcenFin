@@ -280,6 +280,7 @@ export default {
     people: "Lidé",
     appearsIn: "Filmografie",
     cast: "Obsazení",
+    directedBy: "Režie: {names}",
     searchHistory: "Nedávná hledání",
     clearHistory: "Vymazat historii",
 

@@ -60,6 +60,7 @@ export default {
     subtitleDownloading: "Baixando…",
     subtitleApplying: "Baixado — adicionando ao título…",
     subtitleAddedLater: "Salvo. Vai aparecer aqui assim que o servidor ler o arquivo.",
+    directedBy: "Direção: {names}",
 
     // Player
     nextEpisode: "Próximo episódio",

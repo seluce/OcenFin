@@ -280,6 +280,7 @@ export default {
     people: "Personer",
     appearsIn: "Medvirker i",
     cast: "Medvirkende",
+    directedBy: "Instruktion: {names}",
     searchHistory: "Seneste søgninger",
     clearHistory: "Ryd historik",
 

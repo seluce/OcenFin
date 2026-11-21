@@ -280,6 +280,7 @@ export default {
     people: "Personas",
     appearsIn: "Aparece en",
     cast: "Reparto",
+    directedBy: "Dirección: {names}",
     searchHistory: "Búsquedas recientes",
     clearHistory: "Borrar historial",
 

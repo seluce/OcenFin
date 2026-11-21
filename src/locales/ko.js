@@ -280,6 +280,7 @@ export default {
     people: "인물",
     appearsIn: "출연작",
     cast: "출연진",
+    directedBy: "감독: {names}",
     searchHistory: "최근 검색어",
     clearHistory: "기록 지우기",
 
