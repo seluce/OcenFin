@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 
 const appinfo = JSON.parse(
   readFileSync(new URL('./public/appinfo.json', import.meta.url), 'utf-8')
@@ -42,7 +43,8 @@ function jassubSimdOnly() {
 // Every locale but en ships as a function that parses its JSON when the app first asks for that language
 // (i18n.svelte.js). As object literals V8 built all twenty at start, a quarter of the main chunk's run time; a JSON
 // string costs only its scan until it is used, and JSON.parse is quicker than an object literal (CODE-HEALTH §128).
-// The source files stay plain objects — the i18n check imports them as they are.
+// The source files stay plain objects — the i18n check imports them as they are. A file JSON cannot carry 1:1 (a
+// function, a date, an undefined value) ships unchanged instead, with a warning: the transform never alters a text.
 function localesOnDemand() {
   return {
     name: 'locales-on-demand',
@@ -50,8 +52,12 @@ function localesOnDemand() {
       const file = id.split('?')[0].replace(/\\/g, '/');
       if (!/\/src\/locales\/[^/]+\.js$/.test(file) || file.endsWith('/en.js')) return null;
       const locale = (await import(`${pathToFileURL(file).href}?t=${Date.now()}`)).default;
-      if (!locale || typeof locale !== 'object') { this.warn(`${file}: no default-exported object, shipped as it is`); return null; }
-      return { code: `export default () => JSON.parse(${JSON.stringify(JSON.stringify(locale))});`, map: null };
+      const json = locale && typeof locale === 'object' ? JSON.stringify(locale) : null;
+      if (!json || !isDeepStrictEqual(JSON.parse(json), locale)) {
+        this.warn(`${file}: not plain JSON data, shipped as it is`);
+        return null;
+      }
+      return { code: `export default () => JSON.parse(${JSON.stringify(json)});`, map: null };
     },
   };
 }

@@ -82,7 +82,7 @@
   // Next Up = the next episode of ongoing series → for "current". Returns episodes; shown is the
   // SERIES backdrop (via SeriesId + inherited ParentBackdropImageTags) with the series title.
   async function fetchNextUp() {
-    const url = `${session.serverUrl}/Shows/NextUp?UserId=${userId}&Limit=40&Fields=ParentBackdropImageTags&ImageTypeLimit=1`
+    const url = `${session.serverUrl}/Shows/NextUp?UserId=${userId}&Limit=40&Fields=ParentBackdropImageTags`
               + `&ImageTypeLimit=1&EnableImageTypes=Backdrop,Logo&EnableTotalRecordCount=false`;
     const res = await fetch(url, { headers: authHeaders(session.token) });
     if (!res.ok) return [];
