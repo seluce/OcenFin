@@ -117,8 +117,8 @@
     // unless the admin set another), and any SortBy replaces it. SortName put part 3 of a trilogy
     // before part 2, and "Play all" played it that way (CODE-HEALTH §92).
     const url = collection.Type === 'Playlist'
-      ? `${session.serverUrl}/Playlists/${collection.Id}/Items?UserId=${selectedUser.Id}&Fields=PrimaryImageAspectRatio&Limit=300`
-      : `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${collection.Id}&Fields=PrimaryImageAspectRatio&Limit=100&EnableTotalRecordCount=false`;
+      ? `${session.serverUrl}/Playlists/${collection.Id}/Items?UserId=${selectedUser.Id}&ImageTypeLimit=1&Limit=300`
+      : `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${collection.Id}&ImageTypeLimit=1&Limit=100&EnableTotalRecordCount=false`;
     try {
       const res = await fetch(url, { headers: getAuthHeaders() });
       const loaded = res.ok ? ((await res.json()).Items || []) : null;
@@ -442,7 +442,7 @@
           {#if group.label}
             <h2 class="text-3xl font-bold text-white mb-6 px-2">{group.label}</h2>
           {/if}
-          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+          <div data-focus-grid class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
             {#each group.items as item (item.PlaylistItemId ?? item.Id)}
               <PosterCard {item} {onOpenDetails} {onContextMenu} caption={cardCaption} />
             {/each}

@@ -27,30 +27,37 @@ import ko from './locales/ko.js';
 
 // Each language layered over en → missing keys automatically inherit the English text (never undefined).
 const withFallback = (lang) => ({ ...en, ...lang });
+// The app shows ONE language, and building all twenty at start was a quarter of the main chunk's run time (~36 ms
+// on a 4× throttled CPU, CODE-HEALTH §128). So in the build every locale but en arrives as a function that parses
+// it (vite.config.js, localesOnDemand), and a language is put together the first time it is asked for, then kept.
+// Tools that import a locale file directly (.claude/i18n) still get the plain object — hence data().
+const data = (m) => (typeof m === 'function' ? m() : m);
+const made = {};
+const lazy = (makers) => Object.defineProperties({ en }, Object.fromEntries(Object.entries(makers).map(([k, make]) =>
+  [k, { enumerable: true, get: () => (made[k] ??= make()) }])));
 
-export const translations = {
-  en,
-  de: withFallback(de),
-  fr: withFallback(fr),
-  nl: withFallback(nl),
-  es: withFallback(es),
-  it: withFallback(it),
-  pt: withFallback(pt),
+export const translations = lazy({
+  de: () => withFallback(data(de)),
+  fr: () => withFallback(data(fr)),
+  nl: () => withFallback(data(nl)),
+  es: () => withFallback(data(es)),
+  it: () => withFallback(data(it)),
+  pt: () => withFallback(data(pt)),
   // A regional variant holds only what it says differently and lies over its base, then en.
-  'pt-BR': withFallback({ ...pt, ...ptBR }),
-  ro: withFallback(ro),
-  pl: withFallback(pl),
-  cs: withFallback(cs),
-  hu: withFallback(hu),
-  sv: withFallback(sv),
-  da: withFallback(da),
-  nb: withFallback(nb),
-  fi: withFallback(fi),
-  tr: withFallback(tr),
-  uk: withFallback(uk),
-  ru: withFallback(ru),
-  ko: withFallback(ko),
-};
+  'pt-BR': () => withFallback({ ...data(pt), ...data(ptBR) }),
+  ro: () => withFallback(data(ro)),
+  pl: () => withFallback(data(pl)),
+  cs: () => withFallback(data(cs)),
+  hu: () => withFallback(data(hu)),
+  sv: () => withFallback(data(sv)),
+  da: () => withFallback(data(da)),
+  nb: () => withFallback(data(nb)),
+  fi: () => withFallback(data(fi)),
+  tr: () => withFallback(data(tr)),
+  uk: () => withFallback(data(uk)),
+  ru: () => withFallback(data(ru)),
+  ko: () => withFallback(data(ko)),
+});
 
 // Selection list for the language menu. `codes` maps 2-/3-letter language codes (e.g. "ger"/"deu"/"de")
 // to the internal key so device detection works. codes[0] must be the ISO 639-2/B code (cze, not ces):

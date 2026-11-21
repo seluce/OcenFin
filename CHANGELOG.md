@@ -9,11 +9,12 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 - **Quicker steps from title to title, most of all in large libraries.** Each move takes the TV less work on every
   screen, and a library answers a thousand titles down as quickly as at its top, where it used to slow with every page.
+- **Quicker start.** Of the twenty languages on board, the app now prepares only the one it shows.
 
 ### Internal
 
-- **Lighter library requests.** The library asks the server only for the pictures its cards show, and the info
-  preview's plots come without watched states and artwork it never uses.
+- **Lighter requests.** Every list asks the server only for the pictures its cards show, and the info preview's
+  plots come without watched states and artwork it never uses.
 
 ## 2026.11.19
 

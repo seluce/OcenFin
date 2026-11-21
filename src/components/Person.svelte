@@ -65,7 +65,7 @@
     // so a long-running series' episodes can never crowd movies/series out of a single limit.
     const base = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&PersonIds=${person.Id}` +
       `&Recursive=true&SortBy=PremiereDate&SortOrder=Descending` +
-      `&Fields=PrimaryImageAspectRatio,SeriesName&EnableTotalRecordCount=false`;
+      `&Fields=SeriesName&ImageTypeLimit=1&EnableTotalRecordCount=false`;
     try {
       const [mainRes, epRes] = await Promise.all([
         fetch(`${base}&IncludeItemTypes=Movie,Series&Limit=100`, { headers: getAuthHeaders() }),
@@ -155,7 +155,7 @@
   {:else if groups.length > 0}
     {#each groups as group (group.label)}
       <h2 class="text-2xl font-bold text-white mb-4 mt-2">{group.label}</h2>
-      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-10">
+      <div data-focus-grid class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-10">
         {#each group.items as item (item.Id)}
           <PosterCard {item} {onOpenDetails} {onContextMenu} caption={cardCaption} />
         {/each}

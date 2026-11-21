@@ -50,11 +50,11 @@
         fetch(
           `${session.serverUrl}/Items?UserId=${selectedUser.Id}&Filters=IsFavorite&Recursive=true` +
           `&IncludeItemTypes=Movie,Series,BoxSet,Season,Episode&SortBy=SortName&SortOrder=Ascending` +
-          `&Fields=PrimaryImageAspectRatio,ProductionYear,UserData,SeriesName,ParentIndexNumber,IndexNumber,SeriesId&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`,
+          `&Fields=ProductionYear,SeriesName,ParentIndexNumber,IndexNumber,SeriesId&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`,
           { headers: getAuthHeaders() }
         ),
         fetch(
-          `${session.serverUrl}/Persons?UserId=${selectedUser.Id}&IsFavorite=true&Fields=PrimaryImageAspectRatio`,
+          `${session.serverUrl}/Persons?UserId=${selectedUser.Id}&IsFavorite=true`,
           { headers: getAuthHeaders() }
         ),
       ]);
@@ -119,7 +119,7 @@
       {#each favGroups as group (group.key)}
         {#if group.items.length > 0}
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{group.label}</h2>
-          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-12">
+          <div data-focus-grid class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-12">
             {#each group.items as item (item.Id)}
               <PosterCard {item} {onOpenDetails} {onContextMenu} caption={cardCaption} />
             {/each}
@@ -129,7 +129,7 @@
 
       {#if favEpisodes.length > 0}
         <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.episodes}</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pr-4 mb-12">
+        <div data-focus-grid class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pr-4 mb-12">
           {#each favEpisodes as item (item.Id)}
             <button onclick={() => onOpenDetails(item)} data-item-id={item.Id}
               {@attach longPress()} onlongpress={() => onContextMenu(item)}
@@ -153,7 +153,7 @@
 
       {#if favPersons.length > 0}
         <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.people}</h2>
-        <div class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-6 pr-4 mb-12">
+        <div data-focus-grid class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-6 pr-4 mb-12">
           {#each favPersons as p (p.Id)}
             <button onclick={() => onOpenPerson(p)} data-item-id={p.Id} class="group isolate focus:outline-none text-center scroll-my-4">
               <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl">

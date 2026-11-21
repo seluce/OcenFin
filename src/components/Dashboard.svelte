@@ -314,7 +314,10 @@
   }
 
   const getAuthHeaders = () => authHeaders(session.token);
-  const FIELDS = "PrimaryImageAspectRatio,Overview,BackdropImageTags";
+  // Only the first picture of each type is ever shown, so every list asks for that one alone (ImageTypeLimit=1) —
+  // a title with a dozen backdrops brought every tag and BlurHash along (CODE-HEALTH §126/§128). /Items/{id}/Similar
+  // has no such parameter in 12.2.
+  const FIELDS = "Overview,BackdropImageTags";
   const ROW_LIMIT = 12;   // uniform row length: rows are teasers, the catalog is the library
   const HERO_MIN = 3;     // use the "For You" pool only from this many usable titles on, otherwise new-additions fallback
                           // (exceptions deliberate: hero = 5-item rotation, collections = curated, their own cap)
@@ -334,8 +337,8 @@
       const uId  = selectedUser.Id;
       const opts = { headers: getAuthHeaders() };
       const [rRes, rNext] = await Promise.all([
-        fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&MediaTypes=Video&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
-        fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
+        fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&MediaTypes=Video&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts),
+        fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts),
       ]);
       // An error answer must not empty the rows — it parsed as "no items" and went into the cache.
       if (!rRes.ok || !rNext.ok) { console.warn('dashboard refresh: HTTP', rRes.status, rNext.status); return; }
@@ -356,7 +359,7 @@
       // Fetch recently played movies/series as the hook
       const res = await fetch(
         `${session.serverUrl}/Items?UserId=${uId}&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
-        `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=4&Fields=${fields}&EnableTotalRecordCount=false`, opts
+        `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=4&EnableImages=false&EnableTotalRecordCount=false`, opts
       );
       if (!res.ok) { console.warn('recommendations: HTTP', res.status); return; }
       const seeds = (await res.json()).Items || [];
@@ -388,7 +391,7 @@
       // 1) Taste signal: recently watched movies/series WITH genres (a separate fetch, since FIELDS carries none).
       const seedRes = await fetch(
         `${session.serverUrl}/Items?UserId=${uId}&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
-        `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=25&Fields=Genres&EnableTotalRecordCount=false`, opts
+        `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=25&Fields=Genres&EnableImages=false&EnableTotalRecordCount=false`, opts
       );
       if (!seedRes.ok) { console.warn('taste seeds: HTTP', seedRes.status); return; }
       const seeds = (await seedRes.json()).Items || [];
@@ -409,7 +412,7 @@
       const poolRes = await fetch(
         `${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=Movie,Series&Recursive=true` +
         `&Filters=IsUnplayed&Genres=${genreParam}&SortBy=CommunityRating&SortOrder=Descending` +
-        `&Limit=40&Fields=${FIELDS}&EnableImageTypes=Backdrop,Primary,Logo&EnableTotalRecordCount=false`, opts
+        `&Limit=40&Fields=${FIELDS}&EnableImageTypes=Backdrop,Primary,Logo&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts
       );
       if (!poolRes.ok) { console.warn('hero pool: HTTP', poolRes.status); return []; }
       const pool = ((await poolRes.json()).Items || []).filter(i => i.BackdropImageTags?.length > 0);
@@ -477,7 +480,7 @@
       // progress — an audiobook or an e-book read in another Jellyfin app landed in Continue
       // watching with a play button that did nothing (§66). Jellyfin's own row asks the same; Video
       // and not Movie,Episode, so a half-watched extra still comes back.
-      const pResume       = fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&MediaTypes=Video&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
+      const pResume       = fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&MediaTypes=Video&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts);
       heroForYouPending = true;
       const pHeroForYou = loadHeroForYou(uId, opts)
         .then(pool => { heroForYouPending = false; if (!heroBuilt && !applyHeroPool(pool)) buildHero(); })
@@ -486,7 +489,7 @@
       // Views/Resume, so it also goes out before the await.
       const cache = myCache = { libraries: [], continueWatching: [], nextUp: [], latestMovies: [], latestSeries: [], recentlyWatched: [], recommendations: [], collections: [], heroItems: [], answered: {} };
       const pRecs = loadRecommendations(uId, opts, fields, cache).then(() => answer('recommendations'));
-      const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
+      const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts);
       // Both "recently added" rows ask by DateCreated rather than through /Items/Latest. Measured
       // against a real library, that endpoint answers in 504 ms for Movie but 9951 ms for Series —
       // same endpoint, same fields — and neither dropping the fields nor GroupItems=false changes it
@@ -504,14 +507,14 @@
       // Rows about what to watch next exist separately: Continue watching and Up next.
       const latestQuery = (type) =>
         `${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=${type}&Recursive=true` +
-        `&SortBy=DateCreated&SortOrder=Descending&Limit=${ROW_LIMIT}&Fields=${fields}&EnableTotalRecordCount=false`;
+        `&SortBy=DateCreated&SortOrder=Descending&Limit=${ROW_LIMIT}&Fields=${fields}&ImageTypeLimit=1&EnableTotalRecordCount=false`;
       const pLatestMovies = fetch(latestQuery('Movie'), opts);
       const pLatestSeries = fetch(latestQuery('Series'), opts);
       // History: recently watched movies/episodes. Fetch more (40), since series are then
       // collapsed to one entry each (buffer for a good mix).
-      const pHistory      = fetch(`${session.serverUrl}/Items?UserId=${uId}&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}&EnableTotalRecordCount=false`, opts);
+      const pHistory      = fetch(`${session.serverUrl}/Items?UserId=${uId}&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts);
       // Collections (BoxSets)
-      const pCollections  = fetch(`${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio,ChildCount&Limit=50&EnableTotalRecordCount=false`, opts);
+      const pCollections  = fetch(`${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=ChildCount&ImageTypeLimit=1&Limit=50&EnableTotalRecordCount=false`, opts);
 
       // Priority: Views + Resume → release the UI immediately
       const [resViews, resResume] = await Promise.all([pViews, pResume]);
@@ -555,7 +558,7 @@
         const seriesIds = items.filter(i => i.Type === 'Series').map(i => i.Id);
         if (seriesIds.length) {
           try {
-            const r2 = await fetch(`${session.serverUrl}/Items?UserId=${uId}&Ids=${seriesIds.join(',')}&Fields=ProductionYear,Status,EndDate&EnableTotalRecordCount=false`, opts);
+            const r2 = await fetch(`${session.serverUrl}/Items?UserId=${uId}&Ids=${seriesIds.join(',')}&Fields=ProductionYear,Status,EndDate&EnableImages=false&EnableTotalRecordCount=false`, opts);
             // Enrichment only — on an error response keep the items we already have rather than
             // letting res.json() throw and lose the whole row.
             const info = r2.ok ? new Map(((await r2.json()).Items || []).map(s => [s.Id, s])) : new Map();
@@ -629,7 +632,6 @@
           Name: it.SeriesName,
           Type: 'Series',
           ImageTags: it.SeriesPrimaryImageTag ? { Primary: it.SeriesPrimaryImageTag } : undefined,
-          PrimaryImageAspectRatio: 0.6667,
           ImageBlurHashes: it.ImageBlurHashes,
           // Carry the episode's INHERITED series backdrop along — the focus backdrop
           // preview (previewItem) builds its URL from BackdropImageTags/Parent*; without
@@ -893,7 +895,7 @@
         {#if showLibraries && libraries.length > 0}
           <div>
             <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.myMedia}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
               {#each libraries as library (library.Id)}
                 <!-- data-item-id: Back out of a library returns to the tile it was opened from. This row
                      comes out of the first response round, so it satisfies the rule that only rows which
@@ -927,7 +929,7 @@
         {#if resumeRow.length > 0}
           <div>
             <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.continueWatchingRow}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
               {#each resumeRow as item (item.Id)}
                 {@render landscapeCard(item)}
               {/each}
@@ -939,7 +941,7 @@
         {#if showNextUp && nextUp.length > 0}
           <div>
             <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.nextUp}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
               {#each nextUp as item (item.Id)}
                 {@render landscapeCard(item)}
               {/each}
@@ -951,7 +953,7 @@
         {#if showWatchlist && watchlistDisplay.length > 0}
           <div>
             <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.watchlist}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
               {#each watchlistDisplay as item (item.Id)}
                 {@render portraitCard(item, item._imgUrl || getItemImageUrl(item), itemBlurHash(item))}
               {/each}
@@ -963,7 +965,7 @@
         {#if showHistory && historyRow.length > 0}
           <div>
             <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.recentlyWatched}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
               {#each historyRow as item (item.Id)}
                 {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}   <!-- episodes arrive as their series (dedupeHistory) -->
               {/each}
@@ -975,7 +977,7 @@
         {#if showSharedSuggestions && sharedSuggestions.length > 0}
           <div>
             <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.sharedSuggestions}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
               {#each sharedSuggestions as item (item.Id)}
                 {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
               {/each}
@@ -987,7 +989,7 @@
         {#each (showRecommendations ? recommendations.slice(0, recommendationRows) : []) as rec (rec.seedId ?? rec.seedTitle)}
           <div>
             <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
               {#each rec.items as item (item.Id)}
                 {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
               {/each}
@@ -999,7 +1001,7 @@
         {#if showLatest && latestMovies.length > 0}
           <div>
             <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestMovies}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
               {#each latestMovies as item (item.Id)}
                 {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
               {/each}
@@ -1011,7 +1013,7 @@
         {#if showLatest && latestSeries.length > 0}
           <div>
             <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestSeries}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
               {#each latestSeries as item (item.Id)}
                 {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
               {/each}
@@ -1023,7 +1025,7 @@
         {#if showCollections && collections.length > 0}
           <div>
             <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.collections}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
               {#each collections as col (col.Id)}
                 {@render collectionCard(col)}
               {/each}

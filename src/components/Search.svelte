@@ -120,7 +120,7 @@
     try {
       // Search titles + people in parallel
       const [itemsRes, peopleRes] = await Promise.all([
-        fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&searchTerm=${encodeURIComponent(query)}&Recursive=true&IncludeItemTypes=Movie,Series,Episode&Limit=24&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName&EnableTotalRecordCount=false`,
+        fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&searchTerm=${encodeURIComponent(query)}&Recursive=true&IncludeItemTypes=Movie,Series,Episode&Limit=24&Fields=Overview&ImageTypeLimit=1&SortBy=SortName&EnableTotalRecordCount=false`,
           { headers: getAuthHeaders() }),
         fetch(`${session.serverUrl}/Persons?searchTerm=${encodeURIComponent(query)}&Limit=10&userId=${selectedUser.Id}`,
           { headers: getAuthHeaders() })
@@ -249,7 +249,7 @@
       {#if series.length > 0}
         <div>
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.series}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
+          <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each series as s (s.Id)}
               <button onclick={() => leaveTo(onOpenDetails, s)} data-item-id={s.Id} class="shrink-0 w-48 scroll-m-4 group isolate focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl">
@@ -268,7 +268,7 @@
       {#if movies.length > 0}
         <div>
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.movies}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
+          <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each movies as m (m.Id)}
               <button onclick={() => leaveTo(onOpenDetails, m)} data-item-id={m.Id} class="shrink-0 w-48 scroll-m-4 group isolate focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl">
@@ -287,7 +287,7 @@
       {#if episodes.length > 0}
         <div>
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.episodes}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
+          <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each episodes as ep (ep.Id)}
               <button onclick={() => leaveTo(onOpenDetails, ep)} data-item-id={ep.Id} class="shrink-0 w-80 scroll-m-4 group isolate focus:outline-none text-left">
                 <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl">
@@ -309,7 +309,7 @@
       {#if people.length > 0}
         <div>
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.people}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
+          <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each people as p (p.Id)}
               <button onclick={() => leaveTo(onOpenPerson, p)} data-item-id={p.Id} class="shrink-0 w-40 scroll-m-4 group isolate focus:outline-none text-center">
                 <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl mx-auto">

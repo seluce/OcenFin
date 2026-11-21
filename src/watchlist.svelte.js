@@ -55,7 +55,7 @@ export async function initWatchlist(userId) {
 async function refreshEntries(userId) {
   if (!watchlist.playlistId) return;
   const res = await fetch(
-    `${session.serverUrl}/Playlists/${watchlist.playlistId}/Items?UserId=${userId}&Limit=500`,
+    `${session.serverUrl}/Playlists/${watchlist.playlistId}/Items?UserId=${userId}&ImageTypeLimit=1&Limit=500`,
     { headers: headers() }
   );
   // Deleted in another client: forget it, so the next bookmark creates a new one instead of every

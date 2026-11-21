@@ -522,7 +522,7 @@
     const t0 = performance.now();
     try {
       const res = await fetch(
-        `${session.serverUrl}/Items/${itemId}/Collections?UserId=${selectedUser.Id}&Fields=PrimaryImageAspectRatio`,
+        `${session.serverUrl}/Items/${itemId}/Collections?UserId=${selectedUser.Id}`,
         { headers: getAuthHeaders() }
       );
       if (!res.ok) return;
@@ -537,7 +537,7 @@
     const t0 = performance.now();
     try {
       const res = await fetch(
-        `${session.serverUrl}/Items/${itemId}/Similar?Limit=10&Fields=PrimaryImageAspectRatio`,
+        `${session.serverUrl}/Items/${itemId}/Similar?Limit=10`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) {
@@ -563,7 +563,7 @@
   async function loadRelatedItems(parentId, myToken) {
     try {
       const res = await fetch(
-        `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${parentId}&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName&IsMissing=false&EnableTotalRecordCount=false`,
+        `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${parentId}&Fields=Overview&ImageTypeLimit=1&SortBy=SortName&IsMissing=false&EnableTotalRecordCount=false`,
         { headers: getAuthHeaders() }
       );
       if (res.ok) { const d = await res.json(); if (myToken !== detailToken) return; relatedItems = d.Items || []; }
@@ -1273,7 +1273,7 @@
             {:else}{i18n.t.moreFromSeason} {fullItem.SeasonName || ''}
             {/if}
           </h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
+          <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each relatedItems as ep (ep.Id)}
               <button onclick={() => navigateTo(ep.Id)} data-item-id={ep.Id}
                 onfocus={() => { if (ep.Type === 'Episode') focusedEpisode = ep; }}
@@ -1323,7 +1323,7 @@
       {#if extras.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-extras">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.extras}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
+          <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each extras as ex (ex.Id)}
               <button onclick={() => onPlayVideo?.({ item: ex, audioIndex: -1, subtitleIndex: -1 })}
                 class="shrink-0 w-80 scroll-m-4 group isolate flex flex-col focus:outline-none text-left">
@@ -1348,7 +1348,7 @@
       {#if castMembers.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-cast">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.cast}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
+          <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each castMembers as person (person.Id)}
               <button onclick={() => onOpenPerson?.(person)} data-item-id={person.Id} class="shrink-0 w-36 scroll-m-4 group isolate focus:outline-none text-center">
                 <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
@@ -1372,7 +1372,7 @@
       {#if collections.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-collections">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.includedIn}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
+          <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each collections as col (col.Id)}
               <button onclick={() => onOpenCollection?.(col)} data-item-id={col.Id} class="shrink-0 w-48 scroll-m-4 group isolate flex flex-col focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
@@ -1391,7 +1391,7 @@
       {#if similarItems.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-similar">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.similar}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
+          <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each similarItems as si (si.Id)}
               <button onclick={() => navigateTo(si.Id)} data-item-id={si.Id} class="shrink-0 w-48 scroll-m-4 group isolate flex flex-col focus:outline-none text-left">
                 <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">

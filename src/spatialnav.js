@@ -99,11 +99,13 @@ function focusableBoxes(root) {
 // throttle (CODE-HEALTH §126). The pick tries these neighbours first; only when none lies that way — the grid's
 // edge, a row still loading, the A–Z bar to the right — does it fall back to the whole group, exactly as before.
 // 60 either side are ten rows at six columns: always more than one row, so a hit is the same card the full pick
-// would choose.
+// would choose. `data-focus-grid="row"` marks a single horizontal row (home screen, Details, Search): ◄► take the
+// same shortcut, ▲▼ can never find a sibling there and go straight to the whole group (§128).
 const GRID_NEAR = 60;
-function gridNeighbours(active) {
+function gridNeighbours(active, key) {
   const grid = active?.parentElement;
   if (!grid || !grid.hasAttribute('data-focus-grid')) return null;
+  if ((key === 'ArrowUp' || key === 'ArrowDown') && grid.getAttribute('data-focus-grid') === 'row') return null;
   const out = [];
   const keep = (el) => { if (el.matches(FOCUSABLE)) { const r = rectOf(el); if (r.width !== 0 && r.height !== 0) out.push(el); } };
   let el = active;
@@ -397,7 +399,7 @@ export function createFocusManager(isEnabled) {
     if (scope) {
       // 1a) A big grid: the neighbours first (gridNeighbours). A card found there needs none of the jump-bar and
       //     start-at-top handling below — it is a card in the same grid.
-      const near = gridNeighbours(active);
+      const near = gridNeighbours(active, e.key);
       if (near) {
         const hit = pickVisible(e.key, from, near, active, true, true);
         if (hit) { focusEl(hit); return; }

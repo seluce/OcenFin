@@ -1391,7 +1391,7 @@
       if (!r.ok || destroyed) return;
       const cols = ((await r.json()).Items || []).filter(c => c.Type === 'BoxSet').slice(0, 4);
       const lists = await Promise.all(cols.map(c =>
-        fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${c.Id}&Fields=PrimaryImageAspectRatio&Limit=100&EnableTotalRecordCount=false`,
+        fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${c.Id}&ImageTypeLimit=1&Limit=100&EnableTotalRecordCount=false`,
               { headers: getAuthHeaders() })
           .then(res => res.ok ? res.json() : null).then(d => d?.Items || []).catch(() => [])));
       if (destroyed) return;
