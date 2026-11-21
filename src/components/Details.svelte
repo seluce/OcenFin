@@ -1,7 +1,7 @@
 <script>
   import { i18n, LANGUAGES, plural, baseLang } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
-  import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
+  import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, minutesLeft, getItemSubtitle, authHeaders, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
   import { pickDefaultTracks, rememberChoice, orderTracks } from '../trackmemory.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
   import { buildPlayQueue, playableFor, hasEarlierEpisodes, markEarlierPlayed } from '../playback.js';
@@ -480,6 +480,12 @@
     const date = d && !isNaN(d) ? d.toLocaleDateString(i18n.lang, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
     return { code, date };
   });
+  // A series names its years as the cards do ("2013 – today", "2013 – 2016") and counts its seasons where the others show
+  // a running time — a series' RunTimeTicks is one episode's, and its "ends at" meant nothing (CODE-HEALTH §137).
+  let seriesYears = $derived(fullItem?.Type === 'Series' ? getItemSubtitle(fullItem, i18n.t.today) : '');
+  // A started title says how much is left, in the words of the Continue watching pill (minutesLeft, utils.js), in the
+  // meta row before "ends at" — on the Resume button it pushed the icon buttons onto a second line (§137).
+  let resumeLeft = $derived(minutesLeft(fullItem));
   let genreLine = $derived((fullItem?.Genres || []).slice(0, 3).join(' · '));
   let directors = $derived.by(() => {
     const names = [...new Map((fullItem?.People || []).filter(p => p.Type === 'Director' && p.Name)
@@ -1133,13 +1139,17 @@
               <!-- An episode page named its season in the breadcrumb, but not which episode it is (§136) -->
               {#if episodeMeta.code}<span class="text-blue-400">{episodeMeta.code}</span>{/if}
               {#if episodeMeta.date}<span>{episodeMeta.date}</span>{:else if fullItem.ProductionYear}<span>{fullItem.ProductionYear}</span>{/if}
+            {:else if seriesYears}
+              <span class="text-blue-400">{seriesYears}</span>
             {:else if fullItem.ProductionYear}
               <span class="text-blue-400">{fullItem.ProductionYear}</span>
             {/if}
-            {#if fullItem.RunTimeTicks}
+            {#if fullItem.Type === 'Series'}
+              {#if fullItem.ChildCount}<span>• {plural('seasonCount', fullItem.ChildCount)}</span>{/if}
+            {:else if fullItem.RunTimeTicks}
               <span class="flex items-center gap-2">
                 • {getRuntimeMinutes(fullItem.RunTimeTicks)}
-                <span class="text-base font-normal text-gray-400 ml-1">{getEndTime(fullItem)}</span>
+                <span class="text-base font-normal text-gray-400 ml-1">{resumeLeft ? `${resumeLeft} ${i18n.t.mins} ${i18n.t.remaining} · ` : ''}{getEndTime(fullItem)}</span>
               </span>
             {/if}
             {#if fullItem.OfficialRating}

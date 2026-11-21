@@ -263,6 +263,14 @@ export function itemProgress(item) {
   return 0;
 }
 
+// Minutes left of a started title, rounded; null when not started or under half a minute left. ONE rule for the
+// dashboard's Continue watching pill and Details' Resume button (CODE-HEALTH §137).
+export function minutesLeft(item) {
+  if (!item?.RunTimeTicks || !item.UserData?.PlaybackPositionTicks) return null;
+  const mins = Math.round((item.RunTimeTicks - item.UserData.PlaybackPositionTicks) / 600000000);
+  return mins > 0 ? mins : null;
+}
+
 // Card/grid subtitle: episode → "S1:E2 – Title"; series → year range
 // ("2016 – 2019" / "2024 – today"); otherwise the production year.
 // `todayLabel` = localized "today" (i18n.t.today), passed in by the caller.

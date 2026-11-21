@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, isShownLibrary, getItemImageUrl, libraryIcon, orderHomeRows, HOME_ROWS, dlog } from '../utils.js';
+  import { itemProgress, minutesLeft, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, isShownLibrary, getItemImageUrl, libraryIcon, orderHomeRows, HOME_ROWS, dlog } from '../utils.js';
   import CardStatus from './CardStatus.svelte';
   import { focusFromPointer } from '../spatialnav.js';
   import { session } from '../session.svelte.js';
@@ -698,14 +698,6 @@
     return (item.Type === 'Episode' && item.SeriesName) ? item.SeriesName : item.Name;
   }
 
-  // Remaining time in minutes for "Continue Watching"
-  function getRemainingMinutes(item) {
-    if (!item.RunTimeTicks || !item.UserData?.PlaybackPositionTicks) return null;
-    const remTicks = item.RunTimeTicks - item.UserData.PlaybackPositionTicks;
-    const mins = Math.round(remTicks / 10000000 / 60);
-    return mins > 0 ? mins : null;
-  }
-
   // Hero backdrop in high resolution
   function getHeroBackdrop(item) {
     if (item?.BackdropImageTags?.length > 0)
@@ -742,7 +734,7 @@
   {#snippet landscapeCard(item)}
     {@const img = getItemImageUrl(item, 'landscape', true)}
     {@const prog = itemProgress(item)}
-    {@const rem = getRemainingMinutes(item)}
+    {@const rem = minutesLeft(item)}
     {@const sub = getItemSubtitle(item, i18n.t.today)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
       onfocus={() => previewItem(item)} onblur={cancelPreview}
