@@ -16,6 +16,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   after it. The start, the settings and the way back onto a card also get focus as soon as there is something to focus.
 - **Search results without the wait for people.** Titles show as soon as they are found, and matching people
   follow below them.
+- **Info preview waits for your first move.** A freshly opened library no longer shows the box on its first title by
+  itself, so a single Back leaves it again.
 
 ### Fixed
 

@@ -114,6 +114,8 @@
   // not even one that moves nothing, like ▼ in the last row. Once it is open, ONE calm arrow step takes it along to
   // the next title at once (reading a row); a held or hurried arrow, any other key, the pointer or a scroll close it,
   // and Back closes only the box (App asks handleBackKey). Not focusable, never catches the pointer.
+  // The card the library focuses ITSELF on opening gets no box until the first key or a really moving pointer: two
+  // seconds of looking at a freshly opened grid are no rest on its first title (it also cost a second Back to leave).
   const INFO_DELAY = 2000;
   const FOLLOW_GAP = 300;           // ms: arrows closer than this are scrolling, not reading
   const INFO_TYPES = new Set(['Movie', 'Series', 'BoxSet']);
@@ -124,6 +126,7 @@
   let infoTimer, infoPrefetch, infoToken = 0;
   let infoFor = null;               // { item, card } from the focus until hideInfo(): waiting or shown
   let followArmed = false, lastStep = 0;
+  let quietCard = null;             // focused by focusFirstCard(), not by the user: no box until they move
   const infoCache = new Map();      // id → { Overview, Genres }, bounded: browsing 500 titles must not keep 500 plots
   const infoLoading = new Map();    // id → promise of its entry, while a request for it runs
   function infoExtra(item) {
@@ -160,6 +163,7 @@
     if (!displaySettings.infoPreview || !INFO_TYPES.has(item.Type)) return;
     infoFor = { item, card };
     window.addEventListener('keydown', onInfoKey, true);
+    if (card === quietCard) { window.addEventListener('pointermove', onQuietPointer, true); return; }   // onInfoKey ends it
     const token = infoToken;
     if (follow) {
       // A reading step: this runs inside spatialnav's keydown, so the microtask comes after its scrollIntoView and
@@ -211,6 +215,7 @@
   }
   // Capture, before spatialnav moves focus: a key that moves on is answered by blur/focus anyway.
   function onInfoKey(e) {
+    quietCard = null;                                         // the user moved: from here on the usual two seconds
     if (info && isBackKey(e)) return;                         // App asks handleBackKey(): only the box closes
     if (document.activeElement !== infoFor?.card) { hideInfo(); return; }
     if (!info) { scheduleInfo(infoFor.item, infoFor.card); return; }   // waiting: the two seconds start again
@@ -221,11 +226,20 @@
     followArmed = true;                                       // the focus that follows brings its box at once;
     setTimeout(() => { followArmed = false; }, 0);            // an arrow that moves nothing leaves the box as it is
   }
+  // The pointer counts like spatialnav's: only when it really moves (a resting one fires pointermove too). Onto
+  // another card, spatialnav's focus does the rest; anywhere else the wait starts on the card that has focus.
+  function onQuietPointer(e) {
+    if (!e.movementX && !e.movementY) return;
+    quietCard = null;
+    window.removeEventListener('pointermove', onQuietPointer, true);
+    if (infoFor && !info && document.activeElement === infoFor.card) scheduleInfo(infoFor.item, infoFor.card);
+  }
   function hideInfo() {
     infoToken++;
     clearTimeout(infoTimer); clearTimeout(infoPrefetch);
     infoFor = null;
     window.removeEventListener('keydown', onInfoKey, true);
+    window.removeEventListener('pointermove', onQuietPointer, true);
     info = null;
   }
   export function handleBackKey() {
@@ -823,7 +837,9 @@
   async function focusFirstCard() {
     await tick();
     const card = libraryGrid?.querySelector('button');
-    if (card) card.focus();
+    if (!card) return;
+    quietCard = card;   // set before focus(): its focus handler schedules the info box at once
+    card.focus();
   }
   $effect(() => {
     const lib = library;
@@ -963,7 +979,7 @@
       {:else}
         {#each visibleLibraryItems as item (item.Id)}
           <button onclick={() => openDetails(item)} data-item-id={item.Id}
-            onfocus={(e) => { previewItem(item); scheduleInfo(item, e.currentTarget); }} onblur={() => { cancelPreview(); hideInfo(); }}
+            onfocus={(e) => { previewItem(item); scheduleInfo(item, e.currentTarget); }} onblur={(e) => { cancelPreview(); hideInfo(); if (quietCard === e.currentTarget) quietCard = null; }}
             {@attach longPress()} onlongpress={() => onContextMenu?.(item)}
             class="group isolate focus:outline-none text-left scroll-my-4">
             <!-- transition-transform (not -all): animating border-color alongside the scale would
