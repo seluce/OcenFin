@@ -1,7 +1,7 @@
 <script>
   import { i18n, LANGUAGES, plural, baseLang } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
-  import { dlog, isBackKey, focusOnMount, itemProgress, minutesLeft, episodeCode, backdropUrl, logoUrl, runtimeLabel, endsAtLabel, authHeaders, setPlayed, setFavorite, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
+  import { dlog, isBackKey, focusOnMount, itemProgress, minutesLeft, episodeCode, backdropUrl, logoUrl, runtimeLabel, frameRateLabel, endsAtLabel, authHeaders, setPlayed, setFavorite, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
   import Dialog from './Dialog.svelte';
   import { pickDefaultTracks, rememberChoice, orderTracks } from '../trackmemory.js';
   import { trackLabels } from '../tracklabel.js';
@@ -116,6 +116,20 @@
     const c = (v?.Codec || '').toLowerCase();
     return c === 'hevc' || c === 'h265' ? 'HEVC' : c === 'av1' ? 'AV1' : c === 'h264' || c === 'avc' ? 'H.264' : c.toUpperCase();
   }
+
+  // The media info's finer picture details (§148). Dynamic range by VideoRangeType, Dolby Vision with its profile in
+  // the usual notation (profile.compatibility: 8.1 = HDR10 underneath, 8.4 = HLG, 7.6 = a disc's HDR10, 5 = none)
+  // and what a TV without Dolby Vision shows instead — the base layer.
+  const RANGE_TYPES = { SDR: 'SDR', HDR10: 'HDR10', HDR10Plus: 'HDR10+', HLG: 'HLG' };
+  const DV_BASE = { DOVIWithHDR10: 'HDR10', DOVIWithEL: 'HDR10', DOVIWithHLG: 'HLG', DOVIWithSDR: 'SDR', DOVIWithHDR10Plus: 'HDR10+', DOVIWithELHDR10Plus: 'HDR10+' };
+  function rangeDetail(v) {
+    const t = v?.VideoRangeType || '';
+    if (!t.startsWith('DOVI')) return RANGE_TYPES[t] || (v?.VideoRange && v.VideoRange !== 'Unknown' ? v.VideoRange : '');
+    const p = v.DvProfile ? ` ${v.DvProfile}${v.DvBlSignalCompatibilityId ? '.' + v.DvBlSignalCompatibilityId : ''}` : '';
+    return `Dolby Vision${p}${DV_BASE[t] ? ' + ' + DV_BASE[t] : ''}`;
+  }
+  const kHz = (hz) => hz ? `${new Intl.NumberFormat(i18n.lang, { maximumFractionDigits: 1 }).format(hz / 1000)} kHz` : '';
+  const fileName = (path) => (path || '').split(/[\\/]/).pop();
 
   // A version's own name (§134). Jellyfin names an alternate version after what its file adds to the folder's name
   // ("2160p Remux", "Director's Cut"); the main file, and a version grouped in by hand, after the whole file name,
@@ -424,16 +438,17 @@
     } catch (e) { console.warn('[OcenFin] share QR failed', e); }
   }
 
+  // The media info's size and bitrates in the app language's digits and in decimal units, like the version list
+  // (§148: the same file read "54.20 GB" here and "58,2 GB" there); a small audio bitrate in kbit/s, not "0.6 Mbit/s".
   function formatBytes(bytes) {
     if (!bytes) return null;
-    const gb = bytes / 1073741824;
-    if (gb >= 1) return `${gb.toFixed(2)} GB`;
-    return `${(bytes / 1048576).toFixed(0)} MB`;
+    const gb = bytes >= 1e9;
+    return new Intl.NumberFormat(i18n.lang, { style: 'unit', unit: gb ? 'gigabyte' : 'megabyte', maximumFractionDigits: gb ? 1 : 0 }).format(bytes / (gb ? 1e9 : 1e6));
   }
-
   function formatBitrate(bps) {
     if (!bps) return null;
-    return `${(bps / 1000000).toFixed(1)} Mbit/s`;
+    const mb = bps >= 1e6;
+    return `${new Intl.NumberFormat(i18n.lang, { maximumFractionDigits: mb ? 1 : 0 }).format(bps / (mb ? 1e6 : 1e3))} ${mb ? 'Mbit/s' : 'kbit/s'}`;
   }
 
   const YOUTUBE_APP_ID = 'youtube.leanback.v4';   // LG webOS YouTube app
@@ -1648,25 +1663,39 @@
             {#if formatBitrate(src.Bitrate)}
               <div><div lang="en" class="text-gray-400 text-xs uppercase tracking-wider">Bitrate</div><div class="text-white font-semibold">{formatBitrate(src.Bitrate)}</div></div>
             {/if}
+            <!-- which file this version is (several versions, or a title found twice) — the name, not the server's folders -->
+            {#if fileName(src.Path)}
+              <div class="col-span-3"><div class="text-gray-400 text-xs uppercase tracking-wider">{i18n.t.miFile}</div><div class="text-white font-semibold break-all">{fileName(src.Path)}</div></div>
+            {/if}
           </div>
 
-          <!-- Individual tracks -->
+          <!-- Individual tracks — named as everywhere else (§148): a video track like its version (sourceLabels), audio and
+               subtitles by trackLabels (language in the app's language, flags, format), never the server's DisplayTitle -->
           {#each (src.MediaStreams || []) as s (s.Index)}
+            {@const name = s.Type === 'Video' ? { main: [resLabel(s), rangeLabel(s), codecLabel(s)].filter(Boolean).join(' '), tech: '' } : trackNames.get(s.Index)}
             <div class="bg-gray-900 rounded-xl p-4 border border-gray-700/50">
-              <div class="flex items-center gap-3 mb-2">
+              <div class="flex items-baseline gap-3">
                 <!-- Video/Audio are the server's English type names: lang="en", or Turkish capitals write VİDEO -->
-                <span lang={s.Type === 'Subtitle' ? null : 'en'} class="text-xs uppercase font-bold px-2 py-1 rounded bg-blue-600 text-white shrink-0">{s.Type === 'Subtitle' ? i18n.t.miSubtitle : s.Type}</span>
-                <span class="text-white font-semibold truncate">{s.DisplayTitle || s.Codec || '—'}</span>
+                <span lang={s.Type === 'Subtitle' ? null : 'en'} class="self-center text-xs uppercase font-bold px-2 py-1 rounded bg-blue-600 text-white shrink-0">{s.Type === 'Subtitle' ? i18n.t.miSubtitle : s.Type}</span>
+                <span class="text-white font-semibold truncate">{name?.main || s.Codec?.toUpperCase() || '—'}</span>
+                {#if name?.tech}<span class="text-gray-400 text-sm shrink-0">{name.tech}</span>{/if}
               </div>
-              <div class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-gray-300">
-                {#if s.Codec}<div><span class="text-gray-500">Codec:&nbsp;</span>{s.Codec.toUpperCase()}</div>{/if}
-                {#if s.Type === 'Video' && s.Width}<div><span class="text-gray-500">{i18n.t.miResolution}:&nbsp;</span>{s.Width}×{s.Height}</div>{/if}
-                {#if s.Type === 'Video' && s.VideoRange}<div><span class="text-gray-500">HDR:&nbsp;</span>{s.VideoRange}</div>{/if}
-                {#if s.Type === 'Video' && s.AverageFrameRate}<div><span class="text-gray-500">{i18n.t.miFramerate}:&nbsp;</span>{s.AverageFrameRate.toFixed(0)} fps</div>{/if}
-                {#if s.Type === 'Audio' && s.ChannelLayout}<div><span class="text-gray-500">{i18n.t.miChannels}:&nbsp;</span>{s.ChannelLayout}</div>{/if}
-                {#if s.Language}<div><span class="text-gray-500">{i18n.t.miLanguage}:&nbsp;</span>{s.Language}</div>{/if}
-                {#if formatBitrate(s.BitRate)}<div><span class="text-gray-500">Bitrate:&nbsp;</span>{formatBitrate(s.BitRate)}</div>{/if}
-              </div>
+              {#if s.Type === 'Video'}
+                <div class="grid grid-cols-2 gap-x-6 gap-y-1 mt-2 text-sm text-gray-300">
+                  {#if s.Codec}<div><span class="text-gray-500">Codec:&nbsp;</span>{[codecLabel(s), s.Profile].filter(Boolean).join(' ')}</div>{/if}
+                  {#if s.Width}<div><span class="text-gray-500">{i18n.t.miResolution}:&nbsp;</span>{s.Width}×{s.Height}{s.IsInterlaced ? ` · ${i18n.t.miInterlaced}` : ''}</div>{/if}
+                  {#if rangeDetail(s)}<div><span class="text-gray-500">{i18n.t.miRange}:&nbsp;</span>{rangeDetail(s)}</div>{/if}
+                  {#if s.BitDepth}<div><span class="text-gray-500">{i18n.t.miBitDepth}:&nbsp;</span>{s.BitDepth} bit</div>{/if}
+                  {#if frameRateLabel(s)}<div><span class="text-gray-500">{i18n.t.miFramerate}:&nbsp;</span>{frameRateLabel(s)}</div>{/if}
+                  {#if formatBitrate(s.BitRate)}<div><span class="text-gray-500">Bitrate:&nbsp;</span>{formatBitrate(s.BitRate)}</div>{/if}
+                </div>
+              {:else if s.Type === 'Audio' && (s.SampleRate || s.BitDepth || s.BitRate)}
+                <div class="grid grid-cols-2 gap-x-6 gap-y-1 mt-2 text-sm text-gray-300">
+                  {#if s.SampleRate}<div><span class="text-gray-500">{i18n.t.miSampleRate}:&nbsp;</span>{kHz(s.SampleRate)}</div>{/if}
+                  {#if s.BitDepth}<div><span class="text-gray-500">{i18n.t.miBitDepth}:&nbsp;</span>{s.BitDepth} bit</div>{/if}
+                  {#if formatBitrate(s.BitRate)}<div><span class="text-gray-500">Bitrate:&nbsp;</span>{formatBitrate(s.BitRate)}</div>{/if}
+                </div>
+              {/if}
             </div>
           {/each}
         </div>

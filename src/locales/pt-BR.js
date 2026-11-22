@@ -39,6 +39,8 @@ export default {
     continueWatching: "Continuar assistindo",
     actionFailed: "Algo deu errado",
     miFramerate: "Taxa de quadros",
+    miRange: "Faixa dinâmica",
+    miFile: "Arquivo",
     subtitleSizeDesc: "Vale para legendas de texto e de imagem. Legendas ASS com estilo mantêm o próprio tamanho.",
     filterUnplayed: "Não assistidos",
     filterPlayed: "Assistidos",

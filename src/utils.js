@@ -318,6 +318,18 @@ export function runtimeLabel(ticks) {
   return m ? `${m} ${i18n.t.mins}` : '';
 }
 
+// A video stream's frame rate, "23.976 fps" in the app language's digits — not rounded to 24: 23.976, 29.97 and 59.94
+// are what tell a film, a TV recording and a sports broadcast apart (§148). The media info and the player's info
+// overlay (read once a second there, hence the formatter kept per language); '' without one.
+const fpsFormats = new Map();
+export function frameRateLabel(v) {
+  const r = v?.AverageFrameRate || v?.RealFrameRate, lang = i18n.lang || 'en';
+  if (!r) return '';
+  let fmt = fpsFormats.get(lang);
+  if (!fmt) fpsFormats.set(lang, fmt = new Intl.NumberFormat(lang, { maximumFractionDigits: 3 }));
+  return `${fmt.format(r)} fps`;
+}
+
 // The time of day as the app writes it everywhere — the clock, the screensaver, the player, "ends at" (§142; it was
 // spelled out in five places). The app language is a valid BCP-47 tag, so every locale formats its own way. The
 // formatter is kept per language and format: toLocaleTimeString with options builds a new one on every call, and the

@@ -1,6 +1,6 @@
 <script>
   import { i18n, plural, baseLang } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount, authHeaders, dlog, episodeCode, runtimeLabel, endsAtLabel, timeOfDay, setFavorite, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS, asSubSize, asSubPosition, SUB_STEPS, subtitleTextStyle } from '../utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, episodeCode, runtimeLabel, frameRateLabel, endsAtLabel, timeOfDay, setFavorite, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS, asSubSize, asSubPosition, SUB_STEPS, subtitleTextStyle } from '../utils.js';
   import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks, orderTracks } from '../trackmemory.js';
   import { trackLabels } from '../tracklabel.js';
   import { session } from '../session.svelte.js';
@@ -2387,7 +2387,7 @@
             <span class="text-white font-mono text-right">{[
               infoVideoStream.Codec ? infoVideoStream.Codec.toUpperCase() : null,
               (liveStats.width && liveStats.height) ? `${liveStats.width}×${liveStats.height}` : (infoVideoStream.Width ? `${infoVideoStream.Width}×${infoVideoStream.Height}` : null),
-              infoVideoStream.AverageFrameRate ? `${infoVideoStream.AverageFrameRate.toFixed(0)} fps` : null,
+              frameRateLabel(infoVideoStream) || null,
               fmtBitrate(infoVideoStream.BitRate)
             ].filter(Boolean).join(' · ')}</span>
           </div>
