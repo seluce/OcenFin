@@ -59,6 +59,12 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   as watched now lands on the card next to it.
 - **Focus back on the card after the playlist picker.** Closing the playlist or collection picker opened from a
   card's menu now returns to the card instead of leaving nothing selected.
+- **Big titles keep the bottoms of their letters.** On title pages, collections, person pages, in the library and the
+  player, the lower part of g, p and y was cut off; it now shows in full, with everything in the same place.
+- **Back in the profile menu keeps a selection.** Closing the menu now returns to the profile picture instead of
+  leaving nothing selected.
+- **A title without a poster shows an empty frame.** Its page showed only a thin line where the picture would be.
+- **An empty library shows its own icon.** It used to show the filter symbol even with no filter set.
 
 ### Internal
 

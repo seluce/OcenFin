@@ -2428,7 +2428,7 @@
       <!-- min-w-0 so this block can actually shrink; without it a long episode name wraps over
            several lines. The clock/buttons on the right are already protected by shrink-0. -->
       <div class="min-w-0">
-        <h1 class="text-3xl font-bold drop-shadow-lg line-clamp-2">{item.Name}</h1>
+        <h1 class="text-3xl leading-[1.3] -my-[0.05em] font-bold drop-shadow-lg line-clamp-2">{item.Name}</h1>
         {#if item.SeriesName}
           <p class="text-gray-400 text-lg mt-1 truncate">{item.SeriesName} · {item.SeasonName}</p>
         {/if}

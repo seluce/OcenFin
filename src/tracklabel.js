@@ -12,8 +12,10 @@
 // "forced" / "SDH" / "CC" / "original" in a Title count like the flags (a muxer often writes them there only).
 import { LANGUAGES, i18n } from './i18n.svelte.js';
 import { PGS_CODECS, VOBSUB_CODECS } from './utils.js';
+import { UNDEFINED_LANGS } from './trackmemory.js';
 
-const UNDEFINED = ['und', 'unknown', 'undetermined', 'mul', 'zxx', 'mis'];
+// No language to name: Jellyfin's list (the track pick's), plus "mis" — "uncoded languages" is a code, no name.
+const UNDEFINED = [...UNDEFINED_LANGS, 'mis'];
 // Codes Jellyfin passes on that are no BCP 47 tag (OpenSubtitles' Brazilian Portuguese)
 const ALIASES = { pob: 'pt-BR' };
 const tagOf = (code) => ALIASES[code] || code;

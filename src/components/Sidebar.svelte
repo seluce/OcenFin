@@ -1,4 +1,5 @@
 <script>
+  import { tick } from 'svelte';
   import { i18n } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, buildNavEntries, applyNavConfig } from '../utils.js';
   import { session } from '../session.svelte.js';
@@ -56,7 +57,10 @@
     if (showProfileMenu && isBackKey(e)) {
       e.stopPropagation();
       showProfileMenu = false;
-      profileButton?.focus();   // focus back on the profile button (D-pad orientation)
+      // Focus back on the profile button (D-pad orientation) — once the flyout is gone. While it is still in the page
+      // its trap pulls any focus outside it back in (spatialnav), onto a button removed a moment later: focus ended
+      // on <body>, the bar closed, and nothing on screen was focused (§143).
+      tick().then(() => profileButton?.focus());
     }
   }
 </script>

@@ -3,7 +3,7 @@
   // Used by Details, Player and App (card menu). Controlled via the `mode` prop
   // (null = closed). Closing calls onClose.
   import { i18n } from '../i18n.svelte.js';
-  import {  focusOnMount, authHeaders } from '../utils.js';
+  import { focusOnMount, authHeaders } from '../utils.js';
   import Dialog from './Dialog.svelte';
   import { WATCHLIST_NAME } from '../watchlist.svelte.js';
   import { session } from '../session.svelte.js';

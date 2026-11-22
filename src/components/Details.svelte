@@ -477,25 +477,23 @@
     return [...byId.values()].slice(0, 20);
   });
 
-  // Genres and direction, one quiet line above the plot (CODE-HEALTH §135): the genres the library's info preview
-  // shows, plus who directed it — both come with /Items/{id}. Three at most each (an anthology names a dozen
-  // directors); a director is listed once per Id, like the cast. Writers and studios left out on purpose.
-  // An episode's place and air date for the meta row (CODE-HEALTH §136): "S1:E2", "S1:E2–3" for a double episode
-  // (episodeCode, as every card writes it since §141), the date in the UI language. In UTC: PremiereDate is midnight
-  // UTC, and local time west of Greenwich showed the day before.
+  // An episode's place and air date, in place of the year at the start of the meta line (TitleMeta, CODE-HEALTH §136):
+  // "S1:E2", "S1:E2–3" for a double episode (episodeCode, as every card writes it since §141), the date in the UI
+  // language. In UTC: PremiereDate is midnight UTC, and local time west of Greenwich showed the day before. With no
+  // number, no date and no year there is nothing to lead with — null, and the line starts with the running time.
   let episodeMeta = $derived.by(() => {
     if (fullItem?.Type !== 'Episode') return null;
     const code = episodeCode(fullItem);
     const d = fullItem.PremiereDate ? new Date(fullItem.PremiereDate) : null;
     const date = d && !isNaN(d) ? d.toLocaleDateString(i18n.lang, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
-    return { code, date };
+    return code || date || fullItem.ProductionYear ? { code, date } : null;
   });
-  // A series names its years as the cards do ("2013 – today", "2013 – 2016") and counts its seasons where the others show
-  // a running time — a series' RunTimeTicks is one episode's, and its "ends at" meant nothing (CODE-HEALTH §137). Both
-  // in TitleMeta since §141, the line the banner and the library's preview show too.
   // A started title says how much is left, in the words of the Continue watching pill (minutesLeft, utils.js), in the
   // meta row before "ends at" — on the Resume button it pushed the icon buttons onto a second line (§137).
   let resumeLeft = $derived(minutesLeft(fullItem));
+  // Genres and direction, one quiet line above the plot (CODE-HEALTH §135): the genres the library's info preview
+  // shows, plus who directed it — both come with /Items/{id}. Three at most each (an anthology names a dozen
+  // directors); a director is listed once per Id, like the cast. Writers and studios left out on purpose.
   let genreLine = $derived((fullItem?.Genres || []).slice(0, 3).join(' · '));
   let directors = $derived.by(() => {
     const names = [...new Map((fullItem?.People || []).filter(p => p.Type === 'Director' && p.Name)
@@ -1076,7 +1074,10 @@
            the play button and landed in the episodes or cast row below. -->
       <div class="flex gap-12 items-start mb-8" data-focus-group="details-hero">
 
-        <div class="w-64 shrink-0 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800 relative"
+        <!-- With a picture its own height; without one the shape of the cards (an episode's still is 16:9) — the box had
+             no height then and showed as a thin line (§143). -->
+        <div class="w-64 shrink-0 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800 relative
+          {getItemImageUrl(fullItem) ? '' : fullItem.Type === 'Episode' ? 'aspect-video' : 'aspect-[2/3]'}"
           style:--tw-shadow-color={tint?.glow}>
           {#if getItemImageUrl(fullItem)}
             <img src={getItemImageUrl(fullItem)} {@attach blurUp(itemBlurHash(fullItem))} alt={fullItem.Name} class="w-full h-full object-cover" />
@@ -1116,11 +1117,14 @@
                 <img src={getItemLogoUrl(fullItem)} alt={fullItem.Name}
                      class="max-h-28 max-w-full w-auto object-contain object-left-bottom drop-shadow-lg" />
               {:else}
-                <h1 class="text-6xl font-bold text-white drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
+                <h1 class="text-6xl leading-[1.3] -my-[0.15em] font-bold text-white drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
               {/if}
             </div>
           {:else}
-            <h1 class="max-w-4xl text-6xl font-bold text-white mb-4 drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
+            <!-- leading-[1.3] + the negative margin: a clamp hides overflow, and at text-6xl's line height of 1 that cut
+                 the descenders (p, g, y) off every title. The margin gives the extra height back, so a one-line title
+                 sits where it did (§143). Every big title that clamps or truncates does the same. -->
+            <h1 class="max-w-4xl text-6xl leading-[1.3] -mt-[0.15em] mb-[calc(1rem-0.15em)] font-bold text-white drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
           {/if}
 
           <!-- META — the line the banner and the library's preview show too (TitleMeta, §141); an episode leads with its
@@ -1646,7 +1650,7 @@
   <Dialog z="z-[200]" onBack={() => showOverview = false} onkeydown={(e) => scrollByKey(e, overviewScroll)}>
     <div bind:this={overviewScroll} class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-4xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl">
       <div class="flex justify-between items-start gap-6 p-8 pb-4 sticky top-0 bg-gray-800 z-10">
-        <h2 class="text-4xl text-white font-bold line-clamp-2">{fullItem.Name}</h2>
+        <h2 class="text-4xl leading-[1.3] -my-[0.0944em] text-white font-bold line-clamp-2">{fullItem.Name}</h2>
         <button onclick={() => showOverview = false} {@attach focusOnMount()} aria-label={i18n.t.close}
           class="shrink-0 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>

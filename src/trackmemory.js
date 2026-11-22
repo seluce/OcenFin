@@ -106,8 +106,9 @@ export function matchRememberedSubtitleIndex(streams, seriesId) {
 // Returns stream indexes; -1 means "none" for subtitles and "the file's default" for audio.
 const subCodec = (s) => (s?.Codec || '').toLowerCase();
 const langOf = (s) => s?.Language?.toLowerCase() || null;
-// Jellyfin's own list of "no language" tags (MediaStreamSelector.IsLanguageUndefined).
-const UNDEFINED_LANGS = ['und', 'unknown', 'undetermined', 'mul', 'zxx'];
+// Jellyfin's own list of "no language" tags (MediaStreamSelector.IsLanguageUndefined) — the track pick follows the
+// server's. tracklabel.js builds on it for the names.
+export const UNDEFINED_LANGS = ['und', 'unknown', 'undetermined', 'mul', 'zxx'];
 
 // May a subtitle be switched on automatically? Text always; a graphic one only when the app renders
 // it itself (PGS, VobSub/DVD via libbitsub — Direct Play stays). DVB bitmap subtitles can only be
