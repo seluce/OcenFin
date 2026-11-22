@@ -850,7 +850,7 @@
   <!-- Hero skeleton: reserves the banner height + hints at the title/text/button. ONE snippet for both
        loading phases (initial skeleton AND heroLoading) so nothing shifts up from the first paint. -->
   {#snippet heroSkeleton()}
-    <div class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gradient-to-br from-gray-800/40 via-gray-900/70 to-gray-900">
+    <div class="relative -mx-10 -mt-16 mb-2 h-[48vh] min-h-[320px] overflow-hidden bg-gradient-to-br from-gray-800/40 via-gray-900/70 to-gray-900">
       <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/40 to-transparent"></div>
       <div class="absolute bottom-0 left-0 p-10 pb-8 max-w-3xl flex flex-col gap-3 {reduceAnimations ? '' : 'animate-pulse'}">
         <div class="h-14 w-80 max-w-[60%] bg-white/10 rounded-lg"></div>
@@ -886,8 +886,11 @@
     <!-- HERO BANNER — rotating featured item -->
     {#if showHero && heroCurrent}
       <!-- data-hero: the app's start focus (App.svelte) skips this section and takes the first
-           tile below it instead, so a session opens on a library rather than on a rotating title. -->
-      <div data-hero transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gray-900">
+           tile below it instead, so a session opens on a library rather than on a rotating title.
+           48vh (and the skeleton's) is the ceiling: the most at which the first row still fits below the whole banner
+           at every UI size — Continue watching first at 120 % with 13 px to spare; any more and the start scrolls the
+           banner away (heroHandoff, §146). -->
+      <div data-hero transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[48vh] min-h-[320px] overflow-hidden bg-gray-900">
         <!-- Full-bleed backdrop: crossfade — the PREVIOUS image stays as a base,
              the new one fades in on top (no more dip-to-black). Blurhash → sharp. -->
         {#if prevHeroIndex >= 0 && prevHeroIndex !== heroIndex && heroItems[prevHeroIndex] && getHeroBackdrop(heroItems[prevHeroIndex])}
