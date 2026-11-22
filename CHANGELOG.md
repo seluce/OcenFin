@@ -9,7 +9,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 - **Genres and director on the title page.** A quiet line above the plot names them, as the library's info preview
   already did for the genres.
-- **The whole plot on the title page.** Where the description is cut short, you can select it and OK shows all of it.
+- **The whole plot on the title page.** Where the description is cut short, you can select it and OK shows all of it,
+  split into paragraphs so a long one reads easily.
 - **Episode pages say which episode they are.** Season and episode number and the air date stand next to the runtime.
 - **Series pages with their years and seasons.** They show "2013 – today" or "2013 – 2016" and the number of seasons,
   as the cards already did, instead of an episode's running time.

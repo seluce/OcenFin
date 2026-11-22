@@ -330,6 +330,36 @@
     return () => ro.disconnect();
   }
 
+  // The dialog's plot in paragraphs (§145). Most plots come as ONE block (TMDb), a wall of text in the dialog. Blank
+  // lines of its own make paragraphs (single line breaks stay, whitespace-pre-line); a long block without any is cut
+  // at sentence ends into parts of about PARA characters, as even as the sentences allow. Never after a word of up to
+  // three letters, a number or an initial ("Agentin K. Larsen", "Dr.", "z. B.", "3. Oktober", "U.S.A."): a break
+  // missed there costs nothing, a wrong one would cut a sentence in two. Intl.Segmenter: Chromium 87, webOS 25 has it.
+  const PARA = 320;
+  function bySentences(block) {
+    const n = Math.round(block.length / PARA);
+    if (n < 2 || block.includes('\n') || typeof Intl.Segmenter !== 'function') return [block];
+    const sentences = [];
+    for (const { segment } of new Intl.Segmenter(i18n.lang, { granularity: 'sentence' }).segment(block)) {
+      const last = sentences.length - 1;
+      if (last >= 0 && /(?:^|[\s(„"'.])(?:\p{L}{1,3}|\d+)\.$/u.test(sentences[last].trimEnd())) sentences[last] += segment;
+      else sentences.push(segment);
+    }
+    const target = block.length / n, parts = [];
+    let cur = '';
+    sentences.forEach((sentence, i) => {
+      cur += sentence;
+      const next = sentences[i + 1];
+      // Close the part here when that lands nearer the target than taking the next sentence along.
+      if (next === undefined || (parts.length < n - 1 && Math.abs(cur.length - target) <= Math.abs(cur.length + next.length - target))) {
+        parts.push(cur.trim()); cur = '';
+      }
+    });
+    return parts;
+  }
+  const plotParagraphs = (text) => text.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean).flatMap(bySentences);
+  let plotParts = $derived(showOverview && fullItem?.Overview ? plotParagraphs(fullItem.Overview) : []);
+
   // Share: QR code with a public title link (IMDb/TMDb) — anyone can scan it, no server access needed.
   let showShare = $state(false);
   let kebabBtnEl = $state();                 // three-dots button (bind:this)
@@ -1656,7 +1686,9 @@
           <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
       </div>
-      <p class="px-8 pb-8 text-2xl text-gray-200 leading-relaxed whitespace-pre-line">{fullItem.Overview}</p>
+      <div class="px-8 pb-8 flex flex-col gap-5 text-2xl text-gray-200 leading-relaxed whitespace-pre-line">
+        {#each plotParts as part}<p>{part}</p>{/each}
+      </div>
     </div>
   </Dialog>
 {/if}
