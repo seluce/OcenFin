@@ -1,7 +1,7 @@
 <script>
   import { tick, onDestroy, untrack } from 'svelte';
   import { i18n } from '../i18n.svelte.js';
-  import { itemBlurHash, blurUp, authHeaders, focusOnMount, getItemImageUrl } from '../utils.js';
+  import { itemBlurHash, blurUp, authHeaders, focusOnMount, getItemImageUrl, getItemSubtitle } from '../utils.js';
   import { buildPlayQueue } from '../playback.js';
   import { WATCHLIST_NAME } from '../watchlist.svelte.js';
   import PosterCard from './PosterCard.svelte';
@@ -71,13 +71,6 @@
     try { queue = await buildPlayQueue(items, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() }); }
     finally { buildingQueue = false; }
     if (queue.length && alive) onPlayQueue?.(queue);
-  }
-
-  // Label for an episode: "S1 · E5 · Title"
-  function episodeLabel(item) {
-    const s = item.ParentIndexNumber, e = item.IndexNumber;
-    const code = (s != null && e != null) ? `S${s} · E${e}` : (e != null ? `E${e}` : '');
-    return [code, item.Name].filter(Boolean).join(' · ');
   }
 
   // What this profile may do with the playlist. Jellyfin: renaming and editing the entries is for
@@ -277,10 +270,10 @@
   {#snippet cardCaption(item)}
     {#if item.Type === 'Episode'}
       <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.SeriesName || item.Name}</span>
-      <span class="text-xs text-gray-400 block truncate w-full">{episodeLabel(item)}</span>
+      <span class="text-xs text-gray-400 block truncate w-full">{getItemSubtitle(item)}</span>
     {:else}
       <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Name}</span>
-      {#if item.ProductionYear}<span class="text-xs text-gray-400 block truncate w-full">{item.ProductionYear}</span>{/if}
+      {#if getItemSubtitle(item)}<span class="text-xs text-gray-400 block truncate w-full">{getItemSubtitle(item)}</span>{/if}
     {/if}
   {/snippet}
   <div class="flex items-center gap-6 mb-8">
@@ -346,10 +339,10 @@
             <div class="flex-1 min-w-0">
               {#if item.Type === 'Episode'}
                 <div class="text-lg font-bold text-white truncate">{item.SeriesName || item.Name}</div>
-                <div class="text-sm text-gray-400 truncate">{episodeLabel(item)}</div>
+                <div class="text-sm text-gray-400 truncate">{getItemSubtitle(item)}</div>
               {:else}
                 <div class="text-lg font-bold text-white truncate">{item.Name}</div>
-                {#if item.ProductionYear}<div class="text-sm text-gray-400">{item.ProductionYear}</div>{/if}
+                {#if getItemSubtitle(item)}<div class="text-sm text-gray-400">{getItemSubtitle(item)}</div>{/if}
               {/if}
             </div>
             <button onclick={() => movePlaylistItem(i, i - 1)} disabled={i === 0} data-move-up title={i18n.t.moveUp} aria-label={i18n.t.moveUp}

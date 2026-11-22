@@ -5,10 +5,11 @@
   // persistence and passes things in via props/callbacks (pattern like Collection/Favorites).
   import { tick, untrack } from 'svelte';
   import CardStatus from './CardStatus.svelte';
+  import TitleMeta from './TitleMeta.svelte';
   import { diagCount } from '../diag.js';
   import { session } from '../session.svelte.js';
-  import { i18n, plural } from '../i18n.svelte.js';
-  import { itemProgress, getItemSubtitle, getItemImageUrl, blurUp, itemBlurHash, longPress,
+  import { i18n } from '../i18n.svelte.js';
+  import { getItemSubtitle, getItemImageUrl, blurUp, itemBlurHash, longPress,
            focusOnMount, isBackKey, makeFocusReturn, authHeaders, uiFade, dropTrapOnOutro, dlog, markContentChange } from '../utils.js';
 
   let {
@@ -253,10 +254,6 @@
     node.style.top = `${Math.max(info.minTop, Math.min(info.top, info.maxBottom - h))}px`;
   }
   $effect(() => () => hideInfo());
-  // Second item of the meta line: a series counts its seasons, anything else gives its running time.
-  const infoLength = (it) => it.Type === 'Series'
-    ? (it.ChildCount ? plural('seasonCount', it.ChildCount) : '')
-    : (it.RunTimeTicks ? `${Math.round(it.RunTimeTicks / 600000000)} ${i18n.t.mins}` : '');
 
   // ── Filters ─────────────────────────────────────────────────
   let showFilterMenu  = $state(false);
@@ -1000,15 +997,10 @@
                 <img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
               {/if}
               <CardStatus {item} unplayed={displaySettings.episodeCount} />
-              {#if itemProgress(item) > 0}
-                <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                  <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                </div>
-              {/if}
             </div>
             <div class="mt-3 flex flex-col items-start w-full overflow-hidden">
               <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate block w-full">{item.Name}</span>
-              <span class="text-xs text-gray-400 group-focus:text-gray-300 block truncate w-full mt-0.5">{getItemSubtitle(item, i18n.t.today)}</span>
+              <span class="text-xs text-gray-400 group-focus:text-gray-300 block truncate w-full mt-0.5">{getItemSubtitle(item)}</span>
             </div>
           </button>
         {/each}
@@ -1056,34 +1048,7 @@
       <div {@attach placeInfo} class="absolute bg-gray-900 border border-white/20 rounded-2xl p-7 shadow-[inset_0_1px_0_rgb(255_255_255/0.08)]"
         style="left:{info.x}px;top:{info.top}px;width:{info.w}px">
         <h2 class="text-3xl font-bold text-white line-clamp-2">{info.item.Name}</h2>
-        <div class="flex items-center flex-wrap gap-x-3 gap-y-2 mt-3 text-lg font-semibold text-gray-200">
-          {#if getItemSubtitle(info.item, i18n.t.today)}<span class="text-blue-400">{getItemSubtitle(info.item, i18n.t.today)}</span>{/if}
-          {#if infoLength(info.item)}<span>• {infoLength(info.item)}</span>{/if}
-          {#if info.item.OfficialRating}
-            <span class="px-2 py-0.5 rounded border border-gray-400/80 text-gray-100 text-base font-bold leading-none">{info.item.OfficialRating}</span>
-          {/if}
-          {#if info.item.CommunityRating}
-            <span class="flex items-center gap-1 text-gray-100">
-              •
-              <svg class="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
-              </svg>
-              {info.item.CommunityRating.toFixed(1)}
-            </span>
-          {/if}
-          {#if info.item.CriticRating}
-            <span class="flex items-center gap-1 text-gray-100">
-              •
-              <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="14" r="7.5" fill="#ef4444"/>
-                <ellipse cx="9.5" cy="6.5" rx="2.5" ry="1.3" fill="#22c55e" transform="rotate(-25 9.5 6.5)"/>
-                <ellipse cx="14.5" cy="6.5" rx="2.5" ry="1.3" fill="#22c55e" transform="rotate(25 14.5 6.5)"/>
-                <rect x="11.3" y="4.5" width="1.4" height="3" rx="0.7" fill="#22c55e"/>
-              </svg>
-              {info.item.CriticRating}%
-            </span>
-          {/if}
-        </div>
+        <TitleMeta item={info.item} class="flex items-center flex-wrap gap-x-3 gap-y-2 mt-3 text-lg font-semibold text-gray-200" />
         {#if info.extra.Genres.length}
           <div class="mt-2 text-base text-gray-400 truncate">{info.extra.Genres.join(' · ')}</div>
         {/if}

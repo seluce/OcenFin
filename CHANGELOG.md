@@ -14,7 +14,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Series pages with their years and seasons.** They show "2013 – today" or "2013 – 2016" and the number of seasons,
   as the cards already did, instead of an episode's running time.
 - **Time left on a started title.** Its page says how many minutes remain, next to the time it would end.
-- **Genres in the home banner.** They follow the year and rating, as on the title page.
+- **The home banner with the title page's details.** Its line now shows a series' years and seasons, a film's running
+  time, the age rating, both ratings and the genres, just as the title page and the library's info preview do.
 
 ### Changed
 
@@ -35,6 +36,12 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   they now open over the page instead of pushing it down.
 - **Readable audio and subtitle names.** Each track shows its language in the app's language, forced or SDH and its
   format, instead of the file's jumble of codec words and repeated languages.
+- **Episode numbers written one way.** Cards, search, playlists and the player's next-episode notice all read S1:E2,
+  and a double episode shows both its numbers everywhere.
+- **A series' years on every card.** Search, collections, favourites and person pages show "2013 – today" like the
+  library, instead of the first year only.
+- **Watched ticks in search and favourites.** Search results and favourite episodes now show the tick and the progress
+  bar like every other card.
 
 ### Fixed
 

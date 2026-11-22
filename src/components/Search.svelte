@@ -1,6 +1,7 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { personImageUrl, authHeaders, blurUp, itemBlurHash, getItemImageUrlWithFallbacks as getItemImageUrl, asArray } from '../utils.js';
+  import { personImageUrl, authHeaders, blurUp, itemBlurHash, getItemSubtitle, episodeCode, getItemImageUrlWithFallbacks as getItemImageUrl, asArray } from '../utils.js';
+  import CardStatus from './CardStatus.svelte';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick } from 'svelte';
 
@@ -265,12 +266,13 @@
           <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each series as s (s.Id)}
               <button onclick={() => leaveTo(onOpenDetails, s)} data-item-id={s.Id} class="shrink-0 w-48 scroll-m-4 group isolate focus:outline-none text-left">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
                   {#if getItemImageUrl(s, 'portrait')}<img src={getItemImageUrl(s, 'portrait')} {@attach blurUp(itemBlurHash(s))} alt={s.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
+                  <CardStatus item={s} />
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
                   <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate">{s.Name}</span>
-                  {#if s.ProductionYear}<span class="text-xs text-gray-400 truncate mt-0.5">{s.ProductionYear}</span>{/if}
+                  {#if getItemSubtitle(s)}<span class="text-xs text-gray-400 truncate mt-0.5">{getItemSubtitle(s)}</span>{/if}
                 </div>
               </button>
             {/each}
@@ -284,12 +286,13 @@
           <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each movies as m (m.Id)}
               <button onclick={() => leaveTo(onOpenDetails, m)} data-item-id={m.Id} class="shrink-0 w-48 scroll-m-4 group isolate focus:outline-none text-left">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
                   {#if getItemImageUrl(m, 'portrait')}<img src={getItemImageUrl(m, 'portrait')} {@attach blurUp(itemBlurHash(m))} alt={m.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
+                  <CardStatus item={m} />
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
                   <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate">{m.Name}</span>
-                  {#if m.ProductionYear}<span class="text-xs text-gray-400 truncate mt-0.5">{m.ProductionYear}</span>{/if}
+                  {#if getItemSubtitle(m)}<span class="text-xs text-gray-400 truncate mt-0.5">{getItemSubtitle(m)}</span>{/if}
                 </div>
               </button>
             {/each}
@@ -303,13 +306,14 @@
           <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each episodes as ep (ep.Id)}
               <button onclick={() => leaveTo(onOpenDetails, ep)} data-item-id={ep.Id} class="shrink-0 w-80 scroll-m-4 group isolate focus:outline-none text-left">
-                <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl">
+                <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
                   {#if getItemImageUrl(ep, 'landscape')}<img src={getItemImageUrl(ep, 'landscape')} {@attach blurUp(itemBlurHash(ep))} alt={ep.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
+                  <CardStatus item={ep} />
                 </div>
                 <div class="mt-3 flex flex-col w-full overflow-hidden">
                   <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate">{ep.Name}</span>
                   <span class="text-xs text-gray-400 truncate mt-0.5">
-                    {ep.SeriesName || ''}{#if ep.ParentIndexNumber !== undefined} · S{ep.ParentIndexNumber}:E{ep.IndexNumber || '?'}{/if}
+                    {[ep.SeriesName, episodeCode(ep)].filter(Boolean).join(' · ')}
                   </span>
                 </div>
               </button>

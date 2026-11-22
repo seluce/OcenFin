@@ -1,6 +1,6 @@
 <script>
   import { i18n, plural } from '../i18n.svelte.js';
-  import { authHeaders } from '../utils.js';
+  import { authHeaders, getItemSubtitle } from '../utils.js';
   import { session } from '../session.svelte.js';
   import PosterCard from './PosterCard.svelte';
   import { tick, untrack } from 'svelte';
@@ -123,8 +123,8 @@
       <span class="text-xs text-gray-400 block truncate w-full">{plural('episodeCount', item._episodeCount)}</span>
     {:else if item.Type === 'Episode'}
       <span class="text-xs text-gray-400 block truncate w-full">{item.Name}</span>
-    {:else if item.ProductionYear}
-      <span class="text-xs text-gray-400 block truncate w-full">{item.ProductionYear}</span>
+    {:else if getItemSubtitle(item)}
+      <span class="text-xs text-gray-400 block truncate w-full">{getItemSubtitle(item)}</span>
     {/if}
   {/snippet}
   <div class="flex items-center gap-6 mb-8">

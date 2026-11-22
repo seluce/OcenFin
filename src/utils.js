@@ -3,6 +3,7 @@ import { tick } from 'svelte';
 import { fade } from 'svelte/transition';
 import { dependencies as deps } from '../package.json';   // for the version display on the status page
 import { session } from './session.svelte.js';   // server URL centralized for getItemImageUrl
+import { i18n } from './i18n.svelte.js';          // the words of the title labels below (mins, today, ends at)
 import { APP_VERSION } from './version.js';
 
 // Fade in/out for overlays that respects the "reduce animations" toggle (App maintains
@@ -271,19 +272,42 @@ export function minutesLeft(item) {
   return mins > 0 ? mins : null;
 }
 
-// Card/grid subtitle: episode → "S1:E2 – Title"; series → year range
-// ("2016 – 2019" / "2024 – today"); otherwise the production year.
-// `todayLabel` = localized "today" (i18n.t.today), passed in by the caller.
-export function getItemSubtitle(item, todayLabel = '') {
+// An episode's number as every screen writes it (CODE-HEALTH §141): "S1:E2", "S1:E3–4" for a double episode, "E5"
+// without a season; '' without a number. The playlist view and the player's next-title line wrote "S1 · E2", and only
+// the title page knew double episodes. (Details' share text keeps S01E02 — the form a web search understands.)
+export function episodeCode(item) {
+  const s = item?.ParentIndexNumber, e = item?.IndexNumber, end = item?.IndexNumberEnd;
+  if (e == null) return '';
+  return `${s != null ? `S${s}:` : ''}E${e}${end != null && end !== e ? '–' + end : ''}`;
+}
+
+// A running time, "112 min"; '' without one. ONE rule for the title page, its episode row and extras, the info
+// preview, the banner and the player's next-title line (§141) — it was worked out in five places.
+export function runtimeLabel(ticks) {
+  const m = ticks ? Math.round(ticks / 600000000) : 0;
+  return m ? `${m} ${i18n.t.mins}` : '';
+}
+
+// "ends at 21:30" for a title started now — from its resume point, where the player starts it. The title page and the
+// player's next-title line (§141).
+export function endsAtLabel(item, use24h) {
+  if (!item?.RunTimeTicks) return '';
+  const end = new Date(Date.now() + (item.RunTimeTicks - (item.UserData?.PlaybackPositionTicks || 0)) / 10000);
+  return `${i18n.t.endsAt} ${end.toLocaleTimeString(i18n.lang || 'en', { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`;
+}
+
+// Card/grid subtitle: episode → "S1:E2 – Title"; series → year range ("2016 – 2019" / "2024 – today"); otherwise the
+// production year. Every card caption and the year in the title meta line (TitleMeta) — Search, Collection,
+// Favourites' posters and the person page showed a series' first year only (§141).
+export function getItemSubtitle(item) {
   if (item.Type === 'Episode') {
-    const s = item.ParentIndexNumber ?? '?';
-    const e = item.IndexNumber ?? '?';
-    return `S${s}:E${e} – ${item.Name}`;
+    const code = episodeCode(item);
+    return code ? `${code} – ${item.Name}` : (item.Name || '');
   }
   if (item.Type === 'Series') {
     const start = item.ProductionYear || '';
     const end   = item.Status === 'Continuing'
-      ? todayLabel
+      ? i18n.t.today
       : (item.EndDate ? new Date(item.EndDate).getFullYear() : '');
     if (start && end && start != end) return `${start} – ${end}`;
     return start.toString();

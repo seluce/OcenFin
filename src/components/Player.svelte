@@ -1,6 +1,6 @@
 <script>
   import { i18n, plural, baseLang } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount, authHeaders, dlog, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS, asSubSize, asSubPosition, SUB_STEPS, subtitleTextStyle } from '../utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, episodeCode, runtimeLabel, endsAtLabel, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS, asSubSize, asSubPosition, SUB_STEPS, subtitleTextStyle } from '../utils.js';
   import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks, orderTracks } from '../trackmemory.js';
   import { trackLabels } from '../tracklabel.js';
   import { session } from '../session.svelte.js';
@@ -1431,20 +1431,14 @@
   let episodePosition = $derived((item?.Type === 'Episode' && item.IndexNumber != null && seasonTotal > 0)
                    ? `${i18n.t.episode} ${item.IndexNumber} ${i18n.t.of} ${seasonTotal}` : '');
 
-  // Info line for the next episode: "S2 · E1 · 52 min · ends at 11:59"
+  // Info line for the next title: "S2:E1 · 52 min · ends at 11:59" — number, running time and end as the cards and the
+  // title page write them (utils.js, §141; it said "S2 · E1"). The end counts from the resume point, where it starts.
   let nextEpisodeMeta = $derived.by(() => {
     if (!upNext) return '';
-    const parts = [];
-    if (upNext.ParentIndexNumber != null && upNext.IndexNumber != null)
-      parts.push(`S${upNext.ParentIndexNumber} · E${upNext.IndexNumber}`);
-    else if (upNext.Type === 'Movie' && upNext.ProductionYear) parts.push(String(upNext.ProductionYear));
-    const mins = upNext.RunTimeTicks ? Math.round(upNext.RunTimeTicks / 600000000) : 0;
-    if (mins) {
-      parts.push(`${mins} ${i18n.t.mins}`);
-      const end = new Date(Date.now() + mins * 60000);
-      parts.push(`${i18n.t.endsAt} ${end.toLocaleTimeString(i18n.lang || 'en', { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`);
-    }
-    return parts.join(' · ');
+    const parts = [upNext.Type === 'Episode' ? episodeCode(upNext)
+                   : upNext.Type === 'Movie' && upNext.ProductionYear ? String(upNext.ProductionYear) : ''];
+    if (runtimeLabel(upNext.RunTimeTicks)) parts.push(runtimeLabel(upNext.RunTimeTicks), endsAtLabel(upNext, use24h));
+    return parts.filter(Boolean).join(' · ');
   });
 
   // ============================================================

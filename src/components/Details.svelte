@@ -1,7 +1,7 @@
 <script>
   import { i18n, LANGUAGES, plural, baseLang } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
-  import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, minutesLeft, getItemSubtitle, authHeaders, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
+  import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, minutesLeft, episodeCode, runtimeLabel, endsAtLabel, authHeaders, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
   import { pickDefaultTracks, rememberChoice, orderTracks } from '../trackmemory.js';
   import { trackLabels } from '../tracklabel.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
@@ -11,6 +11,7 @@
   import AddToPicker from './AddToPicker.svelte';
   import SubtitleSearch from './SubtitleSearch.svelte';
   import CardStatus from './CardStatus.svelte';
+  import TitleMeta from './TitleMeta.svelte';
 
   let {
     item,
@@ -41,8 +42,8 @@
   let focusedEpisode = $state(null);
   // "Mark earlier episodes as watched" in the ⋮ menu: null | 'busy' | { n } — see markEarlier().
   let earlier = $state(null);
-  const epCode = (ep) => `S${ep?.ParentIndexNumber ?? '?'}:E${ep?.IndexNumber ?? '?'}`;
-  const epMinutes = (ep) => ep?.RunTimeTicks ? `${Math.round(ep.RunTimeTicks / 600000000)} ${i18n.t.mins}` : '';
+  // "S1:E2 · Title" — the episode row's panel and the share dialog (the number: episodeCode, utils.js, §141)
+  const epTitle = (ep) => [episodeCode(ep), ep?.Name].filter(Boolean).join(' · ');
   let similarItems = $state([]);
   let collections  = $state([]);   // collections (BoxSets) that contain the title — Jellyfin 12+
   let extras       = $state([]);   // special features (making-ofs, deleted scenes, …)
@@ -471,19 +472,19 @@
   // Genres and direction, one quiet line above the plot (CODE-HEALTH §135): the genres the library's info preview
   // shows, plus who directed it — both come with /Items/{id}. Three at most each (an anthology names a dozen
   // directors); a director is listed once per Id, like the cast. Writers and studios left out on purpose.
-  // An episode's place and air date for the meta row (CODE-HEALTH §136): "S1:E2", "S1:E2–3" for a double episode, the
-  // date in the UI language. In UTC: PremiereDate is midnight UTC, and local time west of Greenwich showed the day before.
+  // An episode's place and air date for the meta row (CODE-HEALTH §136): "S1:E2", "S1:E2–3" for a double episode
+  // (episodeCode, as every card writes it since §141), the date in the UI language. In UTC: PremiereDate is midnight
+  // UTC, and local time west of Greenwich showed the day before.
   let episodeMeta = $derived.by(() => {
     if (fullItem?.Type !== 'Episode') return null;
-    const s = fullItem.ParentIndexNumber, e = fullItem.IndexNumber, end = fullItem.IndexNumberEnd;
-    const code = e == null ? '' : `${s != null ? `S${s}:` : ''}E${e}${end != null && end !== e ? '–' + end : ''}`;
+    const code = episodeCode(fullItem);
     const d = fullItem.PremiereDate ? new Date(fullItem.PremiereDate) : null;
     const date = d && !isNaN(d) ? d.toLocaleDateString(i18n.lang, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
     return { code, date };
   });
   // A series names its years as the cards do ("2013 – today", "2013 – 2016") and counts its seasons where the others show
-  // a running time — a series' RunTimeTicks is one episode's, and its "ends at" meant nothing (CODE-HEALTH §137).
-  let seriesYears = $derived(fullItem?.Type === 'Series' ? getItemSubtitle(fullItem, i18n.t.today) : '');
+  // a running time — a series' RunTimeTicks is one episode's, and its "ends at" meant nothing (CODE-HEALTH §137). Both
+  // in TitleMeta since §141, the line the banner and the library's preview show too.
   // A started title says how much is left, in the words of the Continue watching pill (minutesLeft, utils.js), in the
   // meta row before "ends at" — on the Resume button it pushed the icon buttons onto a second line (§137).
   let resumeLeft = $derived(minutesLeft(fullItem));
@@ -992,10 +993,6 @@
     return null;
   }
 
-  function getRuntimeMinutes(ticks) {
-    return !ticks ? "" : Math.round(ticks / 10000000 / 60) + ` ${i18n.t.mins}`;
-  }
-
   // Spoiler protection: slightly obscure unwatched episodes. Excluded are seasons (posters),
   // already started, watched and favorite-marked episodes.
   function epSpoiler(ep) {
@@ -1010,13 +1007,17 @@
     return (selectedSource?.MediaStreams || []).filter(s => s.Type === type);
   }
 
-  function getEndTime(targetItem) {
-    if (!targetItem?.RunTimeTicks) return "";
-    const remainingTicks = targetItem.RunTimeTicks - (targetItem.UserData?.PlaybackPositionTicks || 0);
-    const endDate = new Date(Date.now() + remainingTicks / 10000);
-    return `${i18n.t.endsAt} ${endDate.toLocaleTimeString(i18n.lang || 'en', { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`;
-  }
 </script>
+
+<!-- The meta line's parts that only the title page has (TitleMeta): an episode's number and air date in place of the
+     year, and after the running time what is left of a started title and when it would end -->
+{#snippet episodeLead()}
+  {#if episodeMeta.code}<span class="text-blue-400 whitespace-nowrap">{episodeMeta.code}</span>{/if}
+  {#if episodeMeta.date}<span class="whitespace-nowrap">{episodeMeta.date}</span>{:else if fullItem.ProductionYear}<span>{fullItem.ProductionYear}</span>{/if}
+{/snippet}
+{#snippet endsAt()}
+  <span class="text-base font-normal text-gray-400 ml-1">{resumeLeft ? `${resumeLeft} ${i18n.t.mins} ${i18n.t.remaining} · ` : ''}{endsAtLabel(fullItem, use24h)}</span>
+{/snippet}
 
 <!-- An audio or subtitle track: language, forced/SDH/original and what its title adds, then codec or format dimmer (tracklabel.js, §138) -->
 {#snippet trackName(s)}
@@ -1143,52 +1144,10 @@
             <h1 class="max-w-4xl text-6xl font-bold text-white mb-4 drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
           {/if}
 
-          <!-- META -->
-          <div class="max-w-4xl flex items-center flex-wrap gap-4 text-lg font-semibold text-gray-200 mb-6 [text-shadow:0_1px_4px_rgba(0,0,0,0.75)]">
-            {#if episodeMeta}
-              <!-- An episode page named its season in the breadcrumb, but not which episode it is (§136) -->
-              {#if episodeMeta.code}<span class="text-blue-400">{episodeMeta.code}</span>{/if}
-              {#if episodeMeta.date}<span>{episodeMeta.date}</span>{:else if fullItem.ProductionYear}<span>{fullItem.ProductionYear}</span>{/if}
-            {:else if seriesYears}
-              <span class="text-blue-400">{seriesYears}</span>
-            {:else if fullItem.ProductionYear}
-              <span class="text-blue-400">{fullItem.ProductionYear}</span>
-            {/if}
-            {#if fullItem.Type === 'Series'}
-              {#if fullItem.ChildCount}<span>• {plural('seasonCount', fullItem.ChildCount)}</span>{/if}
-            {:else if fullItem.RunTimeTicks}
-              <span class="flex items-center gap-2">
-                • {getRuntimeMinutes(fullItem.RunTimeTicks)}
-                <span class="text-base font-normal text-gray-400 ml-1">{resumeLeft ? `${resumeLeft} ${i18n.t.mins} ${i18n.t.remaining} · ` : ''}{getEndTime(fullItem)}</span>
-              </span>
-            {/if}
-            {#if fullItem.OfficialRating}
-              <span class="px-2 py-0.5 rounded border border-gray-400/80 bg-black/25 text-gray-100 text-base font-bold leading-none [text-shadow:none]">
-                {fullItem.OfficialRating}
-              </span>
-            {/if}
-            {#if fullItem.CommunityRating}
-              <span class="flex items-center gap-1 text-gray-100">
-                •
-                <svg class="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
-                </svg>
-                {fullItem.CommunityRating.toFixed(1)}
-              </span>
-            {/if}
-            {#if fullItem.CriticRating}
-              <span class="flex items-center gap-1 text-gray-100">
-                •
-                <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
-                  <circle cx="12" cy="14" r="7.5" fill="#ef4444"/>
-                  <ellipse cx="9.5" cy="6.5" rx="2.5" ry="1.3" fill="#22c55e" transform="rotate(-25 9.5 6.5)"/>
-                  <ellipse cx="14.5" cy="6.5" rx="2.5" ry="1.3" fill="#22c55e" transform="rotate(25 14.5 6.5)"/>
-                  <rect x="11.3" y="4.5" width="1.4" height="3" rx="0.7" fill="#22c55e"/>
-                </svg>
-                {fullItem.CriticRating}%
-              </span>
-            {/if}
-          </div>
+          <!-- META — the line the banner and the library's preview show too (TitleMeta, §141); an episode leads with its
+               number and air date (§136), a film or episode adds time left and "ends at" after its running time -->
+          <TitleMeta item={fullItem} lead={episodeMeta ? episodeLead : null} extra={endsAt}
+            class="max-w-4xl flex items-center flex-wrap gap-4 text-lg font-semibold text-gray-200 mb-6 [text-shadow:0_1px_4px_rgba(0,0,0,0.75)]" />
 
           {#if techBadges.length}
             <!-- Technical capabilities of the selected version (reactive: see techBadges) -->
@@ -1228,7 +1187,7 @@
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
               {#if nextToPlay && nextToPlay.Type === 'Episode'}
                 {nextToPlay.UserData?.PlaybackPositionTicks > 0 ? i18n.t.resumePlay : i18n.t.play}
-                <span class="text-xl font-semibold text-gray-600">{epCode(nextToPlay)}</span>
+                <span class="text-xl font-semibold text-gray-600">{episodeCode(nextToPlay)}</span>
               {:else if fullItem.UserData?.PlaybackPositionTicks > 0}{i18n.t.resumePlay}{:else}{i18n.t.play}{/if}
             </button>
 
@@ -1496,18 +1455,13 @@
                     <img src={getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')} {@attach blurUp(itemBlurHash(ep))} alt={ep.Name} loading="lazy"
                       class="w-full h-full object-cover transition-all duration-200 {epSpoiler(ep) ? 'blur-md scale-110' : ''}" />
                   {/if}
-                  {#if itemProgress(ep) > 0}
-                    <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                      <div class="h-full bg-blue-500" style="width:{itemProgress(ep)}%"></div>
-                    </div>
-                  {/if}
                   {#if ep.Id === nextToPlay?.Id && ep.Type === 'Episode'}
                     <div class="absolute top-2 left-2 bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-md shadow-md">{i18n.t.nextUp}</div>
                   {/if}
                   <CardStatus item={ep} />
                 </div>
                 <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full">
-                  {#if ep.IndexNumber && ep.Type !== 'Season'}{ep.IndexNumber}.&nbsp;{/if}{ep.Name}
+                  {#if ep.IndexNumber && ep.Type !== 'Season'}{ep.IndexNumber}{#if ep.IndexNumberEnd > ep.IndexNumber}–{ep.IndexNumberEnd}{/if}.&nbsp;{/if}{ep.Name}
                 </span>
               </button>
             {/each}
@@ -1521,7 +1475,7 @@
             <div class="px-2 -mt-2 min-h-[7.5rem] max-w-5xl">
               {#if shown}
                 <p class="text-xl font-bold text-white">
-                  {epCode(shown)} · {shown.Name}{#if epMinutes(shown)}<span class="text-gray-400 font-medium">{' · '}{epMinutes(shown)}</span>{/if}
+                  {epTitle(shown)}{#if runtimeLabel(shown.RunTimeTicks)}<span class="text-gray-400 font-medium">{' · '}{runtimeLabel(shown.RunTimeTicks)}</span>{/if}
                 </p>
                 {#if shown.Overview && !epSpoiler(shown)}
                   <p class="text-lg text-gray-300 mt-2 line-clamp-3 leading-relaxed">{shown.Overview}</p>
@@ -1550,7 +1504,7 @@
                   {/if}
                 </div>
                 <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full">{ex.Name}</span>
-                {#if ex.RunTimeTicks}<span class="text-xs text-gray-400">{getRuntimeMinutes(ex.RunTimeTicks)}</span>{/if}
+                {#if runtimeLabel(ex.RunTimeTicks)}<span class="text-xs text-gray-400">{runtimeLabel(ex.RunTimeTicks)}</span>{/if}
               </button>
             {/each}
           </div>
@@ -1768,7 +1722,7 @@
       {#if fullItem?.SeriesName && (fullItem.Type === 'Season' || fullItem.Type === 'Episode')}
         <div class="text-center break-words">
           <p class="text-white font-bold">{fullItem.SeriesName}</p>
-          <p class="text-gray-300 font-semibold mt-1">{fullItem.Type === 'Episode' ? `${epCode(fullItem)} · ${fullItem.Name}` : fullItem.Name}</p>
+          <p class="text-gray-300 font-semibold mt-1">{fullItem.Type === 'Episode' ? epTitle(fullItem) : fullItem.Name}</p>
         </div>
       {:else}
         <p class="text-white font-bold text-center break-words">{fullItem?.Name}</p>

@@ -5,7 +5,11 @@
   // started again shows its time left. Top left stays free for labels such as "Next up".
   // It replaces three separate marks — a tick top left, an episode count and a time-left chip top
   // right in another shape — which a watched series showed all at once, plus a full progress bar.
+  // The progress bar along the bottom edge lives here too (§141): it stood beside this component on every card,
+  // written out seven times, and Search and Favourites' episode cards had neither. Sits in the card's frame
+  // (`relative`), like the pill.
   import { i18n } from '../i18n.svelte.js';
+  import { itemProgress } from '../utils.js';
 
   let {
     item,
@@ -15,6 +19,7 @@
 
   let open = $derived(unplayed && (item?.Type === 'Series' || item?.Type === 'Season')
     ? (item?.UserData?.UnplayedItemCount || 0) : 0);
+  let progress = $derived(item ? itemProgress(item) : 0);
 </script>
 
 {#if remaining > 0}
@@ -25,6 +30,11 @@
   <!-- Green, like every other place that says watched — the details page's button, the card menu. -->
   <div class="pill bg-green-600/90 px-1.5">
     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+  </div>
+{/if}
+{#if progress > 0}
+  <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
+    <div class="h-full bg-blue-500" style="width:{progress}%"></div>
   </div>
 {/if}
 

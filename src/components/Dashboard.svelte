@@ -1,7 +1,8 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, minutesLeft, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, isShownLibrary, getItemImageUrl, libraryIcon, orderHomeRows, HOME_ROWS, dlog } from '../utils.js';
+  import { minutesLeft, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, isShownLibrary, getItemImageUrl, libraryIcon, orderHomeRows, HOME_ROWS, dlog } from '../utils.js';
   import CardStatus from './CardStatus.svelte';
+  import TitleMeta from './TitleMeta.svelte';
   import { focusFromPointer } from '../spatialnav.js';
   import { session } from '../session.svelte.js';
   import { watchlist, refreshWatchlist } from '../watchlist.svelte.js';
@@ -324,8 +325,9 @@
   // has no such parameter in 12.2. Fields carries ItemFields only: everything else (BackdropImageTags, SeriesName,
   // ProductionYear, UserData …) comes anyway, and the server drops an unknown name without a word (§129).
   const FIELDS = "Overview";
-  // The banner's titles also name their genres (§139): its pool, and the two "recently added" rows it falls back to
-  const HERO_FIELDS = "Overview,Genres";
+  // The banner's titles also name their genres (§139) and a series its seasons (§141, ChildCount — the library asks it
+  // for every page as well): its pool, and the two "recently added" rows it falls back to
+  const HERO_FIELDS = "Overview,Genres,ChildCount";
   const ROW_LIMIT = 12;   // uniform row length: rows are teasers, the catalog is the library
   const HERO_MIN = 3;     // use the "For You" pool only from this many usable titles on, otherwise new-additions fallback
                           // (exceptions deliberate: hero = 5-item rotation, collections = curated, their own cap)
@@ -761,9 +763,8 @@
   <!-- Reusable card snippets (instead of 8 nearly identical blocks) -->
   {#snippet landscapeCard(item)}
     {@const img = getItemImageUrl(item, 'landscape', true)}
-    {@const prog = itemProgress(item)}
     {@const rem = minutesLeft(item)}
-    {@const sub = getItemSubtitle(item, i18n.t.today)}
+    {@const sub = getItemSubtitle(item)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
       onfocus={() => previewItem(item)} onblur={cancelPreview}
       class="shrink-0 w-80 group isolate flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
@@ -775,11 +776,6 @@
             class="w-full h-full object-cover" loading="lazy" />
         {/if}
         <CardStatus {item} remaining={rem} />
-        {#if prog > 0}
-          <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-            <div class="h-full bg-blue-500" style="width:{prog}%"></div>
-          </div>
-        {/if}
       </div>
       <div class="mt-3 flex flex-col w-full overflow-hidden">
         <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
@@ -791,8 +787,7 @@
   {/snippet}
 
   {#snippet portraitCard(item, img, blur)}
-    {@const prog = itemProgress(item)}
-    {@const sub = getItemSubtitle(item, i18n.t.today)}
+    {@const sub = getItemSubtitle(item)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
       onfocus={() => previewItem(item)} onblur={cancelPreview}
       class="shrink-0 w-48 group isolate flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
@@ -804,11 +799,6 @@
             class="w-full h-full object-cover" loading="lazy" />
         {/if}
         <CardStatus {item} />
-        {#if prog > 0}
-          <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-            <div class="h-full bg-blue-500" style="width:{prog}%"></div>
-          </div>
-        {/if}
       </div>
       <div class="mt-3 flex flex-col w-full overflow-hidden">
         <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
@@ -906,21 +896,9 @@
           {:else}
             <h1 class="text-5xl font-bold text-white drop-shadow-lg">{getItemTitle(heroCurrent)}</h1>
           {/if}
-          <div class="flex items-center gap-3 text-gray-300 font-semibold">
-            {#if heroCurrent.ProductionYear}<span class="text-blue-400">{heroCurrent.ProductionYear}</span>{/if}
-            {#if heroCurrent.CommunityRating}
-              <span class="flex items-center gap-1 text-yellow-400">
-                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-                {heroCurrent.CommunityRating.toFixed(1)}
-              </span>
-            {/if}
-            {#if heroCurrent.CriticRating}
-              <span class="flex items-center gap-1 text-red-400">• {heroCurrent.CriticRating}%</span>
-            {/if}
-            {#if heroCurrent.Genres?.length}
-              <span class="min-w-0 truncate font-normal">{heroCurrent.ProductionYear || heroCurrent.CommunityRating || heroCurrent.CriticRating ? '• ' : ''}{heroCurrent.Genres.slice(0, 3).join(' · ')}</span>
-            {/if}
-          </div>
+          <!-- The same meta line as the library's preview and the title page (TitleMeta, §141), with the genres at its
+               end. It does not wrap: the genres shorten instead, so the banner keeps its height from title to title. -->
+          <TitleMeta item={heroCurrent} genres={heroCurrent.Genres} class="flex items-center gap-3 min-w-0 text-gray-300 font-semibold" />
           {#if heroCurrent.Overview}
             <p class="text-gray-300 text-lg line-clamp-2 max-w-2xl drop-shadow">{heroCurrent.Overview}</p>
           {/if}

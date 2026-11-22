@@ -1,8 +1,9 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, getItemSubtitle, personImageUrl, itemBlurHash, blurUp, longPress, authHeaders, dlog, getItemImageUrl } from '../utils.js';
+  import { getItemSubtitle, personImageUrl, itemBlurHash, blurUp, longPress, authHeaders, dlog, getItemImageUrl } from '../utils.js';
   import { session } from '../session.svelte.js';
   import PosterCard from './PosterCard.svelte';
+  import CardStatus from './CardStatus.svelte';
   import { tick } from 'svelte';
 
   // focusItemId: the card to land on after the parent brought us back (from Details, say). Passed in
@@ -92,8 +93,8 @@
     <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Type === 'Season' ? (item.SeriesName || item.Name) : item.Name}</span>
     {#if item.Type === 'Season'}
       <span class="text-xs text-gray-400 block truncate w-full">{item.Name}</span>
-    {:else if item.ProductionYear}
-      <span class="text-xs text-gray-400 block truncate w-full">{item.ProductionYear}</span>
+    {:else if getItemSubtitle(item)}
+      <span class="text-xs text-gray-400 block truncate w-full">{getItemSubtitle(item)}</span>
     {/if}
   {/snippet}
   <div class="flex items-center gap-4 mb-10">
@@ -138,14 +139,10 @@
                 {#if getItemImageUrl(item, 'landscape')}
                   <img src={getItemImageUrl(item, 'landscape')} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                 {/if}
-                {#if itemProgress(item) > 0}
-                  <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                    <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                  </div>
-                {/if}
+                <CardStatus {item} />
               </div>
               <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.SeriesName || item.Name}</span>
-              <span class="text-xs text-gray-400 block truncate w-full">{getItemSubtitle(item, i18n.t.today)}</span>
+              <span class="text-xs text-gray-400 block truncate w-full">{getItemSubtitle(item)}</span>
             </button>
           {/each}
         </div>

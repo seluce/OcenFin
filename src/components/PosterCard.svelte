@@ -12,7 +12,7 @@
   //
   // `caption` is a snippet so each view keeps its own labelling. It renders INSIDE the button, so
   // `group-focus:` in those spans still refers to this card.
-  import { itemProgress, itemBlurHash, blurUp, longPress, getItemImageUrl } from '../utils.js';
+  import { itemBlurHash, blurUp, longPress, getItemImageUrl } from '../utils.js';
   import CardStatus from './CardStatus.svelte';
 
   let { item, onOpenDetails, onContextMenu, caption } = $props();
@@ -25,11 +25,6 @@
     <CardStatus {item} />
     {#if getItemImageUrl(item)}
       <img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
-    {/if}
-    {#if itemProgress(item) > 0}
-      <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-        <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-      </div>
     {/if}
   </div>
   {@render caption(item)}
