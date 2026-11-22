@@ -11,7 +11,7 @@
   //   extra  — snippet after the running time, inside its item (the title page: time left · ends at)
   //   genres — the banner names them at the end of the line; the preview and the title page show them below
   import { plural } from '../i18n.svelte.js';
-  import { getItemSubtitle, runtimeLabel } from '../utils.js';
+  import { getItemSubtitle, runtimeLabel, ratingBadge } from '../utils.js';
 
   let { item, class: cls = '', lead = null, extra = null, genres = null } = $props();
 
@@ -33,7 +33,7 @@
       <span class="flex items-center gap-2 whitespace-nowrap">{dot('length')}{length}{#if extra && item.Type !== 'Series'}{@render extra()}{/if}</span>
     {/if}
     {#if item.OfficialRating}
-      <span class="px-2 py-0.5 rounded border border-gray-400/80 bg-black/25 text-gray-100 text-[0.89em] font-bold leading-none whitespace-nowrap [text-shadow:none]">{item.OfficialRating}</span>
+      <span class="px-2 py-0.5 rounded border border-gray-400/80 bg-black/25 text-gray-100 text-[0.89em] font-bold leading-none whitespace-nowrap [text-shadow:none]">{ratingBadge(item.OfficialRating)}</span>
     {/if}
     {#if item.CommunityRating}
       <span class="flex items-center gap-1 text-gray-100 whitespace-nowrap">

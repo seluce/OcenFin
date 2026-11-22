@@ -52,8 +52,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   bar like every other card.
 - **One size for every switch in the settings.** Content and Navigation had smaller rows than the other categories;
   now every switch looks like the rest, with a line between each two.
-- **Age rating filter for every rating system.** The library's filter now offers the ratings your titles actually
-  carry, such as PG-13, TV-MA or FSK 12, instead of a fixed list of German ratings.
+- **Age rating filter for every rating system.** It offers the ratings your titles actually carry: every spelling of
+  an age as one number, and letter ratings such as PG-13 or TV-MA in a row of their own.
 - **Every dialog darkens the screen the same way.** They used four shades and the exit question a blur; now all use
   one, and the card menu and the small pickers in the settings fade in like the other dialogs.
 
@@ -75,6 +75,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   leaving nothing selected.
 - **A title without a poster shows an empty frame.** Its page showed only a thin line where the picture would be.
 - **An empty library shows its own icon.** It used to show the filter symbol even with no filter set.
+- **Age ratings from NFO files read cleanly.** A title page shows "FSK 12" instead of the long list of spellings some
+  NFO files store.
 
 ### Internal
 

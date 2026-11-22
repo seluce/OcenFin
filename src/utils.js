@@ -311,6 +311,33 @@ export function episodeCode(item) {
   return `${s != null ? `S${s}:` : ''}E${e}${end != null && end !== e ? '–' + end : ''}`;
 }
 
+// ---- Age ratings as people read them (CODE-HEALTH §150) -------------------------------------------------------------
+// OfficialRating holds whatever the metadata wrote: "FSK 12", "FSK-12", "DE-12", "12", "FSK ab 12", and from a Kodi NFO
+// (tinyMediaManager) every spelling at once, "DE:FSK 12 / DE:FSK-12 / DE:FSK12 / DE:12 / DE:ab 12". parseRating() reads
+// one as an AGE (any country's number: an age is an age) or as a letter CODE (US film/TV, UK U), with a sort value
+// (the code's usual age); anything else stays as written, at the end. Letter codes are NOT turned into ages: a PG-13
+// title is not an FSK 12 one, and the data does not say what it would be.
+const RATING_CODES = { G: 0, U: 0, 'TV-Y': 0, 'TV-G': 0, 'TV-Y7': 7, PG: 10, 'TV-PG': 10, 'PG-13': 13, 'TV-14': 14,
+                       R: 17, 'TV-MA': 17, 'NC-17': 18, NR: 99 };
+const RATING_ALIASES = { 'NOT RATED': 'NR', UNRATED: 'NR', UR: 'NR' };
+const ratingSpellings = (raw) => String(raw ?? '').split(/\s+\/\s+/).map(s => s.trim()).filter(Boolean);
+export function parseRating(raw) {
+  const spellings = ratingSpellings(raw);
+  for (const one of spellings) {
+    let s = one.toUpperCase().replace(/^RATED\s+/, '');
+    for (let pass = 0; pass < 2; pass++) {
+      const code = RATING_ALIASES[s] || s;
+      if (code in RATING_CODES) return { code, sort: RATING_CODES[code] };
+      const age = s.replace(/^(?:FSK|JMK|AB)[\s-]*/, '').replace(/^AB\s*/, '').match(/^(\d{1,2})\+?$/);
+      if (age) return { age: +age[1], sort: +age[1] };
+      s = s.replace(/^[A-Z]{2}\s*[:\-\/]\s*/, '');   // a country in front: "DE-12", "DE:FSK 12", "US-PG-13", "de/12"
+    }
+  }
+  return { code: spellings[0] || '', sort: 99 };
+}
+// The badge on a title (TitleMeta): the first spelling of an NFO's list, without its "DE:" — "FSK 12", not the list.
+export const ratingBadge = (raw) => (ratingSpellings(raw)[0] || '').replace(/^[A-Za-z]{2}\s*:\s*/, '');
+
 // A running time, "112 min"; '' without one. ONE rule for the title page, its episode row and extras, the info
 // preview, the banner and the player's next-title line (§141) — it was worked out in five places.
 export function runtimeLabel(ticks) {

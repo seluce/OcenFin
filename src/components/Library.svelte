@@ -10,7 +10,7 @@
   import { session } from '../session.svelte.js';
   import { i18n } from '../i18n.svelte.js';
   import { getItemSubtitle, getItemImageUrl, backdropPreview, blurUp, itemBlurHash, longPress,
-           focusOnMount, isBackKey, makeFocusReturn, authHeaders, dlog, markContentChange, libraryIcon } from '../utils.js';
+           focusOnMount, isBackKey, makeFocusReturn, authHeaders, dlog, markContentChange, libraryIcon, parseRating } from '../utils.js';
   import Dialog from './Dialog.svelte';
   const FUNNEL_ICON = 'M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z';
 
@@ -254,6 +254,7 @@
   let ratingsFor      = null;   // the library the list belongs to, or is being asked for
   let selectedRatings = $state([]);
   let ratingGroups    = $derived(groupRatings(ratingsRaw));
+  let ratingRows      = $derived([ratingGroups.filter(g => g.isAge), ratingGroups.filter(g => !g.isAge)].filter(r => r.length));
   // Track languages (Jellyfin 12+, via /Items/Filters2): raw { Name, Value } lists from the server,
   // grouped for display below. The selection holds CODES, not labels, so it survives a change of the
   // interface language and "Deutsch" can stand for both "ger" and "deu".
@@ -367,20 +368,19 @@
     } catch { if (ratingsFor === libraryId) ratingsFor = null; }
   }
 
-  // One chip per rating as people read it: "FSK 12", "FSK-12", "DE-12", "FSK ab 12" are one. Sorted by age — the
-  // number in it, else the usual age of a letter rating (G/U 0, PG 10, R 16, MA 17), else at the end.
-  const LETTER_AGE = { G: 0, U: 0, Y: 0, PG: 10, R: 16, MA: 17 };
-  const ratingAge = (r) => { const n = r.match(/\d+/); return n ? +n[0] : LETTER_AGE[r.split('-').pop().toUpperCase()] ?? 99; };
-  const ratingLabel = (raw) => { const de = raw.trim().match(/^(?:FSK|DE)[\s\-\/:]*(?:ab\s*)?(\d{1,2})$/i); return de ? `FSK ${+de[1]}` : raw.trim(); };
+  // One chip per rating as people read it (parseRating, utils.js, §150): every spelling of an age is one chip with the
+  // bare number — "12", "FSK 12", "FSK-12", "DE-12", an NFO's "DE:FSK 12 / DE:FSK-12 / …"; letter codes (G, PG-13, R,
+  // TV-MA, NR) one each, in their own row below the ages. Sorted by age, a code by its usual one, the unknown last.
+  const ratingKey = (raw) => { const r = parseRating(raw); return r.age != null ? `age:${r.age}` : `code:${r.code.toUpperCase()}`; };
   function groupRatings(list) {
     const groups = new Map();
     for (const raw of list) {
-      const label = ratingLabel(raw);
-      const g = groups.get(label.toLowerCase());
-      if (g) g.raws.push(raw); else groups.set(label.toLowerCase(), { label, raws: [raw] });
+      const r = parseRating(raw), key = ratingKey(raw);
+      const g = groups.get(key);
+      if (g) g.raws.push(raw);
+      else groups.set(key, { key, label: r.age != null ? String(r.age) : r.code, isAge: r.age != null, sort: r.sort, raws: [raw] });
     }
-    return [...groups.values()].sort((a, b) => ratingAge(a.label) - ratingAge(b.label)
-      || a.label.localeCompare(b.label, undefined, { numeric: true }));
+    return [...groups.values()].sort((a, b) => a.sort - b.sort || a.label.localeCompare(b.label, undefined, { numeric: true }));
   }
 
   // The server names languages in English ("German (ger)") and lists every code the files carry, so
@@ -516,8 +516,8 @@
       // By CHIP, not by string: a remembered "FSK 16" (the old fixed chip's) means the chip "FSK 16" even where the
       // titles say "DE-16", and a chosen chip takes every string of it along ("FSK 12" + "FSK-12") — else it would
       // look chosen while some of its titles stayed out.
-      const chosen = new Set(selectedRatings.map(r => ratingLabel(r).toLowerCase()));
-      const keep = ratingGroups.filter(g => chosen.has(g.label.toLowerCase())).flatMap(g => g.raws);
+      const chosen = new Set(selectedRatings.map(ratingKey));
+      const keep = ratingGroups.filter(g => chosen.has(g.key)).flatMap(g => g.raws);
       dropped = selectedRatings.filter(r => !keep.includes(r)).length;
       if ((changed = dropped > 0 || keep.length !== selectedRatings.length)) selectedRatings = keep;
     } else {
@@ -1150,15 +1150,18 @@
         {#if ratingGroups.length > 0}
           <div class="flex flex-col gap-3">
             <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{i18n.t.ageRating}</h3>
-            <div class="flex flex-wrap gap-3">
-              {#each ratingGroups as group (group.label)}
-                <button onclick={() => toggleRating(group)}
-                  class="px-5 py-2 rounded-full font-bold text-lg border-2 transition-all focus:outline-none focus:ring-4 focus:ring-white
-                         {ratingSelected(group) ? 'bg-red-700 border-red-500 text-white' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-white'}">
-                  {group.label}
-                </button>
-              {/each}
-            </div>
+            <!-- the ages in one row, the letter codes in the next; one width, so each row reads as a scale -->
+            {#each ratingRows as row}
+              <div class="flex flex-wrap gap-3">
+                {#each row as group (group.key)}
+                  <button onclick={() => toggleRating(group)}
+                    class="min-w-[4.5rem] px-5 py-2 rounded-full font-bold text-lg tabular-nums border-2 transition-all focus:outline-none focus:ring-4 focus:ring-white
+                           {ratingSelected(group) ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-white'}">
+                    {group.label}
+                  </button>
+                {/each}
+              </div>
+            {/each}
           </div>
         {/if}
 
