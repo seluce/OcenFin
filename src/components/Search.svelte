@@ -1,7 +1,8 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { personImageUrl, authHeaders, blurUp, itemBlurHash, getItemSubtitle, episodeCode, getItemImageUrlWithFallbacks as getItemImageUrl, asArray } from '../utils.js';
+  import { authHeaders, blurUp, itemBlurHash, getItemSubtitle, episodeCode, getItemImageUrlWithFallbacks as getItemImageUrl, asArray } from '../utils.js';
   import CardStatus from './CardStatus.svelte';
+  import PersonCard from './PersonCard.svelte';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick } from 'svelte';
 
@@ -97,7 +98,6 @@
   let episodes = $derived(results.filter(r => r.Type === 'Episode'));
   let people   = $state([]);
 
-  const getAuthHeaders = () => authHeaders(session.token);
 
   // Stale guard (pattern like subtitleFetchToken in the Player): only the MOST RECENT search may accept
   // results. Without it an earlier, slow response can overwrite a later one —
@@ -138,9 +138,9 @@
     try {
       // Titles + people in parallel
       const pItems = fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&searchTerm=${encodeURIComponent(query)}&Recursive=true&IncludeItemTypes=Movie,Series,Episode&Limit=24&Fields=Overview&ImageTypeLimit=1&SortBy=SortName&EnableTotalRecordCount=false`,
-        { headers: getAuthHeaders() });
+        { headers: authHeaders() });
       const pPeople = fetch(`${session.serverUrl}/Persons?searchTerm=${encodeURIComponent(query)}&Limit=10&userId=${selectedUser.Id}`,
-        { headers: getAuthHeaders() });
+        { headers: authHeaders() });
       pPeople.catch(() => {});   // awaited below — only so a failure before that is not reported as unhandled
       const itemsRes = await pItems;
       if (stale()) return;
@@ -167,7 +167,7 @@
           try {
             const c = await fetch(
               `${session.serverUrl}/Items?UserId=${selectedUser.Id}&PersonIds=${p.Id}&Recursive=true&IncludeItemTypes=Movie,Series&Limit=0`,
-              { headers: getAuthHeaders() }
+              { headers: authHeaders() }
             );
             const has = c.ok ? ((await c.json()).TotalRecordCount || 0) > 0 : false;
             personHasTitles.set(p.Id, has);
@@ -251,6 +251,32 @@
     </div>
   {/if}
 
+  <!-- One result row (§142: series, films and episodes spelled it out three times). `wide` = episodes: landscape
+       stills, and the series with its episode code as the second line instead of the year. -->
+  {#snippet resultRow(heading, list, wide = false)}
+    {#if list.length > 0}
+      <div>
+        <h2 class="text-3xl font-bold text-white mb-6 px-2">{heading}</h2>
+        <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
+          {#each list as it (it.Id)}
+            {@const img = getItemImageUrl(it, wide ? 'landscape' : 'portrait')}
+            {@const sub = wide ? [it.SeriesName, episodeCode(it)].filter(Boolean).join(' · ') : getItemSubtitle(it)}
+            <button onclick={() => leaveTo(onOpenDetails, it)} data-item-id={it.Id} class="shrink-0 {wide ? 'w-80' : 'w-48'} scroll-m-4 group isolate focus:outline-none text-left">
+              <div class="{wide ? 'aspect-video' : 'aspect-[2/3]'} w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
+                {#if img}<img src={img} {@attach blurUp(itemBlurHash(it))} alt={it.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
+                <CardStatus item={it} />
+              </div>
+              <div class="mt-3 flex flex-col w-full overflow-hidden">
+                <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate">{it.Name}</span>
+                {#if sub}<span class="text-xs text-gray-400 truncate mt-0.5">{sub}</span>{/if}
+              </div>
+            </button>
+          {/each}
+        </div>
+      </div>
+    {/if}
+  {/snippet}
+
   <!-- RESULTS -->
   {#if isLoading}
     <div class="flex-1 flex justify-center mt-20">
@@ -260,67 +286,9 @@
   {:else if results.length > 0 || people.length > 0}
     <div bind:this={scrollEl} class="flex flex-col gap-12 overflow-y-auto hide-scrollbar pb-32">
 
-      {#if series.length > 0}
-        <div>
-          <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.series}</h2>
-          <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
-            {#each series as s (s.Id)}
-              <button onclick={() => leaveTo(onOpenDetails, s)} data-item-id={s.Id} class="shrink-0 w-48 scroll-m-4 group isolate focus:outline-none text-left">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
-                  {#if getItemImageUrl(s, 'portrait')}<img src={getItemImageUrl(s, 'portrait')} {@attach blurUp(itemBlurHash(s))} alt={s.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
-                  <CardStatus item={s} />
-                </div>
-                <div class="mt-3 flex flex-col w-full overflow-hidden">
-                  <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate">{s.Name}</span>
-                  {#if getItemSubtitle(s)}<span class="text-xs text-gray-400 truncate mt-0.5">{getItemSubtitle(s)}</span>{/if}
-                </div>
-              </button>
-            {/each}
-          </div>
-        </div>
-      {/if}
-
-      {#if movies.length > 0}
-        <div>
-          <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.movies}</h2>
-          <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
-            {#each movies as m (m.Id)}
-              <button onclick={() => leaveTo(onOpenDetails, m)} data-item-id={m.Id} class="shrink-0 w-48 scroll-m-4 group isolate focus:outline-none text-left">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
-                  {#if getItemImageUrl(m, 'portrait')}<img src={getItemImageUrl(m, 'portrait')} {@attach blurUp(itemBlurHash(m))} alt={m.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
-                  <CardStatus item={m} />
-                </div>
-                <div class="mt-3 flex flex-col w-full overflow-hidden">
-                  <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate">{m.Name}</span>
-                  {#if getItemSubtitle(m)}<span class="text-xs text-gray-400 truncate mt-0.5">{getItemSubtitle(m)}</span>{/if}
-                </div>
-              </button>
-            {/each}
-          </div>
-        </div>
-      {/if}
-
-      {#if episodes.length > 0}
-        <div>
-          <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.episodes}</h2>
-          <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
-            {#each episodes as ep (ep.Id)}
-              <button onclick={() => leaveTo(onOpenDetails, ep)} data-item-id={ep.Id} class="shrink-0 w-80 scroll-m-4 group isolate focus:outline-none text-left">
-                <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
-                  {#if getItemImageUrl(ep, 'landscape')}<img src={getItemImageUrl(ep, 'landscape')} {@attach blurUp(itemBlurHash(ep))} alt={ep.Name} class="w-full h-full object-cover" loading="lazy" />{/if}
-                  <CardStatus item={ep} />
-                </div>
-                <div class="mt-3 flex flex-col w-full overflow-hidden">
-                  <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate">{ep.Name}</span>
-                  <span class="text-xs text-gray-400 truncate mt-0.5">
-                    {[ep.SeriesName, episodeCode(ep)].filter(Boolean).join(' · ')}
-                  </span>
-                </div>
-              </button>
-            {/each}
-          </div>
-        </div>
-      {/if}
+      {@render resultRow(i18n.t.series, series)}
+      {@render resultRow(i18n.t.movies, movies)}
+      {@render resultRow(i18n.t.episodes, episodes, true)}
 
       <!-- PEOPLE (at the very bottom) -->
       {#if people.length > 0}
@@ -328,18 +296,7 @@
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.people}</h2>
           <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-4 px-2">
             {#each people as p (p.Id)}
-              <button onclick={() => leaveTo(onOpenPerson, p)} data-item-id={p.Id} class="shrink-0 w-40 scroll-m-4 group isolate focus:outline-none text-center">
-                <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl mx-auto">
-                  {#if personImageUrl(session.serverUrl, p)}
-                    <img src={personImageUrl(session.serverUrl, p)} {@attach blurUp(itemBlurHash(p))} alt={p.Name} class="w-full h-full object-cover" loading="lazy" />
-                  {:else}
-                    <div class="w-full h-full flex items-center justify-center text-gray-600">
-                      <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-                    </div>
-                  {/if}
-                </div>
-                <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full block">{p.Name}</span>
-              </button>
+              <PersonCard person={p} onclick={() => leaveTo(onOpenPerson, p)} class="shrink-0 w-40 scroll-m-4" />
             {/each}
           </div>
         </div>

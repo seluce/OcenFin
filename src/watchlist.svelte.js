@@ -21,8 +21,6 @@ export const watchlist = $state({
 let currentUserId = null;
 let initSeq = 0;     // the newest initWatchlist() — only it may report the load as through
 
-function headers() { return authHeaders(session.token); }
-
 // Find the user's watchlist playlist (by its fixed name) and load its members.
 // Called by App whenever the active profile changes.
 export async function initWatchlist(userId) {
@@ -35,7 +33,7 @@ export async function initWatchlist(userId) {
   try {
     const res = await fetch(
       `${session.serverUrl}/Items?UserId=${userId}&IncludeItemTypes=Playlist&Recursive=true&Fields=CanDelete&EnableTotalRecordCount=false`,
-      { headers: headers() }
+      { headers: authHeaders() }
     );
     if (!res.ok) return;
     const d = await res.json();
@@ -56,7 +54,7 @@ async function refreshEntries(userId) {
   if (!watchlist.playlistId) return;
   const res = await fetch(
     `${session.serverUrl}/Playlists/${watchlist.playlistId}/Items?UserId=${userId}&ImageTypeLimit=1&Limit=500`,
-    { headers: headers() }
+    { headers: authHeaders() }
   );
   // Deleted in another client: forget it, so the next bookmark creates a new one instead of every
   // add failing against a playlist that no longer exists (with the icon stuck on "saved").
@@ -112,7 +110,7 @@ export function inWatchlist(itemId) {
 // instead: the next unwatched one, falling back to the first — the same choice as Details'
 // play button (playback.js: no specials, no placeholder episodes).
 async function representativeEpisode(item, userId) {
-  return playableFor(item, { serverUrl: session.serverUrl, userId, headers: headers() });
+  return playableFor(item, { serverUrl: session.serverUrl, userId, headers: authHeaders() });
 }
 
 // Toggle membership. Remove is optimistic; for add the icon flips immediately via a
@@ -130,7 +128,7 @@ export async function toggleWatchlist(item) {
       for (const it of related) delete watchlist.entries[it.Id];
       if (ids.length) {
         const res = await fetch(`${session.serverUrl}/Playlists/${watchlist.playlistId}/Items?EntryIds=${ids.join(',')}`,
-          { method: 'DELETE', headers: headers() });
+          { method: 'DELETE', headers: authHeaders() });
         if (!res.ok) await refreshEntries(userId);   // refused → show what the server still has
       }
     } else if (!watchlist.entries[item.Id]) {
@@ -142,7 +140,7 @@ export async function toggleWatchlist(item) {
       }
       if (watchlist.playlistId) {
         const res = await fetch(`${session.serverUrl}/Playlists/${watchlist.playlistId}/Items?Ids=${target.Id}&UserId=${userId}`,
-          { method: 'POST', headers: headers() });
+          { method: 'POST', headers: authHeaders() });
         // Refused: the 'pending' marker must go — it showed "saved" and, being truthy, blocked every
         // further press until a restart. A 404 means the playlist is gone: the refresh below forgets
         // it, and the next press creates a new one.
@@ -152,7 +150,7 @@ export async function toggleWatchlist(item) {
         // Body, not the query form 12.x marks obsolete. IsPublic stated on purpose: the body's default
         // is TRUE, while the query form made a private playlist — the watchlist must stay private.
         const res = await fetch(`${session.serverUrl}/Playlists`, {
-          method: 'POST', headers: headers(),
+          method: 'POST', headers: authHeaders(),
           body: JSON.stringify({ Name: WATCHLIST_NAME, Ids: [target.Id], UserId: userId, IsPublic: false }),
         });
         if (res.ok) watchlist.playlistId = (await res.json()).Id;

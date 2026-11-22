@@ -1,6 +1,6 @@
 <script>
   import { i18n, plural } from '../i18n.svelte.js';
-  import { authHeaders, getItemSubtitle } from '../utils.js';
+  import { authHeaders, getItemSubtitle, setFavorite } from '../utils.js';
   import { session } from '../session.svelte.js';
   import PosterCard from './PosterCard.svelte';
   import { tick, untrack } from 'svelte';
@@ -45,7 +45,6 @@
     ].filter(g => g.items.length > 0);
   });
 
-  const getAuthHeaders = () => authHeaders(session.token);
 
   async function loadPerson() {
     // Opening a second person while the first is still loading would otherwise let the slower
@@ -57,7 +56,7 @@
     items     = [];
     isLoading = true;
     // Fetch the person item separately → correct favorite status (from search/cast, UserData is often missing)
-    fetch(`${session.serverUrl}/Items/${person.Id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() })
+    fetch(`${session.serverUrl}/Items/${person.Id}?UserId=${selectedUser.Id}`, { headers: authHeaders() })
       .then(r => r.ok ? r.json() : null)
       .then(p => { if (p && myId === loadedId) fav = !!p.UserData?.IsFavorite; })
       .catch(() => {});
@@ -68,8 +67,8 @@
       `&ImageTypeLimit=1&EnableTotalRecordCount=false`;
     try {
       const [mainRes, epRes] = await Promise.all([
-        fetch(`${base}&IncludeItemTypes=Movie,Series&Limit=100`, { headers: getAuthHeaders() }),
-        fetch(`${base}&IncludeItemTypes=Episode&Limit=200`, { headers: getAuthHeaders() }),
+        fetch(`${base}&IncludeItemTypes=Movie,Series&Limit=100`, { headers: authHeaders() }),
+        fetch(`${base}&IncludeItemTypes=Episode&Limit=200`, { headers: authHeaders() }),
       ]);
       const main = mainRes.ok ? ((await mainRes.json()).Items || []) : [];
       const eps  = epRes.ok  ? ((await epRes.json()).Items  || []) : [];
@@ -93,11 +92,7 @@
   async function toggleFavorite() {
     const next = !fav;
     fav = next;
-    try {
-      const res = await fetch(`${session.serverUrl}/UserFavoriteItems/${person.Id}?UserId=${selectedUser.Id}`,
-        { method: next ? 'POST' : 'DELETE', headers: getAuthHeaders() });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);   // an error answer is a failure as well
-    } catch (e) { console.warn('[OcenFin] person favorite failed, rolled back:', e); fav = !next; }
+    if (!(await setFavorite(person.Id, selectedUser.Id, next))) fav = !next;
   }
 
   // Loads on mount and when a different person is opened.

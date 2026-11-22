@@ -42,6 +42,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   library, instead of the first year only.
 - **Watched ticks in search and favourites.** Search results and favourite episodes now show the tick and the progress
   bar like every other card.
+- **One size for every switch in the settings.** Content and Navigation had smaller rows than the other categories;
+  now every switch looks like the rest, with a line between each two.
+- **Every dialog darkens the screen the same way.** They used four shades and the exit question a blur; now all use
+  one, and the card menu and the small pickers in the settings fade in like the other dialogs.
 
 ### Fixed
 
@@ -53,6 +57,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   now takes its episode out of the row at once, instead of leaving it there with a tick until the app restarts.
 - **Focus stays put when a card leaves the home screen.** Back onto a title that has just been finished or marked
   as watched now lands on the card next to it.
+- **Focus back on the card after the playlist picker.** Closing the playlist or collection picker opened from a
+  card's menu now returns to the card instead of leaving nothing selected.
 
 ### Internal
 
@@ -60,6 +66,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   plots come without watched states and artwork it never uses.
 - **Fewer requests, checked against Jellyfin 12.4.** The automatic sign-in, the home screen's suggestions and a
   library's genre list each ask the server once where they asked twice, and nothing the app sends is outdated there.
+- **Less repeated code.** Shared pieces for the person card, dialogs, settings switches, the time of day, favourite
+  and watched marks and the backdrop preview replace copies spread over many screens.
 
 ## 2026.11.19
 

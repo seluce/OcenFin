@@ -9,8 +9,9 @@
   import { diagCount } from '../diag.js';
   import { session } from '../session.svelte.js';
   import { i18n } from '../i18n.svelte.js';
-  import { getItemSubtitle, getItemImageUrl, blurUp, itemBlurHash, longPress,
-           focusOnMount, isBackKey, makeFocusReturn, authHeaders, uiFade, dropTrapOnOutro, dlog, markContentChange } from '../utils.js';
+  import { getItemSubtitle, getItemImageUrl, backdropPreview, blurUp, itemBlurHash, longPress,
+           focusOnMount, isBackKey, makeFocusReturn, authHeaders, dlog, markContentChange } from '../utils.js';
+  import Dialog from './Dialog.svelte';
 
   let {
     selectedUser,
@@ -86,28 +87,12 @@
     jumpOverlayTimer = setTimeout(() => { jumpLetterOverlay = ''; }, 800);
   }
 
-  // ── Backdrop preview (700 ms after focusing a card) ─────────
+  // ── Backdrop preview (700 ms after focusing a card; backdropPreview, utils.js) ─────────
+  // Leaving the cards for the navigation, the filters or the A–Z bar lets it clear, as on the home screen.
   let previewBackdrop = $state('');
-  let previewTimer, clearTimer;
-  function previewItem(item) {
-    if (!displaySettings.backdropPreview) return;
-    clearTimeout(clearTimer);   // a card focus follows directly → do NOT clear (no card→card flicker)
-    clearTimeout(previewTimer);
-    previewTimer = setTimeout(() => {
-      const tag  = item.BackdropImageTags?.[0];
-      const pTag = item.ParentBackdropImageTags?.[0];
-      if (tag)       previewBackdrop = `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${tag}&maxWidth=1280&quality=70&format=webp`;
-      else if (pTag) previewBackdrop = `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${pTag}&maxWidth=1280&quality=70&format=webp`;
-    }, 700);
-  }
-  // Focus leaves a card: stop the fade-in timer and clear the backdrop with a short delay.
-  // If another card focus follows immediately, previewItem cancels the clearing → no flicker.
-  // If focus goes to the navigation/filter/A-Z, the clearing stands → like in the dashboard.
-  function cancelPreview() {
-    clearTimeout(previewTimer);
-    clearTimeout(clearTimer);
-    clearTimer = setTimeout(() => { previewBackdrop = ''; }, 150);
-  }
+  const backdrop = backdropPreview(url => { previewBackdrop = url; });
+  function previewItem(item) { if (displaySettings.backdropPreview) backdrop.show(item); }
+  const cancelPreview = () => backdrop.hide();
 
   // ── Info preview (on by default, CODE-HEALTH §124) ──────────
   // Two seconds at rest on a card: rating, genres and plot in a box beside it, the rest of the library dimmed — the
@@ -323,7 +308,7 @@
     return !currentLetter && !currentlyHasFilters() && currentlyDefaultSort();
   }
 
-  const authOpts = () => ({ headers: authHeaders(session.token) });
+  const authOpts = () => ({ headers: authHeaders() });
 
   // ── Loading ─────────────────────────────────────────────────
   async function loadGenres(libraryId) {
@@ -544,9 +529,8 @@
       // untrack: this runs inside the load $effect, which must not re-run when App saves filters.
       restoreFilters(untrack(() => libraryFilters[lib.Id]));
       currentSort     = librarySorts[lib.Id] ? { ...librarySorts[lib.Id] } : { by: 'SortName', order: 'Ascending' };
+      backdrop.stop();
       previewBackdrop = '';
-      clearTimeout(previewTimer);
-      clearTimeout(clearTimer);
       // A film or series library's genres come with its languages: Filters2 works them out for the same titles
       // anyway, and /Genres had the server build the list a second time (§129). A mixed library still asks /Genres,
       // whose list also holds what only its other titles carry (home videos, music videos).
@@ -1082,8 +1066,7 @@
 
 <!-- FILTER MENU -->
 {#if showFilterMenu}
-  <div data-focus-trap role="dialog" tabindex="-1" transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
-    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeFilterMenu(); } }}>
+  <Dialog onBack={closeFilterMenu}>
     <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
 
       <div class="flex justify-between items-center p-8 pb-4 shrink-0">
@@ -1174,7 +1157,7 @@
       </div>
 
     </div>
-  </div>
+  </Dialog>
 {/if}
 
 <style>

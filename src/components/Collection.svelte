@@ -35,7 +35,6 @@
   let renameValue          = $state('');
   let renameError          = $state(false);
 
-  const getAuthHeaders = () => authHeaders(session.token);
 
   // Random playback from a collection/playlist — counterpart to the series shuffle in the details.
   // Movies/episodes play directly. If the pick lands on a series/season (normal in BoxSets),
@@ -51,7 +50,7 @@
       // Same expansion as playAll: buildPlayQueue resolves series/seasons to episodes with the
       // shared specials rule; the random draw ignores its ordering. Was an inline copy of that
       // query — the third one in the codebase.
-      const pool = await buildPlayQueue([pick], { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+      const pool = await buildPlayQueue([pick], { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: authHeaders() });
       if (!pool.length || !alive) return;   // left meanwhile — no Player popping up over another view
       onPlayVideo?.({ item: pool[Math.floor(Math.random() * pool.length)], audioIndex: -1, subtitleIndex: -1 });
     } else {
@@ -68,7 +67,7 @@
     if (!items.length || buildingQueue) return;
     buildingQueue = true;
     let queue = [];
-    try { queue = await buildPlayQueue(items, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() }); }
+    try { queue = await buildPlayQueue(items, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: authHeaders() }); }
     finally { buildingQueue = false; }
     if (queue.length && alive) onPlayQueue?.(queue);
   }
@@ -84,12 +83,12 @@
     const norm = (v) => String(v || '').replace(/-/g, '').toLowerCase();
     try {
       // One title by id always comes with every field, CanDelete included (the route has no Fields parameter, §129).
-      const r = await fetch(`${session.serverUrl}/Items/${id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
+      const r = await fetch(`${session.serverUrl}/Items/${id}?UserId=${selectedUser.Id}`, { headers: authHeaders() });
       if (!r.ok || id !== loadedId) return;
       const owner = (await r.json()).CanDelete;
       if (id !== loadedId || owner !== false) return;   // owner/admin, or unknown → leave everything on
       canDelete = false;
-      const p = await fetch(`${session.serverUrl}/Playlists/${id}`, { headers: getAuthHeaders() });
+      const p = await fetch(`${session.serverUrl}/Playlists/${id}`, { headers: authHeaders() });
       const shares = p.ok ? ((await p.json()).Shares || []) : [];
       if (id !== loadedId) return;
       canEdit = shares.some(sh => sh.CanEdit && norm(sh.UserId) === norm(selectedUser.Id));
@@ -114,7 +113,7 @@
       ? `${session.serverUrl}/Playlists/${collection.Id}/Items?UserId=${selectedUser.Id}&ImageTypeLimit=1&Limit=300`
       : `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${collection.Id}&ImageTypeLimit=1&Limit=100&EnableTotalRecordCount=false`;
     try {
-      const res = await fetch(url, { headers: getAuthHeaders() });
+      const res = await fetch(url, { headers: authHeaders() });
       const loaded = res.ok ? ((await res.json()).Items || []) : null;
       if (myId !== loadedId) return;   // superseded by a newer collection
       if (loaded) items = loaded;
@@ -158,7 +157,7 @@
     });
     try {
       const res = await fetch(`${session.serverUrl}/Playlists/${collection.Id}/Items/${item.PlaylistItemId}/Move/${toIndex}`,
-        { method: 'POST', headers: getAuthHeaders() });
+        { method: 'POST', headers: authHeaders() });
       if (!res.ok) { console.warn('[OcenFin] move failed', res.status); editRollback(before); }
     } catch (e) { console.warn('[OcenFin] move error', e); editRollback(before); }
   }
@@ -188,7 +187,7 @@
     });
     try {
       const res = await fetch(`${session.serverUrl}/Playlists/${collection.Id}/Items?EntryIds=${item.PlaylistItemId}`,
-        { method: 'DELETE', headers: getAuthHeaders() });
+        { method: 'DELETE', headers: authHeaders() });
       if (!res.ok) { console.warn('[OcenFin] remove failed', res.status); editRollback(before); }
     } catch (e) { console.warn('[OcenFin] remove error', e); editRollback(before); }
   }
@@ -197,7 +196,7 @@
   async function deletePlaylist() {
     if (collection.Type !== 'Playlist') return;
     try {
-      const res = await fetch(`${session.serverUrl}/Items/${collection.Id}`, { method: 'DELETE', headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/Items/${collection.Id}`, { method: 'DELETE', headers: authHeaders() });
       if (!res.ok) { console.warn('[OcenFin] playlist delete failed', res.status); editFailed = true; endDeleteConfirm(); return; }
     } catch (e) { console.warn('[OcenFin] playlist delete error', e); editFailed = true; endDeleteConfirm(); return; }
     confirmDeletePlaylist = false;
@@ -219,7 +218,7 @@
     try {
       // Playlist's own update endpoint: uses the user's ownership rights (no admin right needed).
       const res = await fetch(`${session.serverUrl}/Playlists/${collection.Id}`, {
-        method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ Name: newName })
+        method: 'POST', headers: authHeaders(), body: JSON.stringify({ Name: newName })
       });
       if (!res.ok) { console.warn('[OcenFin] rename failed', res.status); renameError = true; return; }
     } catch (e) { console.warn('[OcenFin] rename error', e); renameError = true; return; }

@@ -3,14 +3,14 @@
   // Used by Details, Player and App (card menu). Controlled via the `mode` prop
   // (null = closed). Closing calls onClose.
   import { i18n } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount, uiFade, dropTrapOnOutro, authHeaders } from '../utils.js';
+  import {  focusOnMount, authHeaders } from '../utils.js';
+  import Dialog from './Dialog.svelte';
   import { WATCHLIST_NAME } from '../watchlist.svelte.js';
   import { session } from '../session.svelte.js';
   import { tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
 
   let { mode = null, item = null, selectedUser, onCreated, onClose } = $props();
-  const getAuthHeaders = () => authHeaders(session.token);
 
   let items     = $state([]);              // existing collections/playlists
   let loading   = $state(false);
@@ -38,7 +38,7 @@
     try {
       const res = await fetch(
         `${session.serverUrl}/Items?UserId=${selectedUser.Id}&Recursive=true&IncludeItemTypes=${type}&SortBy=SortName&SortOrder=Ascending&EnableTotalRecordCount=false`,
-        { headers: getAuthHeaders() }
+        { headers: authHeaders() }
       );
       // The watchlist has its own dedicated button — offering it here as a target again
       // would be confusing duplication, so it is hidden from the playlist picker.
@@ -51,7 +51,7 @@
         const url = m === 'collection'
           ? `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${target.Id}&EnableImages=false&EnableUserData=false&Limit=300&EnableTotalRecordCount=false`
           : `${session.serverUrl}/Playlists/${target.Id}/Items?UserId=${selectedUser.Id}&EnableImages=false&EnableUserData=false&Limit=300`;
-        const r = await fetch(url, { headers: getAuthHeaders() });
+        const r = await fetch(url, { headers: authHeaders() });
         if (r.ok) {
           const kids = (await r.json()).Items || [];
           childrenOf[target.Id] = kids;
@@ -76,7 +76,7 @@
       ? `${session.serverUrl}/Collections/${target.Id}/Items?Ids=${item.Id}`
       : `${session.serverUrl}/Playlists/${target.Id}/Items?Ids=${item.Id}&UserId=${selectedUser.Id}`;
     try {
-      const res = await fetch(url, { method: 'POST', headers: getAuthHeaders() });
+      const res = await fetch(url, { method: 'POST', headers: authHeaders() });
       if (res.ok) {
         msg = `${i18n.t.added}: ${displayName(target)}`; msgError = false;
         alreadyIn.add(target.Id);
@@ -97,8 +97,8 @@
     // Collections still take the query form; playlists a body (12.x marks their query form obsolete),
     // private as before — the body's IsPublic defaults to TRUE.
     const req = mode === 'collection'
-      ? [`${session.serverUrl}/Collections?Name=${encodeURIComponent(name)}&Ids=${item.Id}`, { method: 'POST', headers: getAuthHeaders() }]
-      : [`${session.serverUrl}/Playlists`, { method: 'POST', headers: getAuthHeaders(),
+      ? [`${session.serverUrl}/Collections?Name=${encodeURIComponent(name)}&Ids=${item.Id}`, { method: 'POST', headers: authHeaders() }]
+      : [`${session.serverUrl}/Playlists`, { method: 'POST', headers: authHeaders(),
           body: JSON.stringify({ Name: name, Ids: [item.Id], UserId: selectedUser.Id, IsPublic: false }) }];
     try {
       const res = await fetch(...req);
@@ -122,12 +122,10 @@
     busy = false;
   }
 
-  function onKeydown(e) { if (isBackKey(e)) { e.stopPropagation(); close(); } }
 </script>
 
 {#if mode}
-  <div data-focus-trap role="dialog" tabindex="-1" transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8"
-    onkeydown={onKeydown}>
+  <Dialog z="z-[200]" onBack={close}>
     <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl p-8 flex flex-col gap-5">
       <div class="flex justify-between items-center">
         <h2 class="text-3xl text-white font-bold">{mode === 'collection' ? i18n.t.addToCollection : i18n.t.addToPlaylist}</h2>
@@ -182,6 +180,6 @@
         <div class="text-gray-500 py-2">{i18n.t.noItems}</div>
       {/if}
     </div>
-  </div>
+  </Dialog>
 {/if}
 

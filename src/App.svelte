@@ -2,6 +2,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
   import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, makeFocusReturn, installConnectionGuard, installEnterRepeatGuard, isRepeatedEnter, perfMark, startPerfSampler, asArray, asObject, asNumber, asUiSize, asSubSize, asSubPosition, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS } from './utils.js';
+  import Dialog from './components/Dialog.svelte';
   import { startPlatformDiagnostics } from './diag.js';
   import { buildPlayQueue, playableFor } from './playback.js';
   import { session } from './session.svelte.js';
@@ -748,7 +749,7 @@
     if (_syncOpeningId === norm(itemId)) return;                                          // currently opening
     _syncOpeningId = norm(itemId);
     try {
-      const res = await fetch(`${session.serverUrl}/Items/${itemId}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/Items/${itemId}?UserId=${selectedUser.Id}`, { headers: authHeaders() });
       if (res.ok) {
         playFromOutside(await res.json());
         dlog('[SyncPlay] auto-load →', currentDetailItem?.Name);
@@ -1167,7 +1168,7 @@
               const sameId = (a, b) => String(a || '').replace(/-/g, '').toLowerCase() === String(b || '').replace(/-/g, '').toLowerCase();
               const me = valid !== true && sameId(valid.Id, saved.userId) ? valid : null;
               const res = me ? null : await fetch(`${server.url}/Users/${saved.userId}`, {
-                headers: getAuthHeaders()
+                headers: authHeaders()
               });
               if (res) dlog('[restore] /Users/{id} HTTP', res.status);
               if (me || res.ok) {
@@ -1268,7 +1269,6 @@
   // AUTH
   // ============================================================
 
-  const getAuthHeaders = () => authHeaders(session.token);
 
   async function fetchUsers() {
     try {
@@ -1945,7 +1945,7 @@
   // (e.g. "Playlists") – update the sidebar/menu immediately instead of only on restart.
   async function refreshLibraries() {
     try {
-      const res = await fetch(`${session.serverUrl}/UserViews?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/UserViews?UserId=${selectedUser.Id}`, { headers: authHeaders() });
       if (res.ok) navLibraries = (await res.json()).Items || [];
     } catch { }
   }
@@ -2020,7 +2020,7 @@
   // Reloads the user object (e.g. after a profile-picture upload) → the avatar updates everywhere.
   async function refreshSelectedUser() {
     try {
-      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}`, { headers: authHeaders() });
       if (res.ok) selectedUser = await res.json();
     } catch { /* ignore */ }
   }
@@ -2135,6 +2135,10 @@
   function restoreContextFocus() {
     const id = contextReturnId, el = contextReturnEl, nth = contextReturnNth;
     contextReturnId = null; contextReturnEl = null; contextReturnNth = 0;
+    // The menu and the picker fade out (Dialog, §142), and the fade begins only after focusCardAgain's first look: a
+    // button of the closing dialog still holds focus then, which it would take for "already restored" — let go first.
+    const held = document.activeElement;
+    if (held?.closest('[role="dialog"]')) held.blur();
     focusCardAgain(id, el, '(context menu)', nth);
   }
   $effect(() => { if (!contextItem && !contextPickerMode && (contextReturnId || contextReturnEl)) restoreContextFocus(); });
@@ -2155,7 +2159,7 @@
   // what played, and Back from there lands on the card (or, from a title page, on that page).
   async function playFromCard(item, el, nth = 0) {
     const from = viewState, user = activeUserId;
-    const target = await playableFor(item, { serverUrl: session.serverUrl, userId: activeUserId, headers: getAuthHeaders() });
+    const target = await playableFor(item, { serverUrl: session.serverUrl, userId: activeUserId, headers: authHeaders() });
     if (!target || viewState !== from || activeUserId !== user) return;   // moved on while it resolved
     if (from !== 'details') {
       beginChainIfRoot();
@@ -2201,10 +2205,10 @@
     if (!item?.Id) return;
     const from = viewState, user = activeUserId;
     try {
-      const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300`, { headers: getAuthHeaders() });
+      const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300`, { headers: authHeaders() });
       if (!res.ok) { console.warn('play playlist: HTTP', res.status); return; }
       const data  = await res.json();
-      const queue = await buildPlayQueue(data.Items || [], { serverUrl: session.serverUrl, userId: activeUserId, headers: getAuthHeaders() });
+      const queue = await buildPlayQueue(data.Items || [], { serverUrl: session.serverUrl, userId: activeUserId, headers: authHeaders() });
       // Moved on while the queue was built (another view, another profile) → do not start.
       if (viewState !== from || activeUserId !== user) return;
       detailsOrigin = from;
@@ -2488,7 +2492,7 @@
 
   <!-- Exit-app confirmation (Back at the dashboard) -->
   {#if showExitConfirm}
-    <div class="fixed inset-0 z-[600] flex items-center justify-center bg-black/70 backdrop-blur-sm" data-focus-trap transition:uiFade={{ duration: 150 }} onoutrostart={dropTrapOnOutro}>
+    <Dialog z="z-[600]">
       <div class="bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl p-8 w-full max-w-md mx-6 flex flex-col gap-6">
         <div>
           <h2 class="text-2xl font-bold text-white">{i18n.t.exitTitle}</h2>
@@ -2505,7 +2509,7 @@
           </button>
         </div>
       </div>
-    </div>
+    </Dialog>
   {/if}
 
   <!-- ============================================================

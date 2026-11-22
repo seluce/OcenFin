@@ -1,7 +1,8 @@
 <script>
   import { i18n, LANGUAGES, plural, baseLang } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
-  import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, minutesLeft, episodeCode, runtimeLabel, endsAtLabel, authHeaders, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
+  import { dlog, isBackKey, focusOnMount, itemProgress, minutesLeft, episodeCode, backdropUrl, logoUrl, runtimeLabel, endsAtLabel, authHeaders, setPlayed, setFavorite, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
+  import Dialog from './Dialog.svelte';
   import { pickDefaultTracks, rememberChoice, orderTracks } from '../trackmemory.js';
   import { trackLabels } from '../tracklabel.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
@@ -12,6 +13,7 @@
   import SubtitleSearch from './SubtitleSearch.svelte';
   import CardStatus from './CardStatus.svelte';
   import TitleMeta from './TitleMeta.svelte';
+  import PersonCard from './PersonCard.svelte';
 
   let {
     item,
@@ -219,7 +221,7 @@
       await new Promise(r => setTimeout(r, 1500));
       if (!alive || fullItem?.Id !== id) return false;
       try {
-        const r = await fetch(`${session.serverUrl}/Items/${id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
+        const r = await fetch(`${session.serverUrl}/Items/${id}?UserId=${selectedUser.Id}`, { headers: authHeaders() });
         if (!r.ok) continue;
         const d = await r.json();
         const src = (d.MediaSources || []).find(x => x.Id === srcId) || d.MediaSources?.[0];
@@ -302,6 +304,12 @@
   let trailerEmbedUrl = $state(null);
   let showMediaInfo   = $state(false);   // media info modal
   let mediaInfoScroll = $state();           // the modal's scroll container (bind:this, for D-pad scrolling)
+  // ▲▼ scroll a long text in a dialog (media info, the whole plot) instead of moving focus
+  function scrollByKey(e, el) {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault(); e.stopPropagation();
+    el?.scrollBy({ top: e.key === 'ArrowDown' ? 160 : -160, behavior: 'smooth' });
+  }
 
   // The plot stays clamped to four lines (the hero must leave room for the buttons). Where that cuts it, the text is a
   // button and OK shows all of it in a dialog (CODE-HEALTH §136) — on a TV there was no other way to read the rest.
@@ -375,7 +383,7 @@
       let series = null;
       if ((fullItem.Type === 'Season' || fullItem.Type === 'Episode') && fullItem.SeriesId && !fullItem.ProviderIds?.Imdb) {
         try {
-          const res = await fetch(`${session.serverUrl}/Items/${fullItem.SeriesId}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
+          const res = await fetch(`${session.serverUrl}/Items/${fullItem.SeriesId}?UserId=${selectedUser.Id}`, { headers: authHeaders() });
           if (res.ok) series = await res.json();
         } catch { /* series unreachable → title fallback below */ }
       }
@@ -506,7 +514,6 @@
     tick().then(() => { if (el?.isConnected) el.focus(); });
   }
 
-  const getAuthHeaders = () => authHeaders(session.token);
 
   // Stale guard (pattern like in Search/Library): the breadcrumb navigation (episode → series → season)
   // switches the item quickly in succession — only responses to the MOST RECENT request may
@@ -628,7 +635,7 @@
     try {
       const res = await fetch(
         `${session.serverUrl}/Items/${itemId}?UserId=${selectedUser.Id}`,
-        { headers: getAuthHeaders() }
+        { headers: authHeaders() }
       );
       if (res.ok) {
         const data = await res.json();
@@ -665,7 +672,7 @@
     try {
       const res = await fetch(
         `${session.serverUrl}/Items/${itemId}/SpecialFeatures?userId=${selectedUser.Id}`,
-        { headers: getAuthHeaders() }
+        { headers: authHeaders() }
       );
       if (res.ok) { const d = await res.json(); await titleDrawn; if (myToken !== detailToken) return; extras = Array.isArray(d) ? d : (d.Items || []); }
     } catch { /* extras are optional */ }
@@ -679,7 +686,7 @@
     try {
       const res = await fetch(
         `${session.serverUrl}/Items/${itemId}/Collections?UserId=${selectedUser.Id}`,
-        { headers: getAuthHeaders() }
+        { headers: authHeaders() }
       );
       if (!res.ok) return;
       const d = await res.json();
@@ -695,7 +702,7 @@
     try {
       const res = await fetch(
         `${session.serverUrl}/Items/${itemId}/Similar?Limit=10`,
-        { headers: getAuthHeaders() }
+        { headers: authHeaders() }
       );
       if (res.ok) {
         const d = await res.json();
@@ -713,7 +720,7 @@
 
   async function loadNextToPlay(it, myToken) {
     try {
-      const ep = await playableFor(it, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+      const ep = await playableFor(it, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: authHeaders() });
       if (myToken === detailToken && asked.next === it.Id) nextToPlay = ep;
     } catch { /* the button just says "Play"; handlePlay resolves it again */ }
   }
@@ -722,7 +729,7 @@
     try {
       const res = await fetch(
         `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${parentId}&Fields=Overview&ImageTypeLimit=1&SortBy=SortName&IsMissing=false&EnableTotalRecordCount=false`,
-        { headers: getAuthHeaders() }
+        { headers: authHeaders() }
       );
       if (res.ok) { const d = await res.json(); await titleDrawn; if (myToken !== detailToken || asked.related !== parentId) return; relatedItems = d.Items || []; }
     } catch (e) { console.error(e); }
@@ -744,7 +751,7 @@
       // it was dropped silently, so a season always started at its episode 1.
       try {
         // The one the button names, if it is known already; otherwise resolve it now.
-        const ep = nextToPlay || await playableFor(fullItem, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+        const ep = nextToPlay || await playableFor(fullItem, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: authHeaders() });
         if (ep && stillHere(startedOn)) onPlayVideo?.({ item: ep, audioIndex: -1, subtitleIndex: -1 });
       } catch (e) { console.error(e); }
     } else {
@@ -766,7 +773,7 @@
     // for a season, specials excluded — the identical pool the old inline query built; the random
     // draw ignores buildPlayQueue's ordering.
     const startedOn = fullItem.Id;
-    const pool = await buildPlayQueue([fullItem], { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+    const pool = await buildPlayQueue([fullItem], { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: authHeaders() });
     if (!pool.length || !stillHere(startedOn)) return;
     onPlayVideo?.({ item: pool[Math.floor(Math.random() * pool.length)], audioIndex: -1, subtitleIndex: -1 });
   }
@@ -784,20 +791,12 @@
     const willBePlayed = !shown.UserData?.Played;
     shown.UserData = { ...shown.UserData, Played: willBePlayed };
     if (carry) item.UserData = { ...item.UserData, Played: willBePlayed };
-    try {
-      // An error ANSWER is a failure too: it never threw, so the tick stayed although the server
-      // had refused (or no longer knew the title).
-      const res = await fetch(`${session.serverUrl}/UserPlayedItems/${shown.Id}?UserId=${selectedUser.Id}`, {
-        method: willBePlayed ? "POST" : "DELETE",
-        headers: getAuthHeaders()
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (await setPlayed(shown.Id, selectedUser.Id, willBePlayed)) {
       // The home screen's Continue watching and Up next follow — a series or season marked here takes its
       // episode out of Continue watching, an episode moves Up next on (CODE-HEALTH §140)
       onProgressChanged?.();
-    } catch (e) {
-      // Roll back on error
-      console.warn('[OcenFin] played-status toggle failed, rolled back:', e);
+    } else {
+      // Roll back — an error ANSWER counts too: the tick used to stay although the server had refused
       shown.UserData = { ...shown.UserData, Played: !willBePlayed };
       if (carry) item.UserData = { ...item.UserData, Played: !willBePlayed };
     }
@@ -812,7 +811,7 @@
     const on = fullItem;
     earlier = 'busy';
     try {
-      const { found, done } = await markEarlierPlayed(on, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+      const { found, done } = await markEarlierPlayed(on, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: authHeaders() });
       if (done.length) onProgressChanged?.();
       if (fullItem !== on) return;
       const marked = new Set(done);
@@ -830,14 +829,7 @@
     const willBeFav = !shown.UserData?.IsFavorite;
     shown.UserData = { ...shown.UserData, IsFavorite: willBeFav };
     if (carry) item.UserData = { ...item.UserData, IsFavorite: willBeFav };
-    try {
-      const res = await fetch(`${session.serverUrl}/UserFavoriteItems/${shown.Id}?UserId=${selectedUser.Id}`, {
-        method: willBeFav ? "POST" : "DELETE",
-        headers: getAuthHeaders()
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);   // see togglePlayed
-    } catch (e) {
-      console.warn('[OcenFin] favorite toggle failed, rolled back:', e);
+    if (!(await setFavorite(shown.Id, selectedUser.Id, willBeFav))) {   // rolled back, see togglePlayed
       shown.UserData = { ...shown.UserData, IsFavorite: !willBeFav };
       if (carry) item.UserData = { ...item.UserData, IsFavorite: !willBeFav };
     }
@@ -976,22 +968,9 @@
 
 
 
-  function getItemBackdropUrl(targetItem) {
-    if (targetItem.BackdropImageTags?.length > 0)
-      return `${session.serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
-    if (targetItem.ParentBackdropImageTags?.length > 0)
-      return `${session.serverUrl}/Items/${targetItem.ParentBackdropItemId}/Images/Backdrop?tag=${targetItem.ParentBackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
-    return null;
-  }
-
-  // Title logo (transparent PNG) of the episode/series; for episodes the series. Null → the caller falls back to text.
-  function getItemLogoUrl(targetItem) {
-    if (targetItem.ImageTags?.Logo)
-      return `${session.serverUrl}/Items/${targetItem.Id}/Images/Logo?tag=${targetItem.ImageTags.Logo}&maxHeight=200&quality=90&format=webp`;
-    if (targetItem.ParentLogoImageTag)
-      return `${session.serverUrl}/Items/${targetItem.ParentLogoItemId}/Images/Logo?tag=${targetItem.ParentLogoImageTag}&maxHeight=200&quality=90&format=webp`;
-    return null;
-  }
+  // Backdrop and logo — the title's own, else its series' (an episode, a season); null → no picture / the text title
+  const getItemBackdropUrl = (targetItem) => backdropUrl(targetItem, 1920, 80);
+  const getItemLogoUrl = (targetItem) => logoUrl(targetItem, 200);
 
   // Spoiler protection: slightly obscure unwatched episodes. Excluded are seasons (posters),
   // already started, watched and favorite-marked episodes.
@@ -1517,19 +1496,7 @@
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.cast}</h2>
           <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each castMembers as person (person.Id)}
-              <button onclick={() => onOpenPerson?.(person)} data-item-id={person.Id} class="shrink-0 w-36 scroll-m-4 group isolate focus:outline-none text-center">
-                <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
-                  {#if personImageUrl(session.serverUrl, person)}
-                    <img src={personImageUrl(session.serverUrl, person)} {@attach blurUp(itemBlurHash(person))} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
-                  {:else}
-                    <div class="w-full h-full flex items-center justify-center text-gray-600">
-                      <svg class="w-14 h-14" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-                    </div>
-                  {/if}
-                </div>
-                <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full block">{person.Name}</span>
-                {#if person.Role}<span class="text-xs text-gray-400 truncate w-full block">{person.Role}</span>{/if}
-              </button>
+              <PersonCard {person} onclick={() => onOpenPerson?.(person)} caption={person.Role} class="shrink-0 w-36 scroll-m-4" />
             {/each}
           </div>
         </div>
@@ -1624,12 +1591,7 @@
 
 <!-- MEDIA INFO MODAL (codec, bitrate, languages, …) -->
 {#if showMediaInfo && fullItem?.MediaSources?.length}
-  <div data-focus-trap role="dialog" tabindex="-1" transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8"
-    onkeydown={(e) => {
-      if (isBackKey(e)) { e.stopPropagation(); showMediaInfo = false; return; }
-      if (e.key === 'ArrowDown')    { e.preventDefault(); e.stopPropagation(); mediaInfoScroll?.scrollBy({ top: 160, behavior: 'smooth' }); }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); mediaInfoScroll?.scrollBy({ top: -160, behavior: 'smooth' }); }
-    }}>
+  <Dialog z="z-[200]" onBack={() => showMediaInfo = false} onkeydown={(e) => scrollByKey(e, mediaInfoScroll)}>
     <div bind:this={mediaInfoScroll} class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl">
       <div class="flex justify-between items-center p-8 pb-4 sticky top-0 bg-gray-800 z-10">
         <h2 class="text-4xl text-white font-bold">{i18n.t.mediaInfo}</h2>
@@ -1676,17 +1638,12 @@
         </div>
       {/each}
     </div>
-  </div>
+  </Dialog>
 {/if}
 
 <!-- THE WHOLE PLOT — opened from the clamped text in the hero (overviewClamped); ▲▼ scroll a long one -->
 {#if showOverview && fullItem?.Overview}
-  <div data-focus-trap role="dialog" tabindex="-1" transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8"
-    onkeydown={(e) => {
-      if (isBackKey(e)) { e.stopPropagation(); showOverview = false; return; }
-      if (e.key === 'ArrowDown')    { e.preventDefault(); e.stopPropagation(); overviewScroll?.scrollBy({ top: 160, behavior: 'smooth' }); }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); overviewScroll?.scrollBy({ top: -160, behavior: 'smooth' }); }
-    }}>
+  <Dialog z="z-[200]" onBack={() => showOverview = false} onkeydown={(e) => scrollByKey(e, overviewScroll)}>
     <div bind:this={overviewScroll} class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-4xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl">
       <div class="flex justify-between items-start gap-6 p-8 pb-4 sticky top-0 bg-gray-800 z-10">
         <h2 class="text-4xl text-white font-bold line-clamp-2">{fullItem.Name}</h2>
@@ -1697,15 +1654,13 @@
       </div>
       <p class="px-8 pb-8 text-2xl text-gray-200 leading-relaxed whitespace-pre-line">{fullItem.Overview}</p>
     </div>
-  </div>
+  </Dialog>
 {/if}
 
 <!-- Share: QR code with a title link (IMDb/TMDb) to scan -->
 {#if showShare}
-  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8" role="dialog" tabindex="-1"
-    transition:uiFade onoutrostart={dropTrapOnOutro}
-    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showShare = false; } }}>
-    <div data-modal data-focus-trap
+  <Dialog onBack={() => showShare = false}>
+    <div data-modal
       class="bg-gray-800 border border-gray-700 rounded-2xl p-8 w-full max-w-lg flex flex-col items-center gap-5 shadow-2xl">
       <div class="flex items-center justify-between gap-4 w-full">
         <h2 class="text-3xl text-white font-bold">{i18n.t.share}</h2>
@@ -1729,7 +1684,7 @@
       {/if}
       <p class="text-gray-400 text-base text-center max-w-md">{i18n.t.shareHint}</p>
     </div>
-  </div>
+  </Dialog>
 {/if}
 
 {#if subtitleSearchOpen && fullItem}

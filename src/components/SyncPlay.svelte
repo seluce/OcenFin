@@ -1,6 +1,7 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { focusOnMount, uiFade, dropTrapOnOutro } from '../utils.js';
+  import { focusOnMount } from '../utils.js';
+  import Dialog from './Dialog.svelte';
 
   let {
     group   = null,   // current group { GroupId, GroupName, Participants: [name] } or null
@@ -11,16 +12,9 @@
   } = $props();
 </script>
 
-<!-- Backdrop: click-outside-to-close is a pointer-only convenience and duplicates the Close
-     button below; keyboard/remote users close via that button or the back key. A role + key
-     handler on a full-screen backdrop would be semantically wrong and fight the focus trap. -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<div class="fixed inset-0 z-[130] bg-black/85 flex items-center justify-center p-8"
-     transition:uiFade onoutrostart={dropTrapOnOutro}
-     onclick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
-  <div data-focus-trap
-       class="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh]
+<!-- A click on the darkening closes it too (pointer only, it duplicates the Close button); Back is App's. -->
+<Dialog z="z-[130]" onBackdrop={() => onClose?.()}>
+  <div class="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh]
               overflow-y-auto hide-scrollbar p-8 flex flex-col gap-6">
 
     <div class="flex items-center gap-4">
@@ -94,5 +88,5 @@
       {i18n.t.close}
     </button>
   </div>
-</div>
+</Dialog>
 

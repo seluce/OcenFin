@@ -3,7 +3,8 @@
   import { startQuickConnect as startQC } from '../quickconnect.js';
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
-           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, uploadLog, makeFocusReturn, uiFade, dropTrapOnOutro, isRepeatedEnter, UI_SIZES, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS, orderHomeRows, SUB_POSITIONS, asSubPosition, asSubSize, subtitleTextStyle } from '../utils.js';
+           AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, uploadLog, makeFocusReturn, uiFade, isRepeatedEnter, UI_SIZES, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS, orderHomeRows, SUB_POSITIONS, asSubPosition, asSubSize, subtitleTextStyle } from '../utils.js';
+  import Dialog from './Dialog.svelte';
   import { session } from '../session.svelte.js';
   import { focusFromPointer } from '../spatialnav.js';
   import { startPlatformDiagnostics } from '../diag.js';
@@ -197,7 +198,6 @@
 
   onDestroy(() => { if (modalTimeout) clearTimeout(modalTimeout); sharedQcSess?.cancel(); });
 
-  const getAuthHeaders = () => authHeaders(session.token);
 
   async function openModal(name) {
     modalFocus.capture();
@@ -314,7 +314,7 @@
     try {
       const res = await fetch(`${session.serverUrl}/Users/Password?UserId=${selectedUser.Id}`, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: authHeaders(),
         body: JSON.stringify({ CurrentPw: currentPw, NewPw: newPw })
       });
       pwMessage = res.ok ? i18n.t.pwChangedSuccess : i18n.t.pwChangedError;
@@ -333,7 +333,7 @@
       // body, as before, it was never seen and every attempt failed.
       const res = await fetch(`${session.serverUrl}/QuickConnect/Authorize?Code=${encodeURIComponent(qcCode.trim())}`, {
         method: 'POST',
-        headers: getAuthHeaders()
+        headers: authHeaders()
       });
       qcMessage = res.ok ? i18n.t.qcSuccess : i18n.t.qcError;
       if (res.ok) { qcCode = ''; modalTimeout = setTimeout(closeModal, 2000); }
@@ -516,9 +516,6 @@
     onDisplayChange?.({ ...displaySettings, navIcons: { ...(displaySettings.navIcons || {}), [iconPickerFor]: key } });
     closeIconPicker();
   }
-  function onIconPickerKey(e) {
-    if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); closeIconPicker(); }
-  }
 
   // --- Profile picture (symbol avatar OR poster of a recently watched title → Jellyfin) ---
   let avatarIcon  = $state(null);                  // null = nothing chosen yet (no avatar marked)
@@ -531,9 +528,6 @@
   let recentTitles = $state([]);                   // [{ id, name, imageUrl }] – newest first, deduplicated
   let recentLoading = $state(false);
   let avatarPoster = $state(null);                 // poster chosen in the 'recent' tab (otherwise null)
-  function onAvatarModalKey(e) {
-    if (isBackKey(e)) { e.preventDefault(); e.stopPropagation(); avatarModalOpen = false; }
-  }
   // Effective values only for rendering/uploading (fallback to default); the marking stays on the raw values.
   let effectiveIcon  = $derived(avatarIcon  || AVATAR_ICON_KEYS[0]);
   let effectiveColor = $derived(avatarColor || AVATAR_COLORS[0]);
@@ -568,8 +562,8 @@
         + `&EnableImageTypes=Primary&ImageTypeLimit=1`
         + `&SortBy=DatePlayed&SortOrder=Descending&EnableTotalRecordCount=false&Limit=72`;
       const [played, resume] = await Promise.all([
-        fetch(`${base}&Filters=IsPlayed`,    { headers: getAuthHeaders() }).then(r => r.ok ? r.json() : { Items: [] }),
-        fetch(`${base}&Filters=IsResumable`, { headers: getAuthHeaders() }).then(r => r.ok ? r.json() : { Items: [] }),
+        fetch(`${base}&Filters=IsPlayed`,    { headers: authHeaders() }).then(r => r.ok ? r.json() : { Items: [] }),
+        fetch(`${base}&Filters=IsResumable`, { headers: authHeaders() }).then(r => r.ok ? r.json() : { Items: [] }),
       ]);
       const all = [...(resume.Items || []), ...(played.Items || [])]
         .sort((a, b) => new Date(b.UserData?.LastPlayedDate || 0) - new Date(a.UserData?.LastPlayedDate || 0));
@@ -605,7 +599,7 @@
         : await renderAvatarPng(effectiveIcon, effectiveColor);
       const res = await fetch(`${session.serverUrl}/UserImage?UserId=${selectedUser.Id}`, {
         method: 'POST',
-        headers: { ...authHeaders(session.token), 'Content-Type': 'image/png' },   // one auth scheme, one source
+        headers: { ...authHeaders(), 'Content-Type': 'image/png' },   // one auth scheme, one source
         body: base64,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -848,25 +842,32 @@
 <!-- One row per display toggle. Several groups render the identical control (Content's three, the logo
      in Navigation), so it lives here once — the switch, its colours and the focus ring stay in step
      by construction. Top level, so every category can reach it. -->
+<!-- A switch row — ONE size in every category (§142: 26 were written out, compact in Content and Navigation, large
+     everywhere else). `cls` adds the top line where a card draws its lines as borders. -->
+{#snippet switchRow(label, desc, on, onclick, cls = '')}
+  <button {onclick} aria-pressed={!!on}
+    class="flex items-center justify-between gap-6 w-full p-6 {cls} hover:bg-gray-700 focus:bg-gray-700
+           focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+    <div>
+      <span class="text-2xl text-white font-medium block">{label}</span>
+      {#if desc}<span class="text-gray-400 mt-1 block text-sm">{desc}</span>{/if}
+    </div>
+    {@render switchPill(on)}
+  </button>
+{/snippet}
+
+<!-- The switch itself — also beside the home screen's row list -->
+{#snippet switchPill(on)}
+  <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0 {on ? 'bg-blue-500' : 'bg-gray-600'}">
+    <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform {on ? 'translate-x-8' : ''}"></div>
+  </div>
+{/snippet}
+
+<!-- The display switches of a list (Content, Navigation), a line between each two like everywhere else -->
 {#snippet toggleRows(list)}
-  {#each list as tg}
-    <button onclick={() => toggleDisplay(tg.key)}
-      class="flex items-center justify-between w-full px-6 py-4 hover:bg-gray-700 focus:bg-gray-700
-             focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-      {#if tg.desc}
-        <div class="pr-6">
-          <span class="text-lg text-gray-200 block">{tg.label}</span>
-          <span class="text-gray-400 mt-0.5 block text-sm">{tg.desc}</span>
-        </div>
-      {:else}
-        <span class="text-lg text-gray-200">{tg.label}</span>
-      {/if}
-      <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
-                  {displaySettings[tg.key] ? 'bg-blue-500' : 'bg-gray-600'}">
-        <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
-                    {displaySettings[tg.key] ? 'translate-x-7' : ''}"></div>
-      </div>
-    </button>
+  {#each list as tg, i}
+    {#if i > 0}<div class="h-px bg-gray-700"></div>{/if}
+    {@render switchRow(tg.label, tg.desc, displaySettings[tg.key], () => toggleDisplay(tg.key))}
   {/each}
 {/snippet}
 
@@ -996,19 +997,7 @@
         <div class="h-px bg-gray-700"></div>
 
         <!-- Clock: the corner clock and the player's (CODE-HEALTH §108). -->
-        <button onclick={() => toggleDisplay('clock')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.displayClock}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.clockDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {displaySettings.clock ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {displaySettings.clock ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.displayClock, i18n.t.clockDesc, displaySettings.clock, () => toggleDisplay('clock'))}
 
         <div class="h-px bg-gray-700"></div>
 
@@ -1031,19 +1020,7 @@
         <div class="h-px bg-gray-700"></div>
 
         <!-- Reduce animations — last: a performance switch, not part of the look -->
-        <button onclick={toggleReduceAnimations}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.reduceAnimations}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.reduceAnimationsDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {reduceAnimations ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {reduceAnimations ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.reduceAnimations, i18n.t.reduceAnimationsDesc, reduceAnimations, toggleReduceAnimations)}
 
       </div>
     </section>
@@ -1079,15 +1056,11 @@
                 {#if entry.toggle}
                   <button onclick={() => toggleDisplay(entry.toggle)} aria-label={entry.label} aria-pressed={!!displaySettings[entry.toggle]}
                     class="p-3 rounded-xl focus:outline-none focus:ring-4 focus:ring-white hover:bg-gray-700 focus:bg-gray-700">
-                    <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors
-                                {displaySettings[entry.toggle] ? 'bg-blue-500' : 'bg-gray-600'}">
-                      <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
-                                  {displaySettings[entry.toggle] ? 'translate-x-7' : ''}"></div>
-                    </div>
+                    {@render switchPill(displaySettings[entry.toggle])}
                   </button>
                 {:else}
                   <!-- Continue watching: always shown — the lock sits where the switch would -->
-                  <div class="p-3 w-20 flex justify-center text-gray-600" title={i18n.t.navAlwaysVisible}>
+                  <div class="p-3 w-22 flex justify-center text-gray-600" title={i18n.t.navAlwaysVisible}>
                     <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
                   </div>
                 {/if}
@@ -1097,12 +1070,12 @@
 
           <!-- Number of recommendation rows — only relevant when recommendations are active -->
           {#if displaySettings.recommendations}
-            <div class="px-6 py-4 border-t border-gray-700/50">
-              <span class="text-lg text-gray-200 block mb-3">{i18n.t.recommendationRows}</span>
-              <div class="flex gap-2">
+            <div class="p-6 border-t border-gray-700/50">
+              <span class="text-2xl text-white font-medium block mb-4">{i18n.t.recommendationRows}</span>
+              <div class="flex gap-3">
                 {#each [[1, i18n.t.rowsOne],[2, i18n.t.rowsTwo]] as [val, label]}
                   <button onclick={() => setRecRows(val)}
-                    class="flex-1 py-2.5 rounded-lg font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-all
+                    class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                            {(displaySettings.recommendationRows || 1) === val ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                     {label}
                   </button>
@@ -1126,26 +1099,14 @@
           {@render toggleRows(detailToggles)}
 
           <!-- Theme music on the details page (opt-in). Scope + volume only show while enabled. -->
-          <button onclick={() => togglePlaybackPref('themeMusic')}
-            class="flex items-center justify-between gap-6 w-full px-6 py-4 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-            <div>
-              <span class="text-lg text-gray-200 block">{i18n.t.themeMusic}</span>
-              <span class="text-gray-400 mt-0.5 block text-sm">{i18n.t.themeMusicDesc}</span>
-            </div>
-            <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
-                        {playbackPrefs.themeMusic ? 'bg-blue-500' : 'bg-gray-600'}">
-              <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
-                          {playbackPrefs.themeMusic ? 'translate-x-7' : ''}"></div>
-            </div>
-          </button>
+          {@render switchRow(i18n.t.themeMusic, i18n.t.themeMusicDesc, playbackPrefs.themeMusic, () => togglePlaybackPref('themeMusic'), 'border-t border-gray-700/50')}
 
           {#if playbackPrefs.themeMusic}
-            <div class="px-6 pt-1 pb-2">
-              <div class="flex gap-2">
+            <div class="px-6 pb-2">
+              <div class="flex gap-3">
                 {#each [['both', i18n.t.themeMusicBoth], ['movies', i18n.t.movies], ['series', i18n.t.series]] as [key, label]}
                   <button onclick={() => setThemeScope(key)}
-                    class="flex-1 py-2.5 rounded-lg font-bold text-base focus:outline-none focus:ring-4 focus:ring-white transition-all
+                    class="flex-1 py-3 rounded-xl font-bold text-lg focus:outline-none focus:ring-4 focus:ring-white transition-all
                            {(playbackPrefs.themeMusicScope || 'both') === key ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'}">
                     {label}
                   </button>
@@ -1153,8 +1114,8 @@
               </div>
             </div>
             <!-- Volume as a regular settings row: label left, control right — matching the toggle rows. -->
-            <div class="flex items-center justify-between w-full px-6 py-3">
-              <span class="text-lg text-gray-200">{i18n.t.themeMusicVolume}</span>
+            <div class="flex items-center justify-between gap-6 w-full p-6">
+              <span class="text-2xl text-white font-medium">{i18n.t.themeMusicVolume}</span>
               <div class="flex items-center gap-3 shrink-0">
                 <button onclick={() => stepThemeVolume(-5)}
                   class="w-12 h-10 rounded-lg font-bold text-xl bg-gray-900 text-gray-300 hover:bg-gray-700
@@ -1177,19 +1138,7 @@
       {#if !restrictedProfile}
         <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupWatchTogether}</h3>
         <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
-          <button onclick={onSharedToggle}
-            class="flex items-center justify-between gap-6 w-full px-6 py-4 hover:bg-gray-700 focus:bg-gray-700
-                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-            <div>
-              <span class="text-lg text-gray-200 block">{i18n.t.sharedWatching}</span>
-              <span class="text-gray-400 mt-0.5 block text-sm">{i18n.t.sharedWatchingDesc}</span>
-            </div>
-            <div class="w-14 h-7 rounded-full flex items-center p-1 transition-colors shrink-0
-                        {sharedProfile.enabled ? 'bg-blue-500' : 'bg-gray-600'}">
-              <div class="bg-white w-5 h-5 rounded-full shadow-md transform transition-transform
-                          {sharedProfile.enabled ? 'translate-x-7' : ''}"></div>
-            </div>
-          </button>
+          {@render switchRow(i18n.t.sharedWatching, i18n.t.sharedWatchingDesc, sharedProfile.enabled, onSharedToggle)}
 
           {#if sharedProfile.enabled}
             <div class="h-px bg-gray-700"></div>
@@ -1287,8 +1236,7 @@
 
       <!-- Icon picker (modal, D-pad grid) -->
       {#if iconPickerFor}
-        <div class="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-8"
-             data-focus-trap onkeydown={onIconPickerKey} role="dialog" tabindex="-1">
+        <Dialog z="z-50" onBack={closeIconPicker}>
           <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-2xl max-w-xl w-full">
             <div class="flex justify-between items-center mb-5">
               <h3 class="text-2xl font-bold text-white">{i18n.t.chooseIcon}</h3>
@@ -1305,7 +1253,7 @@
               {/each}
             </div>
           </div>
-        </div>
+        </Dialog>
       {/if}
     </section>
     {/if}
@@ -1321,37 +1269,13 @@
 
         <!-- Number keys → n×10 % of the runtime. Opt-out: on by default, but the description is the
              real point of this row — it is where people discover the shortcut in the first place. -->
-        <button onclick={() => togglePlaybackPref('remoteDigitSeek')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.remoteDigitSeek}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.remoteDigitSeekDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.remoteDigitSeek ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.remoteDigitSeek ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.remoteDigitSeek, i18n.t.remoteDigitSeekDesc, playbackPrefs.remoteDigitSeek, () => togglePlaybackPref('remoteDigitSeek'))}
 
         <div class="h-px bg-gray-700"></div>
 
         <!-- Channel rocker → next/previous episode. Same opt-out; turning it off also protects
              against the accidental press, since the rocker is the easiest key to hit by mistake. -->
-        <button onclick={() => togglePlaybackPref('remoteChannelZap')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.remoteChannelZap}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.remoteChannelZapDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.remoteChannelZap ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.remoteChannelZap ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.remoteChannelZap, i18n.t.remoteChannelZapDesc, playbackPrefs.remoteChannelZap, () => togglePlaybackPref('remoteChannelZap'))}
       </div>
 
       <h2 class="text-xl font-bold text-gray-400 uppercase tracking-wider ml-2 mt-6">{i18n.t.remoteColorButtons}</h2>
@@ -1382,19 +1306,7 @@
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
         <!-- Screensaver Toggle -->
-        <button onclick={() => updateScreensaver({ enabled: !screensaverSettings.enabled })}
-          class="flex items-center justify-between w-full px-6 py-5 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.screensaverTitle}</span>
-            <span class="text-gray-400 mt-0.5 block text-sm">{i18n.t.screensaverDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {screensaverSettings.enabled ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {screensaverSettings.enabled ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.screensaverTitle, i18n.t.screensaverDesc, screensaverSettings.enabled, () => updateScreensaver({ enabled: !screensaverSettings.enabled }))}
 
         <!-- Timeout (only when active) -->
         {#if screensaverSettings.enabled}
@@ -1500,19 +1412,7 @@
         <div class="h-px bg-gray-700"></div>
 
         <!-- Remember audio track per series -->
-        <button onclick={() => togglePlaybackPref('rememberAudioTrack')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.rememberAudioTrack}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.rememberAudioTrackDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.rememberAudioTrack ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.rememberAudioTrack ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.rememberAudioTrack, i18n.t.rememberAudioTrackDesc, playbackPrefs.rememberAudioTrack, () => togglePlaybackPref('rememberAudioTrack'))}
 
       </div>
 
@@ -1520,105 +1420,33 @@
       <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.series}</h3>
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
         <!-- Auto-Skip Intro -->
-        <button onclick={() => togglePlaybackPref('autoSkipIntro')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.autoSkipIntro}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.autoSkipDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.autoSkipIntro ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.autoSkipIntro ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.autoSkipIntro, i18n.t.autoSkipDesc, playbackPrefs.autoSkipIntro, () => togglePlaybackPref('autoSkipIntro'))}
 
         <div class="h-px bg-gray-700"></div>
 
         <!-- Auto-Skip Recap ("previously on …") -->
-        <button onclick={() => togglePlaybackPref('autoSkipRecap')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.autoSkipRecap}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.autoSkipRecapDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.autoSkipRecap ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.autoSkipRecap ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.autoSkipRecap, i18n.t.autoSkipRecapDesc, playbackPrefs.autoSkipRecap, () => togglePlaybackPref('autoSkipRecap'))}
 
         <div class="h-px bg-gray-700"></div>
 
         <!-- Auto-Skip Outro -->
-        <button onclick={() => togglePlaybackPref('autoSkipCredits')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.autoSkipOutro}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.autoSkipOutroDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.autoSkipCredits ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.autoSkipCredits ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.autoSkipOutro, i18n.t.autoSkipOutroDesc, playbackPrefs.autoSkipCredits, () => togglePlaybackPref('autoSkipCredits'))}
 
         <div class="h-px bg-gray-700"></div>
 
         <!-- Next episode automatically -->
-        <button onclick={() => togglePlaybackPref('autoPlayNext')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.autoPlayNext}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.autoPlayNextDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.autoPlayNext ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.autoPlayNext ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.autoPlayNext, i18n.t.autoPlayNextDesc, playbackPrefs.autoPlayNext, () => togglePlaybackPref('autoPlayNext'))}
 
         <div class="h-px bg-gray-700"></div>
 
         <!-- Only-this-episode – unlock the sleep button in the Player (stops auto-play after the episode).
              Here, not under Player, since §108: it belongs to the auto-play chain above and below it. -->
-        <button onclick={() => togglePlaybackPref('sleepButton')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.sleepButton}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.sleepButtonDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.sleepButton ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.sleepButton ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.sleepButton, i18n.t.sleepButtonDesc, playbackPrefs.sleepButton, () => togglePlaybackPref('sleepButton'))}
 
         <div class="h-px bg-gray-700"></div>
 
         <!-- Still watching? – pause playback after inactivity -->
-        <button onclick={() => togglePlaybackPref('stillWatching')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.stillWatching}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.stillWatchingDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.stillWatching ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.stillWatching ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.stillWatching, i18n.t.stillWatchingDesc, playbackPrefs.stillWatching, () => togglePlaybackPref('stillWatching'))}
 
         {#if playbackPrefs.stillWatching}
           <div class="p-6 border-t border-gray-700/50 last:rounded-b-2xl">
@@ -1662,53 +1490,17 @@
         <div class="h-px bg-gray-700"></div>
 
         <!-- Show chapter markers in the Player (a Player display element → belongs to playback) -->
-        <button onclick={() => toggleDisplay('showChapters')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.displayChapters}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.displayChaptersDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {displaySettings.showChapters ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {displaySettings.showChapters ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.displayChapters, i18n.t.displayChaptersDesc, displaySettings.showChapters, () => toggleDisplay('showChapters'))}
 
         <div class="h-px bg-gray-700"></div>
 
         <!-- Preview images while seeking (Trickplay) – opt-out, falls back to chapters/time -->
-        <button onclick={() => togglePlaybackPref('trickplay')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.trickplay}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.trickplayDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.trickplay !== false ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.trickplay !== false ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.trickplay, i18n.t.trickplayDesc, playbackPrefs.trickplay !== false, () => togglePlaybackPref('trickplay'))}
 
         <div class="h-px bg-gray-700"></div>
 
         <!-- Playback info – unlock the info button in the Player (live details as an overlay) -->
-        <button onclick={() => togglePlaybackPref('showPlaybackInfo')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.playbackInfo}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.playbackInfoDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.showPlaybackInfo ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.showPlaybackInfo ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.playbackInfo, i18n.t.playbackInfoDesc, playbackPrefs.showPlaybackInfo, () => togglePlaybackPref('showPlaybackInfo'))}
 
       </div>
 
@@ -1734,35 +1526,11 @@
         <!-- Only for foreign audio (Jellyfin's "Smart"): needs a language to compare the audio with,
              so it is shown only while one is chosen — with "Off" or "Server default" it means nothing. -->
         {#if subtitleLangChosen}
-        <button onclick={() => togglePlaybackPref('subtitleSmart')}
-          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.subtitleSmart}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.subtitleSmartDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.subtitleSmart ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.subtitleSmart ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.subtitleSmart, i18n.t.subtitleSmartDesc, playbackPrefs.subtitleSmart, () => togglePlaybackPref('subtitleSmart'), 'border-t border-gray-700/50')}
         {/if}
 
         <!-- Remember subtitle track per series -->
-        <button onclick={() => togglePlaybackPref('rememberSubtitleTrack')}
-          class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.rememberSubtitleTrack}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.rememberSubtitleTrackDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.rememberSubtitleTrack ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.rememberSubtitleTrack ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.rememberSubtitleTrack, i18n.t.rememberSubtitleTrackDesc, playbackPrefs.rememberSubtitleTrack, () => togglePlaybackPref('rememberSubtitleTrack'), 'border-t border-gray-700/50')}
 
       </div>
 
@@ -1771,50 +1539,14 @@
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
         <!-- Burn in subtitles -->
-        <button onclick={() => togglePlaybackPref('burnSubtitles')}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.burnSubtitles}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.burnSubtitlesDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {playbackPrefs.burnSubtitles ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {playbackPrefs.burnSubtitles ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.burnSubtitles, i18n.t.burnSubtitlesDesc, playbackPrefs.burnSubtitles, () => togglePlaybackPref('burnSubtitles'))}
 
         <!-- Everything below is irrelevant when everything is burned in → hidden, headings included -->
         {#if !playbackPrefs.burnSubtitles}
-          <button onclick={() => togglePlaybackPref('pgsRendering')}
-            class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-            <div>
-              <span class="text-2xl text-white font-medium block">{i18n.t.pgsRendering}</span>
-              <span class="text-gray-400 mt-1 block text-sm">{i18n.t.pgsRenderingDesc}</span>
-            </div>
-            <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                        {playbackPrefs.pgsRendering ? 'bg-blue-500' : 'bg-gray-600'}">
-              <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                          {playbackPrefs.pgsRendering ? 'translate-x-8' : ''}"></div>
-            </div>
-          </button>
+          {@render switchRow(i18n.t.pgsRendering, i18n.t.pgsRenderingDesc, playbackPrefs.pgsRendering, () => togglePlaybackPref('pgsRendering'), 'border-t border-gray-700/50')}
 
           <!-- ASS/SSA in their original look (libass via JASSUB) — off: plain text overlay, both Direct Play -->
-          <button onclick={() => togglePlaybackPref('assRendering')}
-            class="flex items-center justify-between w-full p-6 border-t border-gray-700/50 hover:bg-gray-700 focus:bg-gray-700
-                   focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-            <div>
-              <span class="text-2xl text-white font-medium block">{i18n.t.assRendering}</span>
-              <span class="text-gray-400 mt-1 block text-sm">{i18n.t.assRenderingDesc}</span>
-            </div>
-            <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                        {playbackPrefs.assRendering ? 'bg-blue-500' : 'bg-gray-600'}">
-              <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                          {playbackPrefs.assRendering ? 'translate-x-8' : ''}"></div>
-            </div>
-          </button>
+          {@render switchRow(i18n.t.assRendering, i18n.t.assRenderingDesc, playbackPrefs.assRendering, () => togglePlaybackPref('assRendering'), 'border-t border-gray-700/50')}
         {/if}
       </div>
 
@@ -1901,8 +1633,7 @@
 
       <!-- "Customize" modal: live preview + icon grid + color swatches (padding p-2 → focus rings at the edge not cut off) -->
       {#if avatarModalOpen}
-        <div class="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-8"
-             data-focus-trap onkeydown={onAvatarModalKey} role="dialog" tabindex="-1">
+        <Dialog z="z-50" onBack={() => avatarModalOpen = false}>
           <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-2xl max-w-2xl w-full flex flex-col gap-5">
             <div class="flex justify-between items-center">
               <h3 class="text-2xl font-bold text-white">{i18n.t.profilePicture}</h3>
@@ -1981,7 +1712,7 @@
               {i18n.t.close}
             </button>
           </div>
-        </div>
+        </Dialog>
       {/if}
 
       <!-- Credentials. On an age-restricted profile only "save password" stays: it stores THIS
@@ -1994,19 +1725,7 @@
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
 
         <!-- Save password / quick switch (formerly its own "Profile" category) -->
-        <button onclick={() => onToggleSave?.()}
-          class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
-          <div>
-            <span class="text-2xl text-white font-medium block">{i18n.t.savePasswords}</span>
-            <span class="text-gray-400 mt-1 block text-sm">{i18n.t.fastSwitchDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {isCurrentUserSaved ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {isCurrentUserSaved ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.savePasswords, i18n.t.fastSwitchDesc, isCurrentUserSaved, () => onToggleSave?.())}
 
         {#if !restrictedProfile}
         <div class="h-px bg-gray-700"></div>
@@ -2129,19 +1848,7 @@
 
       <!-- Diagnostic logging toggle (device-wide, opt-in) -->
       <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
-        <button onclick={toggleDebugLogging}
-          class="flex items-center justify-between w-full px-6 py-5 hover:bg-gray-700 focus:bg-gray-700
-                 focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left rounded-2xl">
-          <div class="pr-4">
-            <span class="text-2xl text-white font-medium block">{i18n.t.debugLogging}</span>
-            <span class="text-gray-400 mt-0.5 block text-sm">{i18n.t.debugLoggingDesc}</span>
-          </div>
-          <div class="w-16 h-8 rounded-full flex items-center p-1 transition-colors shrink-0
-                      {debugLogging ? 'bg-blue-500' : 'bg-gray-600'}">
-            <div class="bg-white w-6 h-6 rounded-full shadow-md transform transition-transform
-                        {debugLogging ? 'translate-x-8' : ''}"></div>
-          </div>
-        </button>
+        {@render switchRow(i18n.t.debugLogging, i18n.t.debugLoggingDesc, debugLogging, toggleDebugLogging)}
       </div>
 
       <!-- Show log: in-app log viewer (no ares inspect needed) -->
@@ -2286,11 +1993,9 @@
      LOG VIEWER (own modal, wider than the standard modals)
 ══════════════════════════════════════════ -->
 {#if showLog}
-  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8" role="dialog" tabindex="-1"
-    transition:uiFade onoutrostart={dropTrapOnOutro}
-    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); if (qrSvg) hideQr(); else showLog = false; } }}>
+  <Dialog onBack={() => { if (qrSvg) hideQr(); else showLog = false; }}>
 
-    <div data-modal data-focus-trap
+    <div data-modal
       class="bg-gray-800 border border-gray-700 p-8 rounded-2xl w-full max-w-4xl max-h-[88vh] flex flex-col gap-5 shadow-2xl">
 
       <div class="flex items-center justify-between gap-4 shrink-0">
@@ -2344,17 +2049,15 @@
         </div>
       {/if}
     </div>
-  </div>
+  </Dialog>
 {/if}
 
 <!-- ══════════════════════════════════════════
      MODAL (help / FAQ QR)
 ══════════════════════════════════════════ -->
 {#if showWikiQr}
-  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
-    transition:uiFade onoutrostart={dropTrapOnOutro}>
-    <div data-modal data-focus-trap role="dialog" tabindex="-1"
-      onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showWikiQr = false; } }}
+  <Dialog onBack={() => showWikiQr = false}>
+    <div data-modal
       class="bg-gray-800 border border-gray-700 p-8 rounded-2xl w-full max-w-lg flex flex-col items-center gap-5 shadow-2xl text-center">
       <h2 class="text-4xl text-white font-bold">{i18n.t.helpFaq}</h2>
       {#if wikiQrSvg}
@@ -2366,18 +2069,16 @@
         class="px-6 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
                focus:outline-none focus:ring-4 focus:ring-white transition-colors">{i18n.t.close}</button>
     </div>
-  </div>
+  </Dialog>
 {/if}
 
 <!-- ══════════════════════════════════════════
      MODALS (language, password, Quick Connect, pickers, watch together)
 ══════════════════════════════════════════ -->
 {#if activeModal}
-  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8" role="dialog" tabindex="-1"
-    transition:uiFade onoutrostart={dropTrapOnOutro}
-    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeModal(); } }}>
+  <Dialog onBack={closeModal}>
 
-    <div data-modal data-focus-trap
+    <div data-modal
       class="bg-gray-800 border border-gray-700 p-10 rounded-2xl w-full {activeModal === 'lang' || pickerModals[activeModal]?.grid ? 'max-w-6xl' : activeModal === 'sharedQc' && sharedQcQr ? 'max-w-3xl' : 'max-w-xl'} flex flex-col gap-6 shadow-2xl">
 
       {#if activeModal === 'lang'}
@@ -2575,6 +2276,6 @@
       {/if}
 
     </div>
-  </div>
+  </Dialog>
 {/if}
 

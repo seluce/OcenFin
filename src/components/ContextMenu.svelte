@@ -1,6 +1,7 @@
 <script>
   import { i18n, plural } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount, authHeaders } from '../utils.js';
+  import { isBackKey, focusOnMount, authHeaders, setPlayed, setFavorite } from '../utils.js';
+  import Dialog from './Dialog.svelte';
   import { session } from '../session.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
   import { hasEarlierEpisodes, markEarlierPlayed } from '../playback.js';
@@ -36,22 +37,8 @@
     window.removeEventListener('pointerup', arm);
   });
 
-  function headers() {
-    return authHeaders(session.token);
-  }
-  // true when the server took it. Each action below changes the card optimistically and puts it
-  // back when not — an error ANSWER (403, 404, 500) never threw, so the card kept a state the
-  // server had refused.
-  async function call(method, path) {
-    try {
-      const res = await fetch(`${session.serverUrl}${path}`, { method, headers: headers() });
-      if (!res.ok) console.warn('context action failed: HTTP', res.status, path);
-      return res.ok;
-    } catch (e) {
-      console.error('context action failed', e);
-      return false;
-    }
-  }
+  // Each action below changes the card optimistically and puts it back when the server did not take
+  // it (setPlayed/setFavorite resolve to that — an error ANSWER counts as a refusal).
 
   async function toggleWatched() {
     if (!armed) return;
@@ -59,7 +46,7 @@
     played = next;                         // toggle optimistically
     if (next) hasResume = false;           // marked as watched → no more resume
     if (item.UserData) item.UserData.Played = next;
-    if (!(await call(next ? 'POST' : 'DELETE', `/UserPlayedItems/${item.Id}?UserId=${userId}`))) {
+    if (!(await setPlayed(item.Id, userId, next))) {
       played = !next; hasResume = hadResume;
       if (item.UserData) item.UserData.Played = !next;
     } else onProgressChanged?.();   // a series' episode leaves Continue watching, Up next moves on (§140)
@@ -70,7 +57,7 @@
     const next = !favorite;
     favorite = next;
     if (item.UserData) item.UserData.IsFavorite = next;
-    if (!(await call(next ? 'POST' : 'DELETE', `/UserFavoriteItems/${item.Id}?UserId=${userId}`))) {
+    if (!(await setFavorite(item.Id, userId, next))) {
       favorite = !next;
       if (item.UserData) item.UserData.IsFavorite = !next;
     }
@@ -81,7 +68,7 @@
     const was = { hasResume, played, data: item.UserData ? { ...item.UserData } : null };
     hasResume = false; played = false;     // out of "Continue Watching"
     if (item.UserData) { item.UserData.Played = false; item.UserData.PlaybackPositionTicks = 0; }
-    if (!(await call('DELETE', `/UserPlayedItems/${item.Id}?UserId=${userId}`))) {
+    if (!(await setPlayed(item.Id, userId, false))) {
       hasResume = was.hasResume; played = was.played;
       if (was.data) Object.assign(item.UserData, was.data);
     } else onProgressChanged?.();
@@ -96,7 +83,7 @@
     if (!armed || earlier) return;
     earlier = 'busy';
     try {
-      const { found, done } = await markEarlierPlayed(item, { serverUrl: session.serverUrl, userId, headers: headers() });
+      const { found, done } = await markEarlierPlayed(item, { serverUrl: session.serverUrl, userId, headers: authHeaders() });
       earlier = found && !done.length ? null : { n: done.length };
       if (done.length) onProgressChanged?.();   // Next Up of that series has moved on
     } catch (e) { console.warn('mark earlier episodes:', e?.message || e); earlier = null; }
@@ -116,16 +103,41 @@
 
   // Title: for episodes "Series · Episode title", otherwise the name
   let title = $derived(item?.SeriesName ? `${item.SeriesName} · ${item.Name}` : item?.Name);
+
+  // The entries' icons (24×24 paths)
+  const ICON = {
+    play: 'M8 5v14l11-7z',
+    info: 'M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z',
+    watched: 'M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+    earlier: 'M1.5 12.5l4.5 4.5 9-10M11 16.5l.5.5 9-10',
+    heart: 'M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z',
+    bookmark: 'M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z',
+    reset: 'M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99',
+    list: 'M3.75 6.75h10.5M3.75 12h10.5M3.75 17.25h6M18 14.25v6M15 17.25h6',
+    folder: 'M12 10.5v6m3-3H9m4.06-7.19l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z',
+  };
+  const takeFocus = focusOnMount();   // the first entry takes focus — see the snippet
 </script>
 
 <svelte:window onkeydowncapture={handleKeyDown} />
 
-<!-- Overlay: backdrop click-to-close is a pointer-only convenience; keyboard/remote users close via
-     the back key or by picking an action. A role/key handler on the backdrop would fight the focus trap. -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<div data-focus-trap class="fixed inset-0 z-[90] bg-black/80 flex items-center justify-center p-8"
-     onclick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
+<!-- One menu entry (§142: eleven buttons spelled this out). `tint` colours the icon by state, `solid` = filled without
+     an outline (play), `filled` = filled AND outlined (favourite, watchlist when set), `busy` dims it while it works.
+     `focus` is the ONE attachment made in the script, never a factory called here: an attachment is rebuilt when its
+     function changes, and building one runs it — a fresh focusOnMount() per label change would pull focus back. -->
+{#snippet entry(onclick, label, d, { tint = 'text-gray-400', solid = false, filled = false, busy = false, focus = false } = {})}
+  <button {onclick} {@attach focus}
+    class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
+           hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors {busy ? 'opacity-60' : ''}">
+    <svg class="w-6 h-6 shrink-0 {tint}" fill={solid || filled ? 'currentColor' : 'none'} stroke={solid ? 'none' : 'currentColor'} stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" {d}/>
+    </svg>
+    {label}
+  </button>
+{/snippet}
+
+<!-- A click on the darkening closes it too (pointer only); Back is handled on the window, above. -->
+<Dialog z="z-[90]" onBackdrop={onClose}>
 
   <div class="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden ring-1 ring-white/10">
     <!-- Header -->
@@ -138,105 +150,32 @@
     <div class="p-3 flex flex-col gap-1">
       {#if item?.Type === 'Playlist'}
         <!-- Playlist: only container-appropriate actions -->
-        <button onclick={playAll} {@attach focusOnMount()}
-          class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-                 hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
-          <svg class="w-6 h-6 shrink-0 text-gray-400" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-          {i18n.t.playAll}
-        </button>
-        <button onclick={openDetails}
-          class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-                 hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
-          <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
-          {i18n.t.openDetails}
-        </button>
+        {@render entry(playAll, i18n.t.playAll, ICON.play, { solid: true, focus: takeFocus })}
+        {@render entry(openDetails, i18n.t.openDetails, ICON.info)}
       {:else}
-      {#if canPlay}
-        <button onclick={play} {@attach focusOnMount()}
-          class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-                 hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
-          <svg class="w-6 h-6 shrink-0 text-gray-400" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-          {hasResume ? i18n.t.resumePlay : i18n.t.play}
-        </button>
-      {/if}
-      <button onclick={toggleWatched} {@attach focusOnMount(!canPlay)}
-        class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-               hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
-        <svg class="w-6 h-6 shrink-0 {played ? 'text-green-400' : 'text-gray-400'}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-        </svg>
-        {played ? i18n.t.markUnwatched : i18n.t.markWatched}
-      </button>
-
-      {#if canMarkEarlier}
-        <button onclick={markEarlier}
-          class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-                 hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors {earlier === 'busy' ? 'opacity-60' : ''}">
-          <svg class="w-6 h-6 shrink-0 {earlier?.n >= 0 ? 'text-green-400' : 'text-gray-400'}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M1.5 12.5l4.5 4.5 9-10M11 16.5l.5.5 9-10"/>
-          </svg>
-          {earlier?.n > 0 ? plural('earlierMarked', earlier.n) : earlier?.n === 0 ? i18n.t.earlierAllWatched : i18n.t.markEarlierWatched}
-        </button>
-      {/if}
-
-      <button onclick={toggleFavorite}
-        class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-               hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
-        <svg class="w-6 h-6 shrink-0 {favorite ? 'text-red-500' : 'text-gray-400'}" fill={favorite ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"/>
-        </svg>
-        {favorite ? i18n.t.removeFavorite : i18n.t.addFavorite}
-      </button>
-
-      <button onclick={() => toggleWatchlist(item)}
-        class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-               hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
-        <svg class="w-6 h-6 shrink-0 {inWatchlist(item.Id) ? 'text-blue-400' : 'text-gray-400'}" fill={inWatchlist(item.Id) ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"/>
-        </svg>
-        {inWatchlist(item.Id) ? i18n.t.removeFromWatchlist : i18n.t.addToWatchlist}
-      </button>
-
-      {#if hasResume}
-        <button onclick={resetProgress}
-          class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-                 hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
-          <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
-          </svg>
-          {i18n.t.resetProgress}
-        </button>
-      {/if}
-
-      <button onclick={addToList}
-        class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-               hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
-        <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h10.5M3.75 12h10.5M3.75 17.25h6M18 14.25v6M15 17.25h6"/>
-        </svg>
-        {i18n.t.addToPlaylist}
-      </button>
-
-      {#if canManageCollections}
-        <button onclick={addToCollection}
-          class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-                 hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
-          <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 10.5v6m3-3H9m4.06-7.19l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"/>
-          </svg>
-          {i18n.t.addToCollection}
-        </button>
-      {/if}
-
-      <button onclick={openDetails}
-        class="flex items-center gap-4 px-4 py-3.5 rounded-xl text-left text-white text-lg
-               hover:bg-white/10 focus:bg-white/15 focus:outline-none transition-colors">
-        <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/>
-        </svg>
-        {i18n.t.openDetails}
-      </button>
+        {#if canPlay}
+          {@render entry(play, hasResume ? i18n.t.resumePlay : i18n.t.play, ICON.play, { solid: true, focus: takeFocus })}
+        {/if}
+        {@render entry(toggleWatched, played ? i18n.t.markUnwatched : i18n.t.markWatched, ICON.watched,
+          { tint: played ? 'text-green-400' : 'text-gray-400', focus: !canPlay && takeFocus })}
+        {#if canMarkEarlier}
+          {@render entry(markEarlier,
+            earlier?.n > 0 ? plural('earlierMarked', earlier.n) : earlier?.n === 0 ? i18n.t.earlierAllWatched : i18n.t.markEarlierWatched,
+            ICON.earlier, { tint: earlier?.n >= 0 ? 'text-green-400' : 'text-gray-400', busy: earlier === 'busy' })}
+        {/if}
+        {@render entry(toggleFavorite, favorite ? i18n.t.removeFavorite : i18n.t.addFavorite, ICON.heart,
+          { tint: favorite ? 'text-red-500' : 'text-gray-400', filled: favorite })}
+        {@render entry(() => toggleWatchlist(item), inWatchlist(item.Id) ? i18n.t.removeFromWatchlist : i18n.t.addToWatchlist, ICON.bookmark,
+          { tint: inWatchlist(item.Id) ? 'text-blue-400' : 'text-gray-400', filled: inWatchlist(item.Id) })}
+        {#if hasResume}
+          {@render entry(resetProgress, i18n.t.resetProgress, ICON.reset)}
+        {/if}
+        {@render entry(addToList, i18n.t.addToPlaylist, ICON.list)}
+        {#if canManageCollections}
+          {@render entry(addToCollection, i18n.t.addToCollection, ICON.folder)}
+        {/if}
+        {@render entry(openDetails, i18n.t.openDetails, ICON.info)}
       {/if}
     </div>
   </div>
-</div>
+</Dialog>

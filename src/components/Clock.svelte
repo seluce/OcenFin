@@ -1,5 +1,5 @@
 <script>
-  import { i18n } from '../i18n.svelte.js';
+  import { timeOfDay } from '../utils.js';
   import { onMount, onDestroy } from 'svelte';
 
   // viewState is passed to shift left in the library view (A-Z bar)
@@ -9,12 +9,10 @@
   let ticker;
 
   function updateTime() {
-    const now = new Date();
-    // The app language is a valid BCP-47 tag (as in the screensaver): every locale formats its own way.
-    timeString = now.toLocaleTimeString(i18n.lang || 'en', { hour: '2-digit', minute: '2-digit', hour12: !use24h });
+    timeString = timeOfDay(new Date(), use24h);
   }
 
-  // Language + format reactive: $effect tracks the reads in updateTime (i18n.lang, use24h)
+  // Language + format reactive: $effect tracks the reads in updateTime (i18n.lang inside timeOfDay, use24h)
   // and reformats the time on every change.
   $effect(() => { updateTime(); });
 

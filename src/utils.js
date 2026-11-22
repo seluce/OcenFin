@@ -251,6 +251,36 @@ export function getItemImageUrlWithFallbacks(item, format = 'portrait') {
   return null;
 }
 
+// A title's full-size backdrop — its own, else its series' (an episode, a season) — and its logo the same way (§142:
+// the banner, the title page and the focus preview each built these by hand). Size and quality stay with the caller:
+// the focus preview 1280/70, the banner 1920/85, the title page 1920/80. null when there is none.
+export function backdropUrl(item, maxWidth, quality) {
+  const own = item?.BackdropImageTags?.[0], parent = item?.ParentBackdropImageTags?.[0];
+  const id = own ? item.Id : parent ? item.ParentBackdropItemId : null;
+  return id ? `${session.serverUrl}/Items/${id}/Images/Backdrop?tag=${own || parent}&maxWidth=${maxWidth}&quality=${quality}&format=webp` : null;
+}
+export function logoUrl(item, maxHeight) {
+  const own = item?.ImageTags?.Logo, parent = item?.ParentLogoImageTag;
+  const id = own ? item.Id : parent ? item.ParentLogoItemId : null;
+  return id ? `${session.serverUrl}/Items/${id}/Images/Logo?tag=${own || parent}&maxHeight=${maxHeight}&quality=90&format=webp` : null;
+}
+
+// The backdrop that fades in behind the home screen and the library 700 ms after a card takes focus (§142: both views
+// carried this line for line). `set` gets the picture's URL, '' to clear it. Card → card: the next show() cancels the
+// clearing, so the picture never flickers away in between; focus leaving the cards (menu, filters) lets it clear.
+export function backdropPreview(set) {
+  let showTimer, clearTimer;
+  const stop = () => { clearTimeout(showTimer); clearTimeout(clearTimer); };
+  return {
+    show(item) {
+      stop();
+      showTimer = setTimeout(() => { const url = backdropUrl(item, 1280, 70); if (url) set(url); }, 700);
+    },
+    hide() { stop(); clearTimer = setTimeout(() => set(''), 150); },
+    stop,
+  };
+}
+
 // Progress 0–100: resume position (movies/episodes) or share of watched episodes
 // (series, via Jellyfin's PlayedPercentage). For progress bars.
 // A watched title shows the tick (CardStatus), not a full bar: Jellyfin reports a watched series or
@@ -288,12 +318,24 @@ export function runtimeLabel(ticks) {
   return m ? `${m} ${i18n.t.mins}` : '';
 }
 
+// The time of day as the app writes it everywhere — the clock, the screensaver, the player, "ends at" (§142; it was
+// spelled out in five places). The app language is a valid BCP-47 tag, so every locale formats its own way. The
+// formatter is kept per language and format: toLocaleTimeString with options builds a new one on every call, and the
+// player's "ends at" is read about four times a second.
+const timeFormats = new Map();
+export function timeOfDay(date, use24h) {
+  const lang = i18n.lang || 'en', key = `${lang}|${use24h ? 24 : 12}`;
+  let fmt = timeFormats.get(key);
+  if (!fmt) timeFormats.set(key, fmt = new Intl.DateTimeFormat(lang, { hour: '2-digit', minute: '2-digit', hour12: !use24h }));
+  return fmt.format(date);
+}
+
 // "ends at 21:30" for a title started now — from its resume point, where the player starts it. The title page and the
 // player's next-title line (§141).
 export function endsAtLabel(item, use24h) {
   if (!item?.RunTimeTicks) return '';
   const end = new Date(Date.now() + (item.RunTimeTicks - (item.UserData?.PlaybackPositionTicks || 0)) / 10000);
-  return `${i18n.t.endsAt} ${end.toLocaleTimeString(i18n.lang || 'en', { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`;
+  return `${i18n.t.endsAt} ${timeOfDay(end, use24h)}`;
 }
 
 // Card/grid subtitle: episode → "S1:E2 – Title"; series → year range ("2016 – 2019" / "2024 – today"); otherwise the
@@ -507,13 +549,26 @@ export function renderAvatarPng(iconKey, bgColor, size = 256) {
 // query over the library per request. Exceptions (that really need the counter): the library
 // main query + letterStartIndex (pagination/A-Z) and the person-count check of the search
 // (Limit=0). Audit one-liner:  grep -rn "Items?" --include=*.svelte | grep -v EnableTotalRecordCount
-// Centralized so that not every component maintains its own copy.
-export function authHeaders(token) {
+// Centralized so that not every component maintains its own copy. Without an argument: the signed-in session's
+// token — what nearly every caller sends (§142: twelve files had their own `getAuthHeaders` wrapper for that).
+// Sign-in flows and other profiles' tokens (shared watching, saved accounts) still pass theirs.
+export function authHeaders(token = session.token) {
   return {
     "Authorization": `MediaBrowser Token="${token}"`,
     "Content-Type": "application/json",
   };
 }
+
+// A title's favourite and watched marks on the server (§142: five places wrote the request out). Resolves to whether
+// the server took it — an error ANSWER (403, 404, 500) never throws, so `res.ok` is the test, and a network error is
+// false as well. The optimistic flip and the rollback stay with the view: each has its own state to put back.
+function markItem(route, id, userId, on) {
+  return fetch(`${session.serverUrl}/${route}/${id}?UserId=${userId}`, { method: on ? 'POST' : 'DELETE', headers: authHeaders() })
+    .then(r => { if (!r.ok) console.warn(`[OcenFin] ${route} ${on ? 'POST' : 'DELETE'}: HTTP ${r.status}`); return r.ok; },
+          e => { console.warn(`[OcenFin] ${route}:`, e?.message || e); return false; });
+}
+export const setFavorite = (id, userId, on) => markItem('UserFavoriteItems', id, userId, on);
+export const setPlayed   = (id, userId, on) => markItem('UserPlayedItems', id, userId, on);
 
 // --- Diagnostic logging (opt-in, device-wide) ----------------------------------------------
 // A central switch gates all diagnostic output. dlog() replaces console.log at the

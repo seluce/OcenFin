@@ -10,7 +10,7 @@
   //   lead   — snippet in place of the year (an episode page: its number and air date)
   //   extra  — snippet after the running time, inside its item (the title page: time left · ends at)
   //   genres — the banner names them at the end of the line; the preview and the title page show them below
-  import { i18n, plural } from '../i18n.svelte.js';
+  import { plural } from '../i18n.svelte.js';
   import { getItemSubtitle, runtimeLabel } from '../utils.js';
 
   let { item, class: cls = '', lead = null, extra = null, genres = null } = $props();

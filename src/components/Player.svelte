@@ -1,6 +1,6 @@
 <script>
   import { i18n, plural, baseLang } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount, authHeaders, dlog, episodeCode, runtimeLabel, endsAtLabel, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS, asSubSize, asSubPosition, SUB_STEPS, subtitleTextStyle } from '../utils.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, episodeCode, runtimeLabel, endsAtLabel, timeOfDay, setFavorite, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS, asSubSize, asSubPosition, SUB_STEPS, subtitleTextStyle } from '../utils.js';
   import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks, orderTracks } from '../trackmemory.js';
   import { trackLabels } from '../tracklabel.js';
   import { session } from '../session.svelte.js';
@@ -72,15 +72,13 @@
   // 'end' mode: the label only changes when the remaining MINUTES change, so derive from a
   // minute bucket instead of full-resolution currentTime — the HUD is only opacity-hidden, so
   // this derived stays live for the whole film and used to rebuild a Date plus a fresh
-  // Intl.DateTimeFormat (toLocaleTimeString with options) ~4×/s. The formatter is cached per
+  // Intl.DateTimeFormat (toLocaleTimeString with options) ~4×/s. timeOfDay() keeps the formatter per
   // language/format; the ≤59 s bucketing error is well inside an estimate that drifts anyway.
-  let endTimeFmt   = $derived(new Intl.DateTimeFormat(i18n.lang || 'en',
-    { hour: '2-digit', minute: '2-digit', hour12: !use24h }));
   let remainingMin = $derived(duration ? Math.floor(Math.max(0, duration - currentTime) / 60) : 0);
   let rightTimeLabel = $derived.by(() => {
     if (!duration) return formatTime(0);
     if (timeMode === 'remaining') return '-' + formatTime(Math.max(0, duration - displayTime));
-    if (timeMode === 'end') return endTimeFmt.format(new Date(Date.now() + remainingMin * 60000));
+    if (timeMode === 'end') return timeOfDay(new Date(Date.now() + remainingMin * 60000), use24h);
     return formatTime(duration);
   });
 
@@ -88,8 +86,7 @@
   let clockNow = $state('');
   let clockTimer;
   function updateClock() {
-    clockNow = new Date().toLocaleTimeString(i18n.lang || 'en',
-      { hour: '2-digit', minute: '2-digit', hour12: !use24h });
+    clockNow = timeOfDay(new Date(), use24h);
   }
   $effect(() => { i18n.lang; use24h; updateClock(); });
 
@@ -1390,12 +1387,12 @@
   async function fetchNextFilm() {
     const t0 = performance.now();
     try {
-      const r = await fetch(`${session.serverUrl}/Items/${item.Id}/Collections?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
+      const r = await fetch(`${session.serverUrl}/Items/${item.Id}/Collections?UserId=${selectedUser.Id}`, { headers: authHeaders() });
       if (!r.ok || destroyed) return;
       const cols = ((await r.json()).Items || []).filter(c => c.Type === 'BoxSet').slice(0, 4);
       const lists = await Promise.all(cols.map(c =>
         fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${c.Id}&ImageTypeLimit=1&Limit=100&EnableTotalRecordCount=false`,
-              { headers: getAuthHeaders() })
+              { headers: authHeaders() })
           .then(res => res.ok ? res.json() : null).then(d => d?.Items || []).catch(() => [])));
       if (destroyed) return;
       const list = lists.filter(l => l.some(x => x.Id === item.Id)).sort((a, b) => a.length - b.length)[0];
@@ -1542,7 +1539,6 @@
   // API
   // ============================================================
 
-  const getAuthHeaders = () => authHeaders(session.token);
 
   // ONE /Items/{id} request per Player: fetchMediaSources (chapters, track lists, trickplay), the
   // picked start's source (sourceForPick) and the title-streams fallback read the same answer — a
@@ -1551,7 +1547,7 @@
   // later caller tries again.
   let _fullItemP = null;
   function fetchFullItem() {
-    _fullItemP ??= fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() })
+    _fullItemP ??= fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`, { headers: authHeaders() })
       .then(r => (r.ok ? r.json() : null)).catch(() => null)
       .then(d => { if (!d) _fullItemP = null; return d; });
     return _fullItemP;
@@ -1576,7 +1572,7 @@
     // 1) Media Segments API (the Intro Skipper plugin and the server's own detection deliver via this).
     //    Query without a type filter and filter ourselves — the Recap segment is read from the same answer.
     try {
-      const res = await fetch(`${session.serverUrl}/MediaSegments/${item.Id}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/MediaSegments/${item.Id}`, { headers: authHeaders() });
       if (res.ok) {
         const segs = (await res.json()).Items || [];
         dlog('[OcenFin] media segments:', segs.map(s => s.Type));
@@ -1652,7 +1648,7 @@
         // IsMissing=false: with "display missing episodes" on in the Jellyfin profile the list holds
         // placeholders without a file, and Next / auto-play landed on the error page.
         `${session.serverUrl}/Shows/${item.SeriesId}/Episodes?UserId=${selectedUser.Id}&IsMissing=false`,
-        { headers: getAuthHeaders() }
+        { headers: authHeaders() }
       );
       if (res.ok) {
         const data     = await res.json();
@@ -1666,7 +1662,7 @@
     try {
       await fetch(`${session.serverUrl}/Sessions/Playing`, {
         method: "POST",
-        headers: getAuthHeaders(),
+        headers: authHeaders(),
         body: JSON.stringify({
           ItemId: item.Id, PositionTicks: startTicks,
           IsPaused: false, PlayMethod: playMethod,
@@ -1681,7 +1677,7 @@
     try {
       await fetch(`${session.serverUrl}/Sessions/Playing/Progress`, {
         method: "POST",
-        headers: getAuthHeaders(),
+        headers: authHeaders(),
         body: JSON.stringify({
           ItemId: item.Id,
           PositionTicks: positionTicks(),
@@ -1699,7 +1695,7 @@
     try {
       await fetch(`${session.serverUrl}/Sessions/Playing/Stopped`, {
         method: "POST",
-        headers: getAuthHeaders(),
+        headers: authHeaders(),
         keepalive,
         body: JSON.stringify({
           ItemId: item.Id,
@@ -1718,7 +1714,7 @@
     try {
       fetch(`${session.serverUrl}/Sessions/Playing/Progress`, {
         method: "POST",
-        headers: getAuthHeaders(),
+        headers: authHeaders(),
         keepalive: true,
         body: JSON.stringify({
           ItemId: item.Id,
@@ -1880,13 +1876,7 @@
     isFavorite = next;
     resetControlsTimeout();
     // Rolled back when the server refuses or cannot be reached — the heart used to stay as set.
-    try {
-      const res = await fetch(`${session.serverUrl}/UserFavoriteItems/${item.Id}?UserId=${selectedUser.Id}`, {
-        method: next ? "POST" : "DELETE",
-        headers: getAuthHeaders()
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch (e) { console.warn('[OcenFin] favorite toggle failed, rolled back:', e?.message || e); isFavorite = !next; }
+    if (!(await setFavorite(item.Id, selectedUser.Id, next))) isFavorite = !next;
   }
 
   // ============================================================

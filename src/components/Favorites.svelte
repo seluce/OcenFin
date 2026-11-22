@@ -1,9 +1,10 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { getItemSubtitle, personImageUrl, itemBlurHash, blurUp, longPress, authHeaders, dlog, getItemImageUrl } from '../utils.js';
+  import { getItemSubtitle, itemBlurHash, blurUp, longPress, authHeaders, dlog, getItemImageUrl } from '../utils.js';
   import { session } from '../session.svelte.js';
   import PosterCard from './PosterCard.svelte';
   import CardStatus from './CardStatus.svelte';
+  import PersonCard from './PersonCard.svelte';
   import { tick } from 'svelte';
 
   // focusItemId: the card to land on after the parent brought us back (from Details, say). Passed in
@@ -39,7 +40,6 @@
       )
   );
 
-  const getAuthHeaders = () => authHeaders(session.token);
 
   async function loadFavorites() {
     isLoadingFavorites = true;
@@ -52,11 +52,11 @@
           `${session.serverUrl}/Items?UserId=${selectedUser.Id}&Filters=IsFavorite&Recursive=true` +
           `&IncludeItemTypes=Movie,Series,BoxSet,Season,Episode&SortBy=SortName&SortOrder=Ascending` +
           `&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`,
-          { headers: getAuthHeaders() }
+          { headers: authHeaders() }
         ),
         fetch(
           `${session.serverUrl}/Persons?UserId=${selectedUser.Id}&IsFavorite=true`,
-          { headers: getAuthHeaders() }
+          { headers: authHeaders() }
         ),
       ]);
       const content = contentRes.ok ? ((await contentRes.json()).Items || []) : [];
@@ -152,18 +152,7 @@
         <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.people}</h2>
         <div data-focus-grid class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-6 pr-4 mb-12">
           {#each favPersons as p (p.Id)}
-            <button onclick={() => onOpenPerson(p)} data-item-id={p.Id} class="group isolate focus:outline-none text-center scroll-my-4">
-              <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl">
-                {#if personImageUrl(session.serverUrl, p)}
-                  <img src={personImageUrl(session.serverUrl, p)} {@attach blurUp(itemBlurHash(p))} alt={p.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
-                {:else}
-                  <div class="w-full h-full flex items-center justify-center text-gray-600">
-                    <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-                  </div>
-                {/if}
-              </div>
-              <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full block">{p.Name}</span>
-            </button>
+            <PersonCard person={p} onclick={() => onOpenPerson(p)} class="scroll-my-4" />
           {/each}
         </div>
       {/if}

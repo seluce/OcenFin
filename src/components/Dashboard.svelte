@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { minutesLeft, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, isShownLibrary, getItemImageUrl, libraryIcon, orderHomeRows, HOME_ROWS, dlog } from '../utils.js';
+  import { minutesLeft, backdropPreview, backdropUrl, logoUrl, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, isShownLibrary, getItemImageUrl, libraryIcon, orderHomeRows, HOME_ROWS, dlog } from '../utils.js';
   import CardStatus from './CardStatus.svelte';
   import TitleMeta from './TitleMeta.svelte';
   import { focusFromPointer } from '../spatialnav.js';
@@ -156,23 +156,13 @@
   // watching. Not during a fresh load, which asks them anyway (and clears the flag as it starts).
   let rowsShown = $state(false);
   $effect(() => { if (resumeStale && rowsShown) untrack(refreshResume); });
-  onDestroy(() => { alive = false; clearInterval(heroTimer); clearTimeout(previewTimer); clearTimeout(clearTimer); clearTimeout(holdTimer); });
+  onDestroy(() => { alive = false; clearInterval(heroTimer); backdrop.stop(); clearTimeout(holdTimer); });
 
-  // ── Backdrop preview (like in the Library): 700 ms after focusing a card, fade in its backdrop
-  //    behind the dashboard; remove it again on leaving. Opt-out via dashboardBackdrop. ──
+  // ── Backdrop preview (like in the Library; backdropPreview, utils.js): 700 ms after focusing a card, fade in its
+  //    backdrop behind the dashboard; remove it again on leaving. Opt-out via dashboardBackdrop. ──
   let previewBackdrop = $state("");
-  let previewTimer, clearTimer;
-  function previewItem(item) {
-    if (!dashboardBackdrop || !item) return;
-    clearTimeout(clearTimer);   // a card focus follows directly → do NOT clear (no card→card flicker)
-    clearTimeout(previewTimer);
-    previewTimer = setTimeout(() => {
-      const tag  = item.BackdropImageTags?.[0];
-      const pTag = item.ParentBackdropImageTags?.[0];
-      if (tag)       previewBackdrop = `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${tag}&maxWidth=1280&quality=70&format=webp`;
-      else if (pTag) previewBackdrop = `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${pTag}&maxWidth=1280&quality=70&format=webp`;
-    }, 700);
-  }
+  const backdrop = backdropPreview(url => { previewBackdrop = url; });
+  function previewItem(item) { if (dashboardBackdrop && item) backdrop.show(item); }
 
   // ── The banner: whole or not at all (CODE-HEALTH §49) ──
   // The banner and the focused card's backdrop never share the screen. Two states only:
@@ -231,14 +221,9 @@
   const heroShown = $derived(showHero && !!heroCurrent);
   $effect(() => { heroShown; handoff?.(); });
 
-  // Focus leaves a card: stop the fade-in timer and clear the backdrop with a short delay.
-  // If another card focus follows immediately (card→card), previewItem cancels the clearing → no
-  // flicker. If focus goes to the hero, the library tiles or the navigation, the clearing stands.
-  function cancelPreview() {
-    clearTimeout(previewTimer);
-    clearTimeout(clearTimer);
-    clearTimer = setTimeout(() => { previewBackdrop = ""; }, 150);
-  }
+  // Focus leaves a card: the backdrop clears after a moment — unless another card takes focus at once (no flicker).
+  // Focus going to the banner, the library tiles or the navigation lets it clear.
+  const cancelPreview = () => backdrop.hide();
 
   // Preloads the image of the next hero item → seamless switch without popping in.
   function preloadHero(index) {
@@ -319,7 +304,6 @@
     startHeroRotation();
   }
 
-  const getAuthHeaders = () => authHeaders(session.token);
   // Only the first picture of each type is ever shown, so every list asks for that one alone (ImageTypeLimit=1) —
   // a title with a dozen backdrops brought every tag and BlurHash along (CODE-HEALTH §126/§128). /Items/{id}/Similar
   // has no such parameter in 12.2. Fields carries ItemFields only: everything else (BackdropImageTags, SeriesName,
@@ -362,7 +346,7 @@
     const cache = myCache;
     try {
       const uId  = selectedUser.Id;
-      const opts = { headers: getAuthHeaders() };
+      const opts = { headers: authHeaders() };
       const [rRes, rNext] = await Promise.all([
         fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&MediaTypes=Video&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts),
         fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts),
@@ -535,7 +519,7 @@
     const pResumeKnown = new Promise(r => { resumeKnown = r; });
     try {
       const uId   = selectedUser.Id;
-      const opts  = { headers: getAuthHeaders() };
+      const opts  = { headers: authHeaders() };
       const fields = FIELDS;
 
       // Dispatch order is deliberate. Views + Resume go on the wire first — they release the UI and
@@ -728,20 +712,10 @@
     return (item.Type === 'Episode' && item.SeriesName) ? item.SeriesName : item.Name;
   }
 
-  // Hero backdrop in high resolution
-  function getHeroBackdrop(item) {
-    if (item?.BackdropImageTags?.length > 0)
-      return `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=1920&quality=85&format=webp`;
-    return null;
-  }
-
-  // Logo image (transparent title lettering) — if present, instead of the text title.
-  // Looks more premium; one extra image, no extra effort on the data side.
-  function getHeroLogo(item) {
-    if (item.ImageTags?.Logo)
-      return `${session.serverUrl}/Items/${item.Id}/Images/Logo?tag=${item.ImageTags.Logo}&maxHeight=130&quality=90&format=webp`;
-    return null;
-  }</script>
+  // Hero backdrop in high resolution, and the logo (transparent title lettering) in place of the text title if there is
+  // one — the banner's titles are films and series, so both are their own (backdropUrl / logoUrl, utils.js)
+  const getHeroBackdrop = (item) => backdropUrl(item, 1920, 85);
+  const getHeroLogo = (item) => logoUrl(item, 130);</script>
 
 <!-- aria-busy while rows are held back: App's start focus must not settle for the banner then (§106). -->
 <div class="relative" aria-busy={isLoading || holding} {@attach heroHandoff}>
@@ -786,7 +760,9 @@
     </button>
   {/snippet}
 
-  {#snippet portraitCard(item, img, blur)}
+  <!-- `_imgUrl`: a watchlist episode shows its series' poster (watchlistDisplay) -->
+  {#snippet portraitCard(item)}
+    {@const img = item._imgUrl || getItemImageUrl(item)}
     {@const sub = getItemSubtitle(item)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
       onfocus={() => previewItem(item)} onblur={cancelPreview}
@@ -795,7 +771,7 @@
                   border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow
                   transition-transform duration-200 shadow-xl">
         {#if img}
-          <img src={img} {@attach blurUp(blur)} alt={item.Name}
+          <img src={img} {@attach blurUp(itemBlurHash(item))} alt={item.Name}
             class="w-full h-full object-cover" loading="lazy" />
         {/if}
         <CardStatus {item} />
@@ -829,6 +805,46 @@
       </div>
       <span class="mt-3 text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{col.Name}</span>
     </button>
+  {/snippet}
+
+  <!-- A library tile of "My media" -->
+  {#snippet libraryCard(library)}
+    <!-- data-item-id: Back out of a library returns to the tile it was opened from. This row
+         comes out of the first response round, so it satisfies the rule that only rows which
+         arrive quickly carry the attribute. -->
+    <button onclick={() => onOpenLibrary?.(library)} data-item-id={library.Id}
+      class="shrink-0 scroll-mt-24 scroll-mx-4 group isolate flex flex-col items-center focus:outline-none">
+      <div class="w-64 h-36 bg-gray-800 rounded-xl flex items-center justify-center
+                  border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow group-hover:border-gray-400
+                  transition-transform duration-200 shadow-lg overflow-hidden">
+        {#if getItemImageUrl(library)}
+          <img src={getItemImageUrl(library)} {@attach blurUp(itemBlurHash(library))} alt={library.Name}
+            class="w-full h-full object-cover opacity-80 group-focus:opacity-100" loading="lazy" />
+        {:else}
+          <!-- No picture: the library's icon (as in the sidebar), not its name — the name is
+               already written right under the tile. -->
+          <svg class="w-14 h-14 text-gray-500 group-focus:text-gray-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d={libraryIcon(library, navIcons)}/>
+          </svg>
+        {/if}
+      </div>
+      <!-- block + w-64 (= tile width) + truncate: without a width bound a long library name
+           makes the button wider than its tile, which breaks the spacing of the row. -->
+      <span class="mt-3 text-lg text-gray-300 group-focus:text-white block w-64 truncate text-center">{library.Name}</span>
+    </button>
+  {/snippet}
+
+  <!-- One row of the home screen: heading + a card row, shown only when it has cards (§142: written out ten times).
+       `card` is one of the card snippets above. -->
+  {#snippet shelf(heading, items, card)}
+    {#if items.length > 0}
+      <div>
+        <h2 class="text-2xl font-bold text-white mb-4 px-2">{heading}</h2>
+        <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+          {#each items as it (it.Id)}{@render card(it)}{/each}
+        </div>
+      </div>
+    {/if}
   {/snippet}
 
   <!-- Hero skeleton: reserves the banner height + hints at the title/text/button. ONE snippet for both
@@ -940,147 +956,33 @@
     <div class="contents home-rows">
     {#each shownRows as row (row)}
       {#if row === 'libraries'}
-        <!-- LIBRARIES -->
-        {#if showLibraries && libraries.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.myMedia}</h2>
-            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each libraries as library (library.Id)}
-                <!-- data-item-id: Back out of a library returns to the tile it was opened from. This row
-                     comes out of the first response round, so it satisfies the rule that only rows which
-                     arrive quickly carry the attribute. -->
-                <button onclick={() => onOpenLibrary?.(library)} data-item-id={library.Id}
-                  class="shrink-0 scroll-mt-24 scroll-mx-4 group isolate flex flex-col items-center focus:outline-none">
-                  <div class="w-64 h-36 bg-gray-800 rounded-xl flex items-center justify-center
-                              border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow group-hover:border-gray-400
-                              transition-transform duration-200 shadow-lg overflow-hidden">
-                    {#if getItemImageUrl(library)}
-                      <img src={getItemImageUrl(library)} {@attach blurUp(itemBlurHash(library))} alt={library.Name}
-                        class="w-full h-full object-cover opacity-80 group-focus:opacity-100" loading="lazy" />
-                    {:else}
-                      <!-- No picture: the library's icon (as in the sidebar), not its name — the name is
-                           already written right under the tile. -->
-                      <svg class="w-14 h-14 text-gray-500 group-focus:text-gray-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" d={libraryIcon(library, navIcons)}/>
-                      </svg>
-                    {/if}
-                  </div>
-                  <!-- block + w-64 (= tile width) + truncate: without a width bound a long library name
-                       makes the button wider than its tile, which breaks the spacing of the row. -->
-                  <span class="mt-3 text-lg text-gray-300 group-focus:text-white block w-64 truncate text-center">{library.Name}</span>
-                </button>
-              {/each}
-            </div>
-          </div>
-        {/if}
+        {#if showLibraries}{@render shelf(i18n.t.myMedia, libraries, libraryCard)}{/if}
       {:else if row === 'resume'}
-        <!-- CONTINUE WATCHING -->
-        {#if resumeRow.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.continueWatchingRow}</h2>
-            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each resumeRow as item (item.Id)}
-                {@render landscapeCard(item)}
-              {/each}
-            </div>
-          </div>
-        {/if}
+        {@render shelf(i18n.t.continueWatchingRow, resumeRow, landscapeCard)}
       {:else if row === 'nextUp'}
-        <!-- UP NEXT -->
-        {#if showNextUp && nextUp.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.nextUp}</h2>
-            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each nextUp as item (item.Id)}
-                {@render landscapeCard(item)}
-              {/each}
-            </div>
-          </div>
-        {/if}
+        {#if showNextUp}{@render shelf(i18n.t.nextUp, nextUp, landscapeCard)}{/if}
       {:else if row === 'watchlist'}
-        <!-- WATCHLIST — the user-curated "watch later" playlist (see watchlist.svelte.js) -->
-        {#if showWatchlist && watchlistDisplay.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.watchlist}</h2>
-            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each watchlistDisplay as item (item.Id)}
-                {@render portraitCard(item, item._imgUrl || getItemImageUrl(item), itemBlurHash(item))}
-              {/each}
-            </div>
-          </div>
-        {/if}
+        <!-- the user-curated "watch later" playlist (see watchlist.svelte.js) -->
+        {#if showWatchlist}{@render shelf(i18n.t.watchlist, watchlistDisplay, portraitCard)}{/if}
       {:else if row === 'history'}
-        <!-- RECENTLY WATCHED (history) -->
-        {#if showHistory && historyRow.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.recentlyWatched}</h2>
-            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each historyRow as item (item.Id)}
-                {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}   <!-- episodes arrive as their series (dedupeHistory) -->
-              {/each}
-            </div>
-          </div>
-        {/if}
+        <!-- episodes arrive as their series (dedupeHistory) -->
+        {#if showHistory}{@render shelf(i18n.t.recentlyWatched, historyRow, portraitCard)}{/if}
       {:else if row === 'sharedSuggestions'}
-        <!-- SHARED SUGGESTIONS ("For you both") — only with a shared profile set up -->
-        {#if showSharedSuggestions && sharedSuggestions.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.sharedSuggestions}</h2>
-            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each sharedSuggestions as item (item.Id)}
-                {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
-              {/each}
-            </div>
-          </div>
-        {/if}
+        <!-- "For you both" — only with a shared profile set up -->
+        {#if showSharedSuggestions}{@render shelf(i18n.t.sharedSuggestions, sharedSuggestions, portraitCard)}{/if}
       {:else if row === 'recommendations'}
-        <!-- RECOMMENDATIONS: "Because you watched X" — personalized -->
+        <!-- "Because you watched X" — personalized -->
         {#each (showRecommendations ? recommendations.slice(0, recommendationRows) : []) as rec (rec.seedId ?? rec.seedTitle)}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
-            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each rec.items as item (item.Id)}
-                {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
-              {/each}
-            </div>
-          </div>
+          {@render shelf(i18n.t.becauseSeen.replace('{x}', rec.seedTitle), rec.items, portraitCard)}
         {/each}
       {:else if row === 'latest'}
-        <!-- RECENTLY ADDED MOVIES -->
-        {#if showLatest && latestMovies.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestMovies}</h2>
-            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each latestMovies as item (item.Id)}
-                {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
-              {/each}
-            </div>
-          </div>
-        {/if}
-
-        <!-- RECENTLY ADDED SERIES -->
-        {#if showLatest && latestSeries.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestSeries}</h2>
-            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each latestSeries as item (item.Id)}
-                {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
-              {/each}
-            </div>
-          </div>
+        {#if showLatest}
+          {@render shelf(i18n.t.latestMovies, latestMovies, portraitCard)}
+          {@render shelf(i18n.t.latestSeries, latestSeries, portraitCard)}
         {/if}
       {:else if row === 'collections'}
-        <!-- COLLECTIONS (BoxSets) — browse-oriented, hence at the bottom -->
-        {#if showCollections && collections.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.collections}</h2>
-            <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each collections as col (col.Id)}
-                {@render collectionCard(col)}
-              {/each}
-            </div>
-          </div>
-        {/if}
+        <!-- BoxSets — browse-oriented, hence at the bottom -->
+        {#if showCollections}{@render shelf(i18n.t.collections, collections, collectionCard)}{/if}
       {/if}
     {/each}
     <!-- Placeholders while rows are still held back — shown only as long as no row above them is
