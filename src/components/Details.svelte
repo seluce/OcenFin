@@ -23,7 +23,7 @@
     focusItemId = null, focusScrollTop = 0,   // where to land when App brings us back (person page)
     takeResume = null,          // App: hands back, ONCE, what was on screen when we were left for a collection, a person page or the player
     onClose, onLibChanged, onOpenPerson, onOpenCollection, onPlayVideo,   // callback props
-    onProgressChanged,          // episodes were marked watched in bulk → App refreshes Next Up on the dashboard
+    onProgressChanged,          // something was marked (un)watched → App refreshes Continue watching and Up next on the dashboard
   } = $props();
 
   let fullItem     = $state(null);
@@ -791,6 +791,9 @@
         headers: getAuthHeaders()
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // The home screen's Continue watching and Up next follow — a series or season marked here takes its
+      // episode out of Continue watching, an episode moves Up next on (CODE-HEALTH §140)
+      onProgressChanged?.();
     } catch (e) {
       // Roll back on error
       console.warn('[OcenFin] played-status toggle failed, rolled back:', e);

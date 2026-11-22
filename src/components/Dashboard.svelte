@@ -5,7 +5,7 @@
   import { focusFromPointer } from '../spatialnav.js';
   import { session } from '../session.svelte.js';
   import { watchlist, refreshWatchlist } from '../watchlist.svelte.js';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack, tick } from 'svelte';
 
   let {
     selectedUser,
@@ -25,7 +25,7 @@
     sharedSuggestions = [],     // "For you both" — titles that match the shared preference
     showSharedSuggestions = false, // show the row (only when a shared profile is set up)
     sharedSuggestionsReady = true, // App has computed the row for the current members (its scan is slow)
-    resumeStale = false,        // App: playback happened since the last dashboard visit → fetch Resume/NextUp fresh
+    resumeStale = false,        // App: played or marked (un)watched since Resume/NextUp were asked → fetch them fresh
     onResumeRefreshed,          // () => void — App resets the flag
     onLibrariesLoaded, onOpenCollection, onOpenContext, onOpenDetails, onOpenLibrary,   // callback props
     onPlay,                     // (item, el) => void — the banner's Play: App plays it straight away
@@ -150,6 +150,11 @@
   let alive = true;
   let myCache = null;
   onMount(() => { loadDashboardData(); });
+  // Continue watching and Up next follow whatever was played or marked since they were asked (§140): on a visit
+  // from the cache, and while the home screen is up — the card menu on a series whose episode sits in Continue
+  // watching. Not during a fresh load, which asks them anyway (and clears the flag as it starts).
+  let rowsShown = $state(false);
+  $effect(() => { if (resumeStale && rowsShown) untrack(refreshResume); });
   onDestroy(() => { alive = false; clearInterval(heroTimer); clearTimeout(previewTimer); clearTimeout(clearTimer); clearTimeout(holdTimer); });
 
   // ── Backdrop preview (like in the Library): 700 ms after focusing a card, fade in its backdrop
@@ -331,7 +336,24 @@
     return raw.filter(i => !inProgress.has(i.Id) && !inProgress.has(i.SeriesId));
   }
 
-  // After playback: fetch ONLY Resume + NextUp fresh and merge them into the cache — the
+  // The fresh answer can take the focused card away: the title Back returned to was finished or marked watched, and
+  // the card restore had found it in the cache rows a moment before (§140). Focus then goes to the card that moved
+  // into its place in that row, else the one before it, else the next card down the page — not to nothing.
+  function holdFocus() {
+    const was = document.activeElement, page = was?.closest?.('.home-rows');
+    if (!page || !was.dataset.itemId) return () => {};
+    const cards = [...page.querySelectorAll('[data-item-id]')], at = cards.indexOf(was);
+    const row = cards.filter(c => c.parentElement === was.parentElement), i = row.indexOf(was);
+    return () => {
+      if (was.isConnected || (document.activeElement && document.activeElement !== document.body)) return;
+      const next = [...row.slice(i + 1), ...row.slice(0, i).reverse(), ...cards.slice(at + 1), ...cards.slice(0, at).reverse()]
+        .find(c => c.isConnected);
+      next?.focus();
+      dlog('[focus] refreshed row took the focused card →', next?.dataset.itemId ?? 'none left');
+    };
+  }
+
+  // After playback or a watched mark: fetch ONLY Resume + NextUp fresh and merge them into the cache — the
   // instant display from the cache stays, but the one row that actually changed is
   // correct again (progress/new title). No full reload, the hero stays put (no reshuffle).
   async function refreshResume() {
@@ -348,10 +370,12 @@
       const resume = (await rRes.json()).Items || [];
       const dNext  = await rNext.json();
       if (!alive) return;
+      const refocus = holdFocus();
       continueWatching = resume;
       nextUp = filterNextUp(dNext.Items || []);
       if (cache) { cache.continueWatching = continueWatching; cache.nextUp = nextUp; }
       onResumeRefreshed?.();
+      tick().then(refocus);
     } catch { /* the flag stays set → the next dashboard visit tries again */ }
   }
 
@@ -498,12 +522,13 @@
           if (!heroItems.length) heroFromCache();
         });
       } else answer(...HOME_ROWS);
-      if (resumeStale) refreshResume();   // background refresh, the UI is already up from the cache
+      rowsShown = true;   // → refreshResume() when stale, in the background — the UI is already up from the cache
       return;
     }
 
     isLoading   = true;
     heroLoading = true;   // reserve the hero space from the first paint until the featured data is there
+    onResumeRefreshed?.();   // Resume and Up next go out below, after whatever made them stale
     let resumeKnown;   // opened once continueWatching holds this load's answer — or none is coming (every exit below)
     const pResumeKnown = new Promise(r => { resumeKnown = r; });
     try {
@@ -587,6 +612,7 @@
       // still the dashboard on screen — after a profile switch the cache belongs to the next one.
       cache.libraries = libraries; cache.continueWatching = continueWatching;
       if (alive) apiCache.dashboard = cache;
+      rowsShown = true;
 
       // Load collections independently
       const pCols = pCollections.then(r => r.json()).then(d => {

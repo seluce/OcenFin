@@ -62,7 +62,7 @@
     if (!(await call(next ? 'POST' : 'DELETE', `/UserPlayedItems/${item.Id}?UserId=${userId}`))) {
       played = !next; hasResume = hadResume;
       if (item.UserData) item.UserData.Played = !next;
-    }
+    } else onProgressChanged?.();   // a series' episode leaves Continue watching, Up next moves on (§140)
     onChanged?.();                   // reload only AFTER the server write (otherwise a race: reload reads stale data)
   }
   async function toggleFavorite() {
@@ -84,7 +84,7 @@
     if (!(await call('DELETE', `/UserPlayedItems/${item.Id}?UserId=${userId}`))) {
       hasResume = was.hasResume; played = was.played;
       if (was.data) Object.assign(item.UserData, was.data);
-    }
+    } else onProgressChanged?.();
     onChanged?.();
   }
   // "Mark earlier episodes as watched" (playback.js). The entry reports in place what it did — how many,

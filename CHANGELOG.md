@@ -42,6 +42,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   watching could turn up in the banner as well.
 - **Title pages with one actor in several roles open again.** Such a page, common with anime, kept loading forever;
   the person now shows once, with all their roles.
+- **Continue watching keeps up with "watched".** A series or season marked as watched on its page or in a card's menu
+  now takes its episode out of the row at once, instead of leaving it there with a tick until the app restarts.
+- **Focus stays put when a card leaves the home screen.** Back onto a title that has just been finished or marked
+  as watched now lands on the card next to it.
 
 ### Internal
 
