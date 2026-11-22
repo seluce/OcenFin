@@ -2416,10 +2416,11 @@
     </div>
   {/if}
 
-  <!-- MAIN OVERLAY — clicking the empty picture area (the overlay itself, not its buttons) pauses/plays -->
+  <!-- MAIN OVERLAY — clicking the empty picture area (the overlay itself, not its buttons) pauses/plays.
+       Its shade (.hud-shade, below) carries the HUD's text over any picture, a white one included (§147). -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/50 flex flex-col justify-between p-10 transition-opacity duration-500 z-50
+  <div class="absolute inset-0 hud-shade flex flex-col justify-between p-10 transition-opacity duration-500 z-50
               {showControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}"
        onclick={(e) => { if (e.target === e.currentTarget) togglePlay(); }}>
 
@@ -2430,10 +2431,10 @@
       <div class="min-w-0">
         <h1 class="text-3xl leading-[1.3] -my-[0.05em] font-bold drop-shadow-lg line-clamp-2">{item.Name}</h1>
         {#if item.SeriesName}
-          <p class="text-gray-400 text-lg mt-1 truncate">{item.SeriesName} · {item.SeasonName}</p>
+          <p class="text-gray-200 text-lg mt-1 truncate">{[item.SeriesName, item.SeasonName].filter(Boolean).join(' · ')}</p>
         {/if}
         {#if episodePosition}
-          <p class="text-gray-500 text-base mt-0.5 font-semibold tracking-wide">{episodePosition}</p>
+          <p class="text-gray-300 text-base mt-0.5 font-semibold tracking-wide">{episodePosition}</p>
         {/if}
       </div>
       <div class="flex items-center gap-4 shrink-0">
@@ -2859,6 +2860,19 @@
   onClose={async () => { pickerMode = null; if (wasPlayingBeforePicker) videoElement?.play().catch(() => {}); wasPlayingBeforePicker = false; await tick(); if (controlOpener && document.contains(controlOpener)) controlOpener.focus(); else playerContainer?.focus(); controlOpener = null; }} />
 
 <style>
+  /* The controls' shade (§147). Its job is the HUD's text over ANY picture: on a pure white frame — the worst case, no
+     picture is brighter — every line keeps 4.5:1, down to "Episode X of Y" under a two-line title at 120 % (y ≈ 258 px,
+     24 %: 0.675 black there). Top: 0.8 black to 14 %, then a smoothstep down to nothing at 54 %; bottom: a smoothstep from
+     54 % up to 0.85 at 92 % (the time labels from 78 %). Smoothstep is flat at both ends — three straight pieces (it was
+     0.8 → 0.65 at 28 % → 0 at 50 %) left a visible edge where the slope changed. Stops = 0.8·(1 − smoothstep), 8 steps. */
+  .hud-shade {
+    background-image: linear-gradient(to bottom,
+      rgb(0 0 0 / 0.8) 14%, rgb(0 0 0 / 0.766) 19%, rgb(0 0 0 / 0.675) 24%, rgb(0 0 0 / 0.547) 29%, rgb(0 0 0 / 0.4) 34%,
+      rgb(0 0 0 / 0.253) 39%, rgb(0 0 0 / 0.125) 44%, rgb(0 0 0 / 0.034) 49%, rgb(0 0 0 / 0) 54%,
+      rgb(0 0 0 / 0.037) 58.75%, rgb(0 0 0 / 0.133) 63.5%, rgb(0 0 0 / 0.269) 68.25%, rgb(0 0 0 / 0.425) 73%,
+      rgb(0 0 0 / 0.581) 77.75%, rgb(0 0 0 / 0.717) 82.5%, rgb(0 0 0 / 0.813) 87.25%, rgb(0 0 0 / 0.85) 92%);
+  }
+
   /* JASSUB (ASS subtitles) puts its canvas right after the <video>: above the picture, below spinner and controls. */
   :global(canvas.JASSUB) { z-index: 20; }
 

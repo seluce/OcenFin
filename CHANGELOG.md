@@ -26,6 +26,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Home banner together with the first rows.** It no longer waits for the watch history before it looks for titles,
   so its placeholder is gone at the same moment as the rest.
 - **A slightly taller home banner.** The picture behind the featured title gets a little more room.
+- **Episode details in the player stay readable.** Series, season and "Episode 2 of 8" at the top now stand out
+  over bright scenes too, as do the times at the bottom, thanks to a stronger, even shade behind the controls.
 - **Title pages complete sooner.** Seasons, episodes and suggestions now load together with the title instead of
   after it. The start, the settings and the way back onto a card also get focus as soon as there is something to focus.
 - **Search results without the wait for people.** Titles show as soon as they are found, and matching people
