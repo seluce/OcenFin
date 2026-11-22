@@ -14,6 +14,7 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Series pages with their years and seasons.** They show "2013 – today" or "2013 – 2016" and the number of seasons,
   as the cards already did, instead of an episode's running time.
 - **Time left on a started title.** Its page says how many minutes remain, next to the time it would end.
+- **Genres in the home banner.** They follow the year and rating, as on the title page.
 
 ### Changed
 

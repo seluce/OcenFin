@@ -319,6 +319,8 @@
   // has no such parameter in 12.2. Fields carries ItemFields only: everything else (BackdropImageTags, SeriesName,
   // ProductionYear, UserData …) comes anyway, and the server drops an unknown name without a word (§129).
   const FIELDS = "Overview";
+  // The banner's titles also name their genres (§139): its pool, and the two "recently added" rows it falls back to
+  const HERO_FIELDS = "Overview,Genres";
   const ROW_LIMIT = 12;   // uniform row length: rows are teasers, the catalog is the library
   const HERO_MIN = 3;     // use the "For You" pool only from this many usable titles on, otherwise new-additions fallback
                           // (exceptions deliberate: hero = 5-item rotation, collections = curated, their own cap)
@@ -439,7 +441,7 @@
     return fetch(
       `${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=Movie,Series&Recursive=true` +
       `&Filters=IsUnplayed&Genres=${genres.map(encodeURIComponent).join('|')}&SortBy=CommunityRating&SortOrder=Descending` +
-      `&Limit=40&Fields=${FIELDS}&EnableImageTypes=Backdrop,Primary,Logo&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts
+      `&Limit=40&Fields=${HERO_FIELDS}&EnableImageTypes=Backdrop,Primary,Logo&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts
     ).then(res => {
       if (!res.ok) { console.warn('hero pool: HTTP', res.status); return []; }
       return res.json().then(d => (d.Items || []).filter(i => i.BackdropImageTags?.length > 0));
@@ -553,7 +555,7 @@
       // Rows about what to watch next exist separately: Continue watching and Up next.
       const latestQuery = (type) =>
         `${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=${type}&Recursive=true` +
-        `&SortBy=DateCreated&SortOrder=Descending&Limit=${ROW_LIMIT}&Fields=${fields}&ImageTypeLimit=1&EnableTotalRecordCount=false`;
+        `&SortBy=DateCreated&SortOrder=Descending&Limit=${ROW_LIMIT}&Fields=${HERO_FIELDS}&ImageTypeLimit=1&EnableTotalRecordCount=false`;
       const pLatestMovies = fetch(latestQuery('Movie'), opts);
       const pLatestSeries = fetch(latestQuery('Series'), opts);
       // History: recently watched movies/episodes. Fetch more (40), since series are then
@@ -888,6 +890,9 @@
             {/if}
             {#if heroCurrent.CriticRating}
               <span class="flex items-center gap-1 text-red-400">• {heroCurrent.CriticRating}%</span>
+            {/if}
+            {#if heroCurrent.Genres?.length}
+              <span class="min-w-0 truncate font-normal">{heroCurrent.ProductionYear || heroCurrent.CommunityRating || heroCurrent.CriticRating ? '• ' : ''}{heroCurrent.Genres.slice(0, 3).join(' · ')}</span>
             {/if}
           </div>
           {#if heroCurrent.Overview}
