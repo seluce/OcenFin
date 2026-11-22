@@ -126,7 +126,7 @@ export default {
     sortRating: "Bewertung",
     sortRandom: "Zufällig",
     genres: "Genres",
-    ageRating: "Altersfreigabe (FSK)",
+    ageRating: "Altersfreigabe",
 
     // Details
     play: "Abspielen",

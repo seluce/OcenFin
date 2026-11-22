@@ -246,8 +246,14 @@
   let activeFilters   = $state({ isFavorite: false, isPlayed: false, isNotPlayed: false });
   let availableGenres = $state([]);
   let selectedGenres  = $state([]);
-  let selectedFsk     = $state([]);
-  const fskOptions    = ['0','6','12','16','18'];
+  // Age ratings: the ones the library's titles CARRY, from /Items/Filters (§144) — Filters2 has none, and the fixed
+  // FSK 0…18 chips found nothing in a library rated PG-13 or TV-MA. Asked when the menu first opens (the server walks
+  // every title for it), at once only when a remembered rating filter needs checking. The selection holds the
+  // server's own strings: the query sends exactly what the titles carry, and "FSK 12" / "FSK-12" share one chip.
+  let ratingsRaw      = $state([]);
+  let ratingsFor      = null;   // the library the list belongs to, or is being asked for
+  let selectedRatings = $state([]);
+  let ratingGroups    = $derived(groupRatings(ratingsRaw));
   // Track languages (Jellyfin 12+, via /Items/Filters2): raw { Name, Value } lists from the server,
   // grouped for display below. The selection holds CODES, not labels, so it survives a change of the
   // interface language and "Deutsch" can stand for both "ger" and "deu".
@@ -258,7 +264,7 @@
   let audioLangGroups    = $derived(groupLanguages(audioLangsRaw));
   let subtitleLangGroups = $derived(groupLanguages(subtitleLangsRaw));
   let hasFilters = $derived(activeFilters.isFavorite || activeFilters.isPlayed || activeFilters.isNotPlayed
-                  || selectedGenres.length > 0 || selectedFsk.length > 0
+                  || selectedGenres.length > 0 || selectedRatings.length > 0
                   || selectedAudioLangs.length > 0 || selectedSubtitleLangs.length > 0);
 
   // ── Sorting ─────────────────────────────────────────────────
@@ -299,7 +305,7 @@
 
   function currentlyHasFilters() {
     return activeFilters.isFavorite || activeFilters.isPlayed || activeFilters.isNotPlayed
-           || selectedGenres.length > 0 || selectedFsk.length > 0
+           || selectedGenres.length > 0 || selectedRatings.length > 0
            || selectedAudioLangs.length > 0 || selectedSubtitleLangs.length > 0;
   }
   function currentlyDefaultSort() {
@@ -341,6 +347,42 @@
     } catch { }
   }
 
+  // The age ratings the library's titles carry (§144). Only the legacy /Items/Filters has them (QueryFiltersLegacy;
+  // Jellyfin's web client takes its rating filter from there too) — it loads every title of the library on the
+  // server, so it is asked once per library visit, when the menu opens. Same types as the listing; a failed request
+  // is asked again at the next open.
+  async function loadRatings(libraryId, collectionType) {
+    if (!libraryId || ratingsFor === libraryId) return;
+    ratingsFor = libraryId;
+    const t0 = performance.now();
+    const types = LIBRARY_ITEM_TYPES[(collectionType || '').toLowerCase()] || 'Movie,Series';
+    try {
+      const res = await fetch(`${session.serverUrl}/Items/Filters?UserId=${selectedUser.Id}&ParentId=${libraryId}&IncludeItemTypes=${types}`, authOpts());
+      if (!res.ok) throw new Error(res.status);
+      const d = await res.json();
+      if (currentLibraryId !== libraryId) return;   // switched library meanwhile
+      ratingsRaw = (d.OfficialRatings || []).filter(r => typeof r === 'string' && r.trim());
+      dropUnknownFilters('ratings');
+      dlog('[Library] ratings', ratingsRaw.length, 'in', Math.round(performance.now() - t0), 'ms');
+    } catch { if (ratingsFor === libraryId) ratingsFor = null; }
+  }
+
+  // One chip per rating as people read it: "FSK 12", "FSK-12", "DE-12", "FSK ab 12" are one. Sorted by age — the
+  // number in it, else the usual age of a letter rating (G/U 0, PG 10, R 16, MA 17), else at the end.
+  const LETTER_AGE = { G: 0, U: 0, Y: 0, PG: 10, R: 16, MA: 17 };
+  const ratingAge = (r) => { const n = r.match(/\d+/); return n ? +n[0] : LETTER_AGE[r.split('-').pop().toUpperCase()] ?? 99; };
+  const ratingLabel = (raw) => { const de = raw.trim().match(/^(?:FSK|DE)[\s\-\/:]*(?:ab\s*)?(\d{1,2})$/i); return de ? `FSK ${+de[1]}` : raw.trim(); };
+  function groupRatings(list) {
+    const groups = new Map();
+    for (const raw of list) {
+      const label = ratingLabel(raw);
+      const g = groups.get(label.toLowerCase());
+      if (g) g.raws.push(raw); else groups.set(label.toLowerCase(), { label, raws: [raw] });
+    }
+    return [...groups.values()].sort((a, b) => ratingAge(a.label) - ratingAge(b.label)
+      || a.label.localeCompare(b.label, undefined, { numeric: true }));
+  }
+
   // The server names languages in English ("German (ger)") and lists every code the files carry, so
   // "ger" and "deu" arrive as two entries. Named in the interface language instead and grouped by that
   // name — one chip per language. "und" (a track without a language tag) is left out: "has an untagged
@@ -371,10 +413,7 @@
     if (activeFilters.isNotPlayed) f.push('IsUnplayed');
     if (f.length) q += `&Filters=${f.join(',')}`;
     for (const g of selectedGenres) q += `&Genres=${encodeURIComponent(g)}`;
-    if (selectedFsk.length) {
-      const ratings = selectedFsk.map(v => `FSK ${v}`).join('|');
-      q += `&OfficialRatings=${encodeURIComponent(ratings)}`;
-    }
+    if (selectedRatings.length) q += `&OfficialRatings=${encodeURIComponent(selectedRatings.join('|'))}`;
     // Any of the chosen languages; a series counts when one of its episodes has it (server side).
     if (selectedAudioLangs.length)    q += `&AudioLanguages=${selectedAudioLangs.map(encodeURIComponent).join(',')}`;
     if (selectedSubtitleLangs.length) q += `&SubtitleLanguages=${selectedSubtitleLangs.map(encodeURIComponent).join(',')}`;
@@ -411,9 +450,9 @@
       ? selectedGenres.filter(g => g !== name) : [...selectedGenres, name];
     if (!showFilterMenu) applyFilters();
   }
-  function toggleFsk(age) {
-    selectedFsk = selectedFsk.includes(age)
-      ? selectedFsk.filter(v => v !== age) : [...selectedFsk, age];
+  const ratingSelected = (group) => group.raws.some(r => selectedRatings.includes(r));
+  function toggleRating(group) {
+    selectedRatings = ratingSelected(group) ? selectedRatings.filter(r => !group.raws.includes(r)) : [...selectedRatings, ...group.raws];
     if (!showFilterMenu) applyFilters();
   }
   const langSelected = (sel, group) => group.codes.some(c => sel.includes(c));
@@ -428,8 +467,9 @@
   // a full reload per chip tap (tapping 3 genres = 3 fetches, all but the
   // last discarded). Snapshot on open; reload only on an actual change.
   let filterMenuSnapshot = '';
-  const filterStateKey = () => JSON.stringify([activeFilters, selectedGenres, selectedFsk, selectedAudioLangs, selectedSubtitleLangs]);
+  const filterStateKey = () => JSON.stringify([activeFilters, selectedGenres, selectedRatings, selectedAudioLangs, selectedSubtitleLangs]);
   function openFilterMenu(e) {
+    loadRatings(currentLibraryId, currentLibraryType);
     filterFocus.capture(e.currentTarget);
     filterMenuSnapshot = filterStateKey();
     showFilterMenu = true;
@@ -448,13 +488,14 @@
     const f = saved && typeof saved === 'object' ? saved : {};
     activeFilters = { isFavorite: !!f.isFavorite, isPlayed: !!f.isPlayed, isNotPlayed: !!f.isNotPlayed && !f.isPlayed };
     selectedGenres        = strings(f.genres);
-    selectedFsk           = strings(f.fsk).filter(v => fskOptions.includes(v));
+    // `fsk`: the fixed chips before §144 ('12') — kept as the very string they sent.
+    selectedRatings       = [...new Set([...strings(f.ratings), ...strings(f.fsk).filter(v => /^\d{1,2}$/.test(v)).map(v => `FSK ${v}`)])];
     selectedAudioLangs    = strings(f.audio);
     selectedSubtitleLangs = strings(f.subtitle);
   }
   function applyFilters() {
     if (currentLibraryId) onFiltersPersist?.(currentLibraryId, hasFilters ? {
-      ...activeFilters, genres: [...selectedGenres], fsk: [...selectedFsk],
+      ...activeFilters, genres: [...selectedGenres], ratings: [...selectedRatings],
       audio: [...selectedAudioLangs], subtitle: [...selectedSubtitleLangs],
     } : null);
     reloadCurrent();
@@ -465,20 +506,28 @@
   // With the menu open, its close applies the change.
   function dropUnknownFilters(kind) {
     const known = (list, key) => new Set(list.map(x => x?.[key]));
-    let dropped = 0;
+    let dropped = 0, changed = false;
     if (kind === 'genres') {
       const has = known(availableGenres, 'Name');
       const keep = selectedGenres.filter(x => has.has(x));
       dropped = selectedGenres.length - keep.length;
-      if (dropped) selectedGenres = keep;
+      if ((changed = dropped > 0)) selectedGenres = keep;
+    } else if (kind === 'ratings') {
+      // By CHIP, not by string: a remembered "FSK 16" (the old fixed chip's) means the chip "FSK 16" even where the
+      // titles say "DE-16", and a chosen chip takes every string of it along ("FSK 12" + "FSK-12") — else it would
+      // look chosen while some of its titles stayed out.
+      const chosen = new Set(selectedRatings.map(r => ratingLabel(r).toLowerCase()));
+      const keep = ratingGroups.filter(g => chosen.has(g.label.toLowerCase())).flatMap(g => g.raws);
+      dropped = selectedRatings.filter(r => !keep.includes(r)).length;
+      if ((changed = dropped > 0 || keep.length !== selectedRatings.length)) selectedRatings = keep;
     } else {
       const audio = known(audioLangsRaw, 'Value'), subs = known(subtitleLangsRaw, 'Value');
       const a = selectedAudioLangs.filter(x => audio.has(x)), t = selectedSubtitleLangs.filter(x => subs.has(x));
       dropped = selectedAudioLangs.length - a.length + selectedSubtitleLangs.length - t.length;
-      if (dropped) { selectedAudioLangs = a; selectedSubtitleLangs = t; }
+      if ((changed = dropped > 0)) { selectedAudioLangs = a; selectedSubtitleLangs = t; }
     }
-    if (!dropped) return;
-    dlog('[Library] dropped', dropped, 'remembered', kind, 'filter(s) the library no longer has');
+    if (!changed) return;
+    if (dropped) dlog('[Library] dropped', dropped, 'remembered', kind, 'filter(s) the library no longer has');
     if (!showFilterMenu) applyFilters();
   }
   // In the menu: clears what is set; like every change there, it is applied on close. The button goes
@@ -538,6 +587,8 @@
       const typed = !!LIBRARY_ITEM_TYPES[(lib.CollectionType || '').toLowerCase()];
       if (!typed) loadGenres(lib.Id);
       loadLanguages(lib.Id, typed);
+      ratingsRaw = []; ratingsFor = null;
+      if (untrack(() => selectedRatings.length)) loadRatings(lib.Id, lib.CollectionType);
       currentLibraryType = (lib.CollectionType || '').toLowerCase();
     }
     currentLibraryName = lib.Name;
@@ -1096,18 +1147,20 @@
           </div>
         </div>
 
-        <div class="flex flex-col gap-3">
-          <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{i18n.t.ageRating}</h3>
-          <div class="flex flex-wrap gap-3">
-            {#each fskOptions as age}
-              <button onclick={() => toggleFsk(age)}
-                class="px-5 py-2 rounded-full font-bold text-lg border-2 transition-all focus:outline-none focus:ring-4 focus:ring-white
-                       {selectedFsk.includes(age) ? 'bg-red-700 border-red-500 text-white' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-white'}">
-                FSK {age}
-              </button>
-            {/each}
+        {#if ratingGroups.length > 0}
+          <div class="flex flex-col gap-3">
+            <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{i18n.t.ageRating}</h3>
+            <div class="flex flex-wrap gap-3">
+              {#each ratingGroups as group (group.label)}
+                <button onclick={() => toggleRating(group)}
+                  class="px-5 py-2 rounded-full font-bold text-lg border-2 transition-all focus:outline-none focus:ring-4 focus:ring-white
+                         {ratingSelected(group) ? 'bg-red-700 border-red-500 text-white' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-white'}">
+                  {group.label}
+                </button>
+              {/each}
+            </div>
           </div>
-        </div>
+        {/if}
 
         {#each [['audio', i18n.t.audio, audioLangGroups, selectedAudioLangs], ['subtitle', i18n.t.subtitles, subtitleLangGroups, selectedSubtitleLangs]] as [kind, title, groups, sel] (kind)}
           {#if groups.length > 0}

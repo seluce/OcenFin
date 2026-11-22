@@ -44,6 +44,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   bar like every other card.
 - **One size for every switch in the settings.** Content and Navigation had smaller rows than the other categories;
   now every switch looks like the rest, with a line between each two.
+- **Age rating filter for every rating system.** The library's filter now offers the ratings your titles actually
+  carry, such as PG-13, TV-MA or FSK 12, instead of a fixed list of German ratings.
 - **Every dialog darkens the screen the same way.** They used four shades and the exit question a blur; now all use
   one, and the card menu and the small pickers in the settings fade in like the other dialogs.
 
