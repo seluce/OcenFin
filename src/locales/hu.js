@@ -166,6 +166,8 @@ export default {
     subtitleAddedLater: "Elmentve. Itt jelenik meg, amint a szerver beolvasta.",
     subtitleExactMatch: "Pontos egyezés",
     subtitleForced: "Kényszerített",
+    trackOriginal: "Eredeti",
+    trackExternal: "Külső",
     subtitleMachine: "Gépi fordítás",
     episodes: "Epizódok",
     episodeCount: { one: "{n} epizód", other: "{n} epizód" },

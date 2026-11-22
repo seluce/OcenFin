@@ -166,6 +166,8 @@ export default {
     subtitleAddedLater: "Tallennettu. Se näkyy tässä heti, kun palvelin on lukenut sen.",
     subtitleExactMatch: "Täsmällinen osuma",
     subtitleForced: "Pakotettu",
+    trackOriginal: "Alkuperäinen",
+    trackExternal: "Ulkoinen",
     subtitleMachine: "Konekäännetty",
     episodes: "Jaksot",
     episodeCount: { one: "{n} jakso", other: "{n} jaksoa" },

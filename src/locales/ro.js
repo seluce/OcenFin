@@ -166,6 +166,8 @@ export default {
     subtitleAddedLater: "Salvat. Va apărea aici imediat ce serverul îl citește.",
     subtitleExactMatch: "Potrivire exactă",
     subtitleForced: "Forțat",
+    trackOriginal: "Original",
+    trackExternal: "Extern",
     subtitleMachine: "Traducere automată",
     episodes: "Episoade",
     episodeCount: { one: "{n} episod", few: "{n} episoade", other: "{n} de episoade" },

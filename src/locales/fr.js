@@ -166,6 +166,8 @@ export default {
     subtitleAddedLater: "Enregistré. Il apparaîtra ici dès que le serveur l'aura pris en compte.",
     subtitleExactMatch: "Correspondance exacte",
     subtitleForced: "Forcé",
+    trackOriginal: "Original",
+    trackExternal: "Externe",
     subtitleMachine: "Traduction automatique",
     episodes: "Épisodes",
     episodeCount: { one: "{n} épisode", other: "{n} épisodes" },

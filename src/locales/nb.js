@@ -166,6 +166,8 @@ export default {
     subtitleAddedLater: "Lagret. Den vises her så snart serveren har lest den inn.",
     subtitleExactMatch: "Nøyaktig treff",
     subtitleForced: "Tvunget",
+    trackOriginal: "Original",
+    trackExternal: "Ekstern",
     subtitleMachine: "Maskinoversatt",
     episodes: "Episoder",
     episodeCount: { one: "{n} episode", other: "{n} episoder" },

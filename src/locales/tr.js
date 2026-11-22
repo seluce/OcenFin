@@ -166,6 +166,8 @@ export default {
     subtitleAddedLater: "Kaydedildi. Sunucu okur okumaz burada görünecek.",
     subtitleExactMatch: "Tam eşleşme",
     subtitleForced: "Zorunlu",
+    trackOriginal: "Orijinal",
+    trackExternal: "Harici",
     subtitleMachine: "Makine çevirisi",
     episodes: "Bölümler",
     episodeCount: { one: "{n} bölüm", other: "{n} bölüm" },

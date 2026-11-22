@@ -166,6 +166,8 @@ export default {
     subtitleAddedLater: "Uloženo. Objeví se tu, jakmile je server načte.",
     subtitleExactMatch: "Přesná shoda",
     subtitleForced: "Vynucené",
+    trackOriginal: "Originál",
+    trackExternal: "Externí",
     subtitleMachine: "Strojový překlad",
     episodes: "Díly",
     episodeCount: { one: "{n} díl", few: "{n} díly", other: "{n} dílů" },

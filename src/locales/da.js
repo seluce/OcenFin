@@ -166,6 +166,8 @@ export default {
     subtitleAddedLater: "Gemt. Den vises her, så snart serveren har læst den ind.",
     subtitleExactMatch: "Præcist match",
     subtitleForced: "Tvungen",
+    trackOriginal: "Original",
+    trackExternal: "Ekstern",
     subtitleMachine: "Maskinoversat",
     episodes: "Afsnit",
     episodeCount: { one: "{n} afsnit", other: "{n} afsnit" },

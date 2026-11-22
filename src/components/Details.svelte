@@ -3,6 +3,7 @@
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
   import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, minutesLeft, getItemSubtitle, authHeaders, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
   import { pickDefaultTracks, rememberChoice, orderTracks } from '../trackmemory.js';
+  import { trackLabels } from '../tracklabel.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
   import { buildPlayQueue, playableFor, hasEarlierEpisodes, markEarlierPlayed } from '../playback.js';
   import { session } from '../session.svelte.js';
@@ -156,6 +157,8 @@
   // The audio and subtitle lists in the order orderTracks gives them (the profile's languages first).
   let audioChoices    = $derived(orderTracks(selectedSource?.MediaStreams, 'Audio', playbackPrefs, baseLang(i18n.lang)));
   let subtitleChoices = $derived(orderTracks(selectedSource?.MediaStreams, 'Subtitle', playbackPrefs, baseLang(i18n.lang)));
+  // Their names (tracklabel.js): language, flags and what the Title adds; tracks that read the same get a number
+  let trackNames = $derived(trackLabels(selectedSource?.MediaStreams));
 
   // Choose default audio/subtitle for a source — the shared rule in trackmemory.js, which the Player
   // applies to every start that does not come through this page (series play button, play-all, …).
@@ -289,8 +292,6 @@
   onDestroy(() => { window.removeEventListener('keydown', onDropdownBack, true); window.removeEventListener('click', onDropdownOutside); });
 
   // Display labels for the trigger buttons
-  function audioLabel(s)    { return s ? (s.DisplayTitle || `${s.Language || i18n.t.unknown} – ${s.Codec}`) : ''; }
-  function subtitleLabel(s) { return s ? (s.DisplayTitle || s.Language || i18n.t.unknown) : ''; }
 
   // ---- Add to collection / playlist -----------------------------------------------------------
   // The dialog itself lives in the shared component <AddToPicker>; here only the trigger.
@@ -1014,6 +1015,12 @@
   }
 </script>
 
+<!-- An audio or subtitle track: language, forced/SDH/original and what its title adds, then codec or format dimmer (tracklabel.js, §138) -->
+{#snippet trackName(s)}
+  {@const l = trackNames.get(s?.Index)}
+  {#if l}{l.main}{#if l.tech}<span class="opacity-70">{' · ' + l.tech}</span>{/if}{/if}
+{/snippet}
+
 <!-- A version as the list and its field name it: its own name, then resolution, range and codec dimmer (sourceLabels) -->
 {#snippet versionLabel(src)}
   {@const l = sourceLabels.get(src?.Id)}
@@ -1379,7 +1386,7 @@
                   <div class="flex-1 min-w-0 relative" data-dropdown data-focus-trap={openDropdown === 'audio' || undefined}>
                     <button onclick={(e) => toggleDropdown('audio', e)}
                       class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
-                      <span class="truncate">{audioLabel(getMediaStreams('Audio').find(s => s.Index === selectedAudioIndex))}</span>
+                      <span class="truncate">{@render trackName(getMediaStreams('Audio').find(s => s.Index === selectedAudioIndex))}</span>
                       <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'audio' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                     </button>
                     {#if openDropdown === 'audio'}
@@ -1387,7 +1394,7 @@
                         {#each audioChoices as stream (stream.Index)}
                           <button onclick={() => { pickTrack('audio', stream.Index); closeDropdown(); }} data-opt data-active={stream.Index === selectedAudioIndex || undefined}
                             class="text-left text-sm px-3 py-2 scroll-my-1 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedAudioIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
-                            {audioLabel(stream)}
+                            {@render trackName(stream)}
                           </button>
                         {/each}
                       </div>
@@ -1399,7 +1406,7 @@
                   <svg class="w-6 h-6 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
                   </svg>
-                  <span class="text-sm font-semibold text-gray-300">{getMediaStreams('Audio')[0].DisplayTitle || getMediaStreams('Audio')[0].Language || getMediaStreams('Audio')[0].Codec}</span>
+                  <span class="text-sm font-semibold text-gray-300">{@render trackName(getMediaStreams('Audio')[0])}</span>
                 </div>
               {/if}
 
@@ -1412,7 +1419,7 @@
                   <div class="flex-1 min-w-0 relative" data-dropdown data-focus-trap={openDropdown === 'subtitle' || undefined}>
                     <button onclick={(e) => toggleDropdown('subtitle', e)} data-subtitle-trigger
                       class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
-                      <span class="truncate">{selectedSubtitleIndex === -1 ? i18n.t.subtitleOff : subtitleLabel(getMediaStreams('Subtitle').find(s => s.Index === selectedSubtitleIndex))}</span>
+                      <span class="truncate">{#if selectedSubtitleIndex === -1}{i18n.t.subtitleOff}{:else}{@render trackName(getMediaStreams('Subtitle').find(s => s.Index === selectedSubtitleIndex))}{/if}</span>
                       <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'subtitle' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                     </button>
                     {#if openDropdown === 'subtitle'}
@@ -1424,7 +1431,7 @@
                         {#each subtitleChoices as stream (stream.Index)}
                           <button onclick={() => { pickTrack('subtitle', stream.Index); closeDropdown(); }} data-opt data-active={stream.Index === selectedSubtitleIndex || undefined}
                             class="text-left text-sm px-3 py-2 scroll-my-1 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedSubtitleIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
-                            {subtitleLabel(stream)}
+                            {@render trackName(stream)}
                           </button>
                         {/each}
                         {#if canSearchSubtitles}

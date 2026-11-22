@@ -166,6 +166,8 @@ export default {
     subtitleAddedLater: "저장했습니다. 서버가 읽어 들이면 여기에 표시됩니다.",
     subtitleExactMatch: "정확히 일치",
     subtitleForced: "강제",
+    trackOriginal: "원어",
+    trackExternal: "외부",
     subtitleMachine: "기계 번역",
     episodes: "에피소드",
     episodeCount: { other: "에피소드 {n}개" },

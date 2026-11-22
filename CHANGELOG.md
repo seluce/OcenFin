@@ -32,6 +32,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   that would still read the same with their size.
 - **Audio and subtitle lists start with your languages.** On the title page and in the player alike; on the title page
   they now open over the page instead of pushing it down.
+- **Readable audio and subtitle names.** Each track shows its language in the app's language, forced or SDH and its
+  format, instead of the file's jumble of codec words and repeated languages.
 
 ### Fixed
 

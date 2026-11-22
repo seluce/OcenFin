@@ -166,6 +166,8 @@ export default {
     subtitleAddedLater: "Opgeslagen. Hij verschijnt hier zodra de server hem heeft ingelezen.",
     subtitleExactMatch: "Exacte overeenkomst",
     subtitleForced: "Geforceerd",
+    trackOriginal: "Origineel",
+    trackExternal: "Extern",
     subtitleMachine: "Machinaal vertaald",
     episodes: "Afleveringen",
     episodeCount: { one: "{n} aflevering", other: "{n} afleveringen" },

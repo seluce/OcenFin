@@ -166,6 +166,8 @@ export default {
     subtitleAddedLater: "Сохранено. Появятся здесь, как только сервер их прочитает.",
     subtitleExactMatch: "Точное совпадение",
     subtitleForced: "Принудительные",
+    trackOriginal: "Оригинал",
+    trackExternal: "Внешние",
     subtitleMachine: "Машинный перевод",
     episodes: "Серии",
     episodeCount: { one: "{n} серия", few: "{n} серии", many: "{n} серий", other: "{n} серии" },

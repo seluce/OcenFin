@@ -2,6 +2,7 @@
   import { i18n, plural, baseLang } from '../i18n.svelte.js';
   import { isBackKey, focusOnMount, authHeaders, dlog, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS, asSubSize, asSubPosition, SUB_STEPS, subtitleTextStyle } from '../utils.js';
   import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks, orderTracks } from '../trackmemory.js';
+  import { trackLabels } from '../tracklabel.js';
   import { session } from '../session.svelte.js';
   import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady, syncNow } from '../syncplay.js';
@@ -474,6 +475,7 @@
   // The track menu, in the order Details' lists use — the profile's languages first (trackmemory.js, §134)
   let audioMenu    = $derived(orderTracks(mediaStreams, 'Audio', playbackPrefs, baseLang(i18n.lang)));
   let subtitleMenu = $derived(orderTracks(mediaStreams, 'Subtitle', playbackPrefs, baseLang(i18n.lang)));
+  let trackNames   = $derived(trackLabels(mediaStreams));   // tracklabel.js, as in Details
 
   // --- Playback info overlay (opt-in via playbackPrefs.showPlaybackInfo) ----------------------
   let showInfoOverlay = $state(false);
@@ -2690,10 +2692,11 @@
 
           {#if settingsTab === 'audio'}
             {#each audioMenu as stream (stream.Index)}
+              {@const l = trackNames.get(stream.Index)}
               <button onclick={() => changeTrack('audio', stream.Index)}
                 class="text-left p-3 rounded-lg font-medium text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors
                        {selectedAudioIndex === stream.Index ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
-                {stream.DisplayTitle || `${stream.Language || i18n.t.unknown} – ${stream.Codec}`}
+                {l?.main}{#if l?.tech}<span class="opacity-70">{' · ' + l.tech}</span>{/if}
               </button>
             {:else}
               <p class="text-gray-500 text-sm p-3">—</p>
@@ -2705,11 +2708,12 @@
               {i18n.t.subtitleOff}
             </button>
             {#each subtitleMenu as stream (stream.Index)}
+              {@const l = trackNames.get(stream.Index)}
               <button onclick={() => changeTrack('subtitle', stream.Index)}
                 onfocus={() => prefetchSubtitle(stream)} onmouseenter={() => prefetchSubtitle(stream)}
                 class="text-left p-3 rounded-lg font-medium text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors
                        {selectedSubtitleIndex === stream.Index ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
-                {stream.DisplayTitle || stream.Language || i18n.t.unknown}
+                {l?.main}{#if l?.tech}<span class="opacity-70">{' · ' + l.tech}</span>{/if}
               </button>
             {/each}
           {/if}

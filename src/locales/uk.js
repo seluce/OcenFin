@@ -166,6 +166,8 @@ export default {
     subtitleAddedLater: "Збережено. З’являться тут, щойно сервер їх прочитає.",
     subtitleExactMatch: "Точний збіг",
     subtitleForced: "Примусові",
+    trackOriginal: "Оригінал",
+    trackExternal: "Зовнішні",
     subtitleMachine: "Машинний переклад",
     episodes: "Серії",
     episodeCount: { one: "{n} серія", few: "{n} серії", many: "{n} серій", other: "{n} серії" },

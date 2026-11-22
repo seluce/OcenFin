@@ -166,6 +166,8 @@ export default {
     subtitleAddedLater: "Sparad. Den visas här så snart servern har läst in den.",
     subtitleExactMatch: "Exakt träff",
     subtitleForced: "Tvingad",
+    trackOriginal: "Original",
+    trackExternal: "Extern",
     subtitleMachine: "Maskinöversatt",
     episodes: "Avsnitt",
     episodeCount: { one: "{n} avsnitt", other: "{n} avsnitt" },
