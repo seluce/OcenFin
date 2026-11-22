@@ -6,7 +6,55 @@
 // — which ones those are is computed below from the prefs and server capabilities).
 // ============================================================
 
-import { dlog, authHeaders } from './utils.js';
+import { dlog, authHeaders, GRAPHIC_SUB_CODECS, CLIENT_SUB_CODECS } from './utils.js';
+
+// ---- When OcenFin itself asks for a transcode ------------------------------------------------
+// ONE rule for the Player's start and Details' media info (which shows the outcome before Play). The server
+// still has the last word — its answer names further reasons (TranscodeReasons) — but these are OCENFIN's.
+export const DIRECT_MAX_BITRATE    = 120000000;   // 120 Mbit/s (local network) — limit for Direct Play
+// When transcoding (e.g. burning forced ASS subtitles into the picture) the source bitrate is often too high
+// (HEVC remuxes ~100+ Mbit/s) → a real-time transcode stutters (fragLoadTimeOut/bufferStalled). So the
+// transcode target is capped; Direct Play stays unlimited (the B4 decodes natively).
+export const TRANSCODE_MAX_BITRATE = 20000000;    // 20 Mbit/s — high 1080p quality, transcodes well
+
+// The file's default audio track: IsDefault, else the first; -1 when there is none.
+export function defaultAudioIndex(streams) {
+  const audio = (streams || []).filter(s => s.Type === 'Audio');
+  return (audio.find(s => s.IsDefault) || audio[0])?.Index ?? -1;
+}
+// PGS/VobSub are drawn by libbitsub when the profile wants that and burn-in is off.
+export const drawsGraphicSubs = (prefs) => !!(prefs?.pgsRendering && !prefs?.burnSubtitles);
+// Is this subtitle track burned into the picture? Text tracks only with burn-in on; bitmap ones
+// whenever libbitsub does not draw them (switched off, or a codec it cannot draw — DVB).
+export function subtitleBurns(stream, prefs) {
+  if (prefs?.burnSubtitles) return true;
+  const codec = (stream?.Codec || '').toLowerCase();
+  return GRAPHIC_SUB_CODECS.includes(codec) && !(drawsGraphicSubs(prefs) && CLIENT_SUB_CODECS.includes(codec));
+}
+// What to ask the server for. A track other than the file's default turns Direct Play off and audio copy
+// with it, so the server outputs the CHOSEN track instead of copying the default one; a burned-in subtitle
+// turns Direct Play off. Audio counts as chosen only when the default is KNOWN (no streams → Direct Play).
+export function playbackPlan(streams, audioIndex, subtitleIndex, prefs, forceTranscode = false) {
+  const defAudio = defaultAudioIndex(streams);
+  const explicitAudio = audioIndex !== -1 && defAudio !== -1 && audioIndex !== defAudio;
+  const sub = subtitleIndex !== -1 ? (streams || []).find(s => s.Index === subtitleIndex && s.Type === 'Subtitle') : null;
+  const subBurns = subtitleIndex !== -1 && subtitleBurns(sub, prefs);
+  const direct = !explicitAudio && !subBurns && !forceTranscode;
+  return {
+    explicitAudio, subBurns,
+    enableDirectPlay: direct, enableDirectStream: direct, allowAudioStreamCopy: !explicitAudio,
+    maxBitrate: direct ? DIRECT_MAX_BITRATE : TRANSCODE_MAX_BITRATE,
+    burnSubtitles: prefs?.burnSubtitles, clientGraphicSubs: drawsGraphicSubs(prefs),
+  };
+}
+// How the server's answer plays, and how the app names it (the Player's info overlay, Details' media info).
+export const playMethodOf = (ms) => ms?.TranscodingUrl ? 'Transcode'
+  : (ms?.SupportsDirectStream && !ms.SupportsDirectPlay ? 'DirectStream' : 'DirectPlay');
+export const PLAY_METHODS = {
+  DirectPlay:   { label: 'Direct Play',   color: 'text-green-400' },
+  DirectStream: { label: 'Direct Stream', color: 'text-sky-400' },
+  Transcode:    { label: 'Transcode',     color: 'text-amber-400' },
+};
 
 // Device profile for the LG B4 (webOS, Chromium-based <video> player).
 // Deliberate choices:
@@ -19,7 +67,7 @@ import { dlog, authHeaders } from './utils.js';
 //  • Subtitles: text tracks delivered externally (VTT overlay; ASS via libass/JASSUB), PGS/VobSub
 //    rendered client-side via libbitsub where possible — burned in only when the prefs force it
 //    (see textSub/graphicSub below).
-export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false, clientGraphicSubs = false) {
+export function buildDeviceProfile(maxBitrate = DIRECT_MAX_BITRATE, burnSubtitles = false, clientGraphicSubs = false) {
   // Text subtitles (SubRip/ASS): with burnSubtitles=true burn into the picture (with styling, but
   // transcode + hard switch), otherwise deliver externally as VTT → our own overlay renderer
   // (no styling, but Direct Play + soft switch).
@@ -65,7 +113,7 @@ export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false
         // of failing / silent HEVC playback. AAC is universally MSE-compatible.
         Container: 'ts', Type: 'Video', VideoCodec: 'h264', AudioCodec: 'aac',
         Protocol: 'hls', Context: 'Streaming',
-        MaxAudioChannels: '2', MinSegments: '1',
+        MaxAudioChannels: '2', MinSegments: 1,   // a number in the schema (MaxAudioChannels is a string there)
       },
       { Container: 'aac', Type: 'Audio', AudioCodec: 'aac', Protocol: 'http', Context: 'Streaming', MaxAudioChannels: '2' },
     ],
@@ -107,7 +155,7 @@ export function buildDeviceProfile(maxBitrate = 120000000, burnSubtitles = false
 export async function getPlaybackInfo({
   serverUrl, userId, token, itemId,
   audioStreamIndex = null, subtitleStreamIndex = null,
-  maxBitrate = 120000000, startTicks = 0,
+  maxBitrate = DIRECT_MAX_BITRATE, startTicks = 0,
   enableDirectPlay = true, enableDirectStream = true, allowAudioStreamCopy = true,
   burnSubtitles = false, mediaSourceId = null, clientGraphicSubs = false,
 }) {
@@ -177,7 +225,7 @@ export async function getPlaybackInfo({
   const urlSubIdx   = ms?.TranscodingUrl?.match(/SubtitleStreamIndex=(-?\d+)/)?.[1] ?? null;
   // Detailed diagnostics — show EXACTLY why/how the server plays.
   dlog('[OcenFin] PlaybackInfo:', {
-    method: ms?.TranscodingUrl ? 'Transcode' : (ms?.SupportsDirectPlay ? 'DirectPlay' : 'DirectStream'),
+    method: playMethodOf(ms),
     transcoding: !!ms?.TranscodingUrl,
     subProtocol: ms?.TranscodingSubProtocol,
     container: ms?.Container,
@@ -213,18 +261,20 @@ function _pfKey(p) {
   return [p.itemId, p.userId || '', p.audioStreamIndex ?? -1, p.subtitleStreamIndex ?? -1, !!p.burnSubtitles,
           p.mediaSourceId || '', !!p.clientGraphicSubs,
           p.enableDirectPlay ?? true, p.enableDirectStream ?? true, p.allowAudioStreamCopy ?? true,
-          p.maxBitrate ?? 120000000].join('|');
+          p.maxBitrate ?? DIRECT_MAX_BITRATE].join('|');
 }
 
 export function prefetchPlaybackInfo(params) {
   if (!params?.itemId) return;
   const key = _pfKey(params);
   const existing = _pfCache.get(params.itemId);
-  if (existing && existing.key === key && Date.now() - existing.ts < _PF_TTL) return;  // already freshly loaded
+  if (existing && existing.key === key && Date.now() - existing.ts < _PF_TTL && !existing.error) return;  // already freshly loaded (or on its way)
   // Entries only leave when a start takes them; a prefetch nobody used (the countdown cancelled, the
   // player left) stayed for good — days of a running TV. Expired ones go here.
   for (const [id, e] of _pfCache) if (Date.now() - e.ts >= _PF_TTL) _pfCache.delete(id);
-  _pfCache.set(params.itemId, { ts: Date.now(), key, promise: getPlaybackInfo(params).catch(() => null) });
+  const entry = { ts: Date.now(), key, promise: null, error: null };
+  entry.promise = getPlaybackInfo(params).catch((e) => { entry.error = e; return null; });
+  _pfCache.set(params.itemId, entry);
 }
 
 export async function getPlaybackInfoFast(params) {
@@ -235,6 +285,17 @@ export async function getPlaybackInfoFast(params) {
     if (info) { dlog('[OcenFin] PlaybackInfo taken from prefetch'); return info; }
   }
   return getPlaybackInfo(params);
+}
+
+// The answer a start with these parameters will get — asked through the prefetch cache, so a Play within the
+// TTL takes it instead of asking again (Details' media info). Left in the cache; a refusal throws as in
+// getPlaybackInfo(), with its code.
+export async function peekPlaybackInfo(params) {
+  prefetchPlaybackInfo(params);
+  const entry = _pfCache.get(params.itemId);
+  const info = await entry.promise;
+  if (info) return info;
+  throw entry.error || new Error('PlaybackInfo failed');
 }
 
 // Builds the final playback URL + metadata from the server's decision.
@@ -270,9 +331,7 @@ export function resolveStream({ serverUrl, token, itemId, mediaSource, audioStre
   // server-side audio track selection isn't possible here, so no index parameters).
   const msId = mediaSource?.Id || itemId;
   const url = `${serverUrl}/Videos/${itemId}/stream?static=true&mediaSourceId=${msId}&ApiKey=${token}`;
-  const method = (mediaSource && mediaSource.SupportsDirectStream && !mediaSource.SupportsDirectPlay)
-    ? 'DirectStream' : 'DirectPlay';
-  return { url, isHls: false, method, mediaSource };
+  return { url, isHls: false, method: playMethodOf(mediaSource), mediaSource };
 }
 
 // Returns the external VTT subtitle URL for a track (if DeliveryMethod = External).

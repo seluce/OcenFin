@@ -67,7 +67,7 @@ export async function playThemeFor(item, userId, volumePercent) {
   try {
     const res = await fetch(
       `${session.serverUrl}/Items/${item.Id}/ThemeMedia?userId=${userId}&inheritFromParent=true`,
-      { headers: authHeaders(session.token) }
+      { headers: authHeaders() }
     );
     // Two different failures that must NOT be treated alike. Superseded means a newer call already
     // owns the audio — touching it here would cut that one off. A bad answer for THIS title means we

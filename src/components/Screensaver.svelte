@@ -1,6 +1,6 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { authHeaders } from '../utils.js';
+  import { authHeaders, timeOfDay } from '../utils.js';
   import { session } from '../session.svelte.js';
   import { watchlist } from '../watchlist.svelte.js';
   import { onMount, onDestroy } from 'svelte';
@@ -23,7 +23,7 @@
     // The app language IS a valid BCP-47 tag — Chromium 120 ships full ICU, so 'fr', 'pl', 'pt'
     // etc. all format correctly. The old de/en special-case gave six of eight languages English dates.
     const loc = i18n.lang || 'en';
-    timeString = now.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit', hour12: !use24h });
+    timeString = timeOfDay(now, use24h);
     dateString = now.toLocaleDateString(loc, { weekday: 'long', day: 'numeric', month: 'long' });
   }
 
@@ -64,9 +64,9 @@
 
   async function fetchBackdrops(filter) {
     const url = `${session.serverUrl}/Items?UserId=${userId}&Recursive=true&IncludeItemTypes=Movie,Series`
-              + `${filter}&SortBy=Random&Limit=80&Fields=BackdropImageTags&ImageTypeLimit=1`
+              + `${filter}&SortBy=Random&Limit=80&ImageTypeLimit=1`
               + `&EnableImageTypes=Backdrop,Logo&EnableTotalRecordCount=false`;
-    const res = await fetch(url, { headers: authHeaders(session.token) });
+    const res = await fetch(url, { headers: authHeaders() });
     if (!res.ok) return [];
     const data = await res.json();
     return (data.Items || [])
@@ -82,9 +82,9 @@
   // Next Up = the next episode of ongoing series → for "current". Returns episodes; shown is the
   // SERIES backdrop (via SeriesId + inherited ParentBackdropImageTags) with the series title.
   async function fetchNextUp() {
-    const url = `${session.serverUrl}/Shows/NextUp?UserId=${userId}&Limit=40&Fields=ParentBackdropImageTags`
+    const url = `${session.serverUrl}/Shows/NextUp?UserId=${userId}&Limit=40`
               + `&ImageTypeLimit=1&EnableImageTypes=Backdrop,Logo&EnableTotalRecordCount=false`;
-    const res = await fetch(url, { headers: authHeaders(session.token) });
+    const res = await fetch(url, { headers: authHeaders() });
     if (!res.ok) return [];
     const data = await res.json();
     return (data.Items || [])

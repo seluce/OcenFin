@@ -25,7 +25,7 @@ export async function measureClockOffset(serverUrl, token, samples = 4) {
     const t0 = Date.now();
     let data;
     try {
-      const res = await fetch(`${serverUrl}/GetUtcTime`, { headers: headers(token) });
+      const res = await fetch(`${serverUrl}/GetUtcTime`, { headers: authHeaders(token) });
       if (!res.ok) return _clockOffset;                 // endpoint absent → keep whatever we have
       data = await res.json();
     } catch { return _clockOffset; }
@@ -43,17 +43,13 @@ export async function measureClockOffset(serverUrl, token, samples = 4) {
   return _clockOffset;
 }
 
-// One auth scheme, one source: utils.authHeaders. The local alias stays so the
-// many call sites remain unchanged (headers(token) instead of rewriting everywhere).
-const headers = (token) => authHeaders(token);
-
 // Registers the session as controllable — a prerequisite for SyncPlay to address the session
 // within a group. Idempotent; once after login is enough.
 export async function registerSession(serverUrl, token) {
   try {
     await fetch(`${serverUrl}/Sessions/Capabilities/Full`, {
       method: 'POST',
-      headers: headers(token),
+      headers: authHeaders(token),
       body: JSON.stringify({
         PlayableMediaTypes: ['Video', 'Audio'],
         SupportedCommands: ['PlayState', 'Play', 'DisplayMessage'],
@@ -68,7 +64,7 @@ export async function registerSession(serverUrl, token) {
 // Available groups incl. participants. Returns [] on error.
 export async function listSyncGroups(serverUrl, token) {
   try {
-    const res = await fetch(`${serverUrl}/SyncPlay/List`, { headers: headers(token) });
+    const res = await fetch(`${serverUrl}/SyncPlay/List`, { headers: authHeaders(token) });
     if (!res.ok) return [];
     return await res.json();   // [{ GroupId, GroupName, Participants: [name], LastUpdatedAt }]
   } catch { return []; }
@@ -77,7 +73,7 @@ export async function listSyncGroups(serverUrl, token) {
 export async function createSyncGroup(serverUrl, token, groupName) {
   try {
     const res = await fetch(`${serverUrl}/SyncPlay/New`, {
-      method: 'POST', headers: headers(token), body: JSON.stringify({ GroupName: groupName }),
+      method: 'POST', headers: authHeaders(token), body: JSON.stringify({ GroupName: groupName }),
     });
     return res.ok;
   } catch { return false; }
@@ -86,7 +82,7 @@ export async function createSyncGroup(serverUrl, token, groupName) {
 export async function joinSyncGroup(serverUrl, token, groupId) {
   try {
     const res = await fetch(`${serverUrl}/SyncPlay/Join`, {
-      method: 'POST', headers: headers(token), body: JSON.stringify({ GroupId: groupId }),
+      method: 'POST', headers: authHeaders(token), body: JSON.stringify({ GroupId: groupId }),
     });
     return res.ok;
   } catch { return false; }
@@ -94,7 +90,7 @@ export async function joinSyncGroup(serverUrl, token, groupId) {
 
 export async function leaveSyncGroup(serverUrl, token) {
   try {
-    const res = await fetch(`${serverUrl}/SyncPlay/Leave`, { method: 'POST', headers: headers(token) });
+    const res = await fetch(`${serverUrl}/SyncPlay/Leave`, { method: 'POST', headers: authHeaders(token) });
     return res.ok;
   } catch { return false; }
 }
@@ -113,7 +109,7 @@ export function syncSocketUrl(serverUrl, token, deviceId) {
 export async function setSyncIgnoreWait(serverUrl, token, ignore) {
   try {
     await fetch(`${serverUrl}/SyncPlay/SetIgnoreWait`, {
-      method: 'POST', headers: headers(token), body: JSON.stringify({ IgnoreWait: ignore }),
+      method: 'POST', headers: authHeaders(token), body: JSON.stringify({ IgnoreWait: ignore }),
     });
     return true;
   } catch { return false; }
@@ -124,7 +120,7 @@ export async function setSyncIgnoreWait(serverUrl, token, ignore) {
 export async function setSyncQueue(serverUrl, token, itemId, startPositionTicks) {
   try {
     const res = await fetch(`${serverUrl}/SyncPlay/SetNewQueue`, {
-      method: 'POST', headers: headers(token),
+      method: 'POST', headers: authHeaders(token),
       body: JSON.stringify({ PlayingQueue: [itemId], PlayingItemPosition: 0, StartPositionTicks: startPositionTicks }),
     });
     return res.ok;
@@ -136,28 +132,19 @@ export async function setSyncQueue(serverUrl, token, itemId, startPositionTicks)
 export async function sendSyncCommand(serverUrl, token, action, positionTicks) {
   try {
     const body = action === 'Seek' ? JSON.stringify({ PositionTicks: positionTicks }) : undefined;
-    const res = await fetch(`${serverUrl}/SyncPlay/${action}`, { method: 'POST', headers: headers(token), body });
+    const res = await fetch(`${serverUrl}/SyncPlay/${action}`, { method: 'POST', headers: authHeaders(token), body });
     return res.ok;
   } catch { return false; }
 }
 
-// Buffer handshake: "I'm buffering/seeking, NOT ready" → the group waits.
-export async function sendSyncBuffering(serverUrl, token, positionTicks, isPlaying, playlistItemId) {
-  try {
-    await fetch(`${serverUrl}/SyncPlay/Buffering`, {
-      method: 'POST', headers: headers(token),
-      body: JSON.stringify({ When: new Date(syncNow()).toISOString(), PositionTicks: positionTicks, IsPlaying: isPlaying, PlaylistItemId: playlistItemId }),
-    });
-    return true;
-  } catch { return false; }
+// Buffer handshake. Buffering: "I'm buffering/seeking, NOT ready" → the group waits. Ready: "I'm ready (at this
+// position)" → when all are ready, the server releases playback (Unpause). One sender for both (§142); true when the
+// server took it.
+function sendSyncState(state, serverUrl, token, positionTicks, isPlaying, playlistItemId) {
+  return fetch(`${serverUrl}/SyncPlay/${state}`, {
+    method: 'POST', headers: authHeaders(token),
+    body: JSON.stringify({ When: new Date(syncNow()).toISOString(), PositionTicks: positionTicks, IsPlaying: isPlaying, PlaylistItemId: playlistItemId }),
+  }).then(r => r.ok, () => false);
 }
-// "I'm ready (at this position)" → when all are ready, the server releases playback (Unpause).
-export async function sendSyncReady(serverUrl, token, positionTicks, isPlaying, playlistItemId) {
-  try {
-    await fetch(`${serverUrl}/SyncPlay/Ready`, {
-      method: 'POST', headers: headers(token),
-      body: JSON.stringify({ When: new Date(syncNow()).toISOString(), PositionTicks: positionTicks, IsPlaying: isPlaying, PlaylistItemId: playlistItemId }),
-    });
-    return true;
-  } catch { return false; }
-}
+export const sendSyncBuffering = (...report) => sendSyncState('Buffering', ...report);
+export const sendSyncReady     = (...report) => sendSyncState('Ready', ...report);

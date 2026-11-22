@@ -3,6 +3,90 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## 2026.11.22
+
+### Added
+
+- **Genres and director on the title page.** A quiet line above the plot names them, as the library's info preview
+  already did for the genres.
+- **The whole plot on the title page.** Where the description is cut short, you can select it and OK shows all of it,
+  split into paragraphs so a long one reads easily.
+- **Episode pages say which episode they are.** Season and episode number and the air date stand next to the runtime.
+- **Series pages with their years and seasons.** They show "2013 – today" or "2013 – 2016" and the number of seasons,
+  as the cards already did, instead of an episode's running time.
+- **Time left on a started title.** Its page says how many minutes remain, next to the time it would end.
+- **The home banner with the title page's details.** Its line now shows a series' years and seasons, a film's running
+  time, the age rating, both ratings and the genres, just as the title page and the library's info preview do.
+- **How a title will play, before you press Play.** Media info says whether the chosen version, audio and subtitle play
+  directly or get converted, and why; the audio and subtitle lists mark the tracks that would convert or burn in.
+
+### Changed
+
+- **Quicker steps from title to title, most of all in large libraries.** Each move takes the TV less work on every
+  screen, and a library answers a thousand titles down as quickly as at its top, where it used to slow with every page.
+- **Quicker start.** Of the twenty languages on board, the app now prepares only the one it shows.
+- **Home banner together with the first rows.** It no longer waits for the watch history before it looks for titles,
+  so its placeholder is gone at the same moment as the rest.
+- **A slightly taller home banner.** The picture behind the featured title gets a little more room.
+- **Episode details in the player stay readable.** Series, season and "Episode 2 of 8" at the top now stand out
+  over bright scenes too, as do the times at the bottom, thanks to a stronger, even shade behind the controls.
+- **Media info in more detail.** It names the Dolby Vision profile, bit depth, exact frame rate, the audio's sample
+  rate and the file, and writes sizes and tracks the way the rest of the app does.
+- **Title pages complete sooner.** Seasons, episodes and suggestions now load together with the title instead of
+  after it. The start, the settings and the way back onto a card also get focus as soon as there is something to focus.
+- **Search results without the wait for people.** Titles show as soon as they are found, and matching people
+  follow below them.
+- **Info preview waits for your first move.** A freshly opened library no longer shows the box on its first title by
+  itself, so a single Back leaves it again.
+- **Versions you can tell apart.** A title with several versions lists each with its name and picture format, and two
+  that would still read the same with their size.
+- **Audio and subtitle lists start with your languages.** On the title page and in the player alike; on the title page
+  they now open over the page instead of pushing it down.
+- **Readable audio and subtitle names.** Each track shows its language in the app's language, forced or SDH and its
+  format, instead of the file's jumble of codec words and repeated languages.
+- **Episode numbers written one way.** Cards, search, playlists and the player's next-episode notice all read S1:E2,
+  and a double episode shows both its numbers everywhere.
+- **A series' years on every card.** Search, collections, favourites and person pages show "2013 – today" like the
+  library, instead of the first year only.
+- **Watched ticks in search and favourites.** Search results and favourite episodes now show the tick and the progress
+  bar like every other card.
+- **One size for every switch in the settings.** Content and Navigation had smaller rows than the other categories;
+  now every switch looks like the rest, with a line between each two.
+- **Age rating filter for every rating system.** It offers the ratings your titles actually carry: every spelling of
+  an age as one number, and letter ratings such as PG-13 or TV-MA in a row of their own.
+- **Every dialog darkens the screen the same way.** They used four shades and the exit question a blur; now all use
+  one, and the card menu and the small pickers in the settings fade in like the other dialogs.
+
+### Fixed
+
+- **No half-watched titles in the home banner.** When the server answered in a certain order, a title from Continue
+  watching could turn up in the banner as well.
+- **Title pages with one actor in several roles open again.** Such a page, common with anime, kept loading forever;
+  the person now shows once, with all their roles.
+- **Continue watching keeps up with "watched".** A series or season marked as watched on its page or in a card's menu
+  now takes its episode out of the row at once, instead of leaving it there with a tick until the app restarts.
+- **Focus stays put when a card leaves the home screen.** Back onto a title that has just been finished or marked
+  as watched now lands on the card next to it.
+- **Focus back on the card after the playlist picker.** Closing the playlist or collection picker opened from a
+  card's menu now returns to the card instead of leaving nothing selected.
+- **Big titles keep the bottoms of their letters.** On title pages, collections, person pages, in the library and the
+  player, the lower part of g, p and y was cut off; it now shows in full, with everything in the same place.
+- **Back in the profile menu keeps a selection.** Closing the menu now returns to the profile picture instead of
+  leaving nothing selected.
+- **A title without a poster shows an empty frame.** Its page showed only a thin line where the picture would be.
+- **An empty library shows its own icon.** It used to show the filter symbol even with no filter set.
+- **Age ratings from NFO files read cleanly.** A title page shows "FSK 12" instead of the long list of spellings some
+  NFO files store.
+
+### Internal
+
+- **Lighter requests.** Every list asks the server only for the pictures its cards show, and the info preview's
+  plots come without watched states and artwork it never uses.
+- **Fewer requests, checked against Jellyfin 12.4.** The automatic sign-in, the home screen's suggestions and a
+  library's genre list each ask the server once where they asked twice, and nothing the app sends is outdated there.
+- **Less repeated code.** Shared pieces for the person card, dialogs, settings switches, the time of day, favourite
+  and watched marks and the backdrop preview replace copies spread over many screens.
+
 ## 2026.11.19
 
 ### Added

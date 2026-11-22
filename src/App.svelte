@@ -2,6 +2,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
   import { isBackKey, focusOnMount, authHeaders, dlog, setDebug, uiFade, dropTrapOnOutro, makeFocusReturn, installConnectionGuard, installEnterRepeatGuard, isRepeatedEnter, perfMark, startPerfSampler, asArray, asObject, asNumber, asUiSize, asSubSize, asSubPosition, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS } from './utils.js';
+  import Dialog from './components/Dialog.svelte';
   import { startPlatformDiagnostics } from './diag.js';
   import { buildPlayQueue, playableFor } from './playback.js';
   import { session } from './session.svelte.js';
@@ -59,26 +60,51 @@
   // while a sidebar selection has to take focus OUT of the sidebar and may only stop for focus that
   // has gone somewhere else entirely.
   function focusContent({ why, heldByOther, maxTries = 12, gap = 100, onGiveUp }) {
-    let cancelled = false, tries = 0;
+    let done = false, tries = 0, timer = 0, frame = 0, watcher = null;
+    const stop = () => { done = true; clearTimeout(timer); cancelAnimationFrame(frame); watcher?.disconnect(); };
     const attempt = () => {
-      if (cancelled) return;
+      if (done) return;
       const active = document.activeElement;
       if (heldByOther(active)) {
+        stop();
         dlog('[focus]', why, '· stood down, already on', (active.textContent || '').trim().slice(0, 24));
         return;
       }
-      const main   = document.querySelector('[data-focus-group="main"]');
-      const shown  = main ? [...main.querySelectorAll(CONTENT_FOCUSABLE)].filter(isShown) : [];
+      const main = document.querySelector('[data-focus-group="main"]');
       // The hero only as the last resort — not while the view is still building (aria-busy: the dashboard
       // holds rows back, §106), or start focus lands on the banner a moment before the first row appears.
-      const target = shown.find(el => !el.closest('[data-hero]'))
-                  || (main?.querySelector('[aria-busy="true"]') ? null : shown[0]);
-      if (target) { target.focus(); dlog('[focus]', why, '→', (target.textContent || '').trim().slice(0, 24)); return; }
-      if (++tries < maxTries) { setTimeout(attempt, gap); return; }
+      let target = null, first = null;
+      for (const el of main ? main.querySelectorAll(CONTENT_FOCUSABLE) : []) {
+        if (!isShown(el)) continue;
+        if (!el.closest('[data-hero]')) { target = el; break; }
+        first ??= el;
+      }
+      target ??= main?.querySelector('[aria-busy="true"]') ? null : first;
+      if (target) { stop(); target.focus(); dlog('[focus]', why, '→', (target.textContent || '').trim().slice(0, 24)); }
+    };
+    const step = () => {
+      attempt();
+      if (done) return;
+      if (++tries < maxTries) { timer = setTimeout(step, gap); return; }
+      stop();
       onGiveUp?.();
     };
-    tick().then(attempt);
-    return () => { cancelled = true; };
+    tick().then(() => {
+      if (done) return;
+      // The view usually appears BETWEEN two timer steps, and the wait for the next one was the
+      // slowest part of the start and of opening Settings (§132). So try again as soon as the content
+      // area changes too — at most once per frame, before it is painted. The timer stays: it bounds
+      // the whole wait and gives up in the end.
+      const main = document.querySelector('[data-focus-group="main"]');
+      if (main) {
+        watcher = new MutationObserver(() => {
+          frame ||= requestAnimationFrame(() => { frame = 0; attempt(); });
+        });
+        watcher.observe(main, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-busy', 'class', 'disabled'] });
+      }
+      step();
+    });
+    return stop;
   }
 
   // Stand-down rule for everything except the app start. A HIDDEN element never counts as holding
@@ -723,7 +749,7 @@
     if (_syncOpeningId === norm(itemId)) return;                                          // currently opening
     _syncOpeningId = norm(itemId);
     try {
-      const res = await fetch(`${session.serverUrl}/Items/${itemId}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/Items/${itemId}?UserId=${selectedUser.Id}`, { headers: authHeaders() });
       if (res.ok) {
         playFromOutside(await res.json());
         dlog('[SyncPlay] auto-load →', currentDetailItem?.Name);
@@ -1137,12 +1163,16 @@
               return;
             }
             if (valid) {
-              const res = await fetch(`${server.url}/Users/${saved.userId}`, {
-                headers: getAuthHeaders()
+              // /Users/Me already brought the user; asking /Users/{id} for the same one cost a second round trip
+              // before the app could open (§129). Only if it is somebody else (or unreadable) the old way.
+              const sameId = (a, b) => String(a || '').replace(/-/g, '').toLowerCase() === String(b || '').replace(/-/g, '').toLowerCase();
+              const me = valid !== true && sameId(valid.Id, saved.userId) ? valid : null;
+              const res = me ? null : await fetch(`${server.url}/Users/${saved.userId}`, {
+                headers: authHeaders()
               });
-              dlog('[restore] /Users/{id} HTTP', res.status);
-              if (res.ok) {
-                selectedUser = await res.json();
+              if (res) dlog('[restore] /Users/{id} HTTP', res.status);
+              if (me || res.ok) {
+                selectedUser = me || await res.json();
                 isLoggedIn   = true;
                 appPhase     = 'app';
                 applyUserPrefs(selectedUser.Id);   // load profile settings
@@ -1201,6 +1231,7 @@
         localStorage.removeItem(userPrefsKey(uid));
         localStorage.removeItem(`search_history_${uid}`);
         localStorage.removeItem(`ocenfin:trackmem:${uid}`);
+        localStorage.removeItem(`ocenfin:herogenres:${uid}`);   // the hero's kept taste (Dashboard, §130)
         n++;
       } catch {}
     }
@@ -1238,7 +1269,6 @@
   // AUTH
   // ============================================================
 
-  const getAuthHeaders = () => authHeaders(session.token);
 
   async function fetchUsers() {
     try {
@@ -1413,7 +1443,7 @@
       try {
         const res = await fetch(
           `${session.serverUrl}/Items?UserId=${m.id}&ParentId=${libraryId}&Recursive=true` +
-          `&IncludeItemTypes=Movie,Series&Fields=UserData&EnableImages=false` +
+          `&IncludeItemTypes=Movie,Series&EnableImages=false` +
           `&Limit=100000&EnableTotalRecordCount=false`,
           { headers: authHeaders(token) }
         );
@@ -1471,7 +1501,7 @@
       try {
         const res = await fetch(
           `${session.serverUrl}/Items?UserId=${m.id}&Recursive=true&IncludeItemTypes=Movie,Series` +
-          `&Fields=Genres,CommunityRating,UserData&EnableImageTypes=Primary&Limit=100000&EnableTotalRecordCount=false`,
+          `&Fields=Genres&EnableImageTypes=Primary&Limit=100000&EnableTotalRecordCount=false`,
           { headers: authHeaders(token) }
         );
         if (!res.ok) return null;
@@ -1529,15 +1559,16 @@
   // baseUrl can be passed explicitly: on auto-login the reactive session.serverUrl ($:) is not yet
   // updated (Svelte flushes reactivity only after the synchronous block), so
   // `${session.serverUrl}` would point to '' there → relative fetch to the app origin instead of the server.
-  // Three answers, not two: true = valid, false = the server REJECTED it (401/403), null = no verdict
+  // Three answers, not two: truthy = valid, false = the server REJECTED it (401/403), null = no verdict
   // (unreachable, or the server erred). Callers delete tokens and tear sessions down only on false —
   // a Wi-Fi that is not up yet after standby, or a NAS still waking, used to count as "rejected" and
-  // cost the saved sign-in.
+  // cost the saved sign-in. Valid comes back as the token's UserDto (/Users/Me builds it the same way as
+  // /Users/{id}, §129) — true only if its body could not be read; every caller tests truthiness or === false/null.
   async function validateToken(token, baseUrl = session.serverUrl) {
     try {
       const res = await fetch(`${baseUrl}/Users/Me`, { headers: authHeaders(token) });
       if (!res.ok) dlog('[auth] token validation failed — HTTP', res.status);
-      if (res.ok) return true;
+      if (res.ok) return (await res.json().catch(() => null)) || true;
       return (res.status === 401 || res.status === 403) ? false : null;
     } catch (e) { dlog('[auth] token validation — network error:', e?.message || e); return null; }
   }
@@ -1914,7 +1945,7 @@
   // (e.g. "Playlists") – update the sidebar/menu immediately instead of only on restart.
   async function refreshLibraries() {
     try {
-      const res = await fetch(`${session.serverUrl}/UserViews?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/UserViews?UserId=${selectedUser.Id}`, { headers: authHeaders() });
       if (res.ok) navLibraries = (await res.json()).Items || [];
     } catch { }
   }
@@ -1989,7 +2020,7 @@
   // Reloads the user object (e.g. after a profile-picture upload) → the avatar updates everywhere.
   async function refreshSelectedUser() {
     try {
-      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/Users/${selectedUser.Id}`, { headers: authHeaders() });
       if (res.ok) selectedUser = await res.json();
     } catch { /* ignore */ }
   }
@@ -2104,6 +2135,10 @@
   function restoreContextFocus() {
     const id = contextReturnId, el = contextReturnEl, nth = contextReturnNth;
     contextReturnId = null; contextReturnEl = null; contextReturnNth = 0;
+    // The menu and the picker fade out (Dialog, §142), and the fade begins only after focusCardAgain's first look: a
+    // button of the closing dialog still holds focus then, which it would take for "already restored" — let go first.
+    const held = document.activeElement;
+    if (held?.closest('[role="dialog"]')) held.blur();
     focusCardAgain(id, el, '(context menu)', nth);
   }
   $effect(() => { if (!contextItem && !contextPickerMode && (contextReturnId || contextReturnEl)) restoreContextFocus(); });
@@ -2124,7 +2159,7 @@
   // what played, and Back from there lands on the card (or, from a title page, on that page).
   async function playFromCard(item, el, nth = 0) {
     const from = viewState, user = activeUserId;
-    const target = await playableFor(item, { serverUrl: session.serverUrl, userId: activeUserId, headers: getAuthHeaders() });
+    const target = await playableFor(item, { serverUrl: session.serverUrl, userId: activeUserId, headers: authHeaders() });
     if (!target || viewState !== from || activeUserId !== user) return;   // moved on while it resolved
     if (from !== 'details') {
       beginChainIfRoot();
@@ -2170,10 +2205,10 @@
     if (!item?.Id) return;
     const from = viewState, user = activeUserId;
     try {
-      const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300`, { headers: getAuthHeaders() });
+      const res   = await fetch(`${session.serverUrl}/Playlists/${item.Id}/Items?UserId=${activeUserId}&Limit=300`, { headers: authHeaders() });
       if (!res.ok) { console.warn('play playlist: HTTP', res.status); return; }
       const data  = await res.json();
-      const queue = await buildPlayQueue(data.Items || [], { serverUrl: session.serverUrl, userId: activeUserId, headers: getAuthHeaders() });
+      const queue = await buildPlayQueue(data.Items || [], { serverUrl: session.serverUrl, userId: activeUserId, headers: authHeaders() });
       // Moved on while the queue was built (another view, another profile) → do not start.
       if (viewState !== from || activeUserId !== user) return;
       detailsOrigin = from;
@@ -2457,7 +2492,7 @@
 
   <!-- Exit-app confirmation (Back at the dashboard) -->
   {#if showExitConfirm}
-    <div class="fixed inset-0 z-[600] flex items-center justify-center bg-black/70 backdrop-blur-sm" data-focus-trap transition:uiFade={{ duration: 150 }} onoutrostart={dropTrapOnOutro}>
+    <Dialog z="z-[600]">
       <div class="bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl p-8 w-full max-w-md mx-6 flex flex-col gap-6">
         <div>
           <h2 class="text-2xl font-bold text-white">{i18n.t.exitTitle}</h2>
@@ -2474,7 +2509,7 @@
           </button>
         </div>
       </div>
-    </div>
+    </Dialog>
   {/if}
 
   <!-- ============================================================

@@ -1,6 +1,6 @@
 <script>
   import { i18n, plural } from '../i18n.svelte.js';
-  import { authHeaders } from '../utils.js';
+  import { authHeaders, getItemSubtitle, setFavorite } from '../utils.js';
   import { session } from '../session.svelte.js';
   import PosterCard from './PosterCard.svelte';
   import { tick, untrack } from 'svelte';
@@ -45,7 +45,6 @@
     ].filter(g => g.items.length > 0);
   });
 
-  const getAuthHeaders = () => authHeaders(session.token);
 
   async function loadPerson() {
     // Opening a second person while the first is still loading would otherwise let the slower
@@ -57,7 +56,7 @@
     items     = [];
     isLoading = true;
     // Fetch the person item separately → correct favorite status (from search/cast, UserData is often missing)
-    fetch(`${session.serverUrl}/Items/${person.Id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() })
+    fetch(`${session.serverUrl}/Items/${person.Id}?UserId=${selectedUser.Id}`, { headers: authHeaders() })
       .then(r => r.ok ? r.json() : null)
       .then(p => { if (p && myId === loadedId) fav = !!p.UserData?.IsFavorite; })
       .catch(() => {});
@@ -65,11 +64,11 @@
     // so a long-running series' episodes can never crowd movies/series out of a single limit.
     const base = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&PersonIds=${person.Id}` +
       `&Recursive=true&SortBy=PremiereDate&SortOrder=Descending` +
-      `&Fields=PrimaryImageAspectRatio,SeriesName&EnableTotalRecordCount=false`;
+      `&ImageTypeLimit=1&EnableTotalRecordCount=false`;
     try {
       const [mainRes, epRes] = await Promise.all([
-        fetch(`${base}&IncludeItemTypes=Movie,Series&Limit=100`, { headers: getAuthHeaders() }),
-        fetch(`${base}&IncludeItemTypes=Episode&Limit=200`, { headers: getAuthHeaders() }),
+        fetch(`${base}&IncludeItemTypes=Movie,Series&Limit=100`, { headers: authHeaders() }),
+        fetch(`${base}&IncludeItemTypes=Episode&Limit=200`, { headers: authHeaders() }),
       ]);
       const main = mainRes.ok ? ((await mainRes.json()).Items || []) : [];
       const eps  = epRes.ok  ? ((await epRes.json()).Items  || []) : [];
@@ -93,11 +92,7 @@
   async function toggleFavorite() {
     const next = !fav;
     fav = next;
-    try {
-      const res = await fetch(`${session.serverUrl}/UserFavoriteItems/${person.Id}?UserId=${selectedUser.Id}`,
-        { method: next ? 'POST' : 'DELETE', headers: getAuthHeaders() });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);   // an error answer is a failure as well
-    } catch (e) { console.warn('[OcenFin] person favorite failed, rolled back:', e); fav = !next; }
+    if (!(await setFavorite(person.Id, selectedUser.Id, next))) fav = !next;
   }
 
   // Loads on mount and when a different person is opened.
@@ -123,8 +118,8 @@
       <span class="text-xs text-gray-400 block truncate w-full">{plural('episodeCount', item._episodeCount)}</span>
     {:else if item.Type === 'Episode'}
       <span class="text-xs text-gray-400 block truncate w-full">{item.Name}</span>
-    {:else if item.ProductionYear}
-      <span class="text-xs text-gray-400 block truncate w-full">{item.ProductionYear}</span>
+    {:else if getItemSubtitle(item)}
+      <span class="text-xs text-gray-400 block truncate w-full">{getItemSubtitle(item)}</span>
     {/if}
   {/snippet}
   <div class="flex items-center gap-6 mb-8">
@@ -141,7 +136,7 @@
   <div class="flex items-center gap-4 mb-10">
     <svg class="w-10 h-10 shrink-0 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
     <div class="min-w-0">
-      <h1 class="text-4xl font-bold text-white truncate">{person?.Name}</h1>
+      <h1 class="text-4xl leading-[1.3] -my-[0.0944em] font-bold text-white truncate">{person?.Name}</h1>
       <p class="text-gray-400 mt-1">{i18n.t.appearsIn}</p>
     </div>
   </div>
@@ -155,7 +150,7 @@
   {:else if groups.length > 0}
     {#each groups as group (group.label)}
       <h2 class="text-2xl font-bold text-white mb-4 mt-2">{group.label}</h2>
-      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-10">
+      <div data-focus-grid class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-10">
         {#each group.items as item (item.Id)}
           <PosterCard {item} {onOpenDetails} {onContextMenu} caption={cardCaption} />
         {/each}

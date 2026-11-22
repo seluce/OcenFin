@@ -3,6 +3,7 @@ import { tick } from 'svelte';
 import { fade } from 'svelte/transition';
 import { dependencies as deps } from '../package.json';   // for the version display on the status page
 import { session } from './session.svelte.js';   // server URL centralized for getItemImageUrl
+import { i18n } from './i18n.svelte.js';          // the words of the title labels below (mins, today, ends at)
 import { APP_VERSION } from './version.js';
 
 // Fade in/out for overlays that respects the "reduce animations" toggle (App maintains
@@ -250,6 +251,36 @@ export function getItemImageUrlWithFallbacks(item, format = 'portrait') {
   return null;
 }
 
+// A title's full-size backdrop — its own, else its series' (an episode, a season) — and its logo the same way (§142:
+// the banner, the title page and the focus preview each built these by hand). Size and quality stay with the caller:
+// the focus preview 1280/70, the banner 1920/85, the title page 1920/80. null when there is none.
+export function backdropUrl(item, maxWidth, quality) {
+  const own = item?.BackdropImageTags?.[0], parent = item?.ParentBackdropImageTags?.[0];
+  const id = own ? item.Id : parent ? item.ParentBackdropItemId : null;
+  return id ? `${session.serverUrl}/Items/${id}/Images/Backdrop?tag=${own || parent}&maxWidth=${maxWidth}&quality=${quality}&format=webp` : null;
+}
+export function logoUrl(item, maxHeight) {
+  const own = item?.ImageTags?.Logo, parent = item?.ParentLogoImageTag;
+  const id = own ? item.Id : parent ? item.ParentLogoItemId : null;
+  return id ? `${session.serverUrl}/Items/${id}/Images/Logo?tag=${own || parent}&maxHeight=${maxHeight}&quality=90&format=webp` : null;
+}
+
+// The backdrop that fades in behind the home screen and the library 700 ms after a card takes focus (§142: both views
+// carried this line for line). `set` gets the picture's URL, '' to clear it. Card → card: the next show() cancels the
+// clearing, so the picture never flickers away in between; focus leaving the cards (menu, filters) lets it clear.
+export function backdropPreview(set) {
+  let showTimer, clearTimer;
+  const stop = () => { clearTimeout(showTimer); clearTimeout(clearTimer); };
+  return {
+    show(item) {
+      stop();
+      showTimer = setTimeout(() => { const url = backdropUrl(item, 1280, 70); if (url) set(url); }, 700);
+    },
+    hide() { stop(); clearTimer = setTimeout(() => set(''), 150); },
+    stop,
+  };
+}
+
 // Progress 0–100: resume position (movies/episodes) or share of watched episodes
 // (series, via Jellyfin's PlayedPercentage). For progress bars.
 // A watched title shows the tick (CardStatus), not a full bar: Jellyfin reports a watched series or
@@ -263,19 +294,101 @@ export function itemProgress(item) {
   return 0;
 }
 
-// Card/grid subtitle: episode → "S1:E2 – Title"; series → year range
-// ("2016 – 2019" / "2024 – today"); otherwise the production year.
-// `todayLabel` = localized "today" (i18n.t.today), passed in by the caller.
-export function getItemSubtitle(item, todayLabel = '') {
+// Minutes left of a started title, rounded; null when not started or under half a minute left. ONE rule for the
+// dashboard's Continue watching pill and Details' Resume button (CODE-HEALTH §137).
+export function minutesLeft(item) {
+  if (!item?.RunTimeTicks || !item.UserData?.PlaybackPositionTicks) return null;
+  const mins = Math.round((item.RunTimeTicks - item.UserData.PlaybackPositionTicks) / 600000000);
+  return mins > 0 ? mins : null;
+}
+
+// An episode's number as every screen writes it (CODE-HEALTH §141): "S1:E2", "S1:E3–4" for a double episode, "E5"
+// without a season; '' without a number. The playlist view and the player's next-title line wrote "S1 · E2", and only
+// the title page knew double episodes. (Details' share text keeps S01E02 — the form a web search understands.)
+export function episodeCode(item) {
+  const s = item?.ParentIndexNumber, e = item?.IndexNumber, end = item?.IndexNumberEnd;
+  if (e == null) return '';
+  return `${s != null ? `S${s}:` : ''}E${e}${end != null && end !== e ? '–' + end : ''}`;
+}
+
+// ---- Age ratings as people read them (CODE-HEALTH §150) -------------------------------------------------------------
+// OfficialRating holds whatever the metadata wrote: "FSK 12", "FSK-12", "DE-12", "12", "FSK ab 12", and from a Kodi NFO
+// (tinyMediaManager) every spelling at once, "DE:FSK 12 / DE:FSK-12 / DE:FSK12 / DE:12 / DE:ab 12". parseRating() reads
+// one as an AGE (any country's number: an age is an age) or as a letter CODE (US film/TV, UK U), with a sort value
+// (the code's usual age); anything else stays as written, at the end. Letter codes are NOT turned into ages: a PG-13
+// title is not an FSK 12 one, and the data does not say what it would be.
+const RATING_CODES = { G: 0, U: 0, 'TV-Y': 0, 'TV-G': 0, 'TV-Y7': 7, PG: 10, 'TV-PG': 10, 'PG-13': 13, 'TV-14': 14,
+                       R: 17, 'TV-MA': 17, 'NC-17': 18, NR: 99 };
+const RATING_ALIASES = { 'NOT RATED': 'NR', UNRATED: 'NR', UR: 'NR' };
+const ratingSpellings = (raw) => String(raw ?? '').split(/\s+\/\s+/).map(s => s.trim()).filter(Boolean);
+export function parseRating(raw) {
+  const spellings = ratingSpellings(raw);
+  for (const one of spellings) {
+    let s = one.toUpperCase().replace(/^RATED\s+/, '');
+    for (let pass = 0; pass < 2; pass++) {
+      const code = RATING_ALIASES[s] || s;
+      if (code in RATING_CODES) return { code, sort: RATING_CODES[code] };
+      const age = s.replace(/^(?:FSK|JMK|AB)[\s-]*/, '').replace(/^AB\s*/, '').match(/^(\d{1,2})\+?$/);
+      if (age) return { age: +age[1], sort: +age[1] };
+      s = s.replace(/^[A-Z]{2}\s*[:\-\/]\s*/, '');   // a country in front: "DE-12", "DE:FSK 12", "US-PG-13", "de/12"
+    }
+  }
+  return { code: spellings[0] || '', sort: 99 };
+}
+// The badge on a title (TitleMeta): the first spelling of an NFO's list, without its "DE:" — "FSK 12", not the list.
+export const ratingBadge = (raw) => (ratingSpellings(raw)[0] || '').replace(/^[A-Za-z]{2}\s*:\s*/, '');
+
+// A running time, "112 min"; '' without one. ONE rule for the title page, its episode row and extras, the info
+// preview, the banner and the player's next-title line (§141) — it was worked out in five places.
+export function runtimeLabel(ticks) {
+  const m = ticks ? Math.round(ticks / 600000000) : 0;
+  return m ? `${m} ${i18n.t.mins}` : '';
+}
+
+// A video stream's frame rate, "23.976 fps" in the app language's digits — not rounded to 24: 23.976, 29.97 and 59.94
+// are what tell a film, a TV recording and a sports broadcast apart (§148). The media info and the player's info
+// overlay (read once a second there, hence the formatter kept per language); '' without one.
+const fpsFormats = new Map();
+export function frameRateLabel(v) {
+  const r = v?.AverageFrameRate || v?.RealFrameRate, lang = i18n.lang || 'en';
+  if (!r) return '';
+  let fmt = fpsFormats.get(lang);
+  if (!fmt) fpsFormats.set(lang, fmt = new Intl.NumberFormat(lang, { maximumFractionDigits: 3 }));
+  return `${fmt.format(r)} fps`;
+}
+
+// The time of day as the app writes it everywhere — the clock, the screensaver, the player, "ends at" (§142; it was
+// spelled out in five places). The app language is a valid BCP-47 tag, so every locale formats its own way. The
+// formatter is kept per language and format: toLocaleTimeString with options builds a new one on every call, and the
+// player's "ends at" is read about four times a second.
+const timeFormats = new Map();
+export function timeOfDay(date, use24h) {
+  const lang = i18n.lang || 'en', key = `${lang}|${use24h ? 24 : 12}`;
+  let fmt = timeFormats.get(key);
+  if (!fmt) timeFormats.set(key, fmt = new Intl.DateTimeFormat(lang, { hour: '2-digit', minute: '2-digit', hour12: !use24h }));
+  return fmt.format(date);
+}
+
+// "ends at 21:30" for a title started now — from its resume point, where the player starts it. The title page and the
+// player's next-title line (§141).
+export function endsAtLabel(item, use24h) {
+  if (!item?.RunTimeTicks) return '';
+  const end = new Date(Date.now() + (item.RunTimeTicks - (item.UserData?.PlaybackPositionTicks || 0)) / 10000);
+  return `${i18n.t.endsAt} ${timeOfDay(end, use24h)}`;
+}
+
+// Card/grid subtitle: episode → "S1:E2 – Title"; series → year range ("2016 – 2019" / "2024 – today"); otherwise the
+// production year. Every card caption and the year in the title meta line (TitleMeta) — Search, Collection,
+// Favourites' posters and the person page showed a series' first year only (§141).
+export function getItemSubtitle(item) {
   if (item.Type === 'Episode') {
-    const s = item.ParentIndexNumber ?? '?';
-    const e = item.IndexNumber ?? '?';
-    return `S${s}:E${e} – ${item.Name}`;
+    const code = episodeCode(item);
+    return code ? `${code} – ${item.Name}` : (item.Name || '');
   }
   if (item.Type === 'Series') {
     const start = item.ProductionYear || '';
     const end   = item.Status === 'Continuing'
-      ? todayLabel
+      ? i18n.t.today
       : (item.EndDate ? new Date(item.EndDate).getFullYear() : '');
     if (start && end && start != end) return `${start} – ${end}`;
     return start.toString();
@@ -475,13 +588,26 @@ export function renderAvatarPng(iconKey, bgColor, size = 256) {
 // query over the library per request. Exceptions (that really need the counter): the library
 // main query + letterStartIndex (pagination/A-Z) and the person-count check of the search
 // (Limit=0). Audit one-liner:  grep -rn "Items?" --include=*.svelte | grep -v EnableTotalRecordCount
-// Centralized so that not every component maintains its own copy.
-export function authHeaders(token) {
+// Centralized so that not every component maintains its own copy. Without an argument: the signed-in session's
+// token — what nearly every caller sends (§142: twelve files had their own `getAuthHeaders` wrapper for that).
+// Sign-in flows and other profiles' tokens (shared watching, saved accounts) still pass theirs.
+export function authHeaders(token = session.token) {
   return {
     "Authorization": `MediaBrowser Token="${token}"`,
     "Content-Type": "application/json",
   };
 }
+
+// A title's favourite and watched marks on the server (§142: five places wrote the request out). Resolves to whether
+// the server took it — an error ANSWER (403, 404, 500) never throws, so `res.ok` is the test, and a network error is
+// false as well. The optimistic flip and the rollback stay with the view: each has its own state to put back.
+function markItem(route, id, userId, on) {
+  return fetch(`${session.serverUrl}/${route}/${id}?UserId=${userId}`, { method: on ? 'POST' : 'DELETE', headers: authHeaders() })
+    .then(r => { if (!r.ok) console.warn(`[OcenFin] ${route} ${on ? 'POST' : 'DELETE'}: HTTP ${r.status}`); return r.ok; },
+          e => { console.warn(`[OcenFin] ${route}:`, e?.message || e); return false; });
+}
+export const setFavorite = (id, userId, on) => markItem('UserFavoriteItems', id, userId, on);
+export const setPlayed   = (id, userId, on) => markItem('UserPlayedItems', id, userId, on);
 
 // --- Diagnostic logging (opt-in, device-wide) ----------------------------------------------
 // A central switch gates all diagnostic output. dlog() replaces console.log at the

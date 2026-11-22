@@ -1,7 +1,7 @@
 <script>
   import { tick, onDestroy, untrack } from 'svelte';
   import { i18n } from '../i18n.svelte.js';
-  import { itemBlurHash, blurUp, authHeaders, focusOnMount, getItemImageUrl } from '../utils.js';
+  import { itemBlurHash, blurUp, authHeaders, focusOnMount, getItemImageUrl, getItemSubtitle } from '../utils.js';
   import { buildPlayQueue } from '../playback.js';
   import { WATCHLIST_NAME } from '../watchlist.svelte.js';
   import PosterCard from './PosterCard.svelte';
@@ -35,7 +35,6 @@
   let renameValue          = $state('');
   let renameError          = $state(false);
 
-  const getAuthHeaders = () => authHeaders(session.token);
 
   // Random playback from a collection/playlist — counterpart to the series shuffle in the details.
   // Movies/episodes play directly. If the pick lands on a series/season (normal in BoxSets),
@@ -51,7 +50,7 @@
       // Same expansion as playAll: buildPlayQueue resolves series/seasons to episodes with the
       // shared specials rule; the random draw ignores its ordering. Was an inline copy of that
       // query — the third one in the codebase.
-      const pool = await buildPlayQueue([pick], { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+      const pool = await buildPlayQueue([pick], { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: authHeaders() });
       if (!pool.length || !alive) return;   // left meanwhile — no Player popping up over another view
       onPlayVideo?.({ item: pool[Math.floor(Math.random() * pool.length)], audioIndex: -1, subtitleIndex: -1 });
     } else {
@@ -68,16 +67,9 @@
     if (!items.length || buildingQueue) return;
     buildingQueue = true;
     let queue = [];
-    try { queue = await buildPlayQueue(items, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() }); }
+    try { queue = await buildPlayQueue(items, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: authHeaders() }); }
     finally { buildingQueue = false; }
     if (queue.length && alive) onPlayQueue?.(queue);
-  }
-
-  // Label for an episode: "S1 · E5 · Title"
-  function episodeLabel(item) {
-    const s = item.ParentIndexNumber, e = item.IndexNumber;
-    const code = (s != null && e != null) ? `S${s} · E${e}` : (e != null ? `E${e}` : '');
-    return [code, item.Name].filter(Boolean).join(' · ');
   }
 
   // What this profile may do with the playlist. Jellyfin: renaming and editing the entries is for
@@ -90,12 +82,13 @@
     canEdit = canDelete = true;
     const norm = (v) => String(v || '').replace(/-/g, '').toLowerCase();
     try {
-      const r = await fetch(`${session.serverUrl}/Items/${id}?UserId=${selectedUser.Id}&Fields=CanDelete`, { headers: getAuthHeaders() });
+      // One title by id always comes with every field, CanDelete included (the route has no Fields parameter, §129).
+      const r = await fetch(`${session.serverUrl}/Items/${id}?UserId=${selectedUser.Id}`, { headers: authHeaders() });
       if (!r.ok || id !== loadedId) return;
       const owner = (await r.json()).CanDelete;
       if (id !== loadedId || owner !== false) return;   // owner/admin, or unknown → leave everything on
       canDelete = false;
-      const p = await fetch(`${session.serverUrl}/Playlists/${id}`, { headers: getAuthHeaders() });
+      const p = await fetch(`${session.serverUrl}/Playlists/${id}`, { headers: authHeaders() });
       const shares = p.ok ? ((await p.json()).Shares || []) : [];
       if (id !== loadedId) return;
       canEdit = shares.some(sh => sh.CanEdit && norm(sh.UserId) === norm(selectedUser.Id));
@@ -117,10 +110,10 @@
     // unless the admin set another), and any SortBy replaces it. SortName put part 3 of a trilogy
     // before part 2, and "Play all" played it that way (CODE-HEALTH §92).
     const url = collection.Type === 'Playlist'
-      ? `${session.serverUrl}/Playlists/${collection.Id}/Items?UserId=${selectedUser.Id}&Fields=PrimaryImageAspectRatio&Limit=300`
-      : `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${collection.Id}&Fields=PrimaryImageAspectRatio&Limit=100&EnableTotalRecordCount=false`;
+      ? `${session.serverUrl}/Playlists/${collection.Id}/Items?UserId=${selectedUser.Id}&ImageTypeLimit=1&Limit=300`
+      : `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${collection.Id}&ImageTypeLimit=1&Limit=100&EnableTotalRecordCount=false`;
     try {
-      const res = await fetch(url, { headers: getAuthHeaders() });
+      const res = await fetch(url, { headers: authHeaders() });
       const loaded = res.ok ? ((await res.json()).Items || []) : null;
       if (myId !== loadedId) return;   // superseded by a newer collection
       if (loaded) items = loaded;
@@ -164,7 +157,7 @@
     });
     try {
       const res = await fetch(`${session.serverUrl}/Playlists/${collection.Id}/Items/${item.PlaylistItemId}/Move/${toIndex}`,
-        { method: 'POST', headers: getAuthHeaders() });
+        { method: 'POST', headers: authHeaders() });
       if (!res.ok) { console.warn('[OcenFin] move failed', res.status); editRollback(before); }
     } catch (e) { console.warn('[OcenFin] move error', e); editRollback(before); }
   }
@@ -194,7 +187,7 @@
     });
     try {
       const res = await fetch(`${session.serverUrl}/Playlists/${collection.Id}/Items?EntryIds=${item.PlaylistItemId}`,
-        { method: 'DELETE', headers: getAuthHeaders() });
+        { method: 'DELETE', headers: authHeaders() });
       if (!res.ok) { console.warn('[OcenFin] remove failed', res.status); editRollback(before); }
     } catch (e) { console.warn('[OcenFin] remove error', e); editRollback(before); }
   }
@@ -203,7 +196,7 @@
   async function deletePlaylist() {
     if (collection.Type !== 'Playlist') return;
     try {
-      const res = await fetch(`${session.serverUrl}/Items/${collection.Id}`, { method: 'DELETE', headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/Items/${collection.Id}`, { method: 'DELETE', headers: authHeaders() });
       if (!res.ok) { console.warn('[OcenFin] playlist delete failed', res.status); editFailed = true; endDeleteConfirm(); return; }
     } catch (e) { console.warn('[OcenFin] playlist delete error', e); editFailed = true; endDeleteConfirm(); return; }
     confirmDeletePlaylist = false;
@@ -225,7 +218,7 @@
     try {
       // Playlist's own update endpoint: uses the user's ownership rights (no admin right needed).
       const res = await fetch(`${session.serverUrl}/Playlists/${collection.Id}`, {
-        method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ Name: newName })
+        method: 'POST', headers: authHeaders(), body: JSON.stringify({ Name: newName })
       });
       if (!res.ok) { console.warn('[OcenFin] rename failed', res.status); renameError = true; return; }
     } catch (e) { console.warn('[OcenFin] rename error', e); renameError = true; return; }
@@ -276,10 +269,10 @@
   {#snippet cardCaption(item)}
     {#if item.Type === 'Episode'}
       <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.SeriesName || item.Name}</span>
-      <span class="text-xs text-gray-400 block truncate w-full">{episodeLabel(item)}</span>
+      <span class="text-xs text-gray-400 block truncate w-full">{getItemSubtitle(item)}</span>
     {:else}
       <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Name}</span>
-      {#if item.ProductionYear}<span class="text-xs text-gray-400 block truncate w-full">{item.ProductionYear}</span>{/if}
+      {#if getItemSubtitle(item)}<span class="text-xs text-gray-400 block truncate w-full">{getItemSubtitle(item)}</span>{/if}
     {/if}
   {/snippet}
   <div class="flex items-center gap-6 mb-8">
@@ -293,7 +286,7 @@
        the playlist/collection name is (otherwise they'd be pushed out of view). -->
   <div class="flex items-center gap-4 mb-10">
     <svg class="w-10 h-10 shrink-0 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
-    <h1 class="text-4xl font-bold text-white min-w-0 truncate">{name === WATCHLIST_NAME ? i18n.t.watchlist : name}</h1>
+    <h1 class="text-4xl leading-[1.3] -my-[0.0944em] font-bold text-white min-w-0 truncate">{name === WATCHLIST_NAME ? i18n.t.watchlist : name}</h1>
     {#if items.length > 0 && !playlistEditMode}
       <button onclick={playAll}
         class="ml-4 shrink-0 bg-blue-600 text-white font-bold px-6 py-3 rounded-xl
@@ -345,10 +338,10 @@
             <div class="flex-1 min-w-0">
               {#if item.Type === 'Episode'}
                 <div class="text-lg font-bold text-white truncate">{item.SeriesName || item.Name}</div>
-                <div class="text-sm text-gray-400 truncate">{episodeLabel(item)}</div>
+                <div class="text-sm text-gray-400 truncate">{getItemSubtitle(item)}</div>
               {:else}
                 <div class="text-lg font-bold text-white truncate">{item.Name}</div>
-                {#if item.ProductionYear}<div class="text-sm text-gray-400">{item.ProductionYear}</div>{/if}
+                {#if getItemSubtitle(item)}<div class="text-sm text-gray-400">{getItemSubtitle(item)}</div>{/if}
               {/if}
             </div>
             <button onclick={() => movePlaylistItem(i, i - 1)} disabled={i === 0} data-move-up title={i18n.t.moveUp} aria-label={i18n.t.moveUp}
@@ -442,7 +435,7 @@
           {#if group.label}
             <h2 class="text-3xl font-bold text-white mb-6 px-2">{group.label}</h2>
           {/if}
-          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+          <div data-focus-grid class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
             {#each group.items as item (item.PlaylistItemId ?? item.Id)}
               <PosterCard {item} {onOpenDetails} {onContextMenu} caption={cardCaption} />
             {/each}

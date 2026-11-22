@@ -1,9 +1,10 @@
 <script>
-  import { i18n, plural } from '../i18n.svelte.js';
-  import { isBackKey, focusOnMount, authHeaders, dlog, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS, asSubSize, asSubPosition, SUB_STEPS, subtitleTextStyle } from '../utils.js';
-  import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks } from '../trackmemory.js';
+  import { i18n, plural, baseLang } from '../i18n.svelte.js';
+  import { isBackKey, focusOnMount, authHeaders, dlog, episodeCode, runtimeLabel, frameRateLabel, endsAtLabel, timeOfDay, setFavorite, perfEnabled, uiFade, dropTrapOnOutro, getItemImageUrl, hint, hideHints, PGS_CODECS, VOBSUB_CODECS, CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS, asSubSize, asSubPosition, SUB_STEPS, subtitleTextStyle } from '../utils.js';
+  import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks, orderTracks } from '../trackmemory.js';
+  import { trackLabels } from '../tracklabel.js';
   import { session } from '../session.svelte.js';
-  import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
+  import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl, playbackPlan, DIRECT_MAX_BITRATE, PLAY_METHODS } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady, syncNow } from '../syncplay.js';
   import { PgsRenderer, VobSubRenderer, initWasm, warmup } from 'libbitsub';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
@@ -71,15 +72,13 @@
   // 'end' mode: the label only changes when the remaining MINUTES change, so derive from a
   // minute bucket instead of full-resolution currentTime — the HUD is only opacity-hidden, so
   // this derived stays live for the whole film and used to rebuild a Date plus a fresh
-  // Intl.DateTimeFormat (toLocaleTimeString with options) ~4×/s. The formatter is cached per
+  // Intl.DateTimeFormat (toLocaleTimeString with options) ~4×/s. timeOfDay() keeps the formatter per
   // language/format; the ≤59 s bucketing error is well inside an estimate that drifts anyway.
-  let endTimeFmt   = $derived(new Intl.DateTimeFormat(i18n.lang || 'en',
-    { hour: '2-digit', minute: '2-digit', hour12: !use24h }));
   let remainingMin = $derived(duration ? Math.floor(Math.max(0, duration - currentTime) / 60) : 0);
   let rightTimeLabel = $derived.by(() => {
     if (!duration) return formatTime(0);
     if (timeMode === 'remaining') return '-' + formatTime(Math.max(0, duration - displayTime));
-    if (timeMode === 'end') return endTimeFmt.format(new Date(Date.now() + remainingMin * 60000));
+    if (timeMode === 'end') return timeOfDay(new Date(Date.now() + remainingMin * 60000), use24h);
     return formatTime(duration);
   });
 
@@ -87,8 +86,7 @@
   let clockNow = $state('');
   let clockTimer;
   function updateClock() {
-    clockNow = new Date().toLocaleTimeString(i18n.lang || 'en',
-      { hour: '2-digit', minute: '2-digit', hour12: !use24h });
+    clockNow = timeOfDay(new Date(), use24h);
   }
   $effect(() => { i18n.lang; use24h; updateClock(); });
 
@@ -433,11 +431,6 @@
   let playMethod    = $state('DirectPlay');         // DirectPlay | DirectStream | Transcode
   let triedTranscodeFallback = false;       // one-time auto fallback when Direct Play fails on the device
   let hls           = null;                 // hls.js instance (only for transcode/HLS)
-  let maxBitrate    = 120000000;            // 120 Mbit/s (local network) — limit for Direct Play
-  // When transcoding (e.g. burning forced ASS subtitles into the picture) the source bitrate
-  // is often too high (HEVC remuxes ~100+ Mbit/s) → real-time transcode stutters (fragLoadTimeOut/bufferStalled).
-  // So cap the transcode target; Direct Play stays unlimited (the B4 decodes natively).
-  const TRANSCODE_MAX_BITRATE = 20000000;   // 20 Mbit/s — high 1080p quality, transcodes well
 
   // After 'loadedmetadata', jump to the resume position (the file is seekable then).
   function seekToResume() {
@@ -471,8 +464,10 @@
     if (!sources?.length) return null;
     return (mediaSourceId && sources.find(s => s.Id === mediaSourceId)) || sources[0];
   }
-  let audioStreams = $derived(mediaStreams.filter(s => s.Type === 'Audio'));
-  let subtitleStreams = $derived(mediaStreams.filter(s => s.Type === 'Subtitle'));
+  // The track menu, in the order Details' lists use — the profile's languages first (trackmemory.js, §134)
+  let audioMenu    = $derived(orderTracks(mediaStreams, 'Audio', playbackPrefs, baseLang(i18n.lang)));
+  let subtitleMenu = $derived(orderTracks(mediaStreams, 'Subtitle', playbackPrefs, baseLang(i18n.lang)));
+  let trackNames   = $derived(trackLabels(mediaStreams));   // tracklabel.js, as in Details
 
   // --- Playback info overlay (opt-in via playbackPrefs.showPlaybackInfo) ----------------------
   let showInfoOverlay = $state(false);
@@ -482,8 +477,6 @@
   let infoAudioStream = $derived((selectedAudioIndex >= 0)
         ? mediaStreams.find(s => s.Index === selectedAudioIndex)
         : (mediaStreams.find(s => s.Type === 'Audio' && s.IsDefault) || mediaStreams.find(s => s.Type === 'Audio')));
-  let playMethodLabel = $derived(playMethod === 'Transcode' ? 'Transcode' : (playMethod === 'DirectStream' ? 'Direct Stream' : 'Direct Play'));
-  let playMethodColor = $derived(playMethod === 'Transcode' ? 'text-amber-400' : (playMethod === 'DirectStream' ? 'text-sky-400' : 'text-green-400'));
   const fmtBitrate = (bps) => bps ? (bps >= 1e6 ? (bps/1e6).toFixed(1) + ' Mbit/s' : Math.round(bps/1e3) + ' kbit/s') : null;
   function updateLiveStats() {
     if (!videoElement) return;
@@ -606,44 +599,20 @@
           }
         }
       }
-      // Audio counts as "explicit" (→ transcode, so the server outputs the CHOSEN track) only
-      // when the default track is KNOWN AND the chosen one differs from it. If the default track
-      // is unknown (no streams), it does NOT transcode — Direct Play takes precedence.
-      const allStreams = titleStreams;
-      const audioTracks = allStreams.filter(s => s.Type === 'Audio');
-      const defaultAudioIndex = (audioTracks.find(s => s.IsDefault) || audioTracks[0])?.Index ?? -1;
-      const explicitAudio = audioIndex !== -1 && defaultAudioIndex !== -1 && audioIndex !== defaultAudioIndex;
-      // A subtitle forces a transcode only when it is BURNED IN:
-      // text subtitles only with burn-in enabled, graphic subtitles (PGS/VobSub) always.
-      // External text subtitles (VTT overlay) need NO transcode → Direct Play stays possible,
-      // and the subtitle switch can happen softly (without reloading).
-      const subStreams = allStreams;
-      const subStream  = subtitleIndex !== -1 ? subStreams.find(s => s.Index === subtitleIndex && s.Type === 'Subtitle') : null;
-      const subCodec    = (subStream?.Codec || '').toLowerCase();
-      const isPgsSub    = PGS_CODECS.includes(subCodec);
-      const isVobSub    = VOBSUB_CODECS.includes(subCodec);          // DVD/VobSub → raw .mks from 12.2
-      const isGraphicSub = GRAPHIC_SUB_CODECS.includes(subCodec);
-      // libbitsub renders PGS and VobSub client-side (when enabled); anything else graphic, or with
-      // client rendering off, has to be burned in.
-      const graphicClientRender = clientGraphicRender && (isPgsSub || isVobSub);
-      const subWillBurn = subtitleIndex !== -1 && (playbackPrefs.burnSubtitles || (isGraphicSub && !graphicClientRender));
-
-      const enableDirectPlay = !explicitAudio && !subWillBurn && !forceTranscode;
-      // On an explicit audio switch/burned-in subtitle: DirectStream OFF + re-encode audio → the
-      // server is guaranteed to output the CHOSEN track instead of copying the default (German) track.
-      const enableDirectStream = !explicitAudio && !subWillBurn && !forceTranscode;
-      const allowAudioStreamCopy = !explicitAudio;
+      // What to ask the server for — the rule Details' media info shows in advance (playback.js): a track
+      // other than the file's default, or a burned-in subtitle, turns Direct Play off. External text
+      // subtitles (VTT overlay) and PGS/VobSub drawn by libbitsub keep it, and switch softly.
+      const plan = playbackPlan(titleStreams, audioIndex, subtitleIndex, playbackPrefs, forceTranscode);
+      const { enableDirectPlay, enableDirectStream, allowAudioStreamCopy } = plan;
       dlog('[OcenFin] setupPlayback →', { item: item?.Name, audioIndex, subtitleIndex, enableDirectPlay, enableDirectStream, allowAudioStreamCopy, forceTranscode });
-      // Direct Play: full bitrate; transcode: cap it so the server keeps up in real time.
-      const requestBitrate = enableDirectPlay ? maxBitrate : Math.min(maxBitrate, TRANSCODE_MAX_BITRATE);
       if (mySetup !== setupToken) return;   // a newer setup started while we fetched the streams
       const info = await getPlaybackInfoFast({
         serverUrl: session.serverUrl, userId: selectedUser.Id, token: session.token, itemId: item.Id,
         audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex,
-        maxBitrate: requestBitrate, startTicks: 0,   // resume happens client-side (seekToResume)
+        maxBitrate: plan.maxBitrate, startTicks: 0,   // resume happens client-side (seekToResume)
         enableDirectPlay, enableDirectStream, allowAudioStreamCopy,
-        burnSubtitles: playbackPrefs.burnSubtitles,
-        clientGraphicSubs: clientGraphicRender,
+        burnSubtitles: plan.burnSubtitles,
+        clientGraphicSubs: plan.clientGraphicSubs,
         mediaSourceId,
       });
       if (mySetup !== setupToken) return;   // superseded while PlaybackInfo was in flight
@@ -1248,7 +1217,7 @@
     prefetchPlaybackInfo({
       serverUrl: session.serverUrl, userId: selectedUser.Id, token: session.token, itemId: nextEpisode.Id,
       audioStreamIndex: selectedAudioIndex, subtitleStreamIndex: selectedSubtitleIndex,
-      maxBitrate, burnSubtitles: playbackPrefs.burnSubtitles, mediaSourceId: null,
+      maxBitrate: DIRECT_MAX_BITRATE, burnSubtitles: playbackPrefs.burnSubtitles, mediaSourceId: null,
       clientGraphicSubs: clientGraphicRender,
     });
   }
@@ -1387,12 +1356,12 @@
   async function fetchNextFilm() {
     const t0 = performance.now();
     try {
-      const r = await fetch(`${session.serverUrl}/Items/${item.Id}/Collections?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
+      const r = await fetch(`${session.serverUrl}/Items/${item.Id}/Collections?UserId=${selectedUser.Id}`, { headers: authHeaders() });
       if (!r.ok || destroyed) return;
       const cols = ((await r.json()).Items || []).filter(c => c.Type === 'BoxSet').slice(0, 4);
       const lists = await Promise.all(cols.map(c =>
-        fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${c.Id}&Fields=PrimaryImageAspectRatio&Limit=100&EnableTotalRecordCount=false`,
-              { headers: getAuthHeaders() })
+        fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${c.Id}&ImageTypeLimit=1&Limit=100&EnableTotalRecordCount=false`,
+              { headers: authHeaders() })
           .then(res => res.ok ? res.json() : null).then(d => d?.Items || []).catch(() => [])));
       if (destroyed) return;
       const list = lists.filter(l => l.some(x => x.Id === item.Id)).sort((a, b) => a.length - b.length)[0];
@@ -1428,20 +1397,14 @@
   let episodePosition = $derived((item?.Type === 'Episode' && item.IndexNumber != null && seasonTotal > 0)
                    ? `${i18n.t.episode} ${item.IndexNumber} ${i18n.t.of} ${seasonTotal}` : '');
 
-  // Info line for the next episode: "S2 · E1 · 52 min · ends at 11:59"
+  // Info line for the next title: "S2:E1 · 52 min · ends at 11:59" — number, running time and end as the cards and the
+  // title page write them (utils.js, §141; it said "S2 · E1"). The end counts from the resume point, where it starts.
   let nextEpisodeMeta = $derived.by(() => {
     if (!upNext) return '';
-    const parts = [];
-    if (upNext.ParentIndexNumber != null && upNext.IndexNumber != null)
-      parts.push(`S${upNext.ParentIndexNumber} · E${upNext.IndexNumber}`);
-    else if (upNext.Type === 'Movie' && upNext.ProductionYear) parts.push(String(upNext.ProductionYear));
-    const mins = upNext.RunTimeTicks ? Math.round(upNext.RunTimeTicks / 600000000) : 0;
-    if (mins) {
-      parts.push(`${mins} ${i18n.t.mins}`);
-      const end = new Date(Date.now() + mins * 60000);
-      parts.push(`${i18n.t.endsAt} ${end.toLocaleTimeString(i18n.lang || 'en', { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`);
-    }
-    return parts.join(' · ');
+    const parts = [upNext.Type === 'Episode' ? episodeCode(upNext)
+                   : upNext.Type === 'Movie' && upNext.ProductionYear ? String(upNext.ProductionYear) : ''];
+    if (runtimeLabel(upNext.RunTimeTicks)) parts.push(runtimeLabel(upNext.RunTimeTicks), endsAtLabel(upNext, use24h));
+    return parts.filter(Boolean).join(' · ');
   });
 
   // ============================================================
@@ -1545,7 +1508,6 @@
   // API
   // ============================================================
 
-  const getAuthHeaders = () => authHeaders(session.token);
 
   // ONE /Items/{id} request per Player: fetchMediaSources (chapters, track lists, trickplay), the
   // picked start's source (sourceForPick) and the title-streams fallback read the same answer — a
@@ -1554,7 +1516,7 @@
   // later caller tries again.
   let _fullItemP = null;
   function fetchFullItem() {
-    _fullItemP ??= fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() })
+    _fullItemP ??= fetch(`${session.serverUrl}/Items/${item.Id}?UserId=${selectedUser.Id}`, { headers: authHeaders() })
       .then(r => (r.ok ? r.json() : null)).catch(() => null)
       .then(d => { if (!d) _fullItemP = null; return d; });
     return _fullItemP;
@@ -1579,7 +1541,7 @@
     // 1) Media Segments API (the Intro Skipper plugin and the server's own detection deliver via this).
     //    Query without a type filter and filter ourselves — the Recap segment is read from the same answer.
     try {
-      const res = await fetch(`${session.serverUrl}/MediaSegments/${item.Id}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${session.serverUrl}/MediaSegments/${item.Id}`, { headers: authHeaders() });
       if (res.ok) {
         const segs = (await res.json()).Items || [];
         dlog('[OcenFin] media segments:', segs.map(s => s.Type));
@@ -1655,7 +1617,7 @@
         // IsMissing=false: with "display missing episodes" on in the Jellyfin profile the list holds
         // placeholders without a file, and Next / auto-play landed on the error page.
         `${session.serverUrl}/Shows/${item.SeriesId}/Episodes?UserId=${selectedUser.Id}&IsMissing=false`,
-        { headers: getAuthHeaders() }
+        { headers: authHeaders() }
       );
       if (res.ok) {
         const data     = await res.json();
@@ -1669,7 +1631,7 @@
     try {
       await fetch(`${session.serverUrl}/Sessions/Playing`, {
         method: "POST",
-        headers: getAuthHeaders(),
+        headers: authHeaders(),
         body: JSON.stringify({
           ItemId: item.Id, PositionTicks: startTicks,
           IsPaused: false, PlayMethod: playMethod,
@@ -1684,7 +1646,7 @@
     try {
       await fetch(`${session.serverUrl}/Sessions/Playing/Progress`, {
         method: "POST",
-        headers: getAuthHeaders(),
+        headers: authHeaders(),
         body: JSON.stringify({
           ItemId: item.Id,
           PositionTicks: positionTicks(),
@@ -1702,7 +1664,7 @@
     try {
       await fetch(`${session.serverUrl}/Sessions/Playing/Stopped`, {
         method: "POST",
-        headers: getAuthHeaders(),
+        headers: authHeaders(),
         keepalive,
         body: JSON.stringify({
           ItemId: item.Id,
@@ -1721,7 +1683,7 @@
     try {
       fetch(`${session.serverUrl}/Sessions/Playing/Progress`, {
         method: "POST",
-        headers: getAuthHeaders(),
+        headers: authHeaders(),
         keepalive: true,
         body: JSON.stringify({
           ItemId: item.Id,
@@ -1883,13 +1845,7 @@
     isFavorite = next;
     resetControlsTimeout();
     // Rolled back when the server refuses or cannot be reached — the heart used to stay as set.
-    try {
-      const res = await fetch(`${session.serverUrl}/UserFavoriteItems/${item.Id}?UserId=${selectedUser.Id}`, {
-        method: next ? "POST" : "DELETE",
-        headers: getAuthHeaders()
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch (e) { console.warn('[OcenFin] favorite toggle failed, rolled back:', e?.message || e); isFavorite = !next; }
+    if (!(await setFavorite(item.Id, selectedUser.Id, next))) isFavorite = !next;
   }
 
   // ============================================================
@@ -2392,7 +2348,7 @@
       <div class="flex flex-col gap-2">
         <div class="flex justify-between gap-8">
           <span class="text-gray-500">{i18n.t.infoMethod}</span>
-          <span class="font-bold {playMethodColor}">{playMethodLabel}</span>
+          <span class="font-bold {PLAY_METHODS[playMethod].color}">{PLAY_METHODS[playMethod].label}</span>
         </div>
         {#if infoVideoStream}
           <div class="flex justify-between gap-8">
@@ -2400,7 +2356,7 @@
             <span class="text-white font-mono text-right">{[
               infoVideoStream.Codec ? infoVideoStream.Codec.toUpperCase() : null,
               (liveStats.width && liveStats.height) ? `${liveStats.width}×${liveStats.height}` : (infoVideoStream.Width ? `${infoVideoStream.Width}×${infoVideoStream.Height}` : null),
-              infoVideoStream.AverageFrameRate ? `${infoVideoStream.AverageFrameRate.toFixed(0)} fps` : null,
+              frameRateLabel(infoVideoStream) || null,
               fmtBitrate(infoVideoStream.BitRate)
             ].filter(Boolean).join(' · ')}</span>
           </div>
@@ -2429,10 +2385,11 @@
     </div>
   {/if}
 
-  <!-- MAIN OVERLAY — clicking the empty picture area (the overlay itself, not its buttons) pauses/plays -->
+  <!-- MAIN OVERLAY — clicking the empty picture area (the overlay itself, not its buttons) pauses/plays.
+       Its shade (.hud-shade, below) carries the HUD's text over any picture, a white one included (§147). -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/50 flex flex-col justify-between p-10 transition-opacity duration-500 z-50
+  <div class="absolute inset-0 hud-shade flex flex-col justify-between p-10 transition-opacity duration-500 z-50
               {showControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}"
        onclick={(e) => { if (e.target === e.currentTarget) togglePlay(); }}>
 
@@ -2441,12 +2398,12 @@
       <!-- min-w-0 so this block can actually shrink; without it a long episode name wraps over
            several lines. The clock/buttons on the right are already protected by shrink-0. -->
       <div class="min-w-0">
-        <h1 class="text-3xl font-bold drop-shadow-lg line-clamp-2">{item.Name}</h1>
+        <h1 class="text-3xl leading-[1.3] -my-[0.05em] font-bold drop-shadow-lg line-clamp-2">{item.Name}</h1>
         {#if item.SeriesName}
-          <p class="text-gray-400 text-lg mt-1 truncate">{item.SeriesName} · {item.SeasonName}</p>
+          <p class="text-gray-200 text-lg mt-1 truncate">{[item.SeriesName, item.SeasonName].filter(Boolean).join(' · ')}</p>
         {/if}
         {#if episodePosition}
-          <p class="text-gray-500 text-base mt-0.5 font-semibold tracking-wide">{episodePosition}</p>
+          <p class="text-gray-300 text-base mt-0.5 font-semibold tracking-wide">{episodePosition}</p>
         {/if}
       </div>
       <div class="flex items-center gap-4 shrink-0">
@@ -2688,11 +2645,12 @@
         <div class="overflow-y-auto hide-scrollbar flex flex-col gap-2">
 
           {#if settingsTab === 'audio'}
-            {#each audioStreams as stream (stream.Index)}
+            {#each audioMenu as stream (stream.Index)}
+              {@const l = trackNames.get(stream.Index)}
               <button onclick={() => changeTrack('audio', stream.Index)}
                 class="text-left p-3 rounded-lg font-medium text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors
                        {selectedAudioIndex === stream.Index ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
-                {stream.DisplayTitle || `${stream.Language || i18n.t.unknown} – ${stream.Codec}`}
+                {l?.main}{#if l?.tech}<span class="opacity-70">{' · ' + l.tech}</span>{/if}
               </button>
             {:else}
               <p class="text-gray-500 text-sm p-3">—</p>
@@ -2703,12 +2661,13 @@
                      {selectedSubtitleIndex === -1 ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
               {i18n.t.subtitleOff}
             </button>
-            {#each subtitleStreams as stream (stream.Index)}
+            {#each subtitleMenu as stream (stream.Index)}
+              {@const l = trackNames.get(stream.Index)}
               <button onclick={() => changeTrack('subtitle', stream.Index)}
                 onfocus={() => prefetchSubtitle(stream)} onmouseenter={() => prefetchSubtitle(stream)}
                 class="text-left p-3 rounded-lg font-medium text-sm focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white transition-colors
                        {selectedSubtitleIndex === stream.Index ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
-                {stream.DisplayTitle || stream.Language || i18n.t.unknown}
+                {l?.main}{#if l?.tech}<span class="opacity-70">{' · ' + l.tech}</span>{/if}
               </button>
             {/each}
           {/if}
@@ -2870,6 +2829,19 @@
   onClose={async () => { pickerMode = null; if (wasPlayingBeforePicker) videoElement?.play().catch(() => {}); wasPlayingBeforePicker = false; await tick(); if (controlOpener && document.contains(controlOpener)) controlOpener.focus(); else playerContainer?.focus(); controlOpener = null; }} />
 
 <style>
+  /* The controls' shade (§147). Its job is the HUD's text over ANY picture: on a pure white frame — the worst case, no
+     picture is brighter — every line keeps 4.5:1, down to "Episode X of Y" under a two-line title at 120 % (y ≈ 258 px,
+     24 %: 0.675 black there). Top: 0.8 black to 14 %, then a smoothstep down to nothing at 54 %; bottom: a smoothstep from
+     54 % up to 0.85 at 92 % (the time labels from 78 %). Smoothstep is flat at both ends — three straight pieces (it was
+     0.8 → 0.65 at 28 % → 0 at 50 %) left a visible edge where the slope changed. Stops = 0.8·(1 − smoothstep), 8 steps. */
+  .hud-shade {
+    background-image: linear-gradient(to bottom,
+      rgb(0 0 0 / 0.8) 14%, rgb(0 0 0 / 0.766) 19%, rgb(0 0 0 / 0.675) 24%, rgb(0 0 0 / 0.547) 29%, rgb(0 0 0 / 0.4) 34%,
+      rgb(0 0 0 / 0.253) 39%, rgb(0 0 0 / 0.125) 44%, rgb(0 0 0 / 0.034) 49%, rgb(0 0 0 / 0) 54%,
+      rgb(0 0 0 / 0.037) 58.75%, rgb(0 0 0 / 0.133) 63.5%, rgb(0 0 0 / 0.269) 68.25%, rgb(0 0 0 / 0.425) 73%,
+      rgb(0 0 0 / 0.581) 77.75%, rgb(0 0 0 / 0.717) 82.5%, rgb(0 0 0 / 0.813) 87.25%, rgb(0 0 0 / 0.85) 92%);
+  }
+
   /* JASSUB (ASS subtitles) puts its canvas right after the <video>: above the picture, below spinner and controls. */
   :global(canvas.JASSUB) { z-index: 20; }
 

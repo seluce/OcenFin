@@ -1,8 +1,10 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, getItemSubtitle, personImageUrl, itemBlurHash, blurUp, longPress, authHeaders, dlog, getItemImageUrl } from '../utils.js';
+  import { getItemSubtitle, itemBlurHash, blurUp, longPress, authHeaders, dlog, getItemImageUrl } from '../utils.js';
   import { session } from '../session.svelte.js';
   import PosterCard from './PosterCard.svelte';
+  import CardStatus from './CardStatus.svelte';
+  import PersonCard from './PersonCard.svelte';
   import { tick } from 'svelte';
 
   // focusItemId: the card to land on after the parent brought us back (from Details, say). Passed in
@@ -38,7 +40,6 @@
       )
   );
 
-  const getAuthHeaders = () => authHeaders(session.token);
 
   async function loadFavorites() {
     isLoadingFavorites = true;
@@ -50,12 +51,12 @@
         fetch(
           `${session.serverUrl}/Items?UserId=${selectedUser.Id}&Filters=IsFavorite&Recursive=true` +
           `&IncludeItemTypes=Movie,Series,BoxSet,Season,Episode&SortBy=SortName&SortOrder=Ascending` +
-          `&Fields=PrimaryImageAspectRatio,ProductionYear,UserData,SeriesName,ParentIndexNumber,IndexNumber,SeriesId&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`,
-          { headers: getAuthHeaders() }
+          `&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`,
+          { headers: authHeaders() }
         ),
         fetch(
-          `${session.serverUrl}/Persons?UserId=${selectedUser.Id}&IsFavorite=true&Fields=PrimaryImageAspectRatio`,
-          { headers: getAuthHeaders() }
+          `${session.serverUrl}/Persons?UserId=${selectedUser.Id}&IsFavorite=true`,
+          { headers: authHeaders() }
         ),
       ]);
       const content = contentRes.ok ? ((await contentRes.json()).Items || []) : [];
@@ -92,8 +93,8 @@
     <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Type === 'Season' ? (item.SeriesName || item.Name) : item.Name}</span>
     {#if item.Type === 'Season'}
       <span class="text-xs text-gray-400 block truncate w-full">{item.Name}</span>
-    {:else if item.ProductionYear}
-      <span class="text-xs text-gray-400 block truncate w-full">{item.ProductionYear}</span>
+    {:else if getItemSubtitle(item)}
+      <span class="text-xs text-gray-400 block truncate w-full">{getItemSubtitle(item)}</span>
     {/if}
   {/snippet}
   <div class="flex items-center gap-4 mb-10">
@@ -119,7 +120,7 @@
       {#each favGroups as group (group.key)}
         {#if group.items.length > 0}
           <h2 class="text-3xl font-bold text-white mb-6 px-2">{group.label}</h2>
-          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-12">
+          <div data-focus-grid class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-12">
             {#each group.items as item (item.Id)}
               <PosterCard {item} {onOpenDetails} {onContextMenu} caption={cardCaption} />
             {/each}
@@ -129,23 +130,19 @@
 
       {#if favEpisodes.length > 0}
         <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.episodes}</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pr-4 mb-12">
+        <div data-focus-grid class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pr-4 mb-12">
           {#each favEpisodes as item (item.Id)}
             <button onclick={() => onOpenDetails(item)} data-item-id={item.Id}
               {@attach longPress()} onlongpress={() => onContextMenu(item)}
-              class="group focus:outline-none text-left scroll-my-4">
-              <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
+              class="group isolate focus:outline-none text-left scroll-my-4">
+              <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
                 {#if getItemImageUrl(item, 'landscape')}
                   <img src={getItemImageUrl(item, 'landscape')} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
                 {/if}
-                {#if itemProgress(item) > 0}
-                  <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                    <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                  </div>
-                {/if}
+                <CardStatus {item} />
               </div>
               <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.SeriesName || item.Name}</span>
-              <span class="text-xs text-gray-400 block truncate w-full">{getItemSubtitle(item, i18n.t.today)}</span>
+              <span class="text-xs text-gray-400 block truncate w-full">{getItemSubtitle(item)}</span>
             </button>
           {/each}
         </div>
@@ -153,20 +150,9 @@
 
       {#if favPersons.length > 0}
         <h2 class="text-3xl font-bold text-white mb-6 px-2">{i18n.t.people}</h2>
-        <div class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-6 pr-4 mb-12">
+        <div data-focus-grid class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-6 pr-4 mb-12">
           {#each favPersons as p (p.Id)}
-            <button onclick={() => onOpenPerson(p)} data-item-id={p.Id} class="group focus:outline-none text-center scroll-my-4">
-              <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl">
-                {#if personImageUrl(session.serverUrl, p)}
-                  <img src={personImageUrl(session.serverUrl, p)} {@attach blurUp(itemBlurHash(p))} alt={p.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
-                {:else}
-                  <div class="w-full h-full flex items-center justify-center text-gray-600">
-                    <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-                  </div>
-                {/if}
-              </div>
-              <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full block">{p.Name}</span>
-            </button>
+            <PersonCard person={p} onclick={() => onOpenPerson(p)} class="scroll-my-4" />
           {/each}
         </div>
       {/if}

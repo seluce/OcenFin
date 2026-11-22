@@ -7,7 +7,8 @@
   // only offers the entry to such profiles.
   import { i18n, LANGUAGES } from '../i18n.svelte.js';
   import { session } from '../session.svelte.js';
-  import { authHeaders, focusOnMount, isBackKey, uiFade, dropTrapOnOutro } from '../utils.js';
+  import { authHeaders, focusOnMount } from '../utils.js';
+  import Dialog from './Dialog.svelte';
   import { onMount } from 'svelte';
 
   let {
@@ -32,7 +33,7 @@
     status = 'searching'; results = [];
     try {
       const res = await fetch(`${session.serverUrl}/Items/${item.Id}/RemoteSearch/Subtitles/${code(key)}?isPerfectMatch=false`,
-        { headers: authHeaders(session.token) });
+        { headers: authHeaders() });
       if (my !== searchToken) return;
       if (!res.ok) { console.warn('[subtitles] search: HTTP', res.status); status = 'failed'; return; }
       const list = (await res.json()) || [];
@@ -49,7 +50,7 @@
     busyId = r.Id; status = 'downloading';
     try {
       const res = await fetch(`${session.serverUrl}/Items/${item.Id}/RemoteSearch/Subtitles/${encodeURIComponent(r.Id)}`,
-        { method: 'POST', headers: authHeaders(session.token) });
+        { method: 'POST', headers: authHeaders() });
       if (!res.ok) { console.warn('[subtitles] download: HTTP', res.status); status = 'failed'; busyId = null; return; }
     } catch (e) { console.warn('[subtitles] download failed', e); status = 'failed'; busyId = null; return; }
     // Downloaded; the server reads it in on its own schedule. Close once the track is there, or say
@@ -70,10 +71,8 @@
   onMount(() => search(lang));
 </script>
 
-<div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8" role="dialog" tabindex="-1"
-  transition:uiFade onoutrostart={dropTrapOnOutro}
-  onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); onClose?.(); } }}>
-  <div data-modal data-focus-trap
+<Dialog onBack={() => onClose?.()}>
+  <div data-modal
     class="bg-gray-800 border border-gray-700 rounded-2xl p-8 w-full max-w-3xl max-h-[85vh] flex flex-col gap-5 shadow-2xl">
     <div class="flex items-center justify-between gap-4">
       <div class="min-w-0">
@@ -132,4 +131,4 @@
       <p class="text-blue-300 text-center font-semibold">{status === 'downloading' ? i18n.t.subtitleDownloading : i18n.t.subtitleApplying}</p>
     {/if}
   </div>
-</div>
+</Dialog>

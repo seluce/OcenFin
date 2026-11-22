@@ -5,11 +5,14 @@
   // persistence and passes things in via props/callbacks (pattern like Collection/Favorites).
   import { tick, untrack } from 'svelte';
   import CardStatus from './CardStatus.svelte';
+  import TitleMeta from './TitleMeta.svelte';
   import { diagCount } from '../diag.js';
   import { session } from '../session.svelte.js';
-  import { i18n, plural } from '../i18n.svelte.js';
-  import { itemProgress, getItemSubtitle, getItemImageUrl, blurUp, itemBlurHash, longPress,
-           focusOnMount, isBackKey, makeFocusReturn, authHeaders, uiFade, dropTrapOnOutro, dlog, markContentChange } from '../utils.js';
+  import { i18n } from '../i18n.svelte.js';
+  import { getItemSubtitle, getItemImageUrl, backdropPreview, blurUp, itemBlurHash, longPress,
+           focusOnMount, isBackKey, makeFocusReturn, authHeaders, dlog, markContentChange, libraryIcon, parseRating } from '../utils.js';
+  import Dialog from './Dialog.svelte';
+  const FUNNEL_ICON = 'M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z';
 
   let {
     selectedUser,
@@ -40,6 +43,14 @@
   // 187 and at 340) — it is near constant, and its cause is still open. Don't tune this constant
   // hoping to move it.
   const libraryItemLimit = 25;
+  // What a card reads (§126): SortName for the A–Z highlight, ChildCount for an empty playlist and the info box's
+  // seasons, RecursiveItemCount for a series' watched share — the three of them only come when asked. A series' years
+  // (EndDate, Status) come anyway: they are no ItemFields, and the server drops such a name unread (§129).
+  // PrimaryImageAspectRatio is gone — nothing reads it, and the server works it out per title. Images: the poster and ONE backdrop (the
+  // preview behind the grid) — without the limit every title brings the tags and BlurHashes of all its pictures
+  // (logo, thumb, banner, disc, every backdrop), which a list of thousands keeps in memory for nothing.
+  const LIST_FIELDS = 'SortName,ChildCount,RecursiveItemCount';
+  const LIST_IMAGES = '&ImageTypeLimit=1&EnableImageTypes=Primary,Backdrop';
 
   // ── Grid state ──────────────────────────────────────────────
   let currentItems        = $state([]);
@@ -77,28 +88,12 @@
     jumpOverlayTimer = setTimeout(() => { jumpLetterOverlay = ''; }, 800);
   }
 
-  // ── Backdrop preview (700 ms after focusing a card) ─────────
+  // ── Backdrop preview (700 ms after focusing a card; backdropPreview, utils.js) ─────────
+  // Leaving the cards for the navigation, the filters or the A–Z bar lets it clear, as on the home screen.
   let previewBackdrop = $state('');
-  let previewTimer, clearTimer;
-  function previewItem(item) {
-    if (!displaySettings.backdropPreview) return;
-    clearTimeout(clearTimer);   // a card focus follows directly → do NOT clear (no card→card flicker)
-    clearTimeout(previewTimer);
-    previewTimer = setTimeout(() => {
-      const tag  = item.BackdropImageTags?.[0];
-      const pTag = item.ParentBackdropImageTags?.[0];
-      if (tag)       previewBackdrop = `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${tag}&maxWidth=1280&quality=70&format=webp`;
-      else if (pTag) previewBackdrop = `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${pTag}&maxWidth=1280&quality=70&format=webp`;
-    }, 700);
-  }
-  // Focus leaves a card: stop the fade-in timer and clear the backdrop with a short delay.
-  // If another card focus follows immediately, previewItem cancels the clearing → no flicker.
-  // If focus goes to the navigation/filter/A-Z, the clearing stands → like in the dashboard.
-  function cancelPreview() {
-    clearTimeout(previewTimer);
-    clearTimeout(clearTimer);
-    clearTimer = setTimeout(() => { previewBackdrop = ''; }, 150);
-  }
+  const backdrop = backdropPreview(url => { previewBackdrop = url; });
+  function previewItem(item) { if (displaySettings.backdropPreview) backdrop.show(item); }
+  const cancelPreview = () => backdrop.hide();
 
   // ── Info preview (on by default, CODE-HEALTH §124) ──────────
   // Two seconds at rest on a card: rating, genres and plot in a box beside it, the rest of the library dimmed — the
@@ -106,6 +101,8 @@
   // not even one that moves nothing, like ▼ in the last row. Once it is open, ONE calm arrow step takes it along to
   // the next title at once (reading a row); a held or hurried arrow, any other key, the pointer or a scroll close it,
   // and Back closes only the box (App asks handleBackKey). Not focusable, never catches the pointer.
+  // The card the library focuses ITSELF on opening gets no box until the first key or a really moving pointer: two
+  // seconds of looking at a freshly opened grid are no rest on its first title (it also cost a second Back to leave).
   const INFO_DELAY = 2000;
   const FOLLOW_GAP = 300;           // ms: arrows closer than this are scrolling, not reading
   const INFO_TYPES = new Set(['Movie', 'Series', 'BoxSet']);
@@ -116,6 +113,7 @@
   let infoTimer, infoPrefetch, infoToken = 0;
   let infoFor = null;               // { item, card } from the focus until hideInfo(): waiting or shown
   let followArmed = false, lastStep = 0;
+  let quietCard = null;             // focused by focusFirstCard(), not by the user: no box until they move
   const infoCache = new Map();      // id → { Overview, Genres }, bounded: browsing 500 titles must not keep 500 plots
   const infoLoading = new Map();    // id → promise of its entry, while a request for it runs
   function infoExtra(item) {
@@ -130,7 +128,7 @@
     const ids = [...new Set([item, ...visibleLibraryItems.slice(Math.max(0, i - 24), i + 36)]
       .filter(x => INFO_TYPES.has(x.Type) && !infoCache.has(x.Id) && !infoLoading.has(x.Id)).map(x => x.Id))];
     if (!ids.length) return;
-    const req = fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&Ids=${ids.join(',')}&Fields=Overview,Genres&EnableTotalRecordCount=false`, authOpts())
+    const req = fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&Ids=${ids.join(',')}&Fields=Overview,Genres&EnableUserData=false&EnableImages=false&EnableTotalRecordCount=false`, authOpts())
       .then(r => r.ok ? r.json() : null).catch(() => null)
       .then(d => {
         const got = new Map((d?.Items || []).map(it => [it.Id, it]));
@@ -152,6 +150,7 @@
     if (!displaySettings.infoPreview || !INFO_TYPES.has(item.Type)) return;
     infoFor = { item, card };
     window.addEventListener('keydown', onInfoKey, true);
+    if (card === quietCard) { window.addEventListener('pointermove', onQuietPointer, true); return; }   // onInfoKey ends it
     const token = infoToken;
     if (follow) {
       // A reading step: this runs inside spatialnav's keydown, so the microtask comes after its scrollIntoView and
@@ -203,6 +202,7 @@
   }
   // Capture, before spatialnav moves focus: a key that moves on is answered by blur/focus anyway.
   function onInfoKey(e) {
+    quietCard = null;                                         // the user moved: from here on the usual two seconds
     if (info && isBackKey(e)) return;                         // App asks handleBackKey(): only the box closes
     if (document.activeElement !== infoFor?.card) { hideInfo(); return; }
     if (!info) { scheduleInfo(infoFor.item, infoFor.card); return; }   // waiting: the two seconds start again
@@ -213,11 +213,20 @@
     followArmed = true;                                       // the focus that follows brings its box at once;
     setTimeout(() => { followArmed = false; }, 0);            // an arrow that moves nothing leaves the box as it is
   }
+  // The pointer counts like spatialnav's: only when it really moves (a resting one fires pointermove too). Onto
+  // another card, spatialnav's focus does the rest; anywhere else the wait starts on the card that has focus.
+  function onQuietPointer(e) {
+    if (!e.movementX && !e.movementY) return;
+    quietCard = null;
+    window.removeEventListener('pointermove', onQuietPointer, true);
+    if (infoFor && !info && document.activeElement === infoFor.card) scheduleInfo(infoFor.item, infoFor.card);
+  }
   function hideInfo() {
     infoToken++;
     clearTimeout(infoTimer); clearTimeout(infoPrefetch);
     infoFor = null;
     window.removeEventListener('keydown', onInfoKey, true);
+    window.removeEventListener('pointermove', onQuietPointer, true);
     info = null;
   }
   export function handleBackKey() {
@@ -231,18 +240,21 @@
     node.style.top = `${Math.max(info.minTop, Math.min(info.top, info.maxBottom - h))}px`;
   }
   $effect(() => () => hideInfo());
-  // Second item of the meta line: a series counts its seasons, anything else gives its running time.
-  const infoLength = (it) => it.Type === 'Series'
-    ? (it.ChildCount ? plural('seasonCount', it.ChildCount) : '')
-    : (it.RunTimeTicks ? `${Math.round(it.RunTimeTicks / 600000000)} ${i18n.t.mins}` : '');
 
   // ── Filters ─────────────────────────────────────────────────
   let showFilterMenu  = $state(false);
   let activeFilters   = $state({ isFavorite: false, isPlayed: false, isNotPlayed: false });
   let availableGenres = $state([]);
   let selectedGenres  = $state([]);
-  let selectedFsk     = $state([]);
-  const fskOptions    = ['0','6','12','16','18'];
+  // Age ratings: the ones the library's titles CARRY, from /Items/Filters (§144) — Filters2 has none, and the fixed
+  // FSK 0…18 chips found nothing in a library rated PG-13 or TV-MA. Asked when the menu first opens (the server walks
+  // every title for it), at once only when a remembered rating filter needs checking. The selection holds the
+  // server's own strings: the query sends exactly what the titles carry, and "FSK 12" / "FSK-12" share one chip.
+  let ratingsRaw      = $state([]);
+  let ratingsFor      = null;   // the library the list belongs to, or is being asked for
+  let selectedRatings = $state([]);
+  let ratingGroups    = $derived(groupRatings(ratingsRaw));
+  let ratingRows      = $derived([ratingGroups.filter(g => g.isAge), ratingGroups.filter(g => !g.isAge)].filter(r => r.length));
   // Track languages (Jellyfin 12+, via /Items/Filters2): raw { Name, Value } lists from the server,
   // grouped for display below. The selection holds CODES, not labels, so it survives a change of the
   // interface language and "Deutsch" can stand for both "ger" and "deu".
@@ -253,7 +265,7 @@
   let audioLangGroups    = $derived(groupLanguages(audioLangsRaw));
   let subtitleLangGroups = $derived(groupLanguages(subtitleLangsRaw));
   let hasFilters = $derived(activeFilters.isFavorite || activeFilters.isPlayed || activeFilters.isNotPlayed
-                  || selectedGenres.length > 0 || selectedFsk.length > 0
+                  || selectedGenres.length > 0 || selectedRatings.length > 0
                   || selectedAudioLangs.length > 0 || selectedSubtitleLangs.length > 0);
 
   // ── Sorting ─────────────────────────────────────────────────
@@ -294,7 +306,7 @@
 
   function currentlyHasFilters() {
     return activeFilters.isFavorite || activeFilters.isPlayed || activeFilters.isNotPlayed
-           || selectedGenres.length > 0 || selectedFsk.length > 0
+           || selectedGenres.length > 0 || selectedRatings.length > 0
            || selectedAudioLangs.length > 0 || selectedSubtitleLangs.length > 0;
   }
   function currentlyDefaultSort() {
@@ -304,12 +316,12 @@
     return !currentLetter && !currentlyHasFilters() && currentlyDefaultSort();
   }
 
-  const authOpts = () => ({ headers: authHeaders(session.token) });
+  const authOpts = () => ({ headers: authHeaders() });
 
   // ── Loading ─────────────────────────────────────────────────
   async function loadGenres(libraryId) {
     try {
-      const res = await fetch(`${session.serverUrl}/Genres?ParentId=${libraryId}&UserId=${selectedUser.Id}&EnableTotalRecordCount=false`, authOpts());
+      const res = await fetch(`${session.serverUrl}/Genres?ParentId=${libraryId}&UserId=${selectedUser.Id}&EnableImages=false&EnableTotalRecordCount=false`, authOpts());
       // Same guard as loadLanguages: after a quick A → B switch, A's genres arrived last and filled
       // B's filter menu.
       if (res.ok) { const d = await res.json(); if (currentLibraryId === libraryId) { availableGenres = d.Items || []; dropUnknownFilters('genres'); } }
@@ -319,7 +331,8 @@
   // Which audio and subtitle languages the library's titles carry. The server only fills these for
   // Movie/Series/Episode types, and adds the episodes itself when Series is asked for, so one request
   // covers film, series and mixed libraries. Older servers answer without the fields → no sections.
-  async function loadLanguages(libraryId) {
+  // withGenres: the answer's Genres (Name + Id, the same GetGenres over these types) fill the genre menu too.
+  async function loadLanguages(libraryId, withGenres = false) {
     audioLangsRaw = []; subtitleLangsRaw = [];
     const t0 = performance.now();
     try {
@@ -327,11 +340,47 @@
       if (!res.ok) return;
       const d = await res.json();
       if (currentLibraryId !== libraryId) return;   // switched library meanwhile
+      if (withGenres) { availableGenres = d.Genres || []; dropUnknownFilters('genres'); }
       audioLangsRaw    = d.AudioLanguages    || [];
       subtitleLangsRaw = d.SubtitleLanguages || [];
       dropUnknownFilters('languages');
       dlog('[Library] languages', audioLangsRaw.length, 'audio ·', subtitleLangsRaw.length, 'subtitle in', Math.round(performance.now() - t0), 'ms');
     } catch { }
+  }
+
+  // The age ratings the library's titles carry (§144). Only the legacy /Items/Filters has them (QueryFiltersLegacy;
+  // Jellyfin's web client takes its rating filter from there too) — it loads every title of the library on the
+  // server, so it is asked once per library visit, when the menu opens. Same types as the listing; a failed request
+  // is asked again at the next open.
+  async function loadRatings(libraryId, collectionType) {
+    if (!libraryId || ratingsFor === libraryId) return;
+    ratingsFor = libraryId;
+    const t0 = performance.now();
+    const types = LIBRARY_ITEM_TYPES[(collectionType || '').toLowerCase()] || 'Movie,Series';
+    try {
+      const res = await fetch(`${session.serverUrl}/Items/Filters?UserId=${selectedUser.Id}&ParentId=${libraryId}&IncludeItemTypes=${types}`, authOpts());
+      if (!res.ok) throw new Error(res.status);
+      const d = await res.json();
+      if (currentLibraryId !== libraryId) return;   // switched library meanwhile
+      ratingsRaw = (d.OfficialRatings || []).filter(r => typeof r === 'string' && r.trim());
+      dropUnknownFilters('ratings');
+      dlog('[Library] ratings', ratingsRaw.length, 'in', Math.round(performance.now() - t0), 'ms');
+    } catch { if (ratingsFor === libraryId) ratingsFor = null; }
+  }
+
+  // One chip per rating as people read it (parseRating, utils.js, §150): every spelling of an age is one chip with the
+  // bare number — "12", "FSK 12", "FSK-12", "DE-12", an NFO's "DE:FSK 12 / DE:FSK-12 / …"; letter codes (G, PG-13, R,
+  // TV-MA, NR) one each, in their own row below the ages. Sorted by age, a code by its usual one, the unknown last.
+  const ratingKey = (raw) => { const r = parseRating(raw); return r.age != null ? `age:${r.age}` : `code:${r.code.toUpperCase()}`; };
+  function groupRatings(list) {
+    const groups = new Map();
+    for (const raw of list) {
+      const r = parseRating(raw), key = ratingKey(raw);
+      const g = groups.get(key);
+      if (g) g.raws.push(raw);
+      else groups.set(key, { key, label: r.age != null ? String(r.age) : r.code, isAge: r.age != null, sort: r.sort, raws: [raw] });
+    }
+    return [...groups.values()].sort((a, b) => a.sort - b.sort || a.label.localeCompare(b.label, undefined, { numeric: true }));
   }
 
   // The server names languages in English ("German (ger)") and lists every code the files carry, so
@@ -364,10 +413,7 @@
     if (activeFilters.isNotPlayed) f.push('IsUnplayed');
     if (f.length) q += `&Filters=${f.join(',')}`;
     for (const g of selectedGenres) q += `&Genres=${encodeURIComponent(g)}`;
-    if (selectedFsk.length) {
-      const ratings = selectedFsk.map(v => `FSK ${v}`).join('|');
-      q += `&OfficialRatings=${encodeURIComponent(ratings)}`;
-    }
+    if (selectedRatings.length) q += `&OfficialRatings=${encodeURIComponent(selectedRatings.join('|'))}`;
     // Any of the chosen languages; a series counts when one of its episodes has it (server side).
     if (selectedAudioLangs.length)    q += `&AudioLanguages=${selectedAudioLangs.map(encodeURIComponent).join(',')}`;
     if (selectedSubtitleLangs.length) q += `&SubtitleLanguages=${selectedSubtitleLangs.map(encodeURIComponent).join(',')}`;
@@ -404,9 +450,9 @@
       ? selectedGenres.filter(g => g !== name) : [...selectedGenres, name];
     if (!showFilterMenu) applyFilters();
   }
-  function toggleFsk(age) {
-    selectedFsk = selectedFsk.includes(age)
-      ? selectedFsk.filter(v => v !== age) : [...selectedFsk, age];
+  const ratingSelected = (group) => group.raws.some(r => selectedRatings.includes(r));
+  function toggleRating(group) {
+    selectedRatings = ratingSelected(group) ? selectedRatings.filter(r => !group.raws.includes(r)) : [...selectedRatings, ...group.raws];
     if (!showFilterMenu) applyFilters();
   }
   const langSelected = (sel, group) => group.codes.some(c => sel.includes(c));
@@ -421,8 +467,9 @@
   // a full reload per chip tap (tapping 3 genres = 3 fetches, all but the
   // last discarded). Snapshot on open; reload only on an actual change.
   let filterMenuSnapshot = '';
-  const filterStateKey = () => JSON.stringify([activeFilters, selectedGenres, selectedFsk, selectedAudioLangs, selectedSubtitleLangs]);
+  const filterStateKey = () => JSON.stringify([activeFilters, selectedGenres, selectedRatings, selectedAudioLangs, selectedSubtitleLangs]);
   function openFilterMenu(e) {
+    loadRatings(currentLibraryId, currentLibraryType);
     filterFocus.capture(e.currentTarget);
     filterMenuSnapshot = filterStateKey();
     showFilterMenu = true;
@@ -441,13 +488,14 @@
     const f = saved && typeof saved === 'object' ? saved : {};
     activeFilters = { isFavorite: !!f.isFavorite, isPlayed: !!f.isPlayed, isNotPlayed: !!f.isNotPlayed && !f.isPlayed };
     selectedGenres        = strings(f.genres);
-    selectedFsk           = strings(f.fsk).filter(v => fskOptions.includes(v));
+    // `fsk`: the fixed chips before §144 ('12') — kept as the very string they sent.
+    selectedRatings       = [...new Set([...strings(f.ratings), ...strings(f.fsk).filter(v => /^\d{1,2}$/.test(v)).map(v => `FSK ${v}`)])];
     selectedAudioLangs    = strings(f.audio);
     selectedSubtitleLangs = strings(f.subtitle);
   }
   function applyFilters() {
     if (currentLibraryId) onFiltersPersist?.(currentLibraryId, hasFilters ? {
-      ...activeFilters, genres: [...selectedGenres], fsk: [...selectedFsk],
+      ...activeFilters, genres: [...selectedGenres], ratings: [...selectedRatings],
       audio: [...selectedAudioLangs], subtitle: [...selectedSubtitleLangs],
     } : null);
     reloadCurrent();
@@ -458,20 +506,28 @@
   // With the menu open, its close applies the change.
   function dropUnknownFilters(kind) {
     const known = (list, key) => new Set(list.map(x => x?.[key]));
-    let dropped = 0;
+    let dropped = 0, changed = false;
     if (kind === 'genres') {
       const has = known(availableGenres, 'Name');
       const keep = selectedGenres.filter(x => has.has(x));
       dropped = selectedGenres.length - keep.length;
-      if (dropped) selectedGenres = keep;
+      if ((changed = dropped > 0)) selectedGenres = keep;
+    } else if (kind === 'ratings') {
+      // By CHIP, not by string: a remembered "FSK 16" (the old fixed chip's) means the chip "FSK 16" even where the
+      // titles say "DE-16", and a chosen chip takes every string of it along ("FSK 12" + "FSK-12") — else it would
+      // look chosen while some of its titles stayed out.
+      const chosen = new Set(selectedRatings.map(ratingKey));
+      const keep = ratingGroups.filter(g => chosen.has(g.key)).flatMap(g => g.raws);
+      dropped = selectedRatings.filter(r => !keep.includes(r)).length;
+      if ((changed = dropped > 0 || keep.length !== selectedRatings.length)) selectedRatings = keep;
     } else {
       const audio = known(audioLangsRaw, 'Value'), subs = known(subtitleLangsRaw, 'Value');
       const a = selectedAudioLangs.filter(x => audio.has(x)), t = selectedSubtitleLangs.filter(x => subs.has(x));
       dropped = selectedAudioLangs.length - a.length + selectedSubtitleLangs.length - t.length;
-      if (dropped) { selectedAudioLangs = a; selectedSubtitleLangs = t; }
+      if ((changed = dropped > 0)) { selectedAudioLangs = a; selectedSubtitleLangs = t; }
     }
-    if (!dropped) return;
-    dlog('[Library] dropped', dropped, 'remembered', kind, 'filter(s) the library no longer has');
+    if (!changed) return;
+    if (dropped) dlog('[Library] dropped', dropped, 'remembered', kind, 'filter(s) the library no longer has');
     if (!showFilterMenu) applyFilters();
   }
   // In the menu: clears what is set; like every change there, it is applied on close. The button goes
@@ -523,11 +579,16 @@
       // untrack: this runs inside the load $effect, which must not re-run when App saves filters.
       restoreFilters(untrack(() => libraryFilters[lib.Id]));
       currentSort     = librarySorts[lib.Id] ? { ...librarySorts[lib.Id] } : { by: 'SortName', order: 'Ascending' };
+      backdrop.stop();
       previewBackdrop = '';
-      clearTimeout(previewTimer);
-      clearTimeout(clearTimer);
-      loadGenres(lib.Id);
-      loadLanguages(lib.Id);
+      // A film or series library's genres come with its languages: Filters2 works them out for the same titles
+      // anyway, and /Genres had the server build the list a second time (§129). A mixed library still asks /Genres,
+      // whose list also holds what only its other titles carry (home videos, music videos).
+      const typed = !!LIBRARY_ITEM_TYPES[(lib.CollectionType || '').toLowerCase()];
+      if (!typed) loadGenres(lib.Id);
+      loadLanguages(lib.Id, typed);
+      ratingsRaw = []; ratingsFor = null;
+      if (untrack(() => selectedRatings.length)) loadRatings(lib.Id, lib.CollectionType);
       currentLibraryType = (lib.CollectionType || '').toLowerCase();
     }
     currentLibraryName = lib.Name;
@@ -557,7 +618,7 @@
     if (myToken !== loadToken) return;   // a newer request arrived during the count query
     firstLoadedIndex = startIndex;
 
-    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${lib.Id}&Fields=PrimaryImageAspectRatio,SortName,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
+    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${lib.Id}&Fields=${LIST_FIELDS}${LIST_IMAGES}&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${startIndex}`;
     url += getFilterQuery();
 
     const t0 = performance.now();
@@ -605,7 +666,7 @@
     isFetchingMore = true;
     const myToken = loadToken;   // belongs to the CURRENT list — don't append anymore after a reload
     const start = firstLoadedIndex + currentItems.length;
-    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,SortName,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}&EnableTotalRecordCount=false`;
+    let url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=${LIST_FIELDS}${LIST_IMAGES}&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${libraryItemLimit}&StartIndex=${start}&EnableTotalRecordCount=false`;
     url += getFilterQuery();
     try {
       const res = await fetch(url, authOpts());
@@ -641,7 +702,7 @@
     const myToken = loadToken;   // belongs to the CURRENT list — don't prepend anymore after a reload
     const newStart = Math.max(0, firstLoadedIndex - libraryItemLimit);
     const count    = firstLoadedIndex - newStart;
-    const url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=PrimaryImageAspectRatio,SortName,EndDate,Status,ChildCount,RecursiveItemCount,BackdropImageTags&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}&EnableTotalRecordCount=false`;
+    const url = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${currentLibraryId}&Fields=${LIST_FIELDS}${LIST_IMAGES}&SortBy=${currentSort.by}&SortOrder=${currentSort.order}&Limit=${count}&StartIndex=${newStart}${getFilterQuery()}&EnableTotalRecordCount=false`;
     try {
       const res = await fetch(url, authOpts());
       if (res.ok && myToken === loadToken) {
@@ -809,7 +870,9 @@
   async function focusFirstCard() {
     await tick();
     const card = libraryGrid?.querySelector('button');
-    if (card) card.focus();
+    if (!card) return;
+    quietCard = card;   // set before focus(): its focus handler schedules the info box at once
+    card.focus();
   }
   $effect(() => {
     const lib = library;
@@ -867,7 +930,7 @@
       <!-- min-w-0 + truncate on the name, shrink-0 on the count and the actions: a very long library
            name would otherwise push "Surprise me / Filter / Watch together" out of view and make them unreachable. -->
       <h1 class="text-4xl font-bold text-white min-w-0 flex items-baseline gap-2">
-        <span class="truncate">{currentLibraryName}</span>
+        <span class="truncate leading-[1.3] -my-[0.0944em]">{currentLibraryName}</span>
         <span class="text-xl text-gray-500 font-normal shrink-0">({totalLibraryItems})</span>
       </h1>
       <div class="flex items-center gap-3 shrink-0">
@@ -939,7 +1002,8 @@
       <div {@attach infiniteScrollUp} class="h-2 w-full"></div>
     {/if}
 
-    <div bind:this={libraryGrid}
+    <!-- data-focus-grid: spatialnav looks for the next card among its neighbours first (§126) -->
+    <div bind:this={libraryGrid} data-focus-grid
       class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4">
       {#if isLoading}
         {#each Array(14).fill(0) as _}
@@ -948,14 +1012,19 @@
       {:else}
         {#each visibleLibraryItems as item (item.Id)}
           <button onclick={() => openDetails(item)} data-item-id={item.Id}
-            onfocus={(e) => { previewItem(item); scheduleInfo(item, e.currentTarget); }} onblur={() => { cancelPreview(); hideInfo(); }}
+            onfocus={(e) => { previewItem(item); scheduleInfo(item, e.currentTarget); }} onblur={(e) => { cancelPreview(); hideInfo(); if (quietCard === e.currentTarget) quietCard = null; }}
             {@attach longPress()} onlongpress={() => onContextMenu?.(item)}
-            class="group focus:outline-none text-left scroll-my-4">
+            class="group isolate focus:outline-none text-left scroll-my-4">
             <!-- transition-transform (not -all): animating border-color alongside the scale would
                  invalidate paint on every interpolation step, re-rasterizing the card incl. its
                  shadow-xl per frame (B4). With transform-only the card rasterizes once and the
-                 scale runs purely on the compositor; the focus border switches instantly. -->
-            <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
+                 scale runs purely on the compositor; the focus border switches instantly.
+                 scale-100 at rest and `isolate` on the button (CODE-HEALTH §126): a card going from NO scale to 105 %
+                 changes what it is to the browser (stacking context, containing block) — that relaid out the whole
+                 grid on every press — and the grid's cards shared ONE stacking context, so the paint step before
+                 drawing walked all of them. Scaled from 100 % and each card its own context, a press touches two
+                 cards; 1000 cards deep that was most of the frame. Both look exactly as before. -->
+            <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden border-4 border-transparent scale-100 group-focus:border-white group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
               {#if item.Type === 'Playlist' && item.ChildCount === 0}
                 <div class="w-full h-full flex items-center justify-center text-gray-600">
                   <svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h16v2H4zm2-4h12v2H6zm-4 8h20v10a2 2 0 01-2 2H4a2 2 0 01-2-2V10z"/></svg>
@@ -964,15 +1033,10 @@
                 <img src={getItemImageUrl(item)} {@attach blurUp(itemBlurHash(item))} alt={item.Name} class="w-full h-full object-cover" loading="lazy" decoding="async"/>
               {/if}
               <CardStatus {item} unplayed={displaySettings.episodeCount} />
-              {#if itemProgress(item) > 0}
-                <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                  <div class="h-full bg-blue-500" style="width:{itemProgress(item)}%"></div>
-                </div>
-              {/if}
             </div>
             <div class="mt-3 flex flex-col items-start w-full overflow-hidden">
               <span class="text-sm font-bold text-gray-300 group-focus:text-white truncate block w-full">{item.Name}</span>
-              <span class="text-xs text-gray-400 group-focus:text-gray-300 block truncate w-full mt-0.5">{getItemSubtitle(item, i18n.t.today)}</span>
+              <span class="text-xs text-gray-400 group-focus:text-gray-300 block truncate w-full mt-0.5">{getItemSubtitle(item)}</span>
             </div>
           </button>
         {/each}
@@ -993,7 +1057,8 @@
     <!-- Empty state: empty library or 0 hits due to active filters — instead of a mute empty grid -->
     {#if !isLoading && currentItems.length === 0}
       <div class="flex flex-col items-center justify-center py-24 text-center">
-        <svg class="w-16 h-16 text-gray-700 mb-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z"/></svg>
+        <!-- The funnel only when a filter emptied it; an empty library shows its own icon (sidebar, home tile). -->
+        <svg class="w-16 h-16 text-gray-700 mb-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d={hasFilters ? FUNNEL_ICON : libraryIcon(library, displaySettings.navIcons)}/></svg>
         <p class="text-xl text-gray-400 font-bold">
           {hasFilters ? i18n.t.libraryEmptyFiltered : i18n.t.libraryEmpty}
         </p>
@@ -1019,35 +1084,8 @@
         style="left:{info.hole.x}px;top:{info.hole.y}px;width:{info.hole.w}px;height:{info.hole.h}px;box-shadow:0 0 0 200vmax rgb(3 7 18 / .5)"></div>
       <div {@attach placeInfo} class="absolute bg-gray-900 border border-white/20 rounded-2xl p-7 shadow-[inset_0_1px_0_rgb(255_255_255/0.08)]"
         style="left:{info.x}px;top:{info.top}px;width:{info.w}px">
-        <h2 class="text-3xl font-bold text-white line-clamp-2">{info.item.Name}</h2>
-        <div class="flex items-center flex-wrap gap-x-3 gap-y-2 mt-3 text-lg font-semibold text-gray-200">
-          {#if getItemSubtitle(info.item, i18n.t.today)}<span class="text-blue-400">{getItemSubtitle(info.item, i18n.t.today)}</span>{/if}
-          {#if infoLength(info.item)}<span>• {infoLength(info.item)}</span>{/if}
-          {#if info.item.OfficialRating}
-            <span class="px-2 py-0.5 rounded border border-gray-400/80 text-gray-100 text-base font-bold leading-none">{info.item.OfficialRating}</span>
-          {/if}
-          {#if info.item.CommunityRating}
-            <span class="flex items-center gap-1 text-gray-100">
-              •
-              <svg class="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
-              </svg>
-              {info.item.CommunityRating.toFixed(1)}
-            </span>
-          {/if}
-          {#if info.item.CriticRating}
-            <span class="flex items-center gap-1 text-gray-100">
-              •
-              <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="14" r="7.5" fill="#ef4444"/>
-                <ellipse cx="9.5" cy="6.5" rx="2.5" ry="1.3" fill="#22c55e" transform="rotate(-25 9.5 6.5)"/>
-                <ellipse cx="14.5" cy="6.5" rx="2.5" ry="1.3" fill="#22c55e" transform="rotate(25 14.5 6.5)"/>
-                <rect x="11.3" y="4.5" width="1.4" height="3" rx="0.7" fill="#22c55e"/>
-              </svg>
-              {info.item.CriticRating}%
-            </span>
-          {/if}
-        </div>
+        <h2 class="text-3xl leading-[1.3] -my-[0.05em] font-bold text-white line-clamp-2">{info.item.Name}</h2>
+        <TitleMeta item={info.item} class="flex items-center flex-wrap gap-x-3 gap-y-2 mt-3 text-lg font-semibold text-gray-200" />
         {#if info.extra.Genres.length}
           <div class="mt-2 text-base text-gray-400 truncate">{info.extra.Genres.join(' · ')}</div>
         {/if}
@@ -1081,8 +1119,7 @@
 
 <!-- FILTER MENU -->
 {#if showFilterMenu}
-  <div data-focus-trap role="dialog" tabindex="-1" transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8"
-    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); closeFilterMenu(); } }}>
+  <Dialog onBack={closeFilterMenu}>
     <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
 
       <div class="flex justify-between items-center p-8 pb-4 shrink-0">
@@ -1110,18 +1147,23 @@
           </div>
         </div>
 
-        <div class="flex flex-col gap-3">
-          <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{i18n.t.ageRating}</h3>
-          <div class="flex flex-wrap gap-3">
-            {#each fskOptions as age}
-              <button onclick={() => toggleFsk(age)}
-                class="px-5 py-2 rounded-full font-bold text-lg border-2 transition-all focus:outline-none focus:ring-4 focus:ring-white
-                       {selectedFsk.includes(age) ? 'bg-red-700 border-red-500 text-white' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-white'}">
-                FSK {age}
-              </button>
+        {#if ratingGroups.length > 0}
+          <div class="flex flex-col gap-3">
+            <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider">{i18n.t.ageRating}</h3>
+            <!-- the ages in one row, the letter codes in the next; one width, so each row reads as a scale -->
+            {#each ratingRows as row}
+              <div class="flex flex-wrap gap-3">
+                {#each row as group (group.key)}
+                  <button onclick={() => toggleRating(group)}
+                    class="min-w-[4.5rem] px-5 py-2 rounded-full font-bold text-lg tabular-nums border-2 transition-all focus:outline-none focus:ring-4 focus:ring-white
+                           {ratingSelected(group) ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-900 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-white'}">
+                    {group.label}
+                  </button>
+                {/each}
+              </div>
             {/each}
           </div>
-        </div>
+        {/if}
 
         {#each [['audio', i18n.t.audio, audioLangGroups, selectedAudioLangs], ['subtitle', i18n.t.subtitles, subtitleLangGroups, selectedSubtitleLangs]] as [kind, title, groups, sel] (kind)}
           {#if groups.length > 0}
@@ -1173,7 +1215,7 @@
       </div>
 
     </div>
-  </div>
+  </Dialog>
 {/if}
 
 <style>

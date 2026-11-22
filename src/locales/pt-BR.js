@@ -39,6 +39,14 @@ export default {
     continueWatching: "Continuar assistindo",
     actionFailed: "Algo deu errado",
     miFramerate: "Taxa de quadros",
+    miRange: "Faixa dinâmica",
+    miFile: "Arquivo",
+    miUnchanged: "O arquivo é reproduzido sem alterações.",
+    miWhyAudioTrack: "Outra faixa de áudio que não a padrão do arquivo",
+    miWhySubBurn: "As legendas são incorporadas na imagem",
+    miWhyContainer: "Formato de arquivo não suportado",
+    miAudioReencode: "O áudio passa a ser AAC estéreo",
+    miTagBurned: "incorporada",
     subtitleSizeDesc: "Vale para legendas de texto e de imagem. Legendas ASS com estilo mantêm o próprio tamanho.",
     filterUnplayed: "Não assistidos",
     filterPlayed: "Assistidos",
@@ -60,6 +68,7 @@ export default {
     subtitleDownloading: "Baixando…",
     subtitleApplying: "Baixado — adicionando ao título…",
     subtitleAddedLater: "Salvo. Vai aparecer aqui assim que o servidor ler o arquivo.",
+    directedBy: "Direção: {names}",
 
     // Player
     nextEpisode: "Próximo episódio",

@@ -1,11 +1,12 @@
 <script>
   import { i18n } from '../i18n.svelte.js';
-  import { itemProgress, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, isShownLibrary, getItemImageUrl, libraryIcon, orderHomeRows, HOME_ROWS, dlog } from '../utils.js';
+  import { minutesLeft, backdropPreview, backdropUrl, logoUrl, longPress, authHeaders, blurUp, itemBlurHash, uiFade, getItemSubtitle, isShownLibrary, getItemImageUrl, libraryIcon, orderHomeRows, HOME_ROWS, dlog } from '../utils.js';
   import CardStatus from './CardStatus.svelte';
+  import TitleMeta from './TitleMeta.svelte';
   import { focusFromPointer } from '../spatialnav.js';
   import { session } from '../session.svelte.js';
   import { watchlist, refreshWatchlist } from '../watchlist.svelte.js';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack, tick } from 'svelte';
 
   let {
     selectedUser,
@@ -25,7 +26,7 @@
     sharedSuggestions = [],     // "For you both" — titles that match the shared preference
     showSharedSuggestions = false, // show the row (only when a shared profile is set up)
     sharedSuggestionsReady = true, // App has computed the row for the current members (its scan is slow)
-    resumeStale = false,        // App: playback happened since the last dashboard visit → fetch Resume/NextUp fresh
+    resumeStale = false,        // App: played or marked (un)watched since Resume/NextUp were asked → fetch them fresh
     onResumeRefreshed,          // () => void — App resets the flag
     onLibrariesLoaded, onOpenCollection, onOpenContext, onOpenDetails, onOpenLibrary,   // callback props
     onPlay,                     // (item, el) => void — the banner's Play: App plays it straight away
@@ -150,23 +151,18 @@
   let alive = true;
   let myCache = null;
   onMount(() => { loadDashboardData(); });
-  onDestroy(() => { alive = false; clearInterval(heroTimer); clearTimeout(previewTimer); clearTimeout(clearTimer); clearTimeout(holdTimer); });
+  // Continue watching and Up next follow whatever was played or marked since they were asked (§140): on a visit
+  // from the cache, and while the home screen is up — the card menu on a series whose episode sits in Continue
+  // watching. Not during a fresh load, which asks them anyway (and clears the flag as it starts).
+  let rowsShown = $state(false);
+  $effect(() => { if (resumeStale && rowsShown) untrack(refreshResume); });
+  onDestroy(() => { alive = false; clearInterval(heroTimer); backdrop.stop(); clearTimeout(holdTimer); });
 
-  // ── Backdrop preview (like in the Library): 700 ms after focusing a card, fade in its backdrop
-  //    behind the dashboard; remove it again on leaving. Opt-out via dashboardBackdrop. ──
+  // ── Backdrop preview (like in the Library; backdropPreview, utils.js): 700 ms after focusing a card, fade in its
+  //    backdrop behind the dashboard; remove it again on leaving. Opt-out via dashboardBackdrop. ──
   let previewBackdrop = $state("");
-  let previewTimer, clearTimer;
-  function previewItem(item) {
-    if (!dashboardBackdrop || !item) return;
-    clearTimeout(clearTimer);   // a card focus follows directly → do NOT clear (no card→card flicker)
-    clearTimeout(previewTimer);
-    previewTimer = setTimeout(() => {
-      const tag  = item.BackdropImageTags?.[0];
-      const pTag = item.ParentBackdropImageTags?.[0];
-      if (tag)       previewBackdrop = `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${tag}&maxWidth=1280&quality=70&format=webp`;
-      else if (pTag) previewBackdrop = `${session.serverUrl}/Items/${item.ParentBackdropItemId}/Images/Backdrop?tag=${pTag}&maxWidth=1280&quality=70&format=webp`;
-    }, 700);
-  }
+  const backdrop = backdropPreview(url => { previewBackdrop = url; });
+  function previewItem(item) { if (dashboardBackdrop && item) backdrop.show(item); }
 
   // ── The banner: whole or not at all (CODE-HEALTH §49) ──
   // The banner and the focused card's backdrop never share the screen. Two states only:
@@ -225,14 +221,9 @@
   const heroShown = $derived(showHero && !!heroCurrent);
   $effect(() => { heroShown; handoff?.(); });
 
-  // Focus leaves a card: stop the fade-in timer and clear the backdrop with a short delay.
-  // If another card focus follows immediately (card→card), previewItem cancels the clearing → no
-  // flicker. If focus goes to the hero, the library tiles or the navigation, the clearing stands.
-  function cancelPreview() {
-    clearTimeout(previewTimer);
-    clearTimeout(clearTimer);
-    clearTimer = setTimeout(() => { previewBackdrop = ""; }, 150);
-  }
+  // Focus leaves a card: the backdrop clears after a moment — unless another card takes focus at once (no flicker).
+  // Focus going to the banner, the library tiles or the navigation lets it clear.
+  const cancelPreview = () => backdrop.hide();
 
   // Preloads the image of the next hero item → seamless switch without popping in.
   function preloadHero(index) {
@@ -313,8 +304,14 @@
     startHeroRotation();
   }
 
-  const getAuthHeaders = () => authHeaders(session.token);
-  const FIELDS = "PrimaryImageAspectRatio,Overview,BackdropImageTags";
+  // Only the first picture of each type is ever shown, so every list asks for that one alone (ImageTypeLimit=1) —
+  // a title with a dozen backdrops brought every tag and BlurHash along (CODE-HEALTH §126/§128). /Items/{id}/Similar
+  // has no such parameter in 12.2. Fields carries ItemFields only: everything else (BackdropImageTags, SeriesName,
+  // ProductionYear, UserData …) comes anyway, and the server drops an unknown name without a word (§129).
+  const FIELDS = "Overview";
+  // The banner's titles also name their genres (§139) and a series its seasons (§141, ChildCount — the library asks it
+  // for every page as well): its pool, and the two "recently added" rows it falls back to
+  const HERO_FIELDS = "Overview,Genres,ChildCount";
   const ROW_LIMIT = 12;   // uniform row length: rows are teasers, the catalog is the library
   const HERO_MIN = 3;     // use the "For You" pool only from this many usable titles on, otherwise new-additions fallback
                           // (exceptions deliberate: hero = 5-item rotation, collections = curated, their own cap)
@@ -325,41 +322,68 @@
     return raw.filter(i => !inProgress.has(i.Id) && !inProgress.has(i.SeriesId));
   }
 
-  // After playback: fetch ONLY Resume + NextUp fresh and merge them into the cache — the
+  // The fresh answer can take the focused card away: the title Back returned to was finished or marked watched, and
+  // the card restore had found it in the cache rows a moment before (§140). Focus then goes to the card that moved
+  // into its place in that row, else the one before it, else the next card down the page — not to nothing.
+  function holdFocus() {
+    const was = document.activeElement, page = was?.closest?.('.home-rows');
+    if (!page || !was.dataset.itemId) return () => {};
+    const cards = [...page.querySelectorAll('[data-item-id]')], at = cards.indexOf(was);
+    const row = cards.filter(c => c.parentElement === was.parentElement), i = row.indexOf(was);
+    return () => {
+      if (was.isConnected || (document.activeElement && document.activeElement !== document.body)) return;
+      const next = [...row.slice(i + 1), ...row.slice(0, i).reverse(), ...cards.slice(at + 1), ...cards.slice(0, at).reverse()]
+        .find(c => c.isConnected);
+      next?.focus();
+      dlog('[focus] refreshed row took the focused card →', next?.dataset.itemId ?? 'none left');
+    };
+  }
+
+  // After playback or a watched mark: fetch ONLY Resume + NextUp fresh and merge them into the cache — the
   // instant display from the cache stays, but the one row that actually changed is
   // correct again (progress/new title). No full reload, the hero stays put (no reshuffle).
   async function refreshResume() {
     const cache = myCache;
     try {
       const uId  = selectedUser.Id;
-      const opts = { headers: getAuthHeaders() };
+      const opts = { headers: authHeaders() };
       const [rRes, rNext] = await Promise.all([
-        fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&MediaTypes=Video&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
-        fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts),
+        fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&MediaTypes=Video&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts),
+        fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${FIELDS}&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts),
       ]);
       // An error answer must not empty the rows — it parsed as "no items" and went into the cache.
       if (!rRes.ok || !rNext.ok) { console.warn('dashboard refresh: HTTP', rRes.status, rNext.status); return; }
       const resume = (await rRes.json()).Items || [];
       const dNext  = await rNext.json();
       if (!alive) return;
+      const refocus = holdFocus();
       continueWatching = resume;
       nextUp = filterNextUp(dNext.Items || []);
       if (cache) { cache.continueWatching = continueWatching; cache.nextUp = nextUp; }
       onResumeRefreshed?.();
+      tick().then(refocus);
     } catch { /* the flag stays set → the next dashboard visit tries again */ }
+  }
+
+  // Recently watched films and series, newest first, WITH genres — one query for two readers: the For-You hero counts
+  // the genres of all 25, the recommendations take the first two as seeds. It used to go out twice, as Limit=25 and
+  // Limit=4, same filter, same order (CODE-HEALTH §129). null = the server answered with an error.
+  function loadRecentlyPlayed(uId, opts) {
+    return fetch(
+      `${session.serverUrl}/Items?UserId=${uId}&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
+      `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=25&Fields=Genres&EnableImages=false&EnableTotalRecordCount=false`, opts
+    ).then(res => {
+      if (!res.ok) { console.warn('recently played: HTTP', res.status); return null; }
+      return res.json().then(d => d.Items || []);
+    });
   }
 
   // Recommendations: seeds from recently watched items, then /Items/{id}/Similar.
   // Best practice: shown right in the dashboard, no separate tab.
-  async function loadRecommendations(uId, opts, fields, cache) {
+  async function loadRecommendations(uId, opts, fields, cache, pPlayed) {
     try {
-      // Fetch recently played movies/series as the hook
-      const res = await fetch(
-        `${session.serverUrl}/Items?UserId=${uId}&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
-        `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=4&Fields=${fields}&EnableTotalRecordCount=false`, opts
-      );
-      if (!res.ok) { console.warn('recommendations: HTTP', res.status); return; }
-      const seeds = (await res.json()).Items || [];
+      const seeds = await pPlayed;   // the hook: recently played movies/series
+      if (!seeds) return;
 
       // Up to two rows of similar titles (cached). Depending on the
       // setting, 1 or 2 are rendered — so switching feels instant without a reload.
@@ -383,40 +407,70 @@
   // UNWATCHED, well-rated titles with a backdrop from them — instead of "newest additions, random".
   // Returns the candidate pool (rating-sorted). Empty = no signal / error → the caller
   // falls back to the previous new-additions logic so the hero never looks empty.
-  async function loadHeroForYou(uId, opts) {
+  //
+  // Two round trips by nature (taste seeds, then the pool), and the seeds are the slower of the two — so the pool
+  // goes out at once with the genres the LAST load found, kept per profile, and this load's seeds only update them
+  // for the next one (CODE-HEALTH §130). Taste moves slowly: the top four genres of the last 25 titles rarely change
+  // with one more film. No genres kept yet (first start, new profile) or their pool too thin: the old chain.
+  async function loadHeroForYou(uId, opts, pPlayed) {
+    const t0 = performance.now();
     try {
-      // 1) Taste signal: recently watched movies/series WITH genres (a separate fetch, since FIELDS carries none).
-      const seedRes = await fetch(
-        `${session.serverUrl}/Items?UserId=${uId}&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed` +
-        `&IncludeItemTypes=Movie,Series&Recursive=true&Limit=25&Fields=Genres&EnableTotalRecordCount=false`, opts
-      );
-      if (!seedRes.ok) { console.warn('taste seeds: HTTP', seedRes.status); return; }
-      const seeds = (await seedRes.json()).Items || [];
-
-      // 2) Count genres weighted — recently watched (higher up in the DatePlayed list) counts a bit more.
-      const counts = new Map();
-      seeds.forEach((it, idx) => {
-        const weight = 1 + (seeds.length - idx) / seeds.length;
-        (it.Genres || []).forEach(g => counts.set(g, (counts.get(g) || 0) + weight));
-      });
-      if (counts.size === 0) return [];   // no signal (new profile) → fallback at the caller
-
-      const topGenres = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([g]) => g);
-
-      // 3) "For You" pool: unwatched, well-rated titles from these genres, with a backdrop.
-      //    Genres= is pipe-separated (OR combination).
-      const genreParam = topGenres.map(encodeURIComponent).join('|');
-      const poolRes = await fetch(
-        `${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=Movie,Series&Recursive=true` +
-        `&Filters=IsUnplayed&Genres=${genreParam}&SortBy=CommunityRating&SortOrder=Descending` +
-        `&Limit=40&Fields=${FIELDS}&EnableImageTypes=Backdrop,Primary,Logo&EnableTotalRecordCount=false`, opts
-      );
-      if (!poolRes.ok) { console.warn('hero pool: HTTP', poolRes.status); return []; }
-      const pool = ((await poolRes.json()).Items || []).filter(i => i.BackdropImageTags?.length > 0);
+      const known = knownHeroGenres(uId);
+      const pKnown = known.length ? loadHeroPool(uId, opts, known) : null;
+      // Taste signal: recently watched movies/series with their genres (loadRecentlyPlayed).
+      const pTaste = pPlayed.then(seeds => seeds ? topGenresOf(seeds) : null);
+      pTaste.then(g => { if (g) keepHeroGenres(uId, g); }).catch(() => {});
+      if (pKnown) {
+        const pool = await pKnown;
+        dlog('[dashboard] hero pool (kept genres)', pool.length, 'in', Math.round(performance.now() - t0), 'ms');
+        if (pool.length >= HERO_MIN) return pool;
+      }
+      const fresh = await pTaste;
+      if (!fresh?.length) return [];   // no signal (new profile) or no answer → fallback at the caller
+      if (pKnown && fresh.join('|') === known.join('|')) return [];   // that pool was just asked for: too thin
+      const pool = await loadHeroPool(uId, opts, fresh);
+      dlog('[dashboard] hero pool (seeds first)', pool.length, 'in', Math.round(performance.now() - t0), 'ms');
       return pool;
     } catch {
       return [];   // error → new-additions fallback at the caller
     }
+  }
+
+  // Count genres weighted — recently watched (higher up in the DatePlayed list) counts a bit more. Top four.
+  function topGenresOf(seeds) {
+    const counts = new Map();
+    seeds.forEach((it, idx) => {
+      const weight = 1 + (seeds.length - idx) / seeds.length;
+      (it.Genres || []).forEach(g => counts.set(g, (counts.get(g) || 0) + weight));
+    });
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([g]) => g);
+  }
+
+  // "For You" pool: unwatched, well-rated titles from these genres, with a backdrop. Genres= is pipe-separated (OR).
+  function loadHeroPool(uId, opts, genres) {
+    return fetch(
+      `${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=Movie,Series&Recursive=true` +
+      `&Filters=IsUnplayed&Genres=${genres.map(encodeURIComponent).join('|')}&SortBy=CommunityRating&SortOrder=Descending` +
+      `&Limit=40&Fields=${HERO_FIELDS}&EnableImageTypes=Backdrop,Primary,Logo&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts
+    ).then(res => {
+      if (!res.ok) { console.warn('hero pool: HTTP', res.status); return []; }
+      return res.json().then(d => (d.Items || []).filter(i => i.BackdropImageTags?.length > 0));
+    }).catch(() => []);
+  }
+
+  // The hero's genres per profile, device-local like the search history (removed with the server's profiles, App).
+  const heroGenresKey = (uId) => `ocenfin:herogenres:${uId}`;
+  function knownHeroGenres(uId) {
+    try {
+      const g = JSON.parse(localStorage.getItem(heroGenresKey(uId)) || 'null');
+      return Array.isArray(g) && g.every(x => typeof x === 'string') ? g.slice(0, 4) : [];
+    } catch { return []; }
+  }
+  function keepHeroGenres(uId, genres) {
+    try {
+      if (genres.length) localStorage.setItem(heroGenresKey(uId), JSON.stringify(genres));
+      else localStorage.removeItem(heroGenresKey(uId));   // history emptied: no taste to start from next time
+    } catch { /* storage full or off — the next load takes the old chain */ }
   }
 
   async function loadDashboardData() {
@@ -454,15 +508,18 @@
           if (!heroItems.length) heroFromCache();
         });
       } else answer(...HOME_ROWS);
-      if (resumeStale) refreshResume();   // background refresh, the UI is already up from the cache
+      rowsShown = true;   // → refreshResume() when stale, in the background — the UI is already up from the cache
       return;
     }
 
     isLoading   = true;
     heroLoading = true;   // reserve the hero space from the first paint until the featured data is there
+    onResumeRefreshed?.();   // Resume and Up next go out below, after whatever made them stale
+    let resumeKnown;   // opened once continueWatching holds this load's answer — or none is coming (every exit below)
+    const pResumeKnown = new Promise(r => { resumeKnown = r; });
     try {
       const uId   = selectedUser.Id;
-      const opts  = { headers: getAuthHeaders() };
+      const opts  = { headers: authHeaders() };
       const fields = FIELDS;
 
       // Dispatch order is deliberate. Views + Resume go on the wire first — they release the UI and
@@ -477,16 +534,21 @@
       // progress — an audiobook or an e-book read in another Jellyfin app landed in Continue
       // watching with a play button that did nothing (§66). Jellyfin's own row asks the same; Video
       // and not Movie,Episode, so a half-watched extra still comes back.
-      const pResume       = fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&MediaTypes=Video&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
+      const pResume       = fetch(`${session.serverUrl}/UserItems/Resume?UserId=${uId}&MediaTypes=Video&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts);
       heroForYouPending = true;
-      const pHeroForYou = loadHeroForYou(uId, opts)
+      // The hero leaves out what Continue watching shows, so it is built only once that row is known. With the pool
+      // now often back first (kept genres) it would have taken a half-watched title along; before, the seeds' round
+      // trip merely happened to outlast Resume. Costs nothing on screen: the banner shows with the rows anyway.
+      const pPlayed     = loadRecentlyPlayed(uId, opts);   // shared by the hero and the recommendations
+      const pHeroForYou = loadHeroForYou(uId, opts, pPlayed)
+        .then(pool => pResumeKnown.then(() => pool))
         .then(pool => { heroForYouPending = false; if (!heroBuilt && !applyHeroPool(pool)) buildHero(); })
         .catch(() => { heroForYouPending = false; if (!heroBuilt) buildHero(); });
       // Derive recommendations ("Because you watched X") from recently watched — independent of
       // Views/Resume, so it also goes out before the await.
       const cache = myCache = { libraries: [], continueWatching: [], nextUp: [], latestMovies: [], latestSeries: [], recentlyWatched: [], recommendations: [], collections: [], heroItems: [], answered: {} };
-      const pRecs = loadRecommendations(uId, opts, fields, cache).then(() => answer('recommendations'));
-      const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&EnableTotalRecordCount=false`, opts);
+      const pRecs = loadRecommendations(uId, opts, fields, cache, pPlayed).then(() => answer('recommendations'));
+      const pNextUp       = fetch(`${session.serverUrl}/Shows/NextUp?UserId=${uId}&Limit=${ROW_LIMIT}&Fields=${fields}&EnableImageTypes=Primary,Backdrop,Thumb&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts);
       // Both "recently added" rows ask by DateCreated rather than through /Items/Latest. Measured
       // against a real library, that endpoint answers in 504 ms for Movie but 9951 ms for Series —
       // same endpoint, same fields — and neither dropping the fields nor GroupItems=false changes it
@@ -504,14 +566,14 @@
       // Rows about what to watch next exist separately: Continue watching and Up next.
       const latestQuery = (type) =>
         `${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=${type}&Recursive=true` +
-        `&SortBy=DateCreated&SortOrder=Descending&Limit=${ROW_LIMIT}&Fields=${fields}&EnableTotalRecordCount=false`;
+        `&SortBy=DateCreated&SortOrder=Descending&Limit=${ROW_LIMIT}&Fields=${HERO_FIELDS}&ImageTypeLimit=1&EnableTotalRecordCount=false`;
       const pLatestMovies = fetch(latestQuery('Movie'), opts);
       const pLatestSeries = fetch(latestQuery('Series'), opts);
       // History: recently watched movies/episodes. Fetch more (40), since series are then
       // collapsed to one entry each (buffer for a good mix).
-      const pHistory      = fetch(`${session.serverUrl}/Items?UserId=${uId}&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}&EnableTotalRecordCount=false`, opts);
+      const pHistory      = fetch(`${session.serverUrl}/Items?UserId=${uId}&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&IncludeItemTypes=Movie,Episode&Recursive=true&Limit=40&Fields=${fields}&ImageTypeLimit=1&EnableTotalRecordCount=false`, opts);
       // Collections (BoxSets)
-      const pCollections  = fetch(`${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio,ChildCount&Limit=50&EnableTotalRecordCount=false`, opts);
+      const pCollections  = fetch(`${session.serverUrl}/Items?UserId=${uId}&IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&Fields=ChildCount&ImageTypeLimit=1&Limit=50&EnableTotalRecordCount=false`, opts);
 
       // Priority: Views + Resume → release the UI immediately
       const [resViews, resResume] = await Promise.all([pViews, pResume]);
@@ -520,13 +582,14 @@
       // next visit loads again. A revoked token is App's to handle (session.authLost).
       if (!resViews.ok || !resResume.ok) {
         console.warn('dashboard: HTTP', resViews.status, resResume.status);
-        isLoading = false; heroLoading = false;
+        isLoading = false; heroLoading = false; resumeKnown();
         answer(...HOME_ROWS);   // nothing else is coming — no placeholder rows
         return;
       }
       // The same libraries as the sidebar (isShownLibrary: films, series, collections, playlists, mixed).
       libraries        = ((await resViews.json()).Items || []).filter(isShownLibrary);
       continueWatching = (await resResume.json()).Items || [];
+      resumeKnown();
       answer('libraries', 'resume');
       isLoading        = false;
       session.connectionLost = false;   // server reachable
@@ -535,6 +598,7 @@
       // still the dashboard on screen — after a profile switch the cache belongs to the next one.
       cache.libraries = libraries; cache.continueWatching = continueWatching;
       if (alive) apiCache.dashboard = cache;
+      rowsShown = true;
 
       // Load collections independently
       const pCols = pCollections.then(r => r.json()).then(d => {
@@ -555,7 +619,7 @@
         const seriesIds = items.filter(i => i.Type === 'Series').map(i => i.Id);
         if (seriesIds.length) {
           try {
-            const r2 = await fetch(`${session.serverUrl}/Items?UserId=${uId}&Ids=${seriesIds.join(',')}&Fields=ProductionYear,Status,EndDate&EnableTotalRecordCount=false`, opts);
+            const r2 = await fetch(`${session.serverUrl}/Items?UserId=${uId}&Ids=${seriesIds.join(',')}&EnableImages=false&EnableTotalRecordCount=false`, opts);
             // Enrichment only — on an error response keep the items we already have rather than
             // letting res.json() throw and lose the whole row.
             const info = r2.ok ? new Map(((await r2.json()).Items || []).map(s => [s.Id, s])) : new Map();
@@ -606,6 +670,7 @@
       console.error("Dashboard load failed:", err);
       isLoading   = false;
       heroLoading = false;
+      resumeKnown();
       answer(...HOME_ROWS);
       session.connectionLost = true;   // server unreachable → banner
     }
@@ -629,7 +694,6 @@
           Name: it.SeriesName,
           Type: 'Series',
           ImageTags: it.SeriesPrimaryImageTag ? { Primary: it.SeriesPrimaryImageTag } : undefined,
-          PrimaryImageAspectRatio: 0.6667,
           ImageBlurHashes: it.ImageBlurHashes,
           // Carry the episode's INHERITED series backdrop along — the focus backdrop
           // preview (previewItem) builds its URL from BackdropImageTags/Parent*; without
@@ -648,28 +712,10 @@
     return (item.Type === 'Episode' && item.SeriesName) ? item.SeriesName : item.Name;
   }
 
-  // Remaining time in minutes for "Continue Watching"
-  function getRemainingMinutes(item) {
-    if (!item.RunTimeTicks || !item.UserData?.PlaybackPositionTicks) return null;
-    const remTicks = item.RunTimeTicks - item.UserData.PlaybackPositionTicks;
-    const mins = Math.round(remTicks / 10000000 / 60);
-    return mins > 0 ? mins : null;
-  }
-
-  // Hero backdrop in high resolution
-  function getHeroBackdrop(item) {
-    if (item?.BackdropImageTags?.length > 0)
-      return `${session.serverUrl}/Items/${item.Id}/Images/Backdrop?tag=${item.BackdropImageTags[0]}&maxWidth=1920&quality=85&format=webp`;
-    return null;
-  }
-
-  // Logo image (transparent title lettering) — if present, instead of the text title.
-  // Looks more premium; one extra image, no extra effort on the data side.
-  function getHeroLogo(item) {
-    if (item.ImageTags?.Logo)
-      return `${session.serverUrl}/Items/${item.Id}/Images/Logo?tag=${item.ImageTags.Logo}&maxHeight=130&quality=90&format=webp`;
-    return null;
-  }</script>
+  // Hero backdrop in high resolution, and the logo (transparent title lettering) in place of the text title if there is
+  // one — the banner's titles are films and series, so both are their own (backdropUrl / logoUrl, utils.js)
+  const getHeroBackdrop = (item) => backdropUrl(item, 1920, 85);
+  const getHeroLogo = (item) => logoUrl(item, 130);</script>
 
 <!-- aria-busy while rows are held back: App's start focus must not settle for the banner then (§106). -->
 <div class="relative" aria-busy={isLoading || holding} {@attach heroHandoff}>
@@ -691,25 +737,19 @@
   <!-- Reusable card snippets (instead of 8 nearly identical blocks) -->
   {#snippet landscapeCard(item)}
     {@const img = getItemImageUrl(item, 'landscape', true)}
-    {@const prog = itemProgress(item)}
-    {@const rem = getRemainingMinutes(item)}
-    {@const sub = getItemSubtitle(item, i18n.t.today)}
+    {@const rem = minutesLeft(item)}
+    {@const sub = getItemSubtitle(item)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
       onfocus={() => previewItem(item)} onblur={cancelPreview}
-      class="shrink-0 w-80 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
+      class="shrink-0 w-80 group isolate flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-video w-full bg-gray-800 rounded-lg overflow-hidden
-                  border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow
+                  border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow
                   transition-transform duration-200 shadow-xl relative">
         {#if img}
           <img src={img} {@attach blurUp(itemBlurHash(item, 'Backdrop'))} alt={item.Name}
             class="w-full h-full object-cover" loading="lazy" />
         {/if}
         <CardStatus {item} remaining={rem} />
-        {#if prog > 0}
-          <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-            <div class="h-full bg-blue-500" style="width:{prog}%"></div>
-          </div>
-        {/if}
       </div>
       <div class="mt-3 flex flex-col w-full overflow-hidden">
         <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
@@ -720,25 +760,21 @@
     </button>
   {/snippet}
 
-  {#snippet portraitCard(item, img, blur)}
-    {@const prog = itemProgress(item)}
-    {@const sub = getItemSubtitle(item, i18n.t.today)}
+  <!-- `_imgUrl`: a watchlist episode shows its series' poster (watchlistDisplay) -->
+  {#snippet portraitCard(item)}
+    {@const img = item._imgUrl || getItemImageUrl(item)}
+    {@const sub = getItemSubtitle(item)}
     <button onclick={() => onOpenDetails?.(item)} data-item-id={item.Id} {@attach longPress()} onlongpress={() => onOpenContext?.(item)}
       onfocus={() => previewItem(item)} onblur={cancelPreview}
-      class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
+      class="shrink-0 w-48 group isolate flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                  border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow
+                  border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow
                   transition-transform duration-200 shadow-xl">
         {#if img}
-          <img src={img} {@attach blurUp(blur)} alt={item.Name}
+          <img src={img} {@attach blurUp(itemBlurHash(item))} alt={item.Name}
             class="w-full h-full object-cover" loading="lazy" />
         {/if}
         <CardStatus {item} />
-        {#if prog > 0}
-          <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-            <div class="h-full bg-blue-500" style="width:{prog}%"></div>
-          </div>
-        {/if}
       </div>
       <div class="mt-3 flex flex-col w-full overflow-hidden">
         <span class="text-sm font-bold text-gray-200 group-focus:text-white truncate w-full">{getItemTitle(item)}</span>
@@ -754,9 +790,9 @@
     <!-- data-item-id: Back from the collection returns to this card (focusCardAgain). The row comes
          from the cache on the way back, so it is there in time. -->
     <button onclick={() => onOpenCollection?.(col)} onfocus={() => previewItem(col)} onblur={cancelPreview} data-item-id={col.Id}
-      class="shrink-0 w-48 group flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
+      class="shrink-0 w-48 group isolate flex flex-col focus:outline-none text-left scroll-mt-24 scroll-mx-4">
       <div class="aspect-[2/3] w-full bg-gray-800 rounded-lg overflow-hidden relative
-                  border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow
+                  border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow
                   transition-transform duration-200 shadow-xl">
         {#if img}
           <img src={img} {@attach blurUp(itemBlurHash(col))} alt={col.Name}
@@ -771,10 +807,50 @@
     </button>
   {/snippet}
 
+  <!-- A library tile of "My media" -->
+  {#snippet libraryCard(library)}
+    <!-- data-item-id: Back out of a library returns to the tile it was opened from. This row
+         comes out of the first response round, so it satisfies the rule that only rows which
+         arrive quickly carry the attribute. -->
+    <button onclick={() => onOpenLibrary?.(library)} data-item-id={library.Id}
+      class="shrink-0 scroll-mt-24 scroll-mx-4 group isolate flex flex-col items-center focus:outline-none">
+      <div class="w-64 h-36 bg-gray-800 rounded-xl flex items-center justify-center
+                  border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow group-hover:border-gray-400
+                  transition-transform duration-200 shadow-lg overflow-hidden">
+        {#if getItemImageUrl(library)}
+          <img src={getItemImageUrl(library)} {@attach blurUp(itemBlurHash(library))} alt={library.Name}
+            class="w-full h-full object-cover opacity-80 group-focus:opacity-100" loading="lazy" />
+        {:else}
+          <!-- No picture: the library's icon (as in the sidebar), not its name — the name is
+               already written right under the tile. -->
+          <svg class="w-14 h-14 text-gray-500 group-focus:text-gray-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d={libraryIcon(library, navIcons)}/>
+          </svg>
+        {/if}
+      </div>
+      <!-- block + w-64 (= tile width) + truncate: without a width bound a long library name
+           makes the button wider than its tile, which breaks the spacing of the row. -->
+      <span class="mt-3 text-lg text-gray-300 group-focus:text-white block w-64 truncate text-center">{library.Name}</span>
+    </button>
+  {/snippet}
+
+  <!-- One row of the home screen: heading + a card row, shown only when it has cards (§142: written out ten times).
+       `card` is one of the card snippets above. -->
+  {#snippet shelf(heading, items, card)}
+    {#if items.length > 0}
+      <div>
+        <h2 class="text-2xl font-bold text-white mb-4 px-2">{heading}</h2>
+        <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
+          {#each items as it (it.Id)}{@render card(it)}{/each}
+        </div>
+      </div>
+    {/if}
+  {/snippet}
+
   <!-- Hero skeleton: reserves the banner height + hints at the title/text/button. ONE snippet for both
        loading phases (initial skeleton AND heroLoading) so nothing shifts up from the first paint. -->
   {#snippet heroSkeleton()}
-    <div class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gradient-to-br from-gray-800/40 via-gray-900/70 to-gray-900">
+    <div class="relative -mx-10 -mt-16 mb-2 h-[48vh] min-h-[320px] overflow-hidden bg-gradient-to-br from-gray-800/40 via-gray-900/70 to-gray-900">
       <div class="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/40 to-transparent"></div>
       <div class="absolute bottom-0 left-0 p-10 pb-8 max-w-3xl flex flex-col gap-3 {reduceAnimations ? '' : 'animate-pulse'}">
         <div class="h-14 w-80 max-w-[60%] bg-white/10 rounded-lg"></div>
@@ -810,8 +886,11 @@
     <!-- HERO BANNER — rotating featured item -->
     {#if showHero && heroCurrent}
       <!-- data-hero: the app's start focus (App.svelte) skips this section and takes the first
-           tile below it instead, so a session opens on a library rather than on a rotating title. -->
-      <div data-hero transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[44vh] min-h-[320px] overflow-hidden bg-gray-900">
+           tile below it instead, so a session opens on a library rather than on a rotating title.
+           48vh (and the skeleton's) is the ceiling: the most at which the first row still fits below the whole banner
+           at every UI size — Continue watching first at 120 % with 13 px to spare; any more and the start scrolls the
+           banner away (heroHandoff, §146). -->
+      <div data-hero transition:uiFade class="relative -mx-10 -mt-16 mb-2 h-[48vh] min-h-[320px] overflow-hidden bg-gray-900">
         <!-- Full-bleed backdrop: crossfade — the PREVIOUS image stays as a base,
              the new one fades in on top (no more dip-to-black). Blurhash → sharp. -->
         {#if prevHeroIndex >= 0 && prevHeroIndex !== heroIndex && heroItems[prevHeroIndex] && getHeroBackdrop(heroItems[prevHeroIndex])}
@@ -836,18 +915,9 @@
           {:else}
             <h1 class="text-5xl font-bold text-white drop-shadow-lg">{getItemTitle(heroCurrent)}</h1>
           {/if}
-          <div class="flex items-center gap-3 text-gray-300 font-semibold">
-            {#if heroCurrent.ProductionYear}<span class="text-blue-400">{heroCurrent.ProductionYear}</span>{/if}
-            {#if heroCurrent.CommunityRating}
-              <span class="flex items-center gap-1 text-yellow-400">
-                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-                {heroCurrent.CommunityRating.toFixed(1)}
-              </span>
-            {/if}
-            {#if heroCurrent.CriticRating}
-              <span class="flex items-center gap-1 text-red-400">• {heroCurrent.CriticRating}%</span>
-            {/if}
-          </div>
+          <!-- The same meta line as the library's preview and the title page (TitleMeta, §141), with the genres at its
+               end. It does not wrap: the genres shorten instead, so the banner keeps its height from title to title. -->
+          <TitleMeta item={heroCurrent} genres={heroCurrent.Genres} class="flex items-center gap-3 min-w-0 text-gray-300 font-semibold" />
           {#if heroCurrent.Overview}
             <p class="text-gray-300 text-lg line-clamp-2 max-w-2xl drop-shadow">{heroCurrent.Overview}</p>
           {/if}
@@ -889,147 +959,33 @@
     <div class="contents home-rows">
     {#each shownRows as row (row)}
       {#if row === 'libraries'}
-        <!-- LIBRARIES -->
-        {#if showLibraries && libraries.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.myMedia}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each libraries as library (library.Id)}
-                <!-- data-item-id: Back out of a library returns to the tile it was opened from. This row
-                     comes out of the first response round, so it satisfies the rule that only rows which
-                     arrive quickly carry the attribute. -->
-                <button onclick={() => onOpenLibrary?.(library)} data-item-id={library.Id}
-                  class="shrink-0 scroll-mt-24 scroll-mx-4 group flex flex-col items-center focus:outline-none">
-                  <div class="w-64 h-36 bg-gray-800 rounded-xl flex items-center justify-center
-                              border-4 border-transparent group-focus:border-white group-focus:scale-105 group-focus:focus-glow group-hover:border-gray-400
-                              transition-transform duration-200 shadow-lg overflow-hidden">
-                    {#if getItemImageUrl(library)}
-                      <img src={getItemImageUrl(library)} {@attach blurUp(itemBlurHash(library))} alt={library.Name}
-                        class="w-full h-full object-cover opacity-80 group-focus:opacity-100" loading="lazy" />
-                    {:else}
-                      <!-- No picture: the library's icon (as in the sidebar), not its name — the name is
-                           already written right under the tile. -->
-                      <svg class="w-14 h-14 text-gray-500 group-focus:text-gray-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" d={libraryIcon(library, navIcons)}/>
-                      </svg>
-                    {/if}
-                  </div>
-                  <!-- block + w-64 (= tile width) + truncate: without a width bound a long library name
-                       makes the button wider than its tile, which breaks the spacing of the row. -->
-                  <span class="mt-3 text-lg text-gray-300 group-focus:text-white block w-64 truncate text-center">{library.Name}</span>
-                </button>
-              {/each}
-            </div>
-          </div>
-        {/if}
+        {#if showLibraries}{@render shelf(i18n.t.myMedia, libraries, libraryCard)}{/if}
       {:else if row === 'resume'}
-        <!-- CONTINUE WATCHING -->
-        {#if resumeRow.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.continueWatchingRow}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each resumeRow as item (item.Id)}
-                {@render landscapeCard(item)}
-              {/each}
-            </div>
-          </div>
-        {/if}
+        {@render shelf(i18n.t.continueWatchingRow, resumeRow, landscapeCard)}
       {:else if row === 'nextUp'}
-        <!-- UP NEXT -->
-        {#if showNextUp && nextUp.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.nextUp}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each nextUp as item (item.Id)}
-                {@render landscapeCard(item)}
-              {/each}
-            </div>
-          </div>
-        {/if}
+        {#if showNextUp}{@render shelf(i18n.t.nextUp, nextUp, landscapeCard)}{/if}
       {:else if row === 'watchlist'}
-        <!-- WATCHLIST — the user-curated "watch later" playlist (see watchlist.svelte.js) -->
-        {#if showWatchlist && watchlistDisplay.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.watchlist}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each watchlistDisplay as item (item.Id)}
-                {@render portraitCard(item, item._imgUrl || getItemImageUrl(item), itemBlurHash(item))}
-              {/each}
-            </div>
-          </div>
-        {/if}
+        <!-- the user-curated "watch later" playlist (see watchlist.svelte.js) -->
+        {#if showWatchlist}{@render shelf(i18n.t.watchlist, watchlistDisplay, portraitCard)}{/if}
       {:else if row === 'history'}
-        <!-- RECENTLY WATCHED (history) -->
-        {#if showHistory && historyRow.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.recentlyWatched}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each historyRow as item (item.Id)}
-                {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}   <!-- episodes arrive as their series (dedupeHistory) -->
-              {/each}
-            </div>
-          </div>
-        {/if}
+        <!-- episodes arrive as their series (dedupeHistory) -->
+        {#if showHistory}{@render shelf(i18n.t.recentlyWatched, historyRow, portraitCard)}{/if}
       {:else if row === 'sharedSuggestions'}
-        <!-- SHARED SUGGESTIONS ("For you both") — only with a shared profile set up -->
-        {#if showSharedSuggestions && sharedSuggestions.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.sharedSuggestions}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each sharedSuggestions as item (item.Id)}
-                {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
-              {/each}
-            </div>
-          </div>
-        {/if}
+        <!-- "For you both" — only with a shared profile set up -->
+        {#if showSharedSuggestions}{@render shelf(i18n.t.sharedSuggestions, sharedSuggestions, portraitCard)}{/if}
       {:else if row === 'recommendations'}
-        <!-- RECOMMENDATIONS: "Because you watched X" — personalized -->
+        <!-- "Because you watched X" — personalized -->
         {#each (showRecommendations ? recommendations.slice(0, recommendationRows) : []) as rec (rec.seedId ?? rec.seedTitle)}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.becauseSeen.replace('{x}', rec.seedTitle)}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each rec.items as item (item.Id)}
-                {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
-              {/each}
-            </div>
-          </div>
+          {@render shelf(i18n.t.becauseSeen.replace('{x}', rec.seedTitle), rec.items, portraitCard)}
         {/each}
       {:else if row === 'latest'}
-        <!-- RECENTLY ADDED MOVIES -->
-        {#if showLatest && latestMovies.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestMovies}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each latestMovies as item (item.Id)}
-                {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
-              {/each}
-            </div>
-          </div>
-        {/if}
-
-        <!-- RECENTLY ADDED SERIES -->
-        {#if showLatest && latestSeries.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.latestSeries}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each latestSeries as item (item.Id)}
-                {@render portraitCard(item, getItemImageUrl(item), itemBlurHash(item))}
-              {/each}
-            </div>
-          </div>
+        {#if showLatest}
+          {@render shelf(i18n.t.latestMovies, latestMovies, portraitCard)}
+          {@render shelf(i18n.t.latestSeries, latestSeries, portraitCard)}
         {/if}
       {:else if row === 'collections'}
-        <!-- COLLECTIONS (BoxSets) — browse-oriented, hence at the bottom -->
-        {#if showCollections && collections.length > 0}
-          <div>
-            <h2 class="text-2xl font-bold text-white mb-4 px-2">{i18n.t.collections}</h2>
-            <div class="flex gap-6 overflow-x-auto hide-scrollbar py-4 px-2">
-              {#each collections as col (col.Id)}
-                {@render collectionCard(col)}
-              {/each}
-            </div>
-          </div>
-        {/if}
+        <!-- BoxSets — browse-oriented, hence at the bottom -->
+        {#if showCollections}{@render shelf(i18n.t.collections, collections, collectionCard)}{/if}
       {/if}
     {/each}
     <!-- Placeholders while rows are still held back — shown only as long as no row above them is

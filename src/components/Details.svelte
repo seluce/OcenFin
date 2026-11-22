@@ -1,15 +1,19 @@
 <script>
   import { i18n, LANGUAGES, plural, baseLang } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
-  import { dlog, isBackKey, focusOnMount, personImageUrl, itemProgress, authHeaders, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, uiFade, dropTrapOnOutro, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
-  import { pickDefaultTracks, rememberChoice } from '../trackmemory.js';
+  import { dlog, isBackKey, focusOnMount, itemProgress, minutesLeft, episodeCode, backdropUrl, logoUrl, runtimeLabel, frameRateLabel, endsAtLabel, authHeaders, setPlayed, setFavorite, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
+  import Dialog from './Dialog.svelte';
+  import { pickDefaultTracks, rememberChoice, orderTracks } from '../trackmemory.js';
+  import { trackLabels } from '../tracklabel.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
-  import { buildPlayQueue, playableFor, hasEarlierEpisodes, markEarlierPlayed } from '../playback.js';
+  import { buildPlayQueue, playableFor, hasEarlierEpisodes, markEarlierPlayed, playbackPlan, peekPlaybackInfo, playMethodOf, defaultAudioIndex, subtitleBurns, PLAY_METHODS, DIRECT_MAX_BITRATE } from '../playback.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
   import SubtitleSearch from './SubtitleSearch.svelte';
   import CardStatus from './CardStatus.svelte';
+  import TitleMeta from './TitleMeta.svelte';
+  import PersonCard from './PersonCard.svelte';
 
   let {
     item,
@@ -22,7 +26,7 @@
     focusItemId = null, focusScrollTop = 0,   // where to land when App brings us back (person page)
     takeResume = null,          // App: hands back, ONCE, what was on screen when we were left for a collection, a person page or the player
     onClose, onLibChanged, onOpenPerson, onOpenCollection, onPlayVideo,   // callback props
-    onProgressChanged,          // episodes were marked watched in bulk → App refreshes Next Up on the dashboard
+    onProgressChanged,          // something was marked (un)watched → App refreshes Continue watching and Up next on the dashboard
   } = $props();
 
   let fullItem     = $state(null);
@@ -40,8 +44,8 @@
   let focusedEpisode = $state(null);
   // "Mark earlier episodes as watched" in the ⋮ menu: null | 'busy' | { n } — see markEarlier().
   let earlier = $state(null);
-  const epCode = (ep) => `S${ep?.ParentIndexNumber ?? '?'}:E${ep?.IndexNumber ?? '?'}`;
-  const epMinutes = (ep) => ep?.RunTimeTicks ? `${Math.round(ep.RunTimeTicks / 600000000)} ${i18n.t.mins}` : '';
+  // "S1:E2 · Title" — the episode row's panel and the share dialog (the number: episodeCode, utils.js, §141)
+  const epTitle = (ep) => [episodeCode(ep), ep?.Name].filter(Boolean).join(' · ');
   let similarItems = $state([]);
   let collections  = $state([]);   // collections (BoxSets) that contain the title — Jellyfin 12+
   let extras       = $state([]);   // special features (making-ofs, deleted scenes, …)
@@ -69,17 +73,10 @@
     // premium=true → standout capabilities (brighter badge); baseline stays dimmer.
     const r = resLabel(v);
     if (r) out.push({ label: r, premium: r === '4K' });
-    const range = (v.VideoRangeType || v.VideoRange || '').toUpperCase();
-    if (range.includes('DOVI') || range.includes('DOLBY')) out.push({ label: 'Dolby Vision', premium: true });
-    else if (range.includes('HDR10PLUS') || range.includes('HDR10+')) out.push({ label: 'HDR10+', premium: true });
-    else if (range.includes('HDR10')) out.push({ label: 'HDR10', premium: true });
-    else if (range.includes('HLG')) out.push({ label: 'HLG', premium: true });
-    else if (range === 'HDR') out.push({ label: 'HDR', premium: true });
-    const c = (v.Codec || '').toLowerCase();
-    if (c === 'hevc' || c === 'h265') out.push({ label: 'HEVC', premium: false });
-    else if (c === 'av1') out.push({ label: 'AV1', premium: false });
-    else if (c === 'h264' || c === 'avc') out.push({ label: 'H.264', premium: false });
-    else if (c) out.push({ label: c.toUpperCase(), premium: false });
+    const range = rangeLabel(v);
+    if (range) out.push({ label: range, premium: true });
+    const codec = codecLabel(v);
+    if (codec) out.push({ label: codec, premium: false });
     // Premium audio of the SELECTED track (fallback: source default, then first audio)
     const audio = streams.find(s => s.Type === 'Audio' && s.Index === selectedAudioIndex)
                || streams.find(s => s.Type === 'Audio' && s.Index === selectedSource?.DefaultAudioStreamIndex)
@@ -106,13 +103,79 @@
          : (h ? h + 'p' : '');
   }
 
-  // Label for the resolution selection, e.g. "4K HEVC" / "1080p HEVC"
-  function sourceLabel(src) {
-    const v = (src?.MediaStreams || []).find(s => s.Type === 'Video');
-    const res = resLabel(v);
-    const codec = (v?.Codec || '').toUpperCase();
-    return [res, codec].filter(Boolean).join(' ') || src?.Name || i18n.t.source;
+  // Dynamic range and codec as the badges and the version list name them; '' for SDR / no codec.
+  function rangeLabel(v) {
+    const range = (v?.VideoRangeType || v?.VideoRange || '').toUpperCase();
+    return range.includes('DOVI') || range.includes('DOLBY') ? 'Dolby Vision'
+         : range.includes('HDR10PLUS') || range.includes('HDR10+') ? 'HDR10+'
+         : range.includes('HDR10') ? 'HDR10'
+         : range.includes('HLG') ? 'HLG'
+         : range === 'HDR' ? 'HDR' : '';
   }
+  function codecLabel(v) {
+    const c = (v?.Codec || '').toLowerCase();
+    return c === 'hevc' || c === 'h265' ? 'HEVC' : c === 'av1' ? 'AV1' : c === 'h264' || c === 'avc' ? 'H.264' : c.toUpperCase();
+  }
+
+  // The media info's finer picture details (§148). Dynamic range by VideoRangeType, Dolby Vision with its profile in
+  // the usual notation (profile.compatibility: 8.1 = HDR10 underneath, 8.4 = HLG, 7.6 = a disc's HDR10, 5 = none)
+  // and what a TV without Dolby Vision shows instead — the base layer.
+  const RANGE_TYPES = { SDR: 'SDR', HDR10: 'HDR10', HDR10Plus: 'HDR10+', HLG: 'HLG' };
+  const DV_BASE = { DOVIWithHDR10: 'HDR10', DOVIWithEL: 'HDR10', DOVIWithHLG: 'HLG', DOVIWithSDR: 'SDR', DOVIWithHDR10Plus: 'HDR10+', DOVIWithELHDR10Plus: 'HDR10+' };
+  function rangeDetail(v) {
+    const t = v?.VideoRangeType || '';
+    if (!t.startsWith('DOVI')) return RANGE_TYPES[t] || (v?.VideoRange && v.VideoRange !== 'Unknown' ? v.VideoRange : '');
+    const p = v.DvProfile ? ` ${v.DvProfile}${v.DvBlSignalCompatibilityId ? '.' + v.DvBlSignalCompatibilityId : ''}` : '';
+    return `Dolby Vision${p}${DV_BASE[t] ? ' + ' + DV_BASE[t] : ''}`;
+  }
+  const kHz = (hz) => hz ? `${new Intl.NumberFormat(i18n.lang, { maximumFractionDigits: 1 }).format(hz / 1000)} kHz` : '';
+  const fileName = (path) => (path || '').split(/[\\/]/).pop();
+
+  // A version's own name (§134). Jellyfin names an alternate version after what its file adds to the folder's name
+  // ("2160p Remux", "Director's Cut"); the main file, and a version grouped in by hand, after the whole file name,
+  // which starts with the title — that prefix and a year after it say nothing here. A name that is only the
+  // resolution ("1080p", "2160p", "4K") repeats the technical part and is dropped too.
+  const RES_WORDS = { '4K': ['4k', '2160p', 'uhd'], '1080p': ['1080p', 'fhd', 'full hd'], '720p': ['720p', 'hd'] };
+  function versionName(src, res) {
+    let n = (src?.Name || '').trim();
+    const t = (fullItem?.Name || '').trim();
+    if (t && n.toLowerCase().startsWith(t.toLowerCase()))
+      n = n.slice(t.length).replace(/^[\s._-]*(?:\(?(?:19|20)\d{2}\)?(?=[\s._)-]|$))?[\s._)-]*/, '').trim();
+    const plain = n.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    return !plain || (RES_WORDS[res] || [res.toLowerCase()]).includes(plain) ? '' : n;
+  }
+  // Every version's label: { name, tech, extra }. Two versions that still read the same (two 1080p encodes, a
+  // version named like the title) get their size, and where even that does not tell them apart, a number —
+  // the list used to show "4K HEVC" twice for a Dolby Vision remux and an HDR10 director's cut.
+  let sourceLabels = $derived.by(() => {
+    const srcs = fullItem?.MediaSources || [];
+    const gb = new Intl.NumberFormat(i18n.lang, { style: 'unit', unit: 'gigabyte', maximumFractionDigits: 1 });
+    const labels = new Map(srcs.map(src => {
+      const v = (src.MediaStreams || []).find(s => s.Type === 'Video');
+      const res = resLabel(v);
+      const tech = [res, rangeLabel(v), codecLabel(v)].filter(Boolean).join(' ');
+      const name = versionName(src, res);
+      return [src.Id, { name: name || (tech ? '' : src.Name || i18n.t.source), tech, extra: '' }];
+    }));
+    const alike = (key) => srcs.reduce((m, src) => { const k = key(labels.get(src.Id)); m.set(k, (m.get(k) || 0) + 1); return m; }, new Map());
+    const base = (l) => `${l.name}|${l.tech}`;
+    let counts = alike(base);
+    for (const src of srcs) { const l = labels.get(src.Id); if (counts.get(base(l)) > 1 && src.Size > 0) l.extra = gb.format(src.Size / 1e9); }
+    const full = (l) => `${base(l)}|${l.extra}`;
+    counts = alike(full);
+    const nth = new Map();
+    for (const src of srcs) {
+      const l = labels.get(src.Id), k = full(l);
+      if (counts.get(k) > 1) { nth.set(k, (nth.get(k) || 0) + 1); l.extra = [l.extra, `#${nth.get(k)}`].filter(Boolean).join(' · '); }
+    }
+    return labels;
+  });
+
+  // The audio and subtitle lists in the order orderTracks gives them (the profile's languages first).
+  let audioChoices    = $derived(orderTracks(selectedSource?.MediaStreams, 'Audio', playbackPrefs, baseLang(i18n.lang)));
+  let subtitleChoices = $derived(orderTracks(selectedSource?.MediaStreams, 'Subtitle', playbackPrefs, baseLang(i18n.lang)));
+  // Their names (tracklabel.js): language, flags and what the Title adds; tracks that read the same get a number
+  let trackNames = $derived(trackLabels(selectedSource?.MediaStreams));
 
   // Choose default audio/subtitle for a source — the shared rule in trackmemory.js, which the Player
   // applies to every start that does not come through this page (series play button, play-all, …).
@@ -172,7 +235,7 @@
       await new Promise(r => setTimeout(r, 1500));
       if (!alive || fullItem?.Id !== id) return false;
       try {
-        const r = await fetch(`${session.serverUrl}/Items/${id}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
+        const r = await fetch(`${session.serverUrl}/Items/${id}?UserId=${selectedUser.Id}`, { headers: authHeaders() });
         if (!r.ok) continue;
         const d = await r.json();
         const src = (d.MediaSources || []).find(x => x.Id === srcId) || d.MediaSources?.[0];
@@ -208,7 +271,26 @@
     const panel = e.currentTarget.closest('[data-dropdown]');
     await tick();
     const active = panel?.querySelector('[data-opt][data-active="true"]');
-    (active || panel?.querySelector('[data-opt]'))?.focus();
+    // preventScroll: a list scrolls itself to its active entry (placeList), the page stays where it is
+    (active || panel?.querySelector('[data-opt]'))?.focus({ preventScroll: true });
+  }
+  // The open version/audio/subtitle list floats over the page (§134): below its field, or above it where the room
+  // below is short and above is larger, as tall as its entries, that room or 60 % of the screen allow, scrolling in
+  // itself with the active entry in the middle. Opened above, ▼ from its last entry lands on the field below it —
+  // the same as ▲ from the first entry of a list below (and of the inline lists before). Opened inline, 25 subtitles pushed the page along until the field itself was gone.
+  function placeList(node) {
+    const field = node.previousElementSibling;
+    if (!field || !scrollEl) return;
+    const area = scrollEl.getBoundingClientRect(), r = field.getBoundingClientRect();
+    const gap = 0.5 * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 20);
+    const below = area.bottom - r.bottom - 3 * gap, above = r.top - area.top - 3 * gap;
+    const h = node.offsetHeight;   // border box, like the max-height it is compared with
+    const up = h > below && above > below;
+    // at most 60 % of the screen, like the Player's track panel: the page around it stays readable
+    node.style.maxHeight = `${Math.max(Math.min(h, up ? above : below, 0.6 * area.height), 8 * gap)}px`;
+    if (up) node.style.bottom = `calc(100% + ${gap}px)`; else node.style.top = `calc(100% + ${gap}px)`;
+    const active = node.querySelector('[data-active="true"]');
+    if (active) node.scrollTop = active.offsetTop - (node.clientHeight - active.offsetHeight) / 2;
   }
   function closeDropdown(refocus = true) {
     const t = openTrigger;
@@ -227,8 +309,6 @@
   onDestroy(() => { window.removeEventListener('keydown', onDropdownBack, true); window.removeEventListener('click', onDropdownOutside); });
 
   // Display labels for the trigger buttons
-  function audioLabel(s)    { return s ? (s.DisplayTitle || `${s.Language || i18n.t.unknown} – ${s.Codec}`) : ''; }
-  function subtitleLabel(s) { return s ? (s.DisplayTitle || s.Language || i18n.t.unknown) : ''; }
 
   // ---- Add to collection / playlist -----------------------------------------------------------
   // The dialog itself lives in the shared component <AddToPicker>; here only the trigger.
@@ -238,6 +318,129 @@
   let trailerEmbedUrl = $state(null);
   let showMediaInfo   = $state(false);   // media info modal
   let mediaInfoScroll = $state();           // the modal's scroll container (bind:this, for D-pad scrolling)
+
+  // ---- How the CURRENT choice plays (version + audio + subtitle), shown in the media info (CODE-HEALTH §149) ----
+  // Asked when the dialog opens, with exactly the request "Play" makes — playbackPlan() is the Player's rule — and
+  // through the prefetch cache, so a Play within its 25 s takes this answer instead of asking again. The server
+  // decides with the device profile, which is the same on every webOS 25 TV; its own limits are in the answer too.
+  let playPlan = $state(null);   // null while asked | { method, notes: [i18n keys] } | { error: i18n key }
+  let planAsk = 0;
+  async function askPlayPlan() {
+    const src = selectedSource, id = fullItem?.Id;
+    if (!src || !id) return;
+    const ask = ++planAsk;
+    playPlan = null;
+    const plan = playbackPlan(src.MediaStreams, selectedAudioIndex, selectedSubtitleIndex, playbackPrefs);
+    try {
+      const info = await peekPlaybackInfo({
+        serverUrl: session.serverUrl, userId: selectedUser.Id, token: session.token, itemId: id,
+        audioStreamIndex: selectedAudioIndex, subtitleStreamIndex: selectedSubtitleIndex,
+        maxBitrate: plan.maxBitrate, startTicks: 0,
+        enableDirectPlay: plan.enableDirectPlay, enableDirectStream: plan.enableDirectStream, allowAudioStreamCopy: plan.allowAudioStreamCopy,
+        burnSubtitles: plan.burnSubtitles, clientGraphicSubs: plan.clientGraphicSubs, mediaSourceId: selectedMediaSourceId,
+      });
+      if (ask === planAsk) playPlan = describePlan(info.mediaSource, plan, src);
+    } catch (e) {
+      if (ask !== planAsk) return;
+      playPlan = { error: { NotAllowed: 'playbackNotAllowed', NoCompatibleStream: 'playbackNoStream', RateLimitExceeded: 'playbackRateLimit' }[e?.code] || 'miPlanFailed' };
+    }
+  }
+  // The server's TranscodeReasons, said in the user's words — the first matching rule wins (bitrate before video).
+  const REASONS = [
+    [/Bitrate/, 'miWhyBitrate'], [/^Subtitle/, 'miWhySubBurn'], [/^SecondaryAudio/, 'miWhyAudioTrack'],
+    [/^(Video|RefFrames|Anamorphic|Interlaced|UnknownVideo)/, 'miWhyVideo'], [/^(Audio|UnknownAudio)/, 'miWhyAudio'],
+    [/^Container/, 'miWhyContainer'],
+  ];
+  // Why it transcodes — OcenFin's own reasons first, then the server's — and what that does to picture and sound,
+  // the latter only where the answer makes it certain: the transcode target is H.264 + AAC stereo (playback.js).
+  function describePlan(ms, plan, src) {
+    const method = playMethodOf(ms);
+    if (method !== 'Transcode') return { method, notes: ['miUnchanged'] };
+    const raw = ms.TranscodeReasons;
+    const reasons = (Array.isArray(raw) ? raw : String(raw || '').split(',')).map(r => r.trim()).filter(Boolean);
+    const why = new Set();
+    if (plan.explicitAudio) why.add('miWhyAudioTrack');
+    if (plan.subBurns) why.add('miWhySubBurn');
+    for (const r of reasons) {
+      const key = REASONS.find(([re]) => re.test(r))?.[1] || 'miWhyOther';
+      // A transcode OcenFin asked for itself is capped (TRANSCODE_MAX_BITRATE) — the server then names the bitrate,
+      // which is a consequence there, not a cause. It stays a cause when the file is above the Direct Play limit too.
+      if (key === 'miWhyBitrate' && !plan.enableDirectPlay && !(src.Bitrate > DIRECT_MAX_BITRATE)) continue;
+      why.add(key);
+    }
+    if (!why.size) why.add('miWhyOther');
+    // The target the server writes into the URL (case as the server spells it)
+    const q = new URLSearchParams((ms.TranscodingUrl || '').split('?')[1] || '');
+    const param = (k) => { for (const [n, v] of q) if (n.toLowerCase() === k) return v.toLowerCase(); return ''; };
+    const streams = src.MediaStreams || [];
+    const video = streams.find(s => s.Type === 'Video');
+    const audioIdx = selectedAudioIndex !== -1 ? selectedAudioIndex : defaultAudioIndex(streams);
+    const audio = streams.find(s => s.Type === 'Audio' && s.Index === audioIdx);
+    const vc = param('videocodec'), ac = param('audiocodec');
+    const maxCh = Number(param('transcodingmaxaudiochannels') || param('maxaudiochannels')) || 0;
+    const videoNew = plan.subBurns || reasons.some(r => /^(Video|RefFrames|Anamorphic|Interlaced|UnknownVideo|ContainerBitrate)/.test(r))
+      || (!!vc && !!video?.Codec && !vc.split(',').includes(video.Codec.toLowerCase()));
+    const audioNew = !!audio && (!plan.allowAudioStreamCopy || reasons.some(r => /^(Audio|UnknownAudio|SecondaryAudio)/.test(r))
+      || (!!ac && !ac.split(',').includes((audio.Codec || '').toLowerCase())) || (maxCh > 0 && audio.Channels > maxCh));
+    return { method, notes: [...why, ...(videoNew ? ['miVideoReencode'] : []), ...(audioNew ? ['miAudioReencode'] : [])] };
+  }
+  // The list markers: which track turns the playback into a transcode before it is picked (the same rule)
+  let defaultAudio = $derived(defaultAudioIndex(selectedSource?.MediaStreams));
+  // ▲▼ scroll a long text in a dialog (media info, the whole plot) instead of moving focus
+  function scrollByKey(e, el) {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault(); e.stopPropagation();
+    el?.scrollBy({ top: e.key === 'ArrowDown' ? 160 : -160, behavior: 'smooth' });
+  }
+
+  // The plot stays clamped to four lines (the hero must leave room for the buttons). Where that cuts it, the text is a
+  // button and OK shows all of it in a dialog (CODE-HEALTH §136) — on a TV there was no other way to read the rest.
+  // Not cut → the button is disabled, which takes it out of the D-pad and the pointer: no extra stop for nothing.
+  let overviewClamped = $state(false);
+  let showOverview    = $state(false);
+  let overviewScroll  = $state();
+  let overviewBtn     = $state();
+  const overviewFocus = makeFocusReturn();
+  $effect(() => { if (!showOverview && overviewFocus.pending) overviewFocus.restore(); });
+  // Measured by a ResizeObserver: its first call comes after layout, and it calls again when the box changes (UI size,
+  // font). Reading the text makes the attachment start over for another title — a cut and an uncut plot can fill
+  // the same four lines, so the box alone would not tell.
+  function measureOverview(node) {
+    void fullItem?.Overview;
+    const ro = new ResizeObserver(() => { overviewClamped = node.scrollHeight > node.clientHeight + 1; });
+    ro.observe(node);
+    return () => ro.disconnect();
+  }
+
+  // The dialog's plot in paragraphs (§145). Most plots come as ONE block (TMDb), a wall of text in the dialog. Blank
+  // lines of its own make paragraphs (single line breaks stay, whitespace-pre-line); a long block without any is cut
+  // at sentence ends into parts of about PARA characters, as even as the sentences allow. Never after a word of up to
+  // three letters, a number or an initial ("Agentin K. Larsen", "Dr.", "z. B.", "3. Oktober", "U.S.A."): a break
+  // missed there costs nothing, a wrong one would cut a sentence in two. Intl.Segmenter: Chromium 87, webOS 25 has it.
+  const PARA = 320;
+  function bySentences(block) {
+    const n = Math.round(block.length / PARA);
+    if (n < 2 || block.includes('\n') || typeof Intl.Segmenter !== 'function') return [block];
+    const sentences = [];
+    for (const { segment } of new Intl.Segmenter(i18n.lang, { granularity: 'sentence' }).segment(block)) {
+      const last = sentences.length - 1;
+      if (last >= 0 && /(?:^|[\s(„"'.])(?:\p{L}{1,3}|\d+)\.$/u.test(sentences[last].trimEnd())) sentences[last] += segment;
+      else sentences.push(segment);
+    }
+    const target = block.length / n, parts = [];
+    let cur = '';
+    sentences.forEach((sentence, i) => {
+      cur += sentence;
+      const next = sentences[i + 1];
+      // Close the part here when that lands nearer the target than taking the next sentence along.
+      if (next === undefined || (parts.length < n - 1 && Math.abs(cur.length - target) <= Math.abs(cur.length + next.length - target))) {
+        parts.push(cur.trim()); cur = '';
+      }
+    });
+    return parts;
+  }
+  const plotParagraphs = (text) => text.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean).flatMap(bySentences);
+  let plotParts = $derived(showOverview && fullItem?.Overview ? plotParagraphs(fullItem.Overview) : []);
 
   // Share: QR code with a public title link (IMDb/TMDb) — anyone can scan it, no server access needed.
   let showShare = $state(false);
@@ -292,7 +495,7 @@
       let series = null;
       if ((fullItem.Type === 'Season' || fullItem.Type === 'Episode') && fullItem.SeriesId && !fullItem.ProviderIds?.Imdb) {
         try {
-          const res = await fetch(`${session.serverUrl}/Items/${fullItem.SeriesId}?UserId=${selectedUser.Id}`, { headers: getAuthHeaders() });
+          const res = await fetch(`${session.serverUrl}/Items/${fullItem.SeriesId}?UserId=${selectedUser.Id}`, { headers: authHeaders() });
           if (res.ok) series = await res.json();
         } catch { /* series unreachable → title fallback below */ }
       }
@@ -303,16 +506,17 @@
     } catch (e) { console.warn('[OcenFin] share QR failed', e); }
   }
 
+  // The media info's size and bitrates in the app language's digits and in decimal units, like the version list
+  // (§148: the same file read "54.20 GB" here and "58,2 GB" there); a small audio bitrate in kbit/s, not "0.6 Mbit/s".
   function formatBytes(bytes) {
     if (!bytes) return null;
-    const gb = bytes / 1073741824;
-    if (gb >= 1) return `${gb.toFixed(2)} GB`;
-    return `${(bytes / 1048576).toFixed(0)} MB`;
+    const gb = bytes >= 1e9;
+    return new Intl.NumberFormat(i18n.lang, { style: 'unit', unit: gb ? 'gigabyte' : 'megabyte', maximumFractionDigits: gb ? 1 : 0 }).format(bytes / (gb ? 1e9 : 1e6));
   }
-
   function formatBitrate(bps) {
     if (!bps) return null;
-    return `${(bps / 1000000).toFixed(1)} Mbit/s`;
+    const mb = bps >= 1e6;
+    return `${new Intl.NumberFormat(i18n.lang, { maximumFractionDigits: mb ? 1 : 0 }).format(bps / (mb ? 1e6 : 1e3))} ${mb ? 'Mbit/s' : 'kbit/s'}`;
   }
 
   const YOUTUBE_APP_ID = 'youtube.leanback.v4';   // LG webOS YouTube app
@@ -372,8 +576,47 @@
     }
   }
 
-  // Cast: actors (max. 20) from the People data
-  let castMembers = $derived((fullItem?.People || []).filter(p => p.Type === 'Actor').slice(0, 20));
+  // Cast: actors (max. 20) from the People data, ONE card per person. Jellyfin lists a person once per role — a voice
+  // actor with three characters, as anime metadata names each one — and the row is keyed by Id: the repeated Id threw
+  // each_key_duplicate and the page never finished loading (CODE-HEALTH §131). The roles go onto the one card.
+  let castMembers = $derived.by(() => {
+    const byId = new Map();
+    for (const p of fullItem?.People || []) {
+      if (p.Type !== 'Actor') continue;
+      const seen = byId.get(p.Id);
+      if (!seen) byId.set(p.Id, { ...p });
+      else if (p.Role && !(seen.Role || '').split(' / ').includes(p.Role)) seen.Role = seen.Role ? `${seen.Role} / ${p.Role}` : p.Role;
+    }
+    return [...byId.values()].slice(0, 20);
+  });
+
+  // An episode's place and air date, in place of the year at the start of the meta line (TitleMeta, CODE-HEALTH §136):
+  // "S1:E2", "S1:E2–3" for a double episode (episodeCode, as every card writes it since §141), the date in the UI
+  // language. In UTC: PremiereDate is midnight UTC, and local time west of Greenwich showed the day before. With no
+  // number, no date and no year there is nothing to lead with — null, and the line starts with the running time.
+  let episodeMeta = $derived.by(() => {
+    if (fullItem?.Type !== 'Episode') return null;
+    const code = episodeCode(fullItem);
+    const d = fullItem.PremiereDate ? new Date(fullItem.PremiereDate) : null;
+    const date = d && !isNaN(d) ? d.toLocaleDateString(i18n.lang, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
+    return code || date || fullItem.ProductionYear ? { code, date } : null;
+  });
+  // A started title says how much is left, in the words of the Continue watching pill (minutesLeft, utils.js), in the
+  // meta row before "ends at" — on the Resume button it pushed the icon buttons onto a second line (§137).
+  let resumeLeft = $derived(minutesLeft(fullItem));
+  // Genres and direction, one quiet line above the plot (CODE-HEALTH §135): the genres the library's info preview
+  // shows, plus who directed it — both come with /Items/{id}. Three at most each (an anthology names a dozen
+  // directors); a director is listed once per Id, like the cast. Writers and studios left out on purpose.
+  let genreLine = $derived((fullItem?.Genres || []).slice(0, 3).join(' · '));
+  let directors = $derived.by(() => {
+    const names = [...new Map((fullItem?.People || []).filter(p => p.Type === 'Director' && p.Name)
+      .map(p => [p.Id || p.Name, p.Name])).values()];
+    if (!names.length) return null;
+    const list = names.length > 3 ? names.slice(0, 3).join(', ') + ' …'
+      : new Intl.ListFormat(i18n.lang, { type: 'conjunction' }).format(names);
+    const [pre, post = ''] = i18n.t.directedBy.split('{names}');
+    return { pre, list, post };
+  });
 
   function closeTrailer() {
     trailerEmbedUrl = null;
@@ -382,7 +625,6 @@
     tick().then(() => { if (el?.isConnected) el.focus(); });
   }
 
-  const getAuthHeaders = () => authHeaders(session.token);
 
   // Stale guard (pattern like in Search/Library): the breadcrumb navigation (episode → series → season)
   // switches the item quickly in succession — only responses to the MOST RECENT request may
@@ -405,7 +647,8 @@
       dlog('[details] mount', id, resume ? `→ shows ${resume.id}, ${resume.stack.length} step(s) back` : '(fresh)');
       navStack = resume ? [...resume.stack] : [];
       restorePending = !!focusItemId;   // set BEFORE the load, so the play button holds back
-      loadFullDetails(resume?.id ?? id);
+      if (resume) loadFullDetails(resume.id, resume.card);
+      else        loadFullDetails(id, cardOf(item));
       restoreSpot({ focusId: focusItemId, scrollTop: focusScrollTop });
     });
   });
@@ -446,7 +689,35 @@
   // suggestion), no access any more, or the server did not answer. The page used to stay EMPTY —
   // no message, nothing focusable, the next key opened the sidebar.
   let loadError = $state(false);
-  async function loadFullDetails(itemId) {
+  // What the rows under a title ask for: the type decides, and for an episode or a season so do its
+  // series and season. All of that comes with every LIST item too, so the card a title was opened
+  // from already knows it — and the rows can be asked for together with the title instead of a round
+  // trip after it (§132). `cardOf` keeps only those fields, for the way back as well.
+  const cardOf = (it) => (it?.Id && it.Type) ? { Id: it.Id, Type: it.Type, SeriesId: it.SeriesId, SeasonId: it.SeasonId } : null;
+  function rowsFor(it) {
+    const t = it.Type;
+    return {
+      similar: (t === 'Season' || t === 'Episode') ? (it.SeriesId || it.Id) : it.Id,
+      related: t === 'Episode' ? (it.SeasonId || null) : (t === 'Series' || t === 'Season') ? it.Id : null,
+      next:    (t === 'Series' || t === 'Season') ? it.Id : null,
+    };
+  }
+  // What is in flight for the title being loaded. An answer for anything else is dropped — that is
+  // how a row asked for on the card's word is corrected once the title says otherwise.
+  let asked = { similar: null, related: null, next: null };
+  // A row that comes in with the title waits for the frame AFTER the one that first draws it: drawn in
+  // the same frame, the rows cost the title 9 ms on a throttled CPU (§132), and the title is what a
+  // page is judged by. One frame later is still a whole round trip earlier than they used to come.
+  // Not the next episode: it names the play button, which belongs to the title.
+  let titleDrawn = Promise.resolve();
+  function askRows(it, myToken) {
+    const want = rowsFor(it);
+    if (want.similar !== asked.similar) { asked.similar = want.similar; similarItems = []; loadSimilarItems(want.similar, myToken); }
+    if (want.related !== asked.related) { asked.related = want.related; relatedItems = []; if (want.related) loadRelatedItems(want.related, myToken); }
+    if (want.next !== asked.next)       { asked.next = want.next; nextToPlay = null; if (want.next) loadNextToPlay(it, myToken); }
+  }
+
+  async function loadFullDetails(itemId, card = null) {
     const myToken = ++detailToken;
     loadStartedAt = performance.now();
     isLoading    = true;
@@ -462,16 +733,27 @@
     selectedAudioIndex    = -1;
     selectedSubtitleIndex = -1;
     selectedMediaSourceId = null;
+    asked = { similar: null, related: null, next: null };
+    let drawn;
+    titleDrawn = new Promise(r => { drawn = r; });
+
+    // The rows go out WITH the title, not after it. They stay off screen until it is there
+    // ({:else if fullItem}), so a quick one cannot land first.
+    loadCollections(itemId, myToken);
+    loadExtras(itemId, myToken);
+    if (card?.Id === itemId) askRows(card, myToken);
 
     try {
       const res = await fetch(
         `${session.serverUrl}/Items/${itemId}?UserId=${selectedUser.Id}`,
-        { headers: getAuthHeaders() }
+        { headers: authHeaders() }
       );
       if (res.ok) {
         const data = await res.json();
         if (myToken !== detailToken) return;   // a different item was opened meanwhile → discard
         fullItem = data;
+        // The rows now share the server with this request (§132) — this tells whether a server keeps the title quick.
+        dlog('[details] title in', Math.round(performance.now() - loadStartedAt), 'ms', card?.Id === itemId ? '(rows asked along)' : '');
 
         if (fullItem.MediaSources?.length > 0) {
           const src = fullItem.MediaSources[0];
@@ -479,28 +761,20 @@
           applySourceDefaults(src);
         }
 
-        // Load in parallel
-        // Query "similar" for season/episode via the SERIES (otherwise the server returns
-        // similar seasons of different series). For a series, its ID directly.
-        const similarId = (fullItem.Type === 'Season' || fullItem.Type === 'Episode')
-          ? (fullItem.SeriesId || itemId)
-          : itemId;
-        loadSimilarItems(similarId, myToken);
-        loadCollections(itemId, myToken);
-        loadExtras(itemId, myToken);
-        if (fullItem.Type === 'Episode' && fullItem.SeasonId) {
-          loadRelatedItems(fullItem.SeasonId, myToken);
-        } else if (fullItem.Type === 'Series' || fullItem.Type === 'Season') {
-          loadRelatedItems(fullItem.Id, myToken);
-          loadNextToPlay(fullItem, myToken);
-        }
+        // "Similar" for a season or an episode goes through the SERIES (otherwise the server returns
+        // similar seasons of other series). Asked again only where the title says something else than
+        // the card did — or when there was no card to go by.
+        askRows(fullItem, myToken);
       } else {
         console.warn('[details] item', itemId, '→ HTTP', res.status);
         if (myToken === detailToken) loadError = true;
       }
     } catch (e) { console.error(e); if (myToken === detailToken) loadError = true; }
     // Only clear the spinner if we're still current — otherwise an old response kills the new one's.
-    finally     { if (myToken === detailToken) isLoading = false; }
+    finally {
+      if (myToken === detailToken) isLoading = false;
+      requestAnimationFrame(() => requestAnimationFrame(drawn));   // the first frame draws the title
+    }
   }
 
   // Extras / special features of the opened item (movie, series or season).
@@ -509,9 +783,9 @@
     try {
       const res = await fetch(
         `${session.serverUrl}/Items/${itemId}/SpecialFeatures?userId=${selectedUser.Id}`,
-        { headers: getAuthHeaders() }
+        { headers: authHeaders() }
       );
-      if (res.ok) { const d = await res.json(); if (myToken !== detailToken) return; extras = Array.isArray(d) ? d : (d.Items || []); }
+      if (res.ok) { const d = await res.json(); await titleDrawn; if (myToken !== detailToken) return; extras = Array.isArray(d) ? d : (d.Items || []); }
     } catch { /* extras are optional */ }
   }
 
@@ -522,11 +796,12 @@
     const t0 = performance.now();
     try {
       const res = await fetch(
-        `${session.serverUrl}/Items/${itemId}/Collections?UserId=${selectedUser.Id}&Fields=PrimaryImageAspectRatio`,
-        { headers: getAuthHeaders() }
+        `${session.serverUrl}/Items/${itemId}/Collections?UserId=${selectedUser.Id}`,
+        { headers: authHeaders() }
       );
       if (!res.ok) return;
       const d = await res.json();
+      await titleDrawn;
       if (myToken !== detailToken) return;
       collections = d.Items || [];
       dlog('[details] collections', collections.length, 'in', Math.round(performance.now() - t0), 'ms');
@@ -537,12 +812,13 @@
     const t0 = performance.now();
     try {
       const res = await fetch(
-        `${session.serverUrl}/Items/${itemId}/Similar?Limit=10&Fields=PrimaryImageAspectRatio`,
-        { headers: getAuthHeaders() }
+        `${session.serverUrl}/Items/${itemId}/Similar?Limit=10`,
+        { headers: authHeaders() }
       );
       if (res.ok) {
         const d = await res.json();
-        if (myToken !== detailToken) return;
+        await titleDrawn;
+        if (myToken !== detailToken || asked.similar !== itemId) return;
         similarItems = d.Items || [];
         // The way back onto a suggestion card relies on this row arriving inside restoreSpot's
         // ~1.2 s (CODE-HEALTH §40) — this line tells whether a server still manages that.
@@ -555,18 +831,18 @@
 
   async function loadNextToPlay(it, myToken) {
     try {
-      const ep = await playableFor(it, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
-      if (myToken === detailToken) nextToPlay = ep;
+      const ep = await playableFor(it, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: authHeaders() });
+      if (myToken === detailToken && asked.next === it.Id) nextToPlay = ep;
     } catch { /* the button just says "Play"; handlePlay resolves it again */ }
   }
 
   async function loadRelatedItems(parentId, myToken) {
     try {
       const res = await fetch(
-        `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${parentId}&Fields=Overview,PrimaryImageAspectRatio&SortBy=SortName&IsMissing=false&EnableTotalRecordCount=false`,
-        { headers: getAuthHeaders() }
+        `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${parentId}&Fields=Overview&ImageTypeLimit=1&SortBy=SortName&IsMissing=false&EnableTotalRecordCount=false`,
+        { headers: authHeaders() }
       );
-      if (res.ok) { const d = await res.json(); if (myToken !== detailToken) return; relatedItems = d.Items || []; }
+      if (res.ok) { const d = await res.json(); await titleDrawn; if (myToken !== detailToken || asked.related !== parentId) return; relatedItems = d.Items || []; }
     } catch (e) { console.error(e); }
   }
 
@@ -586,7 +862,7 @@
       // it was dropped silently, so a season always started at its episode 1.
       try {
         // The one the button names, if it is known already; otherwise resolve it now.
-        const ep = nextToPlay || await playableFor(fullItem, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+        const ep = nextToPlay || await playableFor(fullItem, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: authHeaders() });
         if (ep && stillHere(startedOn)) onPlayVideo?.({ item: ep, audioIndex: -1, subtitleIndex: -1 });
       } catch (e) { console.error(e); }
     } else {
@@ -608,7 +884,7 @@
     // for a season, specials excluded — the identical pool the old inline query built; the random
     // draw ignores buildPlayQueue's ordering.
     const startedOn = fullItem.Id;
-    const pool = await buildPlayQueue([fullItem], { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+    const pool = await buildPlayQueue([fullItem], { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: authHeaders() });
     if (!pool.length || !stillHere(startedOn)) return;
     onPlayVideo?.({ item: pool[Math.floor(Math.random() * pool.length)], audioIndex: -1, subtitleIndex: -1 });
   }
@@ -626,17 +902,12 @@
     const willBePlayed = !shown.UserData?.Played;
     shown.UserData = { ...shown.UserData, Played: willBePlayed };
     if (carry) item.UserData = { ...item.UserData, Played: willBePlayed };
-    try {
-      // An error ANSWER is a failure too: it never threw, so the tick stayed although the server
-      // had refused (or no longer knew the title).
-      const res = await fetch(`${session.serverUrl}/UserPlayedItems/${shown.Id}?UserId=${selectedUser.Id}`, {
-        method: willBePlayed ? "POST" : "DELETE",
-        headers: getAuthHeaders()
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch (e) {
-      // Roll back on error
-      console.warn('[OcenFin] played-status toggle failed, rolled back:', e);
+    if (await setPlayed(shown.Id, selectedUser.Id, willBePlayed)) {
+      // The home screen's Continue watching and Up next follow — a series or season marked here takes its
+      // episode out of Continue watching, an episode moves Up next on (CODE-HEALTH §140)
+      onProgressChanged?.();
+    } else {
+      // Roll back — an error ANSWER counts too: the tick used to stay although the server had refused
       shown.UserData = { ...shown.UserData, Played: !willBePlayed };
       if (carry) item.UserData = { ...item.UserData, Played: !willBePlayed };
     }
@@ -651,7 +922,7 @@
     const on = fullItem;
     earlier = 'busy';
     try {
-      const { found, done } = await markEarlierPlayed(on, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: getAuthHeaders() });
+      const { found, done } = await markEarlierPlayed(on, { serverUrl: session.serverUrl, userId: selectedUser.Id, headers: authHeaders() });
       if (done.length) onProgressChanged?.();
       if (fullItem !== on) return;
       const marked = new Set(done);
@@ -669,14 +940,7 @@
     const willBeFav = !shown.UserData?.IsFavorite;
     shown.UserData = { ...shown.UserData, IsFavorite: willBeFav };
     if (carry) item.UserData = { ...item.UserData, IsFavorite: willBeFav };
-    try {
-      const res = await fetch(`${session.serverUrl}/UserFavoriteItems/${shown.Id}?UserId=${selectedUser.Id}`, {
-        method: willBeFav ? "POST" : "DELETE",
-        headers: getAuthHeaders()
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);   // see togglePlayed
-    } catch (e) {
-      console.warn('[OcenFin] favorite toggle failed, rolled back:', e);
+    if (!(await setFavorite(shown.Id, selectedUser.Id, willBeFav))) {   // rolled back, see togglePlayed
       shown.UserData = { ...shown.UserData, IsFavorite: !willBeFav };
       if (carry) item.UserData = { ...item.UserData, IsFavorite: !willBeFav };
     }
@@ -695,6 +959,7 @@
   // the app.
   let navStack = [];
   let scrollEl = $state();
+  let rootEl;               // the page's root — restoreSpot watches it for the card to appear
   // While a spot is being restored the play button must NOT grab focus on mount, or it would win
   // the race against the card, which only exists once its row has loaded.
   //
@@ -721,11 +986,12 @@
   // That row used to be the one exception (§19/§28): /Items/{id}/Similar came too late for
   // restoreSpot on Jellyfin 10.x. On 12.1 it was measured on the B4 at 215–296 ms after the page
   // started (CODE-HEALTH §40), well inside the window, so it is restored like every other row.
-  function navigateTo(id) {
+  function navigateTo(id, card = null) {
     restorePending = false;   // going forward: the play button is the right landing spot again
     if (fullItem?.Id) {
       navStack.push({
         id: fullItem.Id,
+        card: cardOf(fullItem),
         focusId: document.activeElement?.getAttribute?.('data-item-id') ?? null,
         scrollTop: scrollEl?.scrollTop || 0,
       });
@@ -733,13 +999,13 @@
     }
     isLoading = true;
     fullItem  = null;   // show the spinner immediately
-    loadFullDetails(id);
+    loadFullDetails(id, cardOf(card));
   }
 
   // For App, before it leaves for a view that unmounts us: the title on screen and the chain behind
   // it, since both live only in this component. Handed back through takeResume.
   export function snapshot() {
-    return fullItem?.Id ? { id: fullItem.Id, stack: navStack.map(s => ({ ...s })) } : null;
+    return fullItem?.Id ? { id: fullItem.Id, card: cardOf(fullItem), stack: navStack.map(s => ({ ...s })) } : null;
   }
 
   // Back: one level up inside the page first. Returns false once the chain is empty, which is the
@@ -750,7 +1016,7 @@
     restorePending = !!prev.focusId;
     isLoading = true;
     fullItem  = null;
-    loadFullDetails(prev.id);
+    loadFullDetails(prev.id, prev.card);
     restoreSpot(prev);
     return true;
   }
@@ -769,11 +1035,12 @@
     // missing below it gets clamped (900 became 602 in a measurement) and with a row arriving above
     // the card slides down. So it re-applies until the card's position and the offset hold still.
     const attempt = () => {
-      if (myToken !== detailToken) return;             // a newer navigation took over
+      if (myToken !== detailToken) return sighting?.disconnect();   // a newer navigation took over
       const card = scrollEl?.querySelector(`[data-item-id="${focusId}"]`);
       const active = document.activeElement;
-      if (active && active !== document.body && active !== card) return;   // focus moved on
+      if (active && active !== document.body && active !== card) return sighting?.disconnect();   // focus moved on
       if (card) {
+        sighting?.disconnect();
         scrollEl.scrollTop = scrollTop;                // the view first, then the focus
         card.focus();
         const pos = card.offsetTop;
@@ -782,6 +1049,7 @@
         if (settled >= 3) return;                      // nothing moved any more — done
       }
       if (++tries < 24) { setTimeout(attempt, 50); return; }   // ~1.2 s, ample for those rows
+      sighting?.disconnect();
       // Gave up without the card: its row never came (a server under load) or the card is gone.
       // The play button held back its own focus for this restore, so without this nothing would be
       // focused and the next key press would open the sidebar. Land where a fresh page lands.
@@ -790,31 +1058,30 @@
       }
     };
     await tick();
+    // The card's row lands BETWEEN two steps, and for up to 50 ms the page stood there unscrolled with
+    // nothing focused (§132). So the moment the card appears, the spot is applied once — before that
+    // frame is painted. Only that first sighting: whether things hold still is still judged by the
+    // steps above, which count from their own first sighting exactly as before.
+    // Watched on the root: the scroller itself is still missing while the spinner shows.
+    const sighting = rootEl && new MutationObserver(() => {
+      if (myToken !== detailToken) { sighting.disconnect(); return; }
+      const card = scrollEl?.querySelector(`[data-item-id="${focusId}"]`);
+      if (!card) return;
+      sighting.disconnect();
+      const active = document.activeElement;
+      if (active && active !== document.body && active !== card) return;
+      scrollEl.scrollTop = scrollTop;
+      card.focus();
+    });
+    sighting?.observe(rootEl, { childList: true, subtree: true });
     attempt();
   }
 
 
 
-  function getItemBackdropUrl(targetItem) {
-    if (targetItem.BackdropImageTags?.length > 0)
-      return `${session.serverUrl}/Items/${targetItem.Id}/Images/Backdrop?tag=${targetItem.BackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
-    if (targetItem.ParentBackdropImageTags?.length > 0)
-      return `${session.serverUrl}/Items/${targetItem.ParentBackdropItemId}/Images/Backdrop?tag=${targetItem.ParentBackdropImageTags[0]}&maxWidth=1920&quality=80&format=webp`;
-    return null;
-  }
-
-  // Title logo (transparent PNG) of the episode/series; for episodes the series. Null → the caller falls back to text.
-  function getItemLogoUrl(targetItem) {
-    if (targetItem.ImageTags?.Logo)
-      return `${session.serverUrl}/Items/${targetItem.Id}/Images/Logo?tag=${targetItem.ImageTags.Logo}&maxHeight=200&quality=90&format=webp`;
-    if (targetItem.ParentLogoImageTag)
-      return `${session.serverUrl}/Items/${targetItem.ParentLogoItemId}/Images/Logo?tag=${targetItem.ParentLogoImageTag}&maxHeight=200&quality=90&format=webp`;
-    return null;
-  }
-
-  function getRuntimeMinutes(ticks) {
-    return !ticks ? "" : Math.round(ticks / 10000000 / 60) + ` ${i18n.t.mins}`;
-  }
+  // Backdrop and logo — the title's own, else its series' (an episode, a season); null → no picture / the text title
+  const getItemBackdropUrl = (targetItem) => backdropUrl(targetItem, 1920, 80);
+  const getItemLogoUrl = (targetItem) => logoUrl(targetItem, 200);
 
   // Spoiler protection: slightly obscure unwatched episodes. Excluded are seasons (posters),
   // already started, watched and favorite-marked episodes.
@@ -830,15 +1097,34 @@
     return (selectedSource?.MediaStreams || []).filter(s => s.Type === type);
   }
 
-  function getEndTime(targetItem) {
-    if (!targetItem?.RunTimeTicks) return "";
-    const remainingTicks = targetItem.RunTimeTicks - (targetItem.UserData?.PlaybackPositionTicks || 0);
-    const endDate = new Date(Date.now() + remainingTicks / 10000);
-    return `${i18n.t.endsAt} ${endDate.toLocaleTimeString(i18n.lang || 'en', { hour: '2-digit', minute: '2-digit', hour12: !use24h })}`;
-  }
 </script>
 
-<div class="flex flex-col h-full relative overflow-hidden" style:background-color={tint?.bg}>
+<!-- The meta line's parts that only the title page has (TitleMeta): an episode's number and air date in place of the
+     year, and after the running time what is left of a started title and when it would end -->
+{#snippet episodeLead()}
+  {#if episodeMeta.code}<span class="text-blue-400 whitespace-nowrap">{episodeMeta.code}</span>{/if}
+  {#if episodeMeta.date}<span class="whitespace-nowrap">{episodeMeta.date}</span>{:else if fullItem.ProductionYear}<span>{fullItem.ProductionYear}</span>{/if}
+{/snippet}
+{#snippet endsAt()}
+  <span class="text-base font-normal text-gray-400 ml-1">{resumeLeft ? `${resumeLeft} ${i18n.t.mins} ${i18n.t.remaining} · ` : ''}{endsAtLabel(fullItem, use24h)}</span>
+{/snippet}
+
+<!-- An audio or subtitle track: language, forced/SDH/original and what its title adds, then codec or format dimmer (tracklabel.js, §138) -->
+<!-- A track that turns the playback into a transcode, said before it is picked (playbackPlan's rule, §149) -->
+{#snippet trackTag(key)}<span class="shrink-0 ml-3 text-xs text-amber-300">{i18n.t[key]}</span>{/snippet}
+
+{#snippet trackName(s)}
+  {@const l = trackNames.get(s?.Index)}
+  {#if l}{l.main}{#if l.tech}<span class="opacity-70">{' · ' + l.tech}</span>{/if}{/if}
+{/snippet}
+
+<!-- A version as the list and its field name it: its own name, then resolution, range and codec dimmer (sourceLabels) -->
+{#snippet versionLabel(src)}
+  {@const l = sourceLabels.get(src?.Id)}
+  {#if l}{#if l.name}{l.name}{#if l.tech}<span class="opacity-70">{' · ' + l.tech}</span>{/if}{:else}{l.tech}{/if}{#if l.extra}<span class="opacity-70">{' · ' + l.extra}</span>{/if}{/if}
+{/snippet}
+
+<div bind:this={rootEl} class="flex flex-col h-full relative overflow-hidden" style:background-color={tint?.bg}>
   {#if isLoading}
     <div class="flex-1 flex items-center justify-center">
       <div class="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
@@ -883,16 +1169,16 @@
         </button>
         {#if fullItem.Type === 'Episode'}
           <div class="flex items-center text-xl font-semibold text-gray-400 gap-2">
-            <button onclick={() => navigateTo(fullItem.SeriesId)}
+            <button onclick={() => navigateTo(fullItem.SeriesId, { Id: fullItem.SeriesId, Type: 'Series' })}
               class="hover:text-white focus:text-white focus:outline-none">{fullItem.SeriesName}</button>
             <span>/</span>
-            <button onclick={() => navigateTo(fullItem.SeasonId)}
+            <button onclick={() => navigateTo(fullItem.SeasonId, { Id: fullItem.SeasonId, Type: 'Season', SeriesId: fullItem.SeriesId })}
               class="hover:text-white focus:text-white focus:outline-none">{fullItem.SeasonName}</button>
           </div>
         {:else if fullItem.Type === 'Season' && fullItem.SeriesId}
           <!-- A season page said only "Season 2" — which series, the page did not tell. -->
           <div class="flex items-center text-xl font-semibold text-gray-400 gap-2">
-            <button onclick={() => navigateTo(fullItem.SeriesId)}
+            <button onclick={() => navigateTo(fullItem.SeriesId, { Id: fullItem.SeriesId, Type: 'Series' })}
               class="hover:text-white focus:text-white focus:outline-none">{fullItem.SeriesName}</button>
           </div>
         {/if}
@@ -904,7 +1190,10 @@
            the play button and landed in the episodes or cast row below. -->
       <div class="flex gap-12 items-start mb-8" data-focus-group="details-hero">
 
-        <div class="w-64 shrink-0 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800 relative"
+        <!-- With a picture its own height; without one the shape of the cards (an episode's still is 16:9) — the box had
+             no height then and showed as a thin line (§143). -->
+        <div class="w-64 shrink-0 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800 relative
+          {getItemImageUrl(fullItem) ? '' : fullItem.Type === 'Episode' ? 'aspect-video' : 'aspect-[2/3]'}"
           style:--tw-shadow-color={tint?.glow}>
           {#if getItemImageUrl(fullItem)}
             <img src={getItemImageUrl(fullItem)} {@attach blurUp(itemBlurHash(fullItem))} alt={fullItem.Name} class="w-full h-full object-cover" />
@@ -944,51 +1233,20 @@
                 <img src={getItemLogoUrl(fullItem)} alt={fullItem.Name}
                      class="max-h-28 max-w-full w-auto object-contain object-left-bottom drop-shadow-lg" />
               {:else}
-                <h1 class="text-6xl font-bold text-white drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
+                <h1 class="text-6xl leading-[1.3] -my-[0.15em] font-bold text-white drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
               {/if}
             </div>
           {:else}
-            <h1 class="max-w-4xl text-6xl font-bold text-white mb-4 drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
+            <!-- leading-[1.3] + the negative margin: a clamp hides overflow, and at text-6xl's line height of 1 that cut
+                 the descenders (p, g, y) off every title. The margin gives the extra height back, so a one-line title
+                 sits where it did (§143). Every big title that clamps or truncates does the same. -->
+            <h1 class="max-w-4xl text-6xl leading-[1.3] -mt-[0.15em] mb-[calc(1rem-0.15em)] font-bold text-white drop-shadow-lg line-clamp-2">{fullItem.Name}</h1>
           {/if}
 
-          <!-- META -->
-          <div class="max-w-4xl flex items-center flex-wrap gap-4 text-lg font-semibold text-gray-200 mb-6 [text-shadow:0_1px_4px_rgba(0,0,0,0.75)]">
-            {#if fullItem.ProductionYear}
-              <span class="text-blue-400">{fullItem.ProductionYear}</span>
-            {/if}
-            {#if fullItem.RunTimeTicks}
-              <span class="flex items-center gap-2">
-                • {getRuntimeMinutes(fullItem.RunTimeTicks)}
-                <span class="text-base font-normal text-gray-400 ml-1">{getEndTime(fullItem)}</span>
-              </span>
-            {/if}
-            {#if fullItem.OfficialRating}
-              <span class="px-2 py-0.5 rounded border border-gray-400/80 bg-black/25 text-gray-100 text-base font-bold leading-none [text-shadow:none]">
-                {fullItem.OfficialRating}
-              </span>
-            {/if}
-            {#if fullItem.CommunityRating}
-              <span class="flex items-center gap-1 text-gray-100">
-                •
-                <svg class="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
-                </svg>
-                {fullItem.CommunityRating.toFixed(1)}
-              </span>
-            {/if}
-            {#if fullItem.CriticRating}
-              <span class="flex items-center gap-1 text-gray-100">
-                •
-                <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
-                  <circle cx="12" cy="14" r="7.5" fill="#ef4444"/>
-                  <ellipse cx="9.5" cy="6.5" rx="2.5" ry="1.3" fill="#22c55e" transform="rotate(-25 9.5 6.5)"/>
-                  <ellipse cx="14.5" cy="6.5" rx="2.5" ry="1.3" fill="#22c55e" transform="rotate(25 14.5 6.5)"/>
-                  <rect x="11.3" y="4.5" width="1.4" height="3" rx="0.7" fill="#22c55e"/>
-                </svg>
-                {fullItem.CriticRating}%
-              </span>
-            {/if}
-          </div>
+          <!-- META — the line the banner and the library's preview show too (TitleMeta, §141); an episode leads with its
+               number and air date (§136), a film or episode adds time left and "ends at" after its running time -->
+          <TitleMeta item={fullItem} lead={episodeMeta ? episodeLead : null} extra={endsAt}
+            class="max-w-4xl flex items-center flex-wrap gap-4 text-lg font-semibold text-gray-200 mb-6 [text-shadow:0_1px_4px_rgba(0,0,0,0.75)]" />
 
           {#if techBadges.length}
             <!-- Technical capabilities of the selected version (reactive: see techBadges) -->
@@ -999,10 +1257,23 @@
             </div>
           {/if}
 
+          {#if genreLine || directors}
+            <div class="max-w-4xl flex flex-wrap gap-x-8 gap-y-1 text-lg text-gray-300 mb-4 [text-shadow:0_1px_4px_rgba(0,0,0,0.75)]">
+              {#if genreLine}<span>{genreLine}</span>{/if}
+              {#if directors}<span><span class="text-gray-400">{directors.pre}</span>{directors.list}<span class="text-gray-400">{directors.post}</span></span>{/if}
+            </div>
+          {/if}
+
           <!-- Nothing rather than "No description available": seasons rarely have one, and the filler
                line read like an error. -->
           {#if fullItem.Overview}
-            <p class="max-w-4xl text-xl text-gray-300 mb-10 line-clamp-4 leading-relaxed">{fullItem.Overview}</p>
+            <!-- The padding sits outside the text (negative margins, max width + 1.5rem): it wraps and clamps exactly
+                 as the plain paragraph did, and the focus ring gets room around it. -->
+            <button bind:this={overviewBtn} disabled={!overviewClamped}
+              onclick={() => { overviewFocus.capture(overviewBtn); showOverview = true; }}
+              class="block max-w-[57.5rem] text-left -mx-3 -mt-2 px-3 py-2 mb-8 rounded-xl focus:outline-none focus:ring-4 focus:ring-white">
+              <span {@attach measureOverview} class="text-xl text-gray-300 line-clamp-4 leading-relaxed">{fullItem.Overview}</span>
+            </button>
           {:else}
             <div class="mb-6"></div>
           {/if}
@@ -1015,7 +1286,7 @@
               <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
               {#if nextToPlay && nextToPlay.Type === 'Episode'}
                 {nextToPlay.UserData?.PlaybackPositionTicks > 0 ? i18n.t.resumePlay : i18n.t.play}
-                <span class="text-xl font-semibold text-gray-600">{epCode(nextToPlay)}</span>
+                <span class="text-xl font-semibold text-gray-600">{episodeCode(nextToPlay)}</span>
               {:else if fullItem.UserData?.PlaybackPositionTicks > 0}{i18n.t.resumePlay}{:else}{i18n.t.play}{/if}
             </button>
 
@@ -1099,7 +1370,7 @@
                       </button>
                     {/if}
                     {#if fullItem.MediaSources?.length > 0}
-                      <button onclick={() => { menuReturn.capture(kebabBtnEl); closeDropdown(false); showMediaInfo = true; }}
+                      <button onclick={() => { menuReturn.capture(kebabBtnEl); closeDropdown(false); showMediaInfo = true; askPlayPlan(); }}
                         class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                         <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         {i18n.t.mediaInfo}
@@ -1138,18 +1409,18 @@
                   <svg class="w-6 h-6 text-gray-500 shrink-0 mt-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/>
                   </svg>
-                  <div class="flex-1" data-dropdown data-focus-trap={openDropdown === 'resolution' || undefined}>
+                  <div class="flex-1 min-w-0 relative" data-dropdown data-focus-trap={openDropdown === 'resolution' || undefined}>
                     <button onclick={(e) => toggleDropdown('resolution', e)}
                       class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
-                      <span>{sourceLabel(selectedSource)}</span>
+                      <span class="truncate">{@render versionLabel(selectedSource)}</span>
                       <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'resolution' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                     </button>
                     {#if openDropdown === 'resolution'}
-                      <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
+                      <div {@attach placeList} class="absolute inset-x-0 z-30 overflow-y-auto hide-scrollbar flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1 shadow-2xl">
                         {#each fullItem.MediaSources as src (src.Id)}
                           <button onclick={() => { selectedMediaSourceId = src.Id; onSourceChange(); closeDropdown(); }} data-opt data-active={src.Id === selectedMediaSourceId || undefined}
-                            class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {src.Id === selectedMediaSourceId ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
-                            {sourceLabel(src)}
+                            class="text-left text-sm px-3 py-2 scroll-my-1 rounded focus:outline-none focus:ring-2 focus:ring-white {src.Id === selectedMediaSourceId ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
+                            {@render versionLabel(src)}
                           </button>
                         {/each}
                       </div>
@@ -1173,18 +1444,20 @@
                   <svg class="w-6 h-6 text-gray-500 shrink-0 mt-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
                   </svg>
-                  <div class="flex-1" data-dropdown data-focus-trap={openDropdown === 'audio' || undefined}>
+                  <div class="flex-1 min-w-0 relative" data-dropdown data-focus-trap={openDropdown === 'audio' || undefined}>
                     <button onclick={(e) => toggleDropdown('audio', e)}
                       class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
-                      <span>{audioLabel(getMediaStreams('Audio').find(s => s.Index === selectedAudioIndex))}</span>
+                      <span class="truncate mr-auto">{@render trackName(getMediaStreams('Audio').find(s => s.Index === selectedAudioIndex))}</span>
+                      {#if selectedAudioIndex !== -1 && defaultAudio !== -1 && selectedAudioIndex !== defaultAudio}{@render trackTag('miTagTranscode')}{/if}
                       <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'audio' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                     </button>
                     {#if openDropdown === 'audio'}
-                      <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
-                        {#each getMediaStreams('Audio') as stream (stream.Index)}
+                      <div {@attach placeList} class="absolute inset-x-0 z-30 overflow-y-auto hide-scrollbar flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1 shadow-2xl">
+                        {#each audioChoices as stream (stream.Index)}
                           <button onclick={() => { pickTrack('audio', stream.Index); closeDropdown(); }} data-opt data-active={stream.Index === selectedAudioIndex || undefined}
-                            class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedAudioIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
-                            {audioLabel(stream)}
+                            class="flex items-baseline text-left text-sm px-3 py-2 scroll-my-1 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedAudioIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
+                            <span class="min-w-0 mr-auto">{@render trackName(stream)}</span>
+                            {#if defaultAudio !== -1 && stream.Index !== defaultAudio}{@render trackTag('miTagTranscode')}{/if}
                           </button>
                         {/each}
                       </div>
@@ -1196,7 +1469,7 @@
                   <svg class="w-6 h-6 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
                   </svg>
-                  <span class="text-sm font-semibold text-gray-300">{getMediaStreams('Audio')[0].DisplayTitle || getMediaStreams('Audio')[0].Language || getMediaStreams('Audio')[0].Codec}</span>
+                  <span class="text-sm font-semibold text-gray-300">{@render trackName(getMediaStreams('Audio')[0])}</span>
                 </div>
               {/if}
 
@@ -1206,27 +1479,29 @@
                   <svg class="w-6 h-6 text-gray-500 shrink-0 mt-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
                   </svg>
-                  <div class="flex-1" data-dropdown data-focus-trap={openDropdown === 'subtitle' || undefined}>
+                  <div class="flex-1 min-w-0 relative" data-dropdown data-focus-trap={openDropdown === 'subtitle' || undefined}>
                     <button onclick={(e) => toggleDropdown('subtitle', e)} data-subtitle-trigger
                       class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
-                      <span>{selectedSubtitleIndex === -1 ? i18n.t.subtitleOff : subtitleLabel(getMediaStreams('Subtitle').find(s => s.Index === selectedSubtitleIndex))}</span>
+                      <span class="truncate mr-auto">{#if selectedSubtitleIndex === -1}{i18n.t.subtitleOff}{:else}{@render trackName(getMediaStreams('Subtitle').find(s => s.Index === selectedSubtitleIndex))}{/if}</span>
+                      {#if selectedSubtitleIndex !== -1 && subtitleBurns(getMediaStreams('Subtitle').find(s => s.Index === selectedSubtitleIndex), playbackPrefs)}{@render trackTag('miTagBurned')}{/if}
                       <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'subtitle' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                     </button>
                     {#if openDropdown === 'subtitle'}
-                      <div class="mt-2 flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1">
+                      <div {@attach placeList} class="absolute inset-x-0 z-30 overflow-y-auto hide-scrollbar flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1 shadow-2xl">
                         <button onclick={() => { pickTrack('subtitle', -1); closeDropdown(); }} data-opt data-active={selectedSubtitleIndex === -1 || undefined}
-                          class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {selectedSubtitleIndex === -1 ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
+                          class="text-left text-sm px-3 py-2 scroll-my-1 rounded focus:outline-none focus:ring-2 focus:ring-white {selectedSubtitleIndex === -1 ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
                           {i18n.t.subtitleOff}
                         </button>
-                        {#each getMediaStreams('Subtitle') as stream (stream.Index)}
+                        {#each subtitleChoices as stream (stream.Index)}
                           <button onclick={() => { pickTrack('subtitle', stream.Index); closeDropdown(); }} data-opt data-active={stream.Index === selectedSubtitleIndex || undefined}
-                            class="text-left text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedSubtitleIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
-                            {subtitleLabel(stream)}
+                            class="flex items-baseline text-left text-sm px-3 py-2 scroll-my-1 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedSubtitleIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
+                            <span class="min-w-0 mr-auto">{@render trackName(stream)}</span>
+                            {#if subtitleBurns(stream, playbackPrefs)}{@render trackTag('miTagBurned')}{/if}
                           </button>
                         {/each}
                         {#if canSearchSubtitles}
                           <button onclick={openSubtitleSearch} data-opt
-                            class="text-left text-sm px-3 py-2 mt-1 rounded border-t border-gray-700/70 text-blue-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white">
+                            class="text-left text-sm px-3 py-2 mt-1 scroll-my-1 rounded border-t border-gray-700/70 text-blue-300 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white">
                             {i18n.t.subtitleSearch}
                           </button>
                         {/if}
@@ -1273,20 +1548,15 @@
             {:else}{i18n.t.moreFromSeason} {fullItem.SeasonName || ''}
             {/if}
           </h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
+          <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each relatedItems as ep (ep.Id)}
-              <button onclick={() => navigateTo(ep.Id)} data-item-id={ep.Id}
+              <button onclick={() => navigateTo(ep.Id, ep)} data-item-id={ep.Id}
                 onfocus={() => { if (ep.Type === 'Episode') focusedEpisode = ep; }}
-                class="shrink-0 scroll-m-4 group flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
-                <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
+                class="shrink-0 scroll-m-4 group isolate flex flex-col focus:outline-none text-left relative {ep.Type === 'Season' ? 'w-48' : 'w-80'}">
+                <div class="{ep.Type === 'Season' ? 'aspect-[2/3]' : 'aspect-video'} w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white group-hover:border-gray-500 scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200 shadow-xl relative">
                   {#if getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')}
                     <img src={getItemImageUrl(ep, ep.Type === 'Season' ? 'portrait' : 'landscape')} {@attach blurUp(itemBlurHash(ep))} alt={ep.Name} loading="lazy"
                       class="w-full h-full object-cover transition-all duration-200 {epSpoiler(ep) ? 'blur-md scale-110' : ''}" />
-                  {/if}
-                  {#if itemProgress(ep) > 0}
-                    <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-900/80">
-                      <div class="h-full bg-blue-500" style="width:{itemProgress(ep)}%"></div>
-                    </div>
                   {/if}
                   {#if ep.Id === nextToPlay?.Id && ep.Type === 'Episode'}
                     <div class="absolute top-2 left-2 bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-md shadow-md">{i18n.t.nextUp}</div>
@@ -1294,7 +1564,7 @@
                   <CardStatus item={ep} />
                 </div>
                 <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full">
-                  {#if ep.IndexNumber && ep.Type !== 'Season'}{ep.IndexNumber}.&nbsp;{/if}{ep.Name}
+                  {#if ep.IndexNumber && ep.Type !== 'Season'}{ep.IndexNumber}{#if ep.IndexNumberEnd > ep.IndexNumber}–{ep.IndexNumberEnd}{/if}.&nbsp;{/if}{ep.Name}
                 </span>
               </button>
             {/each}
@@ -1308,7 +1578,7 @@
             <div class="px-2 -mt-2 min-h-[7.5rem] max-w-5xl">
               {#if shown}
                 <p class="text-xl font-bold text-white">
-                  {epCode(shown)} · {shown.Name}{#if epMinutes(shown)}<span class="text-gray-400 font-medium">{' · '}{epMinutes(shown)}</span>{/if}
+                  {epTitle(shown)}{#if runtimeLabel(shown.RunTimeTicks)}<span class="text-gray-400 font-medium">{' · '}{runtimeLabel(shown.RunTimeTicks)}</span>{/if}
                 </p>
                 {#if shown.Overview && !epSpoiler(shown)}
                   <p class="text-lg text-gray-300 mt-2 line-clamp-3 leading-relaxed">{shown.Overview}</p>
@@ -1323,11 +1593,11 @@
       {#if extras.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-extras">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.extras}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
+          <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each extras as ex (ex.Id)}
               <button onclick={() => onPlayVideo?.({ item: ex, audioIndex: -1, subtitleIndex: -1 })}
-                class="shrink-0 w-80 scroll-m-4 group flex flex-col focus:outline-none text-left">
-                <div class="aspect-video w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
+                class="shrink-0 w-80 scroll-m-4 group isolate flex flex-col focus:outline-none text-left">
+                <div class="aspect-video w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
                   {#if getItemImageUrl(ex, 'landscape')}
                     <img src={getItemImageUrl(ex, 'landscape')} {@attach blurUp(itemBlurHash(ex))} alt={ex.Name} class="w-full h-full object-cover" loading="lazy" />
                   {:else}
@@ -1337,7 +1607,7 @@
                   {/if}
                 </div>
                 <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full">{ex.Name}</span>
-                {#if ex.RunTimeTicks}<span class="text-xs text-gray-400">{getRuntimeMinutes(ex.RunTimeTicks)}</span>{/if}
+                {#if runtimeLabel(ex.RunTimeTicks)}<span class="text-xs text-gray-400">{runtimeLabel(ex.RunTimeTicks)}</span>{/if}
               </button>
             {/each}
           </div>
@@ -1348,21 +1618,9 @@
       {#if castMembers.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-cast">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.cast}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
+          <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each castMembers as person (person.Id)}
-              <button onclick={() => onOpenPerson?.(person)} data-item-id={person.Id} class="shrink-0 w-36 scroll-m-4 group focus:outline-none text-center">
-                <div class="aspect-square w-full bg-gray-800 rounded-full overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl mx-auto group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
-                  {#if personImageUrl(session.serverUrl, person)}
-                    <img src={personImageUrl(session.serverUrl, person)} {@attach blurUp(itemBlurHash(person))} alt={person.Name} class="w-full h-full object-cover" loading="lazy" />
-                  {:else}
-                    <div class="w-full h-full flex items-center justify-center text-gray-600">
-                      <svg class="w-14 h-14" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-                    </div>
-                  {/if}
-                </div>
-                <span class="mt-3 text-sm font-bold text-gray-300 group-focus:text-white truncate w-full block">{person.Name}</span>
-                {#if person.Role}<span class="text-xs text-gray-400 truncate w-full block">{person.Role}</span>{/if}
-              </button>
+              <PersonCard {person} onclick={() => onOpenPerson?.(person)} caption={person.Role} class="shrink-0 w-36 scroll-m-4" />
             {/each}
           </div>
         </div>
@@ -1372,10 +1630,10 @@
       {#if collections.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-collections">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.includedIn}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
+          <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each collections as col (col.Id)}
-              <button onclick={() => onOpenCollection?.(col)} data-item-id={col.Id} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
+              <button onclick={() => onOpenCollection?.(col)} data-item-id={col.Id} class="shrink-0 w-48 scroll-m-4 group isolate flex flex-col focus:outline-none text-left">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
                   {#if getItemImageUrl(col, 'portrait')}
                     <img src={getItemImageUrl(col, 'portrait')} {@attach blurUp(itemBlurHash(col))} alt={col.Name} class="w-full h-full object-cover" loading="lazy" />
                   {/if}
@@ -1391,10 +1649,10 @@
       {#if similarItems.length > 0}
         <div class="mt-8 border-t border-gray-800 pt-8" data-focus-group="details-similar">
           <h2 class="text-3xl font-bold text-white mb-6">{i18n.t.similar}</h2>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
+          <div data-focus-grid="row" class="flex gap-6 overflow-x-auto hide-scrollbar pt-4 -mt-4 pb-8 px-2">
             {#each similarItems as si (si.Id)}
-              <button onclick={() => navigateTo(si.Id)} data-item-id={si.Id} class="shrink-0 w-48 scroll-m-4 group flex flex-col focus:outline-none text-left">
-                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
+              <button onclick={() => navigateTo(si.Id, si)} data-item-id={si.Id} class="shrink-0 w-48 scroll-m-4 group isolate flex flex-col focus:outline-none text-left">
+                <div class="aspect-[2/3] w-full bg-gray-800 rounded-xl overflow-hidden border-4 border-transparent group-focus:border-white shadow-xl scale-100 group-focus:scale-105 group-focus:focus-glow transition-transform duration-200">
                   {#if getItemImageUrl(si, 'portrait')}
                     <img src={getItemImageUrl(si, 'portrait')} {@attach blurUp(itemBlurHash(si))} alt={si.Name} class="w-full h-full object-cover" loading="lazy" />
                   {/if}
@@ -1457,12 +1715,7 @@
 
 <!-- MEDIA INFO MODAL (codec, bitrate, languages, …) -->
 {#if showMediaInfo && fullItem?.MediaSources?.length}
-  <div data-focus-trap role="dialog" tabindex="-1" transition:uiFade onoutrostart={dropTrapOnOutro} class="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-8"
-    onkeydown={(e) => {
-      if (isBackKey(e)) { e.stopPropagation(); showMediaInfo = false; return; }
-      if (e.key === 'ArrowDown')    { e.preventDefault(); e.stopPropagation(); mediaInfoScroll?.scrollBy({ top: 160, behavior: 'smooth' }); }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); mediaInfoScroll?.scrollBy({ top: -160, behavior: 'smooth' }); }
-    }}>
+  <Dialog z="z-[200]" onBack={() => showMediaInfo = false} onkeydown={(e) => scrollByKey(e, mediaInfoScroll)}>
     <div bind:this={mediaInfoScroll} class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl">
       <div class="flex justify-between items-center p-8 pb-4 sticky top-0 bg-gray-800 z-10">
         <h2 class="text-4xl text-white font-bold">{i18n.t.mediaInfo}</h2>
@@ -1476,6 +1729,18 @@
         <div class="px-8 pb-8 flex flex-col gap-5">
           <!-- File: container / size / total bitrate -->
           <div class="grid grid-cols-3 gap-3">
+            <!-- How the current choice plays — the Player's names and colours; why, and what it does to picture and sound -->
+            <div class="col-span-3">
+              <div class="text-gray-400 text-xs uppercase tracking-wider">{i18n.t.miPlayback}</div>
+              {#if !playPlan}
+                <div class="text-gray-400 font-semibold">…</div>
+              {:else if playPlan.error}
+                <div class="text-gray-300">{i18n.t[playPlan.error]}</div>
+              {:else}
+                <div lang="en" class="font-semibold {PLAY_METHODS[playPlan.method].color}">{PLAY_METHODS[playPlan.method].label}</div>
+                {#each playPlan.notes as note (note)}<div class="text-sm text-gray-300">{i18n.t[note]}</div>{/each}
+              {/if}
+            </div>
             {#if src.Container}
               <div lang="en"><div class="text-gray-400 text-xs uppercase tracking-wider">Container</div><div class="text-white font-semibold uppercase">{src.Container}</div></div>
             {/if}
@@ -1485,39 +1750,69 @@
             {#if formatBitrate(src.Bitrate)}
               <div><div lang="en" class="text-gray-400 text-xs uppercase tracking-wider">Bitrate</div><div class="text-white font-semibold">{formatBitrate(src.Bitrate)}</div></div>
             {/if}
+            <!-- which file this version is (several versions, or a title found twice) — the name, not the server's folders -->
+            {#if fileName(src.Path)}
+              <div class="col-span-3"><div class="text-gray-400 text-xs uppercase tracking-wider">{i18n.t.miFile}</div><div class="text-white font-semibold break-all">{fileName(src.Path)}</div></div>
+            {/if}
           </div>
 
-          <!-- Individual tracks -->
+          <!-- Individual tracks — named as everywhere else (§148): a video track like its version (sourceLabels), audio and
+               subtitles by trackLabels (language in the app's language, flags, format), never the server's DisplayTitle -->
           {#each (src.MediaStreams || []) as s (s.Index)}
+            {@const name = s.Type === 'Video' ? { main: [resLabel(s), rangeLabel(s), codecLabel(s)].filter(Boolean).join(' '), tech: '' } : trackNames.get(s.Index)}
             <div class="bg-gray-900 rounded-xl p-4 border border-gray-700/50">
-              <div class="flex items-center gap-3 mb-2">
+              <div class="flex items-baseline gap-3">
                 <!-- Video/Audio are the server's English type names: lang="en", or Turkish capitals write VİDEO -->
-                <span lang={s.Type === 'Subtitle' ? null : 'en'} class="text-xs uppercase font-bold px-2 py-1 rounded bg-blue-600 text-white shrink-0">{s.Type === 'Subtitle' ? i18n.t.miSubtitle : s.Type}</span>
-                <span class="text-white font-semibold truncate">{s.DisplayTitle || s.Codec || '—'}</span>
+                <span lang={s.Type === 'Subtitle' ? null : 'en'} class="self-center text-xs uppercase font-bold px-2 py-1 rounded bg-blue-600 text-white shrink-0">{s.Type === 'Subtitle' ? i18n.t.miSubtitle : s.Type}</span>
+                <span class="text-white font-semibold truncate">{name?.main || s.Codec?.toUpperCase() || '—'}</span>
+                {#if name?.tech}<span class="text-gray-400 text-sm shrink-0">{name.tech}</span>{/if}
               </div>
-              <div class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-gray-300">
-                {#if s.Codec}<div><span class="text-gray-500">Codec:&nbsp;</span>{s.Codec.toUpperCase()}</div>{/if}
-                {#if s.Type === 'Video' && s.Width}<div><span class="text-gray-500">{i18n.t.miResolution}:&nbsp;</span>{s.Width}×{s.Height}</div>{/if}
-                {#if s.Type === 'Video' && s.VideoRange}<div><span class="text-gray-500">HDR:&nbsp;</span>{s.VideoRange}</div>{/if}
-                {#if s.Type === 'Video' && s.AverageFrameRate}<div><span class="text-gray-500">{i18n.t.miFramerate}:&nbsp;</span>{s.AverageFrameRate.toFixed(0)} fps</div>{/if}
-                {#if s.Type === 'Audio' && s.ChannelLayout}<div><span class="text-gray-500">{i18n.t.miChannels}:&nbsp;</span>{s.ChannelLayout}</div>{/if}
-                {#if s.Language}<div><span class="text-gray-500">{i18n.t.miLanguage}:&nbsp;</span>{s.Language}</div>{/if}
-                {#if formatBitrate(s.BitRate)}<div><span class="text-gray-500">Bitrate:&nbsp;</span>{formatBitrate(s.BitRate)}</div>{/if}
-              </div>
+              {#if s.Type === 'Video'}
+                <div class="grid grid-cols-2 gap-x-6 gap-y-1 mt-2 text-sm text-gray-300">
+                  {#if s.Codec}<div><span class="text-gray-500">Codec:&nbsp;</span>{[codecLabel(s), s.Profile].filter(Boolean).join(' ')}</div>{/if}
+                  {#if s.Width}<div><span class="text-gray-500">{i18n.t.miResolution}:&nbsp;</span>{s.Width}×{s.Height}{s.IsInterlaced ? ` · ${i18n.t.miInterlaced}` : ''}</div>{/if}
+                  {#if rangeDetail(s)}<div><span class="text-gray-500">{i18n.t.miRange}:&nbsp;</span>{rangeDetail(s)}</div>{/if}
+                  {#if s.BitDepth}<div><span class="text-gray-500">{i18n.t.miBitDepth}:&nbsp;</span>{s.BitDepth} bit</div>{/if}
+                  {#if frameRateLabel(s)}<div><span class="text-gray-500">{i18n.t.miFramerate}:&nbsp;</span>{frameRateLabel(s)}</div>{/if}
+                  {#if formatBitrate(s.BitRate)}<div><span class="text-gray-500">Bitrate:&nbsp;</span>{formatBitrate(s.BitRate)}</div>{/if}
+                </div>
+              {:else if s.Type === 'Audio' && (s.SampleRate || s.BitDepth || s.BitRate)}
+                <div class="grid grid-cols-2 gap-x-6 gap-y-1 mt-2 text-sm text-gray-300">
+                  {#if s.SampleRate}<div><span class="text-gray-500">{i18n.t.miSampleRate}:&nbsp;</span>{kHz(s.SampleRate)}</div>{/if}
+                  {#if s.BitDepth}<div><span class="text-gray-500">{i18n.t.miBitDepth}:&nbsp;</span>{s.BitDepth} bit</div>{/if}
+                  {#if formatBitrate(s.BitRate)}<div><span class="text-gray-500">Bitrate:&nbsp;</span>{formatBitrate(s.BitRate)}</div>{/if}
+                </div>
+              {/if}
             </div>
           {/each}
         </div>
       {/each}
     </div>
-  </div>
+  </Dialog>
+{/if}
+
+<!-- THE WHOLE PLOT — opened from the clamped text in the hero (overviewClamped); ▲▼ scroll a long one -->
+{#if showOverview && fullItem?.Overview}
+  <Dialog z="z-[200]" onBack={() => showOverview = false} onkeydown={(e) => scrollByKey(e, overviewScroll)}>
+    <div bind:this={overviewScroll} class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-4xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl">
+      <div class="flex justify-between items-start gap-6 p-8 pb-4 sticky top-0 bg-gray-800 z-10">
+        <h2 class="text-4xl leading-[1.3] -my-[0.0944em] text-white font-bold line-clamp-2">{fullItem.Name}</h2>
+        <button onclick={() => showOverview = false} {@attach focusOnMount()} aria-label={i18n.t.close}
+          class="shrink-0 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
+          <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="px-8 pb-8 flex flex-col gap-5 text-2xl text-gray-200 leading-relaxed whitespace-pre-line">
+        {#each plotParts as part}<p>{part}</p>{/each}
+      </div>
+    </div>
+  </Dialog>
 {/if}
 
 <!-- Share: QR code with a title link (IMDb/TMDb) to scan -->
 {#if showShare}
-  <div class="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-8" role="dialog" tabindex="-1"
-    transition:uiFade onoutrostart={dropTrapOnOutro}
-    onkeydown={(e) => { if (isBackKey(e)) { e.stopPropagation(); showShare = false; } }}>
-    <div data-modal data-focus-trap
+  <Dialog onBack={() => showShare = false}>
+    <div data-modal
       class="bg-gray-800 border border-gray-700 rounded-2xl p-8 w-full max-w-lg flex flex-col items-center gap-5 shadow-2xl">
       <div class="flex items-center justify-between gap-4 w-full">
         <h2 class="text-3xl text-white font-bold">{i18n.t.share}</h2>
@@ -1534,14 +1829,14 @@
       {#if fullItem?.SeriesName && (fullItem.Type === 'Season' || fullItem.Type === 'Episode')}
         <div class="text-center break-words">
           <p class="text-white font-bold">{fullItem.SeriesName}</p>
-          <p class="text-gray-300 font-semibold mt-1">{fullItem.Type === 'Episode' ? `${epCode(fullItem)} · ${fullItem.Name}` : fullItem.Name}</p>
+          <p class="text-gray-300 font-semibold mt-1">{fullItem.Type === 'Episode' ? epTitle(fullItem) : fullItem.Name}</p>
         </div>
       {:else}
         <p class="text-white font-bold text-center break-words">{fullItem?.Name}</p>
       {/if}
       <p class="text-gray-400 text-base text-center max-w-md">{i18n.t.shareHint}</p>
     </div>
-  </div>
+  </Dialog>
 {/if}
 
 {#if subtitleSearchOpen && fullItem}
