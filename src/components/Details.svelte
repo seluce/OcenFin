@@ -6,7 +6,7 @@
   import { pickDefaultTracks, rememberChoice, orderTracks } from '../trackmemory.js';
   import { trackLabels } from '../tracklabel.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
-  import { buildPlayQueue, playableFor, hasEarlierEpisodes, markEarlierPlayed } from '../playback.js';
+  import { buildPlayQueue, playableFor, hasEarlierEpisodes, markEarlierPlayed, playbackPlan, peekPlaybackInfo, playMethodOf, defaultAudioIndex, subtitleBurns, PLAY_METHODS, DIRECT_MAX_BITRATE } from '../playback.js';
   import { session } from '../session.svelte.js';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import AddToPicker from './AddToPicker.svelte';
@@ -318,6 +318,74 @@
   let trailerEmbedUrl = $state(null);
   let showMediaInfo   = $state(false);   // media info modal
   let mediaInfoScroll = $state();           // the modal's scroll container (bind:this, for D-pad scrolling)
+
+  // ---- How the CURRENT choice plays (version + audio + subtitle), shown in the media info (CODE-HEALTH §149) ----
+  // Asked when the dialog opens, with exactly the request "Play" makes — playbackPlan() is the Player's rule — and
+  // through the prefetch cache, so a Play within its 25 s takes this answer instead of asking again. The server
+  // decides with the device profile, which is the same on every webOS 25 TV; its own limits are in the answer too.
+  let playPlan = $state(null);   // null while asked | { method, notes: [i18n keys] } | { error: i18n key }
+  let planAsk = 0;
+  async function askPlayPlan() {
+    const src = selectedSource, id = fullItem?.Id;
+    if (!src || !id) return;
+    const ask = ++planAsk;
+    playPlan = null;
+    const plan = playbackPlan(src.MediaStreams, selectedAudioIndex, selectedSubtitleIndex, playbackPrefs);
+    try {
+      const info = await peekPlaybackInfo({
+        serverUrl: session.serverUrl, userId: selectedUser.Id, token: session.token, itemId: id,
+        audioStreamIndex: selectedAudioIndex, subtitleStreamIndex: selectedSubtitleIndex,
+        maxBitrate: plan.maxBitrate, startTicks: 0,
+        enableDirectPlay: plan.enableDirectPlay, enableDirectStream: plan.enableDirectStream, allowAudioStreamCopy: plan.allowAudioStreamCopy,
+        burnSubtitles: plan.burnSubtitles, clientGraphicSubs: plan.clientGraphicSubs, mediaSourceId: selectedMediaSourceId,
+      });
+      if (ask === planAsk) playPlan = describePlan(info.mediaSource, plan, src);
+    } catch (e) {
+      if (ask !== planAsk) return;
+      playPlan = { error: { NotAllowed: 'playbackNotAllowed', NoCompatibleStream: 'playbackNoStream', RateLimitExceeded: 'playbackRateLimit' }[e?.code] || 'miPlanFailed' };
+    }
+  }
+  // The server's TranscodeReasons, said in the user's words — the first matching rule wins (bitrate before video).
+  const REASONS = [
+    [/Bitrate/, 'miWhyBitrate'], [/^Subtitle/, 'miWhySubBurn'], [/^SecondaryAudio/, 'miWhyAudioTrack'],
+    [/^(Video|RefFrames|Anamorphic|Interlaced|UnknownVideo)/, 'miWhyVideo'], [/^(Audio|UnknownAudio)/, 'miWhyAudio'],
+    [/^Container/, 'miWhyContainer'],
+  ];
+  // Why it transcodes — OcenFin's own reasons first, then the server's — and what that does to picture and sound,
+  // the latter only where the answer makes it certain: the transcode target is H.264 + AAC stereo (playback.js).
+  function describePlan(ms, plan, src) {
+    const method = playMethodOf(ms);
+    if (method !== 'Transcode') return { method, notes: ['miUnchanged'] };
+    const raw = ms.TranscodeReasons;
+    const reasons = (Array.isArray(raw) ? raw : String(raw || '').split(',')).map(r => r.trim()).filter(Boolean);
+    const why = new Set();
+    if (plan.explicitAudio) why.add('miWhyAudioTrack');
+    if (plan.subBurns) why.add('miWhySubBurn');
+    for (const r of reasons) {
+      const key = REASONS.find(([re]) => re.test(r))?.[1] || 'miWhyOther';
+      // A transcode OcenFin asked for itself is capped (TRANSCODE_MAX_BITRATE) — the server then names the bitrate,
+      // which is a consequence there, not a cause. It stays a cause when the file is above the Direct Play limit too.
+      if (key === 'miWhyBitrate' && !plan.enableDirectPlay && !(src.Bitrate > DIRECT_MAX_BITRATE)) continue;
+      why.add(key);
+    }
+    if (!why.size) why.add('miWhyOther');
+    // The target the server writes into the URL (case as the server spells it)
+    const q = new URLSearchParams((ms.TranscodingUrl || '').split('?')[1] || '');
+    const param = (k) => { for (const [n, v] of q) if (n.toLowerCase() === k) return v.toLowerCase(); return ''; };
+    const streams = src.MediaStreams || [];
+    const video = streams.find(s => s.Type === 'Video');
+    const audioIdx = selectedAudioIndex !== -1 ? selectedAudioIndex : defaultAudioIndex(streams);
+    const audio = streams.find(s => s.Type === 'Audio' && s.Index === audioIdx);
+    const vc = param('videocodec'), ac = param('audiocodec');
+    const maxCh = Number(param('transcodingmaxaudiochannels') || param('maxaudiochannels')) || 0;
+    const videoNew = plan.subBurns || reasons.some(r => /^(Video|RefFrames|Anamorphic|Interlaced|UnknownVideo|ContainerBitrate)/.test(r))
+      || (!!vc && !!video?.Codec && !vc.split(',').includes(video.Codec.toLowerCase()));
+    const audioNew = !!audio && (!plan.allowAudioStreamCopy || reasons.some(r => /^(Audio|UnknownAudio|SecondaryAudio)/.test(r))
+      || (!!ac && !ac.split(',').includes((audio.Codec || '').toLowerCase())) || (maxCh > 0 && audio.Channels > maxCh));
+    return { method, notes: [...why, ...(videoNew ? ['miVideoReencode'] : []), ...(audioNew ? ['miAudioReencode'] : [])] };
+  }
+  // The list markers: which track turns the playback into a transcode before it is picked (the same rule)
+  let defaultAudio = $derived(defaultAudioIndex(selectedSource?.MediaStreams));
   // ▲▼ scroll a long text in a dialog (media info, the whole plot) instead of moving focus
   function scrollByKey(e, el) {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
@@ -1042,6 +1110,9 @@
 {/snippet}
 
 <!-- An audio or subtitle track: language, forced/SDH/original and what its title adds, then codec or format dimmer (tracklabel.js, §138) -->
+<!-- A track that turns the playback into a transcode, said before it is picked (playbackPlan's rule, §149) -->
+{#snippet trackTag(key)}<span class="shrink-0 ml-3 text-xs text-amber-300">{i18n.t[key]}</span>{/snippet}
+
 {#snippet trackName(s)}
   {@const l = trackNames.get(s?.Index)}
   {#if l}{l.main}{#if l.tech}<span class="opacity-70">{' · ' + l.tech}</span>{/if}{/if}
@@ -1299,7 +1370,7 @@
                       </button>
                     {/if}
                     {#if fullItem.MediaSources?.length > 0}
-                      <button onclick={() => { menuReturn.capture(kebabBtnEl); closeDropdown(false); showMediaInfo = true; }}
+                      <button onclick={() => { menuReturn.capture(kebabBtnEl); closeDropdown(false); showMediaInfo = true; askPlayPlan(); }}
                         class="text-left text-base px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-white flex items-center gap-3">
                         <svg class="w-6 h-6 shrink-0 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         {i18n.t.mediaInfo}
@@ -1376,15 +1447,17 @@
                   <div class="flex-1 min-w-0 relative" data-dropdown data-focus-trap={openDropdown === 'audio' || undefined}>
                     <button onclick={(e) => toggleDropdown('audio', e)}
                       class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
-                      <span class="truncate">{@render trackName(getMediaStreams('Audio').find(s => s.Index === selectedAudioIndex))}</span>
+                      <span class="truncate mr-auto">{@render trackName(getMediaStreams('Audio').find(s => s.Index === selectedAudioIndex))}</span>
+                      {#if selectedAudioIndex !== -1 && defaultAudio !== -1 && selectedAudioIndex !== defaultAudio}{@render trackTag('miTagTranscode')}{/if}
                       <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'audio' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                     </button>
                     {#if openDropdown === 'audio'}
                       <div {@attach placeList} class="absolute inset-x-0 z-30 overflow-y-auto hide-scrollbar flex flex-col gap-1 bg-gray-900 rounded border border-gray-700 p-1 shadow-2xl">
                         {#each audioChoices as stream (stream.Index)}
                           <button onclick={() => { pickTrack('audio', stream.Index); closeDropdown(); }} data-opt data-active={stream.Index === selectedAudioIndex || undefined}
-                            class="text-left text-sm px-3 py-2 scroll-my-1 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedAudioIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
-                            {@render trackName(stream)}
+                            class="flex items-baseline text-left text-sm px-3 py-2 scroll-my-1 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedAudioIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
+                            <span class="min-w-0 mr-auto">{@render trackName(stream)}</span>
+                            {#if defaultAudio !== -1 && stream.Index !== defaultAudio}{@render trackTag('miTagTranscode')}{/if}
                           </button>
                         {/each}
                       </div>
@@ -1409,7 +1482,8 @@
                   <div class="flex-1 min-w-0 relative" data-dropdown data-focus-trap={openDropdown === 'subtitle' || undefined}>
                     <button onclick={(e) => toggleDropdown('subtitle', e)} data-subtitle-trigger
                       class="w-full flex items-center justify-between bg-gray-900 text-gray-300 text-sm px-4 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-white">
-                      <span class="truncate">{#if selectedSubtitleIndex === -1}{i18n.t.subtitleOff}{:else}{@render trackName(getMediaStreams('Subtitle').find(s => s.Index === selectedSubtitleIndex))}{/if}</span>
+                      <span class="truncate mr-auto">{#if selectedSubtitleIndex === -1}{i18n.t.subtitleOff}{:else}{@render trackName(getMediaStreams('Subtitle').find(s => s.Index === selectedSubtitleIndex))}{/if}</span>
+                      {#if selectedSubtitleIndex !== -1 && subtitleBurns(getMediaStreams('Subtitle').find(s => s.Index === selectedSubtitleIndex), playbackPrefs)}{@render trackTag('miTagBurned')}{/if}
                       <svg class="w-4 h-4 ml-2 shrink-0 transition-transform {openDropdown === 'subtitle' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                     </button>
                     {#if openDropdown === 'subtitle'}
@@ -1420,8 +1494,9 @@
                         </button>
                         {#each subtitleChoices as stream (stream.Index)}
                           <button onclick={() => { pickTrack('subtitle', stream.Index); closeDropdown(); }} data-opt data-active={stream.Index === selectedSubtitleIndex || undefined}
-                            class="text-left text-sm px-3 py-2 scroll-my-1 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedSubtitleIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
-                            {@render trackName(stream)}
+                            class="flex items-baseline text-left text-sm px-3 py-2 scroll-my-1 rounded focus:outline-none focus:ring-2 focus:ring-white {stream.Index === selectedSubtitleIndex ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 focus:bg-gray-700'}">
+                            <span class="min-w-0 mr-auto">{@render trackName(stream)}</span>
+                            {#if subtitleBurns(stream, playbackPrefs)}{@render trackTag('miTagBurned')}{/if}
                           </button>
                         {/each}
                         {#if canSearchSubtitles}
@@ -1654,6 +1729,18 @@
         <div class="px-8 pb-8 flex flex-col gap-5">
           <!-- File: container / size / total bitrate -->
           <div class="grid grid-cols-3 gap-3">
+            <!-- How the current choice plays — the Player's names and colours; why, and what it does to picture and sound -->
+            <div class="col-span-3">
+              <div class="text-gray-400 text-xs uppercase tracking-wider">{i18n.t.miPlayback}</div>
+              {#if !playPlan}
+                <div class="text-gray-400 font-semibold">…</div>
+              {:else if playPlan.error}
+                <div class="text-gray-300">{i18n.t[playPlan.error]}</div>
+              {:else}
+                <div lang="en" class="font-semibold {PLAY_METHODS[playPlan.method].color}">{PLAY_METHODS[playPlan.method].label}</div>
+                {#each playPlan.notes as note (note)}<div class="text-sm text-gray-300">{i18n.t[note]}</div>{/each}
+              {/if}
+            </div>
             {#if src.Container}
               <div lang="en"><div class="text-gray-400 text-xs uppercase tracking-wider">Container</div><div class="text-white font-semibold uppercase">{src.Container}</div></div>
             {/if}

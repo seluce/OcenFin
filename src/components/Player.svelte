@@ -4,7 +4,7 @@
   import { rememberChoice, matchRememberedAudioIndex, matchRememberedSubtitleIndex, pickDefaultTracks, orderTracks } from '../trackmemory.js';
   import { trackLabels } from '../tracklabel.js';
   import { session } from '../session.svelte.js';
-  import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl } from '../playback.js';
+  import { getPlaybackInfoFast, prefetchPlaybackInfo, resolveStream, externalSubtitleUrl, graphicSubtitleUrl, assSubtitleUrl, playbackPlan, DIRECT_MAX_BITRATE, PLAY_METHODS } from '../playback.js';
   import { sendSyncCommand, setSyncQueue, sendSyncBuffering, sendSyncReady, syncNow } from '../syncplay.js';
   import { PgsRenderer, VobSubRenderer, initWasm, warmup } from 'libbitsub';
   import { onMount, onDestroy, tick, untrack } from 'svelte';
@@ -431,11 +431,6 @@
   let playMethod    = $state('DirectPlay');         // DirectPlay | DirectStream | Transcode
   let triedTranscodeFallback = false;       // one-time auto fallback when Direct Play fails on the device
   let hls           = null;                 // hls.js instance (only for transcode/HLS)
-  let maxBitrate    = 120000000;            // 120 Mbit/s (local network) — limit for Direct Play
-  // When transcoding (e.g. burning forced ASS subtitles into the picture) the source bitrate
-  // is often too high (HEVC remuxes ~100+ Mbit/s) → real-time transcode stutters (fragLoadTimeOut/bufferStalled).
-  // So cap the transcode target; Direct Play stays unlimited (the B4 decodes natively).
-  const TRANSCODE_MAX_BITRATE = 20000000;   // 20 Mbit/s — high 1080p quality, transcodes well
 
   // After 'loadedmetadata', jump to the resume position (the file is seekable then).
   function seekToResume() {
@@ -482,8 +477,6 @@
   let infoAudioStream = $derived((selectedAudioIndex >= 0)
         ? mediaStreams.find(s => s.Index === selectedAudioIndex)
         : (mediaStreams.find(s => s.Type === 'Audio' && s.IsDefault) || mediaStreams.find(s => s.Type === 'Audio')));
-  let playMethodLabel = $derived(playMethod === 'Transcode' ? 'Transcode' : (playMethod === 'DirectStream' ? 'Direct Stream' : 'Direct Play'));
-  let playMethodColor = $derived(playMethod === 'Transcode' ? 'text-amber-400' : (playMethod === 'DirectStream' ? 'text-sky-400' : 'text-green-400'));
   const fmtBitrate = (bps) => bps ? (bps >= 1e6 ? (bps/1e6).toFixed(1) + ' Mbit/s' : Math.round(bps/1e3) + ' kbit/s') : null;
   function updateLiveStats() {
     if (!videoElement) return;
@@ -606,44 +599,20 @@
           }
         }
       }
-      // Audio counts as "explicit" (→ transcode, so the server outputs the CHOSEN track) only
-      // when the default track is KNOWN AND the chosen one differs from it. If the default track
-      // is unknown (no streams), it does NOT transcode — Direct Play takes precedence.
-      const allStreams = titleStreams;
-      const audioTracks = allStreams.filter(s => s.Type === 'Audio');
-      const defaultAudioIndex = (audioTracks.find(s => s.IsDefault) || audioTracks[0])?.Index ?? -1;
-      const explicitAudio = audioIndex !== -1 && defaultAudioIndex !== -1 && audioIndex !== defaultAudioIndex;
-      // A subtitle forces a transcode only when it is BURNED IN:
-      // text subtitles only with burn-in enabled, graphic subtitles (PGS/VobSub) always.
-      // External text subtitles (VTT overlay) need NO transcode → Direct Play stays possible,
-      // and the subtitle switch can happen softly (without reloading).
-      const subStreams = allStreams;
-      const subStream  = subtitleIndex !== -1 ? subStreams.find(s => s.Index === subtitleIndex && s.Type === 'Subtitle') : null;
-      const subCodec    = (subStream?.Codec || '').toLowerCase();
-      const isPgsSub    = PGS_CODECS.includes(subCodec);
-      const isVobSub    = VOBSUB_CODECS.includes(subCodec);          // DVD/VobSub → raw .mks from 12.2
-      const isGraphicSub = GRAPHIC_SUB_CODECS.includes(subCodec);
-      // libbitsub renders PGS and VobSub client-side (when enabled); anything else graphic, or with
-      // client rendering off, has to be burned in.
-      const graphicClientRender = clientGraphicRender && (isPgsSub || isVobSub);
-      const subWillBurn = subtitleIndex !== -1 && (playbackPrefs.burnSubtitles || (isGraphicSub && !graphicClientRender));
-
-      const enableDirectPlay = !explicitAudio && !subWillBurn && !forceTranscode;
-      // On an explicit audio switch/burned-in subtitle: DirectStream OFF + re-encode audio → the
-      // server is guaranteed to output the CHOSEN track instead of copying the default (German) track.
-      const enableDirectStream = !explicitAudio && !subWillBurn && !forceTranscode;
-      const allowAudioStreamCopy = !explicitAudio;
+      // What to ask the server for — the rule Details' media info shows in advance (playback.js): a track
+      // other than the file's default, or a burned-in subtitle, turns Direct Play off. External text
+      // subtitles (VTT overlay) and PGS/VobSub drawn by libbitsub keep it, and switch softly.
+      const plan = playbackPlan(titleStreams, audioIndex, subtitleIndex, playbackPrefs, forceTranscode);
+      const { enableDirectPlay, enableDirectStream, allowAudioStreamCopy } = plan;
       dlog('[OcenFin] setupPlayback →', { item: item?.Name, audioIndex, subtitleIndex, enableDirectPlay, enableDirectStream, allowAudioStreamCopy, forceTranscode });
-      // Direct Play: full bitrate; transcode: cap it so the server keeps up in real time.
-      const requestBitrate = enableDirectPlay ? maxBitrate : Math.min(maxBitrate, TRANSCODE_MAX_BITRATE);
       if (mySetup !== setupToken) return;   // a newer setup started while we fetched the streams
       const info = await getPlaybackInfoFast({
         serverUrl: session.serverUrl, userId: selectedUser.Id, token: session.token, itemId: item.Id,
         audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex,
-        maxBitrate: requestBitrate, startTicks: 0,   // resume happens client-side (seekToResume)
+        maxBitrate: plan.maxBitrate, startTicks: 0,   // resume happens client-side (seekToResume)
         enableDirectPlay, enableDirectStream, allowAudioStreamCopy,
-        burnSubtitles: playbackPrefs.burnSubtitles,
-        clientGraphicSubs: clientGraphicRender,
+        burnSubtitles: plan.burnSubtitles,
+        clientGraphicSubs: plan.clientGraphicSubs,
         mediaSourceId,
       });
       if (mySetup !== setupToken) return;   // superseded while PlaybackInfo was in flight
@@ -1248,7 +1217,7 @@
     prefetchPlaybackInfo({
       serverUrl: session.serverUrl, userId: selectedUser.Id, token: session.token, itemId: nextEpisode.Id,
       audioStreamIndex: selectedAudioIndex, subtitleStreamIndex: selectedSubtitleIndex,
-      maxBitrate, burnSubtitles: playbackPrefs.burnSubtitles, mediaSourceId: null,
+      maxBitrate: DIRECT_MAX_BITRATE, burnSubtitles: playbackPrefs.burnSubtitles, mediaSourceId: null,
       clientGraphicSubs: clientGraphicRender,
     });
   }
@@ -2379,7 +2348,7 @@
       <div class="flex flex-col gap-2">
         <div class="flex justify-between gap-8">
           <span class="text-gray-500">{i18n.t.infoMethod}</span>
-          <span class="font-bold {playMethodColor}">{playMethodLabel}</span>
+          <span class="font-bold {PLAY_METHODS[playMethod].color}">{PLAY_METHODS[playMethod].label}</span>
         </div>
         {#if infoVideoStream}
           <div class="flex justify-between gap-8">

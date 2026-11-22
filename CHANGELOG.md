@@ -17,6 +17,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Time left on a started title.** Its page says how many minutes remain, next to the time it would end.
 - **The home banner with the title page's details.** Its line now shows a series' years and seasons, a film's running
   time, the age rating, both ratings and the genres, just as the title page and the library's info preview do.
+- **How a title will play, before you press Play.** Media info says whether the chosen version, audio and subtitle play
+  directly or get converted, and why; the audio and subtitle lists mark the tracks that would convert or burn in.
 
 ### Changed
 
