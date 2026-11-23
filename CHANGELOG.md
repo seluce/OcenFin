@@ -24,6 +24,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **A server that stops answering no longer leaves the app waiting.** After 30 seconds a page shows its message, the
   player offers Retry, and if the server is gone the reconnect banner comes up and closes once it is back.
 - **No false "Server not reachable".** A request the app cancels itself no longer brings up the banner.
+- **Track names without stray dashes.** A track titled like "English-Signs" showed as "-Signs"; the dash now goes
+  with the word that is left out.
 
 ## 2026.11.22
 

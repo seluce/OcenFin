@@ -117,15 +117,19 @@ function languageWords(s, lang) {
   return langWords.get(key);
 }
 
-// The Title minus what the label shows anyway; '' when nothing is left that says something.
+// The Title minus what the label shows anyway; '' when nothing is left that says something. A struck word leaves a
+// mark first, so the hyphens and dots glued to it go with it (§157) — "ASS-Test", "Commentary-AC3" and "Signs.ENG"
+// read "-Test", "Commentary-" and "Signs." before; one between two words that stay ("Spider-Man") stays.
+const CUT = '\u0001';
 function titleRest(s, lang) {
   let t = (s.Title || '').trim();
   if (!t) return '';
   const re = languageWords(s, lang);
-  if (re) t = t.replace(re, ' ');
+  if (re) t = t.replace(re, CUT);
   // "DDP5.1", "AAC2.0": the codec glued to its channels
   t = t.replace(/(\p{L}\+?)(\d\.\d)/gu, '$1 $2');
-  t = t.replace(HI_T, ' ').replace(MEASURES, ' ').replace(NOISE_RE, ' ');
+  t = t.replace(HI_T, CUT).replace(MEASURES, CUT).replace(NOISE_RE, CUT);
+  t = t.replace(/[-–—.]*\u0001[-–—.]*/g, ' ');
   t = t.replace(/[()[\]{}|/\\,;:_@•·]+/g, ' ').replace(/(^|\s)[-–—.+]+(?=\s|$)/g, ' ').replace(/\s+/g, ' ')
     .replace(/^[\s&]+|[\s&]+$/g, '');
   return /\p{L}/u.test(t) ? capital(t, lang) : '';
