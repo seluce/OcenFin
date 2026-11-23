@@ -633,6 +633,9 @@
       applySubtitleOverlay(subtitleIndex, ms);
     } catch (e) {
       if (mySetup !== setupToken) return;
+      // No answer at all (utils.js' time bound, §157): the stream would wait on the same silent server, and a <video>
+      // has no bound of its own — the spinner stayed for good. Say so, with Retry.
+      if (e?.name === 'TimeoutError') { isBuffering = false; playbackError = true; return; }
       // A refusal with a reason (getPlaybackInfo): the server said no — a direct-play attempt would be
       // refused just the same. Show why.
       if (e?.code) {
@@ -792,7 +795,9 @@
       if (cachedAss) { content = await cachedAss.text(); }
       else {
         const url = assSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
-        const res = await fetch(url);          // the ApiKey is in the URL → a simple GET, no preflight
+        // The ApiKey is in the URL → a simple GET, no preflight. No time bound: the server may extract the track
+        // from a large file first (utils.js, §157).
+        const res = await fetch(url, { timeout: 0 });
         if (!res.ok) { console.warn('[OcenFin] ASS fetch failed:', res.status); return; }
         content = await res.text();
       }
@@ -1056,7 +1061,7 @@
     // The time is the gauge for dropping this prefetch: 12.2 serves graphic tracks straight from the
     // extraction cache (jellyfin#18168) instead of through the encoder — CODE-HEALTH §39, item 2.
     const t0 = performance.now();
-    fetch(url)
+    fetch(url, { timeout: 0 })   // no time bound, as for the ASS file
       .then(r => r.ok ? r.blob() : Promise.reject(new Error('HTTP ' + r.status)))
       .then(b => { subBlobs.set(stream.Index, b); dlog('[OcenFin] subtitle prefetch:', stream.Index, codec, Math.round(b.size / 1024) + ' kB in ' + Math.round(performance.now() - t0) + ' ms'); })
       .catch((e) => { prefetchedSubs.delete(stream.Index); dlog('[OcenFin] subtitle prefetch failed:', stream.Index, codec, e?.message); });   // failed → allow a retry
@@ -1122,7 +1127,7 @@
 
     const url = externalSubtitleUrl({ serverUrl: session.serverUrl, itemId: item.Id, mediaSourceId: ms.Id, stream, token: session.token });
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { timeout: 0 });   // no time bound, as for the ASS file
       if (!res.ok || myToken !== subtitleFetchToken) return;   // superseded or error
       const text = await res.text();
       if (myToken !== subtitleFetchToken) return;

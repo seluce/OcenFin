@@ -750,6 +750,26 @@ export function hint(delay = 350) {
 // instantly. An HTTP error status (4xx/5xx) is NOT a connection loss -- the server answered -- so
 // it is deliberately left alone. Scoped to session.serverUrl; external fetches and <img> loads
 // are untouched. Distinguishing "server unreachable" from "server said no" is the whole point.
+// A request the app cancels itself (its own `signal`: a bounded probe, libbitsub's range check) is no lost connection
+// either — it raised the banner over a healthy server.
+//
+// And no request waits for ever (§157): Chromium waits for an answer until the connection dies, so a server that took
+// the request and went silent left a spinner for good — and on plain HTTP/1.1 six such requests take every connection
+// to the server, the rest of the app queued behind them, pictures included. FETCH_TIMEOUT bounds the wait for the
+// answer's HEADERS (the body is not bounded). Not for a caller with its own `signal` — it bounds itself — and not for
+// a Request object. `timeout` in the init (ms, 0 = none) is read by this wrapper only, fetch ignores it: subtitle files
+// take 0 (the server may extract them from a large file for minutes; the film plays meanwhile), the online subtitle
+// search 2 minutes (the server asks the providers). A request that runs out raises the banner only if the server does
+// not answer a quick check either — one slow request on a healthy server is no lost connection.
+const FETCH_TIMEOUT = 30000;
+let _serverCheck = null;
+function checkServer(orig) {
+  if (_serverCheck || session.connectionLost) return;   // one check, however many requests ran out together
+  const base = session.serverUrl;
+  _serverCheck = orig(`${base}/System/Info/Public`, { cache: 'no-store', signal: AbortSignal.timeout(4500) })
+    .catch(() => { if (session.serverUrl === base) session.connectionLost = true; })
+    .finally(() => { _serverCheck = null; });
+}
 let _connectionGuardInstalled = false;
 // Did this request carry the CURRENT session token? Only then does a 401 mean "our session
 // died". The app deliberately makes requests with OTHER profiles' tokens — "watch together"
@@ -772,6 +792,15 @@ export function installConnectionGuard() {
   window.fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : (input && input.url) || '';
     const isServer = session.serverUrl && url.startsWith(session.serverUrl);
+    const ms = typeof input === 'string' && !init?.signal ? (init?.timeout ?? FETCH_TIMEOUT) : 0;
+    let timer = 0;
+    if (ms > 0) {
+      const ctrl = new AbortController();
+      // A plain Error, not a DOMException: that one carries a numeric `code` (23), and the Player reads `code` as the
+      // server's reason for a refusal.
+      timer = setTimeout(() => ctrl.abort(Object.assign(new Error(`no answer within ${ms / 1000} s`), { name: 'TimeoutError' })), ms);
+      init = { ...init, signal: ctrl.signal };
+    }
     try {
       const res = await orig(input, init);
       if (isServer && res.ok && session.connectionLost) session.connectionLost = false;
@@ -787,9 +816,14 @@ export function installConnectionGuard() {
       }
       return res;
     } catch (err) {
-      if (isServer) session.connectionLost = true;
+      if (init?.signal?.aborted) {   // given up — by the bound here (ms > 0: the signal is ours) or by the caller
+        if (ms > 0) {
+          console.warn(`[fetch] no answer within ${ms / 1000} s: ${url.replace(/^[a-z]+:\/\/[^/]+/i, '').split('?')[0]}`);
+          if (isServer) checkServer(orig);
+        }
+      } else if (isServer) session.connectionLost = true;
       throw err;
-    }
+    } finally { clearTimeout(timer); }
   };
 }
 

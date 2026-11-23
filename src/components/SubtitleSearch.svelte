@@ -32,8 +32,9 @@
     const my = ++searchToken;
     status = 'searching'; results = [];
     try {
+      // The server asks the subtitle providers on the internet — longer than the app's usual bound (utils.js, §157).
       const res = await fetch(`${session.serverUrl}/Items/${item.Id}/RemoteSearch/Subtitles/${code(key)}?isPerfectMatch=false`,
-        { headers: authHeaders() });
+        { headers: authHeaders(), timeout: 120000 });
       if (my !== searchToken) return;
       if (!res.ok) { console.warn('[subtitles] search: HTTP', res.status); status = 'failed'; return; }
       const list = (await res.json()) || [];
@@ -50,7 +51,7 @@
     busyId = r.Id; status = 'downloading';
     try {
       const res = await fetch(`${session.serverUrl}/Items/${item.Id}/RemoteSearch/Subtitles/${encodeURIComponent(r.Id)}`,
-        { method: 'POST', headers: authHeaders() });
+        { method: 'POST', headers: authHeaders(), timeout: 120000 });
       if (!res.ok) { console.warn('[subtitles] download: HTTP', res.status); status = 'failed'; busyId = null; return; }
     } catch (e) { console.warn('[subtitles] download failed', e); status = 'failed'; busyId = null; return; }
     // Downloaded; the server reads it in on its own schedule. Close once the track is there, or say

@@ -283,6 +283,7 @@ export async function getPlaybackInfoFast(params) {
     _pfCache.delete(params.itemId);
     const info = await entry.promise;
     if (info) { dlog('[OcenFin] PlaybackInfo taken from prefetch'); return info; }
+    if (entry.error?.name === 'TimeoutError') throw entry.error;   // no answer in 30 s — asking again doubled the wait
   }
   return getPlaybackInfo(params);
 }
