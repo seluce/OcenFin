@@ -40,9 +40,7 @@ export default {
     settings: "Setări",
     back: "Înapoi",
     switchUser: "Schimbă utilizatorul",
-    switchUserDesc: "Înapoi la alegerea profilului",
     logout: "Deconectare",
-    logoutDesc: "Uită acest dispozitiv",
 
     // Dashboard
     myMedia: "Media mea",

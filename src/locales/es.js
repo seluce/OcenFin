@@ -40,9 +40,7 @@ export default {
     settings: "Ajustes",
     back: "Atrás",
     switchUser: "Cambiar de usuario",
-    switchUserDesc: "Volver a la selección de perfil",
     logout: "Cerrar sesión",
-    logoutDesc: "Olvidar este dispositivo",
 
     // Dashboard
     myMedia: "Mis contenidos",

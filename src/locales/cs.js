@@ -40,9 +40,7 @@ export default {
     settings: "Nastavení",
     back: "Zpět",
     switchUser: "Přepnout uživatele",
-    switchUserDesc: "Zpět na výběr profilu",
     logout: "Odhlásit",
-    logoutDesc: "Zapomenout toto zařízení",
 
     // Dashboard
     myMedia: "Moje média",

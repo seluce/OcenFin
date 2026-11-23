@@ -40,9 +40,7 @@ export default {
     settings: "설정",
     back: "뒤로",
     switchUser: "사용자 전환",
-    switchUserDesc: "프로필 선택으로 돌아가기",
     logout: "로그아웃",
-    logoutDesc: "이 기기 정보 삭제",
 
     // Dashboard
     myMedia: "내 미디어",

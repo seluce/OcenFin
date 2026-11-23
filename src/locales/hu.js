@@ -40,9 +40,7 @@ export default {
     settings: "Beállítások",
     back: "Vissza",
     switchUser: "Felhasználóváltás",
-    switchUserDesc: "Vissza a profilválasztáshoz",
     logout: "Kijelentkezés",
-    logoutDesc: "Az eszköz elfelejtése",
 
     // Dashboard
     myMedia: "Saját média",

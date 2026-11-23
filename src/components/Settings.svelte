@@ -1858,20 +1858,11 @@
         </div>
       {/if}
 
-      <!-- Server and leaving — merged in from the former "Account & Server" category (§108). An
+      <!-- Upkeep and leaving — merged in from the former "Account & Server" category (§108). An
            age-restricted profile does not see it, as it did not see that category. -->
       {#if !restrictedProfile}
-        <!-- Server info -->
-        {#if selectedServer}
-          <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-5">
-            <p class="text-xs text-gray-400 uppercase tracking-wider font-bold mb-1">{i18n.t.connectedServer}</p>
-            <p class="text-xl text-white font-bold">{selectedServer.name}</p>
-            <p class="text-gray-400 mt-0.5 text-sm font-mono">{selectedServer.url}{#if selectedServer.url?.startsWith('http://')}<span title={i18n.t.insecureHttpHint} class="ml-2 inline-block px-1.5 py-0.5 rounded bg-yellow-900/70 text-yellow-300 text-[0.65rem] font-bold align-middle font-sans">HTTP</span>{/if}</p>
-          </div>
-        {/if}
-
-        <!-- Clear cache (directly below the server address) and, beside it, this profile's settings back to their
-             defaults (§112) — two upkeep buttons side by side. -->
+        <!-- Clear cache and, beside it, this profile's settings back to their defaults (§112) — two upkeep buttons
+             side by side. -->
         <div class="grid grid-cols-2 gap-5">
           <button onclick={() => onClearCache?.()}
             class="bg-gray-800/80 border border-gray-700 rounded-2xl shadow-xl flex items-center justify-between gap-4 w-full p-6
@@ -1904,33 +1895,29 @@
           </button>
         </div>
 
-        <!-- Switch user / sign out -->
-        <div class="grid grid-cols-2 gap-5">
-          <button onclick={() => onSwitchUser?.()}
-            class="flex flex-col items-center justify-center p-7 bg-gray-800 border border-gray-700 rounded-2xl
-                   hover:bg-gray-700 hover:scale-105 focus:scale-105
-                   focus:outline-none focus:ring-4 focus:ring-white transition-transform shadow-xl">
-            <svg class="w-11 h-11 text-white mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7"/>
-            </svg>
-            <span class="text-xl text-white font-bold">{i18n.t.switchUser}</span>
-            <span class="text-gray-400 mt-1 text-center text-sm">{i18n.t.switchUserDesc}</span>
-          </button>
-
-          <button onclick={() => onLogout?.()}
-            class="flex flex-col items-center justify-center p-7 bg-red-900/40 border border-red-800/50 rounded-2xl
-                   hover:bg-red-900/70 focus:bg-red-900/70 focus:scale-105
-                   focus:outline-none focus:ring-4 focus:ring-white transition-transform shadow-xl group">
-            <svg class="w-11 h-11 text-red-400 group-hover:text-red-200 group-focus:text-red-200 mb-3 transition-colors"
-              fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
-            </svg>
-            <span class="text-xl text-white font-bold">{i18n.t.logout}</span>
-            <span class="text-red-300 group-hover:text-red-100 group-focus:text-red-100 mt-1 text-center text-sm transition-colors">
-              {i18n.t.logoutDesc}
-            </span>
-          </button>
+        <!-- The server, last, with the two ways out of it on the right (§158): the PIN card's compact buttons — the
+             two big tiles that stood here made leaving the loudest thing on the page. -->
+        <div class="bg-gray-800/80 border border-gray-700 rounded-2xl shadow-xl flex items-center justify-between gap-6 p-6">
+          <div class="min-w-0">
+            {#if selectedServer}
+              <span class="text-xs text-gray-400 uppercase tracking-wider font-bold block mb-1">{i18n.t.connectedServer}</span>
+              <span class="text-2xl text-white font-medium block truncate">{selectedServer.name}</span>
+              <span class="flex items-center gap-2 mt-1 min-w-0">
+                <span class="text-gray-400 text-sm font-mono truncate">{selectedServer.url}</span>
+                {#if selectedServer.url?.startsWith('http://')}<span title={i18n.t.insecureHttpHint} class="shrink-0 px-1.5 py-0.5 rounded bg-yellow-900/70 text-yellow-300 text-[0.65rem] font-bold">HTTP</span>{/if}
+              </span>
+            {/if}
+          </div>
+          <div class="flex gap-3 shrink-0">
+            <button onclick={() => onSwitchUser?.()}
+              class="px-5 py-3 rounded-xl font-bold text-base bg-gray-700 text-white hover:bg-gray-600 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+              {i18n.t.switchUser}
+            </button>
+            <button onclick={() => onLogout?.()}
+              class="px-5 py-3 rounded-xl font-bold text-base bg-red-900/60 text-red-100 hover:bg-red-900 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+              {i18n.t.logout}
+            </button>
+          </div>
         </div>
       {/if}
     </section>

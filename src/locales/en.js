@@ -40,9 +40,7 @@ export default {
     settings: "Settings",
     back: "Back",
     switchUser: "Switch User",
-    switchUserDesc: "Back to profile selection",
     logout: "Log Out",
-    logoutDesc: "Forget this device",
 
     // Dashboard
     myMedia: "My Media",

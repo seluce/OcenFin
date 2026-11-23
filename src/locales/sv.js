@@ -40,9 +40,7 @@ export default {
     settings: "Inställningar",
     back: "Tillbaka",
     switchUser: "Byt användare",
-    switchUserDesc: "Tillbaka till profilvalet",
     logout: "Logga ut",
-    logoutDesc: "Glöm den här enheten",
 
     // Dashboard
     myMedia: "Mina medier",

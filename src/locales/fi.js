@@ -40,9 +40,7 @@ export default {
     settings: "Asetukset",
     back: "Takaisin",
     switchUser: "Vaihda käyttäjää",
-    switchUserDesc: "Takaisin profiilin valintaan",
     logout: "Kirjaudu ulos",
-    logoutDesc: "Unohda tämä laite",
 
     // Dashboard
     myMedia: "Oma media",

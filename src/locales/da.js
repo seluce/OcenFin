@@ -40,9 +40,7 @@ export default {
     settings: "Indstillinger",
     back: "Tilbage",
     switchUser: "Skift bruger",
-    switchUserDesc: "Tilbage til profilvalget",
     logout: "Log ud",
-    logoutDesc: "Glem denne enhed",
 
     // Dashboard
     myMedia: "Mine medier",

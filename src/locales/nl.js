@@ -40,9 +40,7 @@ export default {
     settings: "Instellingen",
     back: "Terug",
     switchUser: "Gebruiker wisselen",
-    switchUserDesc: "Terug naar profielkeuze",
     logout: "Uitloggen",
-    logoutDesc: "Dit apparaat vergeten",
 
     // Dashboard
     myMedia: "Mijn media",

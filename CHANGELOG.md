@@ -18,6 +18,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   written to the log.
 - **Screen saver settings in profiles with an age limit.** The screen saver belongs to each profile now, so these
   profiles can choose their own again.
+- **Server and sign-out together.** Under Profile & Account the connected server comes last, with Switch User and Log
+  Out beside it instead of two large tiles.
 
 ### Fixed
 

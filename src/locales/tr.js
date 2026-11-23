@@ -40,9 +40,7 @@ export default {
     settings: "Ayarlar",
     back: "Geri",
     switchUser: "Kullanıcı değiştir",
-    switchUserDesc: "Profil seçimine geri dön",
     logout: "Çıkış yap",
-    logoutDesc: "Bu cihazı unut",
 
     // Dashboard
     myMedia: "Medyam",

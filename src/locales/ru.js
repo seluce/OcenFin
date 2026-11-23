@@ -40,9 +40,7 @@ export default {
     settings: "Настройки",
     back: "Назад",
     switchUser: "Сменить пользователя",
-    switchUserDesc: "Назад к выбору профиля",
     logout: "Выйти",
-    logoutDesc: "Забыть это устройство",
 
     // Dashboard
     myMedia: "Мои медиа",
