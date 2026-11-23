@@ -3,30 +3,19 @@
 // and persisted in localStorage. Subtitle "Off" is stored as the string 'off'.
 // Shape: { [seriesId]: { audio: <lang>, subtitle: { lang, forced, sdh } | 'off' } }
 //
-// PER PROFILE (Ferris, 2026-10-01): one key per user, `ocenfin:trackmem:<userId>`. It used to be one
-// key for the whole TV, and since the memory comes first in pickDefaultTracks, one profile's choice
-// for a series overrode the next profile's language settings. App names the profile on every
-// sign-in (setTrackMemoryUser); without one nothing is read or written.
+// PER PROFILE (Ferris, 2026-10-01): one key per user, `ocenfin:trackmem:<userId>`. One key for the
+// whole TV let one profile's choice for a series override the next profile's language settings, since
+// the memory comes first in pickDefaultTracks. App names the profile on every sign-in
+// (setTrackMemoryUser); without one nothing is read or written.
 
 import { LANGUAGES } from './i18n.svelte.js';
 import { CLIENT_SUB_CODECS, GRAPHIC_SUB_CODECS } from './utils.js';
 
-const LEGACY_KEY = 'ocenfin:trackmem';
-const keyFor = (userId) => `${LEGACY_KEY}:${userId}`;
+const keyFor = (userId) => `ocenfin:trackmem:${userId}`;
 let _userId = null;
 
 export function setTrackMemoryUser(userId) {
   _userId = userId || null;
-  if (!_userId) return;
-  // The device-wide memory from before goes to the first profile that signs in after the update —
-  // most TVs have one main viewer, and dropping it would forget every series at once.
-  try {
-    const legacy = localStorage.getItem(LEGACY_KEY);
-    if (legacy != null) {
-      if (localStorage.getItem(keyFor(_userId)) == null) localStorage.setItem(keyFor(_userId), legacy);
-      localStorage.removeItem(LEGACY_KEY);
-    }
-  } catch {}
 }
 
 function _load() {

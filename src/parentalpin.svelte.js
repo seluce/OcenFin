@@ -24,8 +24,6 @@ function read() {
   try {
     const r = JSON.parse(localStorage.getItem(KEY) || 'null');
     if (!r || typeof r.hash !== 'string' || typeof r.salt !== 'string') return null;
-    // The first record (§151) only knew WHETHER the last profile had a limit — a child's it was, then.
-    if ('kid' in r) { r.last = r.kid ? 0 : null; delete r.kid; }
     return { ...r, last: asLimit(r.last), upTo: asLimit(r.upTo), atStart: r.atStart !== false };
   } catch { return null; }
 }

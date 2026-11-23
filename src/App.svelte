@@ -191,8 +191,8 @@
 
   // Device base ID: generated randomly once per installation and kept in localStorage so that
   // the same profile on two TVs does NOT get the same DeviceId (Jellyfin allows only one token per
-  // DeviceId → otherwise the second TV would log out the first). Existing installations that already
-  // have tokens keep the old fixed base so their tokens stay valid after the update.
+  // DeviceId → otherwise the second TV would log out the first). An installation keeps the base it
+  // has stored — the oldest ones the fixed 'oceonfin-tv-001' — or its tokens would stop counting.
   function randomDeviceBase() {
     try {
       const a = new Uint8Array(16); crypto.getRandomValues(a);   // needs NO secure context
@@ -203,15 +203,10 @@
   }
   function loadDeviceBase() {
     try {
-      const existing = localStorage.getItem('ocenfin_device_base');
-      if (existing) return existing;
-      const hasTokens = !!localStorage.getItem('jellyfin_tokens_v2')
-                     || !!localStorage.getItem('jellyfin_tokens')
-                     || !!localStorage.getItem('session_token');
-      const base = hasTokens ? 'oceonfin-tv-001' : randomDeviceBase();
-      localStorage.setItem('ocenfin_device_base', base);
+      let base = localStorage.getItem('ocenfin_device_base');
+      if (!base) { base = randomDeviceBase(); localStorage.setItem('ocenfin_device_base', base); }
       return base;
-    } catch { return 'oceonfin-tv-001'; }
+    } catch { return 'oceonfin-tv-001'; }   // no storage: one fixed base rather than a new device on every start
   }
   const BASE_DEVICE_ID = loadDeviceBase();
   // Unique DeviceId per user: Jellyfin allows only ONE token per DeviceId. Without this separation
@@ -349,20 +344,6 @@
                        ? { enabled: !!p.sharedProfile.enabled,
                            members: [p.sharedProfile.members[0] || null, p.sharedProfile.members[1] || null] }
                        : { enabled: false, members: [] };
-    // Migration: copy member tokens that (old) live only in the quick-switch store into the own
-    // shared store → watch together runs independently, quick switch can be turned off freely.
-    const _sid = selectedServer?.id;
-    if (_sid) {
-      let _changed = false;
-      for (const m of sharedProfile.members) {
-        if (m?.id && !sharedTokens[_sid]?.[m.id] && savedTokens[_sid]?.[m.id]) {
-          if (!sharedTokens[_sid]) sharedTokens[_sid] = {};
-          sharedTokens[_sid][m.id] = savedTokens[_sid][m.id];
-          _changed = true;
-        }
-      }
-      if (_changed) { sharedTokens = { ...sharedTokens }; persistSharedTokens(); }
-    }
     librarySharedOn  = false;   // filter starts off per session
     partnersPlayedIds = null;
     partnersPlayedCache = {};   // partner cache belongs to the old session
@@ -944,67 +925,11 @@
   function persistSharedTokens() {
     localStorage.setItem('jellyfin_shared_tokens_v1', JSON.stringify(sharedTokens));
   }
-  // Until 2026-11-17 the screensaver was one device-wide record (`screensaver_settings`). It goes, once, into every
-  // profile that has signed in here and has no screensaver of its own yet — each keeps exactly what it saw — and the
-  // key is removed. A profile that never signed in on this TV starts with the defaults (§115).
-  function migrateScreensaverSettings() {
-    const raw = localStorage.getItem('screensaver_settings');
-    if (raw == null) return;
-    let old = {};
-    try { old = asObject(JSON.parse(raw)); } catch { }
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (!k?.startsWith('user_prefs_')) continue;
-      let p;
-      try { p = asObject(JSON.parse(localStorage.getItem(k) || '{}')); } catch { continue; }
-      if (p.screensaver) continue;
-      p.screensaver = old;
-      localStorage.setItem(k, JSON.stringify(p));
-    }
-    localStorage.removeItem('screensaver_settings');
-  }
-
-  /**
-   * One-time migration from the old format (single server, flat token map).
-   * Runs once and then removes the old keys.
-   */
-  function migrateOldData() {
-    // Sweep legacy plaintext token keys unconditionally FIRST. They predate jellyfin_url in some
-    // installs, and the old early-return left live full-access tokens under keys nothing reads or
-    // deletes again. removeItem on an absent key is a no-op, so this is safe on a clean install.
-    const sweepLegacy = () => {
-      for (const k of ['jellyfin_tokens', 'session_token', 'session_user']) localStorage.removeItem(k);
-    };
-    const oldUrl = localStorage.getItem('jellyfin_url');
-    if (!oldUrl) { sweepLegacy(); return; }
-
-    const serverId  = 'srv_migrated_' + Date.now();
-    const newServer = { id: serverId, url: oldUrl, name: 'Jellyfin Server' };
-    savedServers    = [newServer];
-    persistSavedServers();
-
-    const oldTokensStr = localStorage.getItem('jellyfin_tokens');
-    if (oldTokensStr) {
-      try {
-        const old = JSON.parse(oldTokensStr);
-        savedTokens = { [serverId]: old };
-        persistSavedTokens();
-      } catch { }
-      localStorage.removeItem('jellyfin_tokens');
-    }
-
-    const oldUser  = localStorage.getItem('session_user');
-    const oldToken = localStorage.getItem('session_token');
-    if (oldUser && oldToken) {
-      localStorage.setItem('current_session', JSON.stringify({
-        serverId, userId: oldUser, token: oldToken
-      }));
-      localStorage.removeItem('session_user');
-      localStorage.removeItem('session_token');
-    }
-
-    sweepLegacy();
-    localStorage.removeItem('jellyfin_url');
+  // The version before multi-server support kept full-access tokens in plaintext under these keys. Nothing reads them
+  // any more. Removed on every start, a no-op once they are gone — kept as a safety net: four calls cost nothing, a
+  // stranded token is a whole account.
+  function sweepLegacyTokens() {
+    for (const k of ['jellyfin_url', 'jellyfin_tokens', 'session_token', 'session_user']) localStorage.removeItem(k);
   }
 
   function saveCurrentSession() {
@@ -1060,11 +985,10 @@
   });
 
   onMount(async () => {
-    migrateOldData();
+    sweepLegacyTokens();
     savedServers        = loadSavedServers();
     savedTokens         = loadSavedTokens();
     sharedTokens        = loadSharedTokens();
-    migrateScreensaverSettings();   // device-wide → per profile, once (§115); applyUserPrefs loads it
     setDebug(localStorage.getItem('ocenfin_debug') === '1');   // device-wide diagnostic logging (opt-in)
     startPlatformDiagnostics();   // "[diag]" lines for the move to webOS 26 — debug only, changes nothing (§71)
 
