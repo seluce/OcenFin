@@ -449,7 +449,7 @@ export default {
     pinKids: "Child profiles",
     pinUpTo: "Age limit up to {n}",
     pinUpToAny: "Any age limit",
-    pinKidsNone: "No profile has an age limit yet — it is set per user in the Jellyfin dashboard.",
+    pinKidsNone: "No visible profile has an age limit yet — it is set per user in the Jellyfin dashboard.",
     pinKidsNoProfile: "No profile on this server",
     pinAtStart: "Also ask after switching on",
     pinAtStartDesc: "After switching on and after a 10-minute pause, all but the child profiles ask.",

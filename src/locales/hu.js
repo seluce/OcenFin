@@ -449,7 +449,7 @@ export default {
     pinKids: "Gyerekprofilok",
     pinUpTo: "Korhatár {n}-ig",
     pinUpToAny: "Bármilyen korhatár",
-    pinKidsNone: "Még egyik profilnak sincs korhatára – ezt a Jellyfin irányítópultján lehet beállítani felhasználónként.",
+    pinKidsNone: "Még egyik látható profilnak sincs korhatára – ezt a Jellyfin irányítópultján lehet beállítani felhasználónként.",
     pinKidsNoProfile: "Nincs ilyen profil ezen a szerveren",
     pinAtStart: "Bekapcsoláskor is kérje",
     pinAtStartDesc: "Bekapcsolás után és 10 perc szünet után a gyerekprofilokon kívül mind kéri.",

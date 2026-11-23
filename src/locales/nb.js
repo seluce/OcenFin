@@ -449,7 +449,7 @@ export default {
     pinKids: "Barneprofiler",
     pinUpTo: "Aldersgrense opp til {n}",
     pinUpToAny: "Alle aldersgrenser",
-    pinKidsNone: "Ingen profil har aldersgrense ennå — den stilles inn per bruker i Jellyfin-kontrollpanelet.",
+    pinKidsNone: "Ingen synlig profil har aldersgrense ennå — den stilles inn per bruker i Jellyfin-kontrollpanelet.",
     pinKidsNoProfile: "Ingen profil på denne serveren",
     pinAtStart: "Spør også ved påslåing",
     pinAtStartDesc: "Etter påslåing og etter 10 minutters pause spør alle unntatt barneprofilene.",

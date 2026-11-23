@@ -449,7 +449,7 @@ export default {
     pinKids: "어린이 프로필",
     pinUpTo: "연령 제한 {n}세까지",
     pinUpToAny: "모든 연령 제한",
-    pinKidsNone: "아직 연령 제한이 있는 프로필이 없습니다. 연령 제한은 Jellyfin 대시보드에서 사용자별로 설정합니다.",
+    pinKidsNone: "표시되는 프로필 중 연령 제한이 있는 프로필이 아직 없습니다. 연령 제한은 Jellyfin 대시보드에서 사용자별로 설정합니다.",
     pinKidsNoProfile: "이 서버에 해당 프로필 없음",
     pinAtStart: "전원을 켤 때도 묻기",
     pinAtStartDesc: "전원을 켠 후와 10분 휴식 후에는 어린이 프로필을 제외한 모든 프로필이 PIN을 묻습니다.",

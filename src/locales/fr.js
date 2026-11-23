@@ -449,7 +449,7 @@ export default {
     pinKids: "Profils enfants",
     pinUpTo: "Limite d'âge jusqu'à {n}",
     pinUpToAny: "Toute limite d'âge",
-    pinKidsNone: "Aucun profil n'a encore de limite d'âge — elle se définit par utilisateur dans le tableau de bord Jellyfin.",
+    pinKidsNone: "Aucun profil visible n'a encore de limite d'âge — elle se définit par utilisateur dans le tableau de bord Jellyfin.",
     pinKidsNoProfile: "Aucun profil sur ce serveur",
     pinAtStart: "Demander aussi à l'allumage",
     pinAtStartDesc: "Après l'allumage et 10 minutes de pause, tous sauf les profils enfants demandent le code.",

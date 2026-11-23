@@ -449,7 +449,7 @@ export default {
     pinKids: "Çocuk profilleri",
     pinUpTo: "Yaş sınırı en fazla {n}",
     pinUpToAny: "Her yaş sınırı",
-    pinKidsNone: "Henüz hiçbir profilin yaş sınırı yok — Jellyfin panosunda her kullanıcı için ayarlanır.",
+    pinKidsNone: "Henüz görünen hiçbir profilin yaş sınırı yok — Jellyfin panosunda her kullanıcı için ayarlanır.",
     pinKidsNoProfile: "Bu sunucuda profil yok",
     pinAtStart: "Açılışta da sor",
     pinAtStartDesc: "Açılışta ve 10 dakikalık aradan sonra çocuk profilleri dışındaki tüm profiller PIN ister.",

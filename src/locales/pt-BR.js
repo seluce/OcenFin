@@ -189,7 +189,7 @@ export default {
     pinForgot: "Esqueceu o PIN?",
     pinSetDesc: "Os perfis com limite de idade passam a precisar dele para abrir um perfil com limite mais alto ou as próprias configurações. Para esta TV.",
     pinRemoveDesc: "Todos os perfis e suas configurações voltam a abrir sem PIN.",
-    pinKidsNone: "Ainda nenhum perfil tem limite de idade — é definido por usuário no painel do Jellyfin.",
+    pinKidsNone: "Ainda nenhum perfil visível tem limite de idade — é definido por usuário no painel do Jellyfin.",
 
     // Quick Connect
     quickConnect: "Conexão rápida",

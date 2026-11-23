@@ -449,7 +449,7 @@ export default {
     pinKids: "Dětské profily",
     pinUpTo: "Věkové omezení do {n}",
     pinUpToAny: "Jakékoli věkové omezení",
-    pinKidsNone: "Zatím žádný profil nemá věkové omezení — nastavuje se u každého uživatele v ovládacím panelu Jellyfin.",
+    pinKidsNone: "Zatím žádný viditelný profil nemá věkové omezení — nastavuje se u každého uživatele v ovládacím panelu Jellyfin.",
     pinKidsNoProfile: "Žádný profil na tomto serveru",
     pinAtStart: "Ptát se i po zapnutí",
     pinAtStartDesc: "Po zapnutí a po 10 minutách pauzy se ptají všechny kromě dětských profilů.",

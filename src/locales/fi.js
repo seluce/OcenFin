@@ -449,7 +449,7 @@ export default {
     pinKids: "Lasten profiilit",
     pinUpTo: "Ikäraja enintään {n}",
     pinUpToAny: "Mikä tahansa ikäraja",
-    pinKidsNone: "Millään profiililla ei ole vielä ikärajaa – se asetetaan käyttäjäkohtaisesti Jellyfinin hallintapaneelissa.",
+    pinKidsNone: "Millään näkyvällä profiililla ei ole vielä ikärajaa – se asetetaan käyttäjäkohtaisesti Jellyfinin hallintapaneelissa.",
     pinKidsNoProfile: "Ei profiilia tällä palvelimella",
     pinAtStart: "Kysy myös käynnistettäessä",
     pinAtStartDesc: "Käynnistyksen ja 10 minuutin tauon jälkeen kaikki paitsi lasten profiilit kysyvät sitä.",

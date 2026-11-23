@@ -449,7 +449,7 @@ export default {
     pinKids: "Profiluri pentru copii",
     pinUpTo: "Limită de vârstă până la {n}",
     pinUpToAny: "Orice limită de vârstă",
-    pinKidsNone: "Niciun profil nu are încă o limită de vârstă – se setează pentru fiecare utilizator în tabloul de bord Jellyfin.",
+    pinKidsNone: "Niciun profil vizibil nu are încă o limită de vârstă – se setează pentru fiecare utilizator în tabloul de bord Jellyfin.",
     pinKidsNoProfile: "Niciun profil pe acest server",
     pinAtStart: "Întreabă și la pornire",
     pinAtStartDesc: "La pornire și după 10 minute de pauză îl cer toate, în afară de profilurile pentru copii.",

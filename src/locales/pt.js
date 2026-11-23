@@ -449,7 +449,7 @@ export default {
     pinKids: "Perfis infantis",
     pinUpTo: "Limite de idade até {n}",
     pinUpToAny: "Qualquer limite de idade",
-    pinKidsNone: "Ainda nenhum perfil tem limite de idade — define-se por utilizador no painel do Jellyfin.",
+    pinKidsNone: "Ainda nenhum perfil visível tem limite de idade — define-se por utilizador no painel do Jellyfin.",
     pinKidsNoProfile: "Nenhum perfil neste servidor",
     pinAtStart: "Perguntar também ao ligar",
     pinAtStartDesc: "Ao ligar e após 10 minutos de pausa, todos exceto os perfis infantis o pedem.",
