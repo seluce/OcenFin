@@ -426,6 +426,26 @@ export default {
     pwChangedError: "Błąd podczas zmiany hasła.",
     changePwDesc: "Zaktualizuj swoje hasło Jellyfin.",
 
+    // Parental PIN
+    pinEnter: "Wpisz PIN rodzicielski",
+    pinNew: "Wybierz nowy PIN",
+    pinRepeat: "Powtórz nowy PIN",
+    pinWhyProfile: "Dla profilu {name}.",
+    pinWhySettings: "Dla ustawień tego profilu.",
+    pinWhyReset: "Zalogowano hasłem. Wybierz nowy PIN — Wstecz zachowuje stary.",
+    pinWrong: "Błędny PIN.",
+    pinMismatch: "Kody PIN się różnią. Jeszcze raz.",
+    pinWait: "Zbyt wiele błędnych prób. Następna próba za {time}.",
+    pinForgot: "Nie pamiętasz PIN-u?",
+    pinBackspace: "Usuń cyfrę",
+    pinLockedProfile: "Wymaga kodu PIN rodzicielskiego",
+    pinSet: "Ustaw PIN rodzicielski",
+    pinSetDesc: "Nie wpuszcza dzieci do profili bez limitu wieku ani do ustawień ich własnego profilu. Dotyczy tego telewizora.",
+    pinChange: "Zmień PIN rodzicielski",
+    pinChangeDesc: "Najpierw pyta o obecny PIN.",
+    pinRemove: "Usuń PIN rodzicielski",
+    pinRemoveDesc: "Wszystkie profile i ich ustawienia znów otwierają się bez kodu PIN.",
+
     // Quick Connect
     quickConnect: "Szybkie łączenie",
     qcInstruction: "Wprowadź ten kod w aplikacji Jellyfin (telefon/web) w sekcji „Szybkie łączenie”:",

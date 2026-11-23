@@ -426,6 +426,26 @@ export default {
     pwChangedError: "Şifre değiştirilirken hata oluştu.",
     changePwDesc: "Jellyfin şifrenizi güncelleyin.",
 
+    // Parental PIN
+    pinEnter: "Ebeveyn PIN'ini girin",
+    pinNew: "Yeni bir PIN seçin",
+    pinRepeat: "Yeni PIN'i tekrar girin",
+    pinWhyProfile: "{name} profili için.",
+    pinWhySettings: "Bu profilin ayarları için.",
+    pinWhyReset: "Şifreyle oturum açıldı. Yeni bir PIN seçin — Geri eskisini korur.",
+    pinWrong: "Yanlış PIN.",
+    pinMismatch: "PIN'ler farklı. Bir kez daha.",
+    pinWait: "Çok fazla yanlış deneme. Sonraki deneme {time} sonra.",
+    pinForgot: "PIN'i mi unuttunuz?",
+    pinBackspace: "Rakamı sil",
+    pinLockedProfile: "Ebeveyn PIN'i ister",
+    pinSet: "Ebeveyn PIN'i belirle",
+    pinSetDesc: "Çocukları yaş sınırı olmayan profillerden ve kendi profillerinin ayarlarından uzak tutar. Bu TV için geçerlidir.",
+    pinChange: "Ebeveyn PIN'ini değiştir",
+    pinChangeDesc: "Önce mevcut PIN'i sorar.",
+    pinRemove: "Ebeveyn PIN'ini kaldır",
+    pinRemoveDesc: "Tüm profiller ve ayarları yeniden PIN olmadan açılır.",
+
     // Quick Connect
     quickConnect: "Hızlı Bağlan",
     qcInstruction: "Bu kodu Jellyfin uygulamanızda (telefon/web) “Hızlı Bağlan” altında girin:",

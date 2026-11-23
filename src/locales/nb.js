@@ -426,6 +426,26 @@ export default {
     pwChangedError: "Passordet kunne ikke endres.",
     changePwDesc: "Bytt Jellyfin-passordet ditt.",
 
+    // Parental PIN
+    pinEnter: "Skriv inn foreldre-PIN",
+    pinNew: "Velg en ny PIN-kode",
+    pinRepeat: "Gjenta den nye PIN-koden",
+    pinWhyProfile: "For profilen {name}.",
+    pinWhySettings: "For innstillingene til denne profilen.",
+    pinWhyReset: "Logget inn med passordet. Velg en ny PIN-kode — Tilbake beholder den gamle.",
+    pinWrong: "Feil PIN-kode.",
+    pinMismatch: "PIN-kodene er forskjellige. En gang til.",
+    pinWait: "For mange feil forsøk. Neste forsøk om {time}.",
+    pinForgot: "Glemt PIN-koden?",
+    pinBackspace: "Slett siffer",
+    pinLockedProfile: "Ber om foreldre-PIN",
+    pinSet: "Angi foreldre-PIN",
+    pinSetDesc: "Holder barn ute av profilene uten aldersgrense og ute av innstillingene i sin egen profil. Gjelder denne TV-en.",
+    pinChange: "Endre foreldre-PIN",
+    pinChangeDesc: "Spør først etter den nåværende PIN-koden.",
+    pinRemove: "Fjern foreldre-PIN",
+    pinRemoveDesc: "Alle profiler og innstillingene deres åpnes uten PIN-kode igjen.",
+
     // Quick Connect
     quickConnect: "Hurtigkobling",
     qcInstruction: "Skriv inn denne koden i Jellyfin-appen din (mobil/nett) under «Hurtigkobling»:",

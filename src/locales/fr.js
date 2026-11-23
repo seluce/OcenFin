@@ -426,6 +426,26 @@ export default {
     pwChangedError: "Erreur lors du changement de mot de passe.",
     changePwDesc: "Mettez à jour votre mot de passe Jellyfin.",
 
+    // Parental PIN
+    pinEnter: "Saisir le code parental",
+    pinNew: "Choisir un nouveau code",
+    pinRepeat: "Répéter le nouveau code",
+    pinWhyProfile: "Pour le profil {name}.",
+    pinWhySettings: "Pour les paramètres de ce profil.",
+    pinWhyReset: "Connecté avec le mot de passe. Choisissez un nouveau code — Retour garde l'ancien.",
+    pinWrong: "Code erroné.",
+    pinMismatch: "Les codes diffèrent. Encore une fois.",
+    pinWait: "Trop d'essais erronés. Prochain essai dans {time}.",
+    pinForgot: "Code oublié ?",
+    pinBackspace: "Effacer le chiffre",
+    pinLockedProfile: "Demande le code parental",
+    pinSet: "Définir un code parental",
+    pinSetDesc: "Tient les enfants à l'écart des profils sans limite d'âge et des paramètres de leur propre profil. Pour ce téléviseur.",
+    pinChange: "Modifier le code parental",
+    pinChangeDesc: "Demande d'abord le code actuel.",
+    pinRemove: "Supprimer le code parental",
+    pinRemoveDesc: "Tous les profils et leurs paramètres s'ouvrent de nouveau sans code.",
+
     // Quick Connect
     quickConnect: "Connexion rapide",
     qcInstruction: "Saisissez ce code dans votre application Jellyfin (téléphone/web) sous « Connexion rapide » :",

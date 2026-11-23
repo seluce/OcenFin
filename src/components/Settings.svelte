@@ -5,6 +5,8 @@
   import { isBackKey, focusOnMount, tvKeyboard, buildNavEntries, applyNavConfig, NAV_ICON_PALETTE, NAV_ICON_KEYS,
            AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, uploadLog, makeFocusReturn, uiFade, isRepeatedEnter, UI_SIZES, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS, orderHomeRows, SUB_POSITIONS, asSubPosition, asSubSize, subtitleTextStyle } from '../utils.js';
   import Dialog from './Dialog.svelte';
+  import PinDialog from './PinDialog.svelte';
+  import { parental } from '../parentalpin.svelte.js';
   import { session } from '../session.svelte.js';
   import { focusFromPointer } from '../spatialnav.js';
   import { startPlatformDiagnostics } from '../diag.js';
@@ -16,6 +18,7 @@
     selectedUser,
     selectedServer,
     savedTokens         = {},
+    settingsUnlocked    = false,   // a profile with an age limit opened its settings with the parental PIN (App, §151)
     screensaverSettings = { enabled: true, timeout: 90 },
     reduceAnimations    = false,
     displaySettings     = { clock: true, hero: true, episodeCount: true },
@@ -153,9 +156,12 @@
   // profile may watch, which is the same intent. Nothing new to configure, and it follows the
   // server if the restriction is lifted.
   //
-  // This tidies the interface; it is NOT a security boundary. Anyone at the television can pick a
-  // different profile, so it only holds as far as the other profiles are password-protected.
-  const restrictedProfile = $derived(selectedUser?.Policy?.MaxParentalRating != null);
+  // This tidies the interface. What makes it hold is the parental PIN (§151): once a PIN is set, the profiles without an
+  // age limit ask for it after such a profile, and so do its settings — opened with it (settingsUnlocked), they show
+  // everything until they are left. Watch together stays off all the same (ageLimited): its members' sign-ins are
+  // the members' accounts, past this profile's limit.
+  const ageLimited = $derived(selectedUser?.Policy?.MaxParentalRating != null);
+  const restrictedProfile = $derived(ageLimited && !settingsUnlocked);
   let sharedQcCode  = $state(null);
   let sharedQcQr    = $state(null);
   let sharedQcSess  = null;
@@ -220,6 +226,22 @@
     cancelSharedQuickConnect();   // back/cancel leaves the dialog — the poll must not survive it
     activeModal = null;
   }
+
+  // The parental PIN's card (§151). Done, its rows change ("set" ↔ "change / remove"), so focus goes to the card's first
+  // row rather than back to a button that is gone; cancelled, back to the row it came from.
+  let pinMode = $state(null);     // 'set' | 'change' | 'remove' while the pad is open
+  let pinCardEl = $state();       // in a conditional block: written on mount and on destroy, so a rune (§23)
+  const pinFocus = makeFocusReturn();
+  function openPin(mode) {
+    if (isRepeatedEnter()) return;
+    pinFocus.capture();
+    pinMode = mode;
+  }
+  function pinDone() {
+    pinMode = null; pinFocus.cancel();
+    tick().then(() => pinCardEl?.querySelector('[data-pin-row]')?.focus());
+  }
+  function pinCancel() { pinMode = null; pinFocus.restore(); }
 
   // Reset this profile's settings (CODE-HEALTH §112) — asked first, the dialog lands on Cancel. Both buttons ignore
   // a held OK: its repeated click would answer the dialog the same press opened. The tile says it was done for a
@@ -814,12 +836,12 @@
   // Reset the content scroll position on category switch, so a new category always starts at the
   // top instead of inheriting the previous category's scroll depth.
   $effect(() => { activeCategory; if (contentEl) contentEl.scrollTop = 0; });
-  // Everything that changes the television itself, the account, or exposes diagnostics is dropped
-  // for a restricted profile. What shapes their own viewing — appearance, content, navigation,
-  // playback, subtitles, remote — stays, so the profile still feels like theirs. Profile & Account
-  // stays as a category but hides its server/sign-out part (the former "Account & Server", §108).
-  // Order (§108): the look, what is shown, how it plays, the television, the account, diagnostics.
-  const RESTRICTED_HIDDEN = ['oled', 'status'];
+  // The account and the diagnostics are dropped for a restricted profile. What shapes their own viewing — appearance,
+  // content, navigation, playback, subtitles, remote, and the screen saver, per profile since §115 (§151) — stays, so
+  // the profile still feels like theirs. Profile & Account stays as a category but hides its server/sign-out part (the
+  // former "Account & Server", §108). Order (§108): the look, what is shown, how it plays, the television, the
+  // account, diagnostics.
+  const RESTRICTED_HIDDEN = ['status'];
   let categories = $derived([
     { id: 'appearance', label: i18n.t.settingsDisplay,    icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
     { id: 'displayElements', label: i18n.t.displayElements, icon: 'M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z' },
@@ -853,6 +875,21 @@
       {#if desc}<span class="text-gray-400 mt-1 block text-sm">{desc}</span>{/if}
     </div>
     {@render switchPill(on)}
+  </button>
+{/snippet}
+
+<!-- A row of the parental PIN's card: opens the pad in that mode -->
+{#snippet pinRow(label, desc, mode)}
+  <button onclick={() => openPin(mode)} data-pin-row
+    class="flex items-center justify-between w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+           focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+    <div>
+      <span class="text-2xl text-white font-medium block">{label}</span>
+      <span class="text-gray-400 mt-1 block text-sm">{desc}</span>
+    </div>
+    <svg class="w-7 h-7 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+    </svg>
   </button>
 {/snippet}
 
@@ -1133,9 +1170,9 @@
            sign-ins, but what it DOES is filter your library and add "For you both" to the home
            screen — it changes what is shown, which is this category (under Playback until §108,
            with the credentials before that). Its own heading like every other group.
-           Not for age-restricted profiles: the members' sign-ins are the members' accounts, past
-           this profile's rating limit (App's sharedReady says the same). -->
-      {#if !restrictedProfile}
+           Not for age-restricted profiles, unlocked with the parental PIN or not: the members' sign-ins are the
+           members' accounts, past this profile's rating limit (App's sharedReady says the same). -->
+      {#if !ageLimited}
         <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest ml-2 mt-3 -mb-2">{i18n.t.groupWatchTogether}</h3>
         <div class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
           {@render switchRow(i18n.t.sharedWatching, i18n.t.sharedWatchingDesc, sharedProfile.enabled, onSharedToggle)}
@@ -1761,6 +1798,21 @@
 
       </div>
 
+      <!-- The parental PIN (§151): one per television. Set here in a profile without an age limit; changing and
+           removing it ask for it first. A profile with an age limit sees this only with its settings unlocked, i.e.
+           by someone who knows the PIN — a child can never set one of its own. -->
+      {#if !restrictedProfile}
+        <div bind:this={pinCardEl} class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
+          {#if parental.hasPin}
+            {@render pinRow(i18n.t.pinChange, i18n.t.pinChangeDesc, 'change')}
+            <div class="h-px bg-gray-700"></div>
+            {@render pinRow(i18n.t.pinRemove, i18n.t.pinRemoveDesc, 'remove')}
+          {:else}
+            {@render pinRow(i18n.t.pinSet, i18n.t.pinSetDesc, 'set')}
+          {/if}
+        </div>
+      {/if}
+
       <!-- Server and leaving — merged in from the former "Account & Server" category (§108). An
            age-restricted profile does not see it, as it did not see that category. -->
       {#if !restrictedProfile}
@@ -2279,3 +2331,7 @@
   </Dialog>
 {/if}
 
+{#if pinMode}
+  <PinDialog mode={pinMode} reason={pinMode === 'change' ? i18n.t.pinChange : pinMode === 'remove' ? i18n.t.pinRemove : ''}
+    onDone={pinDone} onCancel={pinCancel} />
+{/if}

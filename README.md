@@ -51,6 +51,7 @@ OcenFin plays your movies and shows as they are: Direct Play with Dolby Vision a
 
 - Fast profile switching with saved sign-in and Quick Connect; profile pictures made right on the TV.
 - Shared profile: link two personal profiles and hide what one of you has already seen.
+- A parental PIN keeps children out of the grown-ups' profiles and out of their own settings.
 - SyncPlay, and remote control from Jellyfin on your phone or in the browser.
 
 ## Privacy

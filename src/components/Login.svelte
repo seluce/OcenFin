@@ -36,7 +36,8 @@
     onRenameServer,               // (id, name) => void — server name adopted from the server
     onTokenRefreshed,             // (serverId, userId, token) => void — App updates only when saving is active
     onSwitchServer,               // () => void — back to the server selection (App: handleLogout)
-    onDone,                       // (user, token) => void — App: finishLogin
+    pinLocked = false,            // the parental PIN locks the profiles without an age limit right now (§151)
+    onDone,                       // (user, token, how) => void — App: enterProfile; how = 'token' | 'password' | 'empty' | 'quickconnect'
   } = $props();
 
   // ── Flow state: lives only here and ends with the unmount ──
@@ -373,7 +374,7 @@
       const valid = await onValidateToken?.(storedToken);
       signingIn = false;
       if (valid) {
-        onDone?.(user, storedToken);
+        onDone?.(user, storedToken, 'token');
         return;
       } else if (valid === null) {
         // No verdict — the server did not answer. A password form now would only invite an attempt
@@ -388,6 +389,14 @@
     }
 
     // Show the password entry
+    showPasswordForm = true;
+  }
+
+  /** The parental PIN's "Forgot the PIN?" (App, §151): this profile's password form — a typed password, checked by
+   *  the server, lets the profile in without the PIN and offers a new one. */
+  export function askPassword(user) {
+    loginError = ''; password = ''; showManualLogin = false;
+    pendingUser = user;
     showPasswordForm = true;
   }
 
@@ -408,7 +417,8 @@
         const data = await res.json();
         // Refresh the saved token — whether saving is active is checked by App
         onTokenRefreshed?.(server?.id, data.User.Id, data.AccessToken);
-        onDone?.(data.User, data.AccessToken);
+        // Whether a password was TYPED: only that one counts as proof for the parental PIN (App's enterProfile).
+        onDone?.(data.User, data.AccessToken, pw ? 'password' : 'empty');
       } else {
         loginError = i18n.t.errLogin;
       }
@@ -431,7 +441,7 @@
       // Like the password path: a profile whose saved sign-in had expired gets the fresh token, or
       // the password form would come back on every switch while "save password" stays on.
       onTokenRefreshed?.(server?.id, user.Id, token);
-      onDone?.(user, token);
+      onDone?.(user, token, 'quickconnect');
     } catch (err) {
       if (err === 'cancelled') return;          // the user backed out — not an error to report
       qcCode = qcQrSvg = null;
@@ -765,7 +775,16 @@
                     </div>
                   {/if}
                 </div>
-                <span class="mt-4 text-2xl text-gray-400 group-focus:text-white transition-colors">{user.Name}</span>
+                <!-- The parental PIN's lock on the profiles it guards right now (§151), so a request for it comes as no
+                     surprise. -->
+                <span class="mt-4 text-2xl text-gray-400 group-focus:text-white transition-colors flex items-center gap-2">
+                  {#if pinLocked && user.Policy?.MaxParentalRating == null}
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" role="img" aria-label={i18n.t.pinLockedProfile}>
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
+                    </svg>
+                  {/if}
+                  {user.Name}
+                </span>
               </button>
             {/each}
           </div>

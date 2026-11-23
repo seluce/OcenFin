@@ -3,6 +3,18 @@
 Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 `public/appinfo.json` as well as the version shown under Settings → Status.
 
+## Unreleased
+
+### Added
+
+- **Parental PIN.** Once a profile with an age limit has been used, the profiles without one ask for a four-digit PIN,
+  and so do that profile's settings; set it under Profile & Account.
+
+### Changed
+
+- **Screen saver settings in profiles with an age limit.** The screen saver belongs to each profile now, so these
+  profiles can choose their own again.
+
 ## 2026.11.22
 
 ### Added

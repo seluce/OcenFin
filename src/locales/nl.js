@@ -426,6 +426,26 @@ export default {
     pwChangedError: "Fout bij het wijzigen van het wachtwoord.",
     changePwDesc: "Werk je Jellyfin-wachtwoord bij.",
 
+    // Parental PIN
+    pinEnter: "Ouderlijke pincode invoeren",
+    pinNew: "Kies een nieuwe pincode",
+    pinRepeat: "Herhaal de nieuwe pincode",
+    pinWhyProfile: "Voor het profiel {name}.",
+    pinWhySettings: "Voor de instellingen van dit profiel.",
+    pinWhyReset: "Aangemeld met het wachtwoord. Kies een nieuwe pincode — Terug houdt de oude.",
+    pinWrong: "Verkeerde pincode.",
+    pinMismatch: "De pincodes verschillen. Nog een keer.",
+    pinWait: "Te veel foute pogingen. Volgende poging over {time}.",
+    pinForgot: "Pincode vergeten?",
+    pinBackspace: "Cijfer wissen",
+    pinLockedProfile: "Vraagt om de ouderlijke pincode",
+    pinSet: "Ouderlijke pincode instellen",
+    pinSetDesc: "Houdt kinderen uit de profielen zonder leeftijdsgrens en uit de instellingen van hun eigen profiel. Voor deze tv.",
+    pinChange: "Ouderlijke pincode wijzigen",
+    pinChangeDesc: "Vraagt eerst om de huidige pincode.",
+    pinRemove: "Ouderlijke pincode verwijderen",
+    pinRemoveDesc: "Alle profielen en hun instellingen openen weer zonder pincode.",
+
     // Quick Connect
     quickConnect: "Quick Connect",
     qcInstruction: "Voer deze code in je Jellyfin-app (telefoon/web) in onder ‘Quick Connect’:",

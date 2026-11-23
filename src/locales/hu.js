@@ -426,6 +426,26 @@ export default {
     pwChangedError: "Nem sikerült módosítani a jelszót.",
     changePwDesc: "A Jellyfin-jelszavad módosítása.",
 
+    // Parental PIN
+    pinEnter: "Add meg a szülői PIN-kódot",
+    pinNew: "Válassz új PIN-kódot",
+    pinRepeat: "Ismételd meg az új PIN-kódot",
+    pinWhyProfile: "{name} profiljához.",
+    pinWhySettings: "Ennek a profilnak a beállításaihoz.",
+    pinWhyReset: "Bejelentkezve a jelszóval. Válassz új PIN-kódot – a Vissza megtartja a régit.",
+    pinWrong: "Hibás PIN-kód.",
+    pinMismatch: "A két PIN-kód eltér. Még egyszer.",
+    pinWait: "Túl sok hibás próbálkozás. Következő próba {time} múlva.",
+    pinForgot: "Elfelejtetted a PIN-t?",
+    pinBackspace: "Számjegy törlése",
+    pinLockedProfile: "Szülői PIN-kódot kér",
+    pinSet: "Szülői PIN-kód beállítása",
+    pinSetDesc: "Távol tartja a gyerekeket a korhatár nélküli profiloktól és a saját profiljuk beállításaitól. Erre a tévére vonatkozik.",
+    pinChange: "Szülői PIN-kód módosítása",
+    pinChangeDesc: "Először a jelenlegi PIN-kódot kéri.",
+    pinRemove: "Szülői PIN-kód eltávolítása",
+    pinRemoveDesc: "Minden profil és a beállításai ismét PIN-kód nélkül nyílnak meg.",
+
     // Quick Connect
     quickConnect: "Gyors csatlakozás",
     qcInstruction: "Írd be ezt a kódot a Jellyfin-alkalmazásban (telefon/web) a „Gyors csatlakozás” menüpontban:",

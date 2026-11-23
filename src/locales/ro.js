@@ -426,6 +426,26 @@ export default {
     pwChangedError: "Eroare la schimbarea parolei.",
     changePwDesc: "Schimbă parola contului Jellyfin.",
 
+    // Parental PIN
+    pinEnter: "Introdu PIN-ul parental",
+    pinNew: "Alege un PIN nou",
+    pinRepeat: "Repetă PIN-ul nou",
+    pinWhyProfile: "Pentru profilul {name}.",
+    pinWhySettings: "Pentru setările acestui profil.",
+    pinWhyReset: "Conectat cu parola. Alege un PIN nou – Înapoi îl păstrează pe cel vechi.",
+    pinWrong: "PIN greșit.",
+    pinMismatch: "PIN-urile diferă. Încă o dată.",
+    pinWait: "Prea multe încercări greșite. Următoarea încercare în {time}.",
+    pinForgot: "Ai uitat PIN-ul?",
+    pinBackspace: "Șterge cifra",
+    pinLockedProfile: "Cere PIN-ul parental",
+    pinSet: "Setează PIN-ul parental",
+    pinSetDesc: "Îi ține pe copii departe de profilurile fără limită de vârstă și de setările propriului profil. Pentru acest televizor.",
+    pinChange: "Schimbă PIN-ul parental",
+    pinChangeDesc: "Cere mai întâi PIN-ul actual.",
+    pinRemove: "Elimină PIN-ul parental",
+    pinRemoveDesc: "Toate profilurile și setările lor se deschid din nou fără PIN.",
+
     // Quick Connect
     quickConnect: "Conectare rapidă",
     qcInstruction: "Introdu acest cod în aplicația Jellyfin (telefon/web) la „Conectare rapidă”:",

@@ -426,6 +426,26 @@ export default {
     pwChangedError: "Při změně hesla došlo k chybě.",
     changePwDesc: "Změňte své heslo k Jellyfinu.",
 
+    // Parental PIN
+    pinEnter: "Zadejte rodičovský PIN",
+    pinNew: "Zvolte nový PIN",
+    pinRepeat: "Zopakujte nový PIN",
+    pinWhyProfile: "Pro profil {name}.",
+    pinWhySettings: "Pro nastavení tohoto profilu.",
+    pinWhyReset: "Přihlášeno heslem. Zvolte nový PIN — Zpět ponechá starý.",
+    pinWrong: "Chybný PIN.",
+    pinMismatch: "Kódy PIN se liší. Ještě jednou.",
+    pinWait: "Příliš mnoho chybných pokusů. Další pokus za {time}.",
+    pinForgot: "Zapomněli jste PIN?",
+    pinBackspace: "Smazat číslici",
+    pinLockedProfile: "Vyžaduje rodičovský PIN",
+    pinSet: "Nastavit rodičovský PIN",
+    pinSetDesc: "Nepustí děti do profilů bez věkového omezení ani do nastavení jejich vlastního profilu. Platí pro tuto televizi.",
+    pinChange: "Změnit rodičovský PIN",
+    pinChangeDesc: "Nejprve se zeptá na současný PIN.",
+    pinRemove: "Odebrat rodičovský PIN",
+    pinRemoveDesc: "Všechny profily a jejich nastavení se opět otevřou bez PIN.",
+
     // Quick Connect
     quickConnect: "Rychlé připojení",
     qcInstruction: "Zadejte tento kód v aplikaci Jellyfin (telefon/web) v části „Rychlé připojení“:",

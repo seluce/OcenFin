@@ -426,6 +426,26 @@ export default {
     pwChangedError: "비밀번호를 변경하지 못했습니다.",
     changePwDesc: "Jellyfin 비밀번호를 변경합니다.",
 
+    // Parental PIN
+    pinEnter: "보호자 PIN 입력",
+    pinNew: "새 PIN 선택",
+    pinRepeat: "새 PIN 다시 입력",
+    pinWhyProfile: "{name} 프로필용입니다.",
+    pinWhySettings: "이 프로필의 설정용입니다.",
+    pinWhyReset: "비밀번호로 로그인했습니다. 새 PIN을 선택하세요. 뒤로를 누르면 기존 PIN이 유지됩니다.",
+    pinWrong: "PIN이 틀렸습니다.",
+    pinMismatch: "두 PIN이 다릅니다. 다시 입력하세요.",
+    pinWait: "잘못된 시도가 너무 많습니다. {time} 후에 다시 시도하세요.",
+    pinForgot: "PIN을 잊으셨나요?",
+    pinBackspace: "숫자 지우기",
+    pinLockedProfile: "보호자 PIN 필요",
+    pinSet: "보호자 PIN 설정",
+    pinSetDesc: "아이들이 연령 제한이 없는 프로필과 자기 프로필의 설정에 들어가지 못하게 합니다. 이 TV에 적용됩니다.",
+    pinChange: "보호자 PIN 변경",
+    pinChangeDesc: "먼저 현재 PIN을 묻습니다.",
+    pinRemove: "보호자 PIN 제거",
+    pinRemoveDesc: "모든 프로필과 설정이 다시 PIN 없이 열립니다.",
+
     // Quick Connect
     quickConnect: "퀵 커넥트",
     qcInstruction: "Jellyfin 앱(휴대폰/웹)의 ‘퀵 커넥트’에 이 코드를 입력하세요:",

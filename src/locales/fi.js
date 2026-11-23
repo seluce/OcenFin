@@ -426,6 +426,26 @@ export default {
     pwChangedError: "Salasanan vaihto epäonnistui.",
     changePwDesc: "Vaihda Jellyfin-salasanasi.",
 
+    // Parental PIN
+    pinEnter: "Anna vanhempien PIN-koodi",
+    pinNew: "Valitse uusi PIN-koodi",
+    pinRepeat: "Toista uusi PIN-koodi",
+    pinWhyProfile: "Profiilia {name} varten.",
+    pinWhySettings: "Tämän profiilin asetuksia varten.",
+    pinWhyReset: "Kirjauduttu salasanalla. Valitse uusi PIN-koodi – Takaisin säilyttää vanhan.",
+    pinWrong: "Väärä PIN-koodi.",
+    pinMismatch: "PIN-koodit eroavat. Vielä kerran.",
+    pinWait: "Liian monta väärää yritystä. Seuraava yritys {time} kuluttua.",
+    pinForgot: "Unohtuiko PIN-koodi?",
+    pinBackspace: "Poista numero",
+    pinLockedProfile: "Kysyy vanhempien PIN-koodia",
+    pinSet: "Aseta vanhempien PIN-koodi",
+    pinSetDesc: "Pitää lapset poissa profiileista, joilla ei ole ikärajaa, ja oman profiilinsa asetuksista. Koskee tätä televisiota.",
+    pinChange: "Vaihda vanhempien PIN-koodi",
+    pinChangeDesc: "Kysyy ensin nykyistä PIN-koodia.",
+    pinRemove: "Poista vanhempien PIN-koodi",
+    pinRemoveDesc: "Kaikki profiilit ja niiden asetukset avautuvat taas ilman PIN-koodia.",
+
     // Quick Connect
     quickConnect: "Pikayhdistys",
     qcInstruction: "Syötä tämä koodi Jellyfin-sovellukseesi (puhelin/selain) kohdassa ”Pikayhdistys”:",

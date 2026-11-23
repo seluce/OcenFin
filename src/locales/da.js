@@ -426,6 +426,26 @@ export default {
     pwChangedError: "Adgangskoden kunne ikke ændres.",
     changePwDesc: "Skift din Jellyfin-adgangskode.",
 
+    // Parental PIN
+    pinEnter: "Indtast forældre-pinkode",
+    pinNew: "Vælg en ny pinkode",
+    pinRepeat: "Gentag den nye pinkode",
+    pinWhyProfile: "Til profilen {name}.",
+    pinWhySettings: "Til indstillingerne for denne profil.",
+    pinWhyReset: "Logget ind med adgangskoden. Vælg en ny pinkode — Tilbage beholder den gamle.",
+    pinWrong: "Forkert pinkode.",
+    pinMismatch: "Pinkoderne er forskellige. En gang til.",
+    pinWait: "For mange forkerte forsøg. Næste forsøg om {time}.",
+    pinForgot: "Glemt pinkoden?",
+    pinBackspace: "Slet ciffer",
+    pinLockedProfile: "Beder om forældre-pinkoden",
+    pinSet: "Angiv forældre-pinkode",
+    pinSetDesc: "Holder børn ude af profilerne uden aldersgrænse og ude af indstillingerne i deres egen profil. Gælder dette tv.",
+    pinChange: "Skift forældre-pinkode",
+    pinChangeDesc: "Spørger først om den nuværende pinkode.",
+    pinRemove: "Fjern forældre-pinkode",
+    pinRemoveDesc: "Alle profiler og deres indstillinger åbner igen uden pinkode.",
+
     // Quick Connect
     quickConnect: "Lyn-forbind",
     qcInstruction: "Indtast denne kode i din Jellyfin-app (mobil/web) under »Lyn-forbind«:",

@@ -181,6 +181,15 @@ export default {
     pwChangedError: "Erro ao alterar a senha.",
     changePwDesc: "Atualize a sua senha do Jellyfin.",
 
+    // Parental PIN
+    pinEnter: "Digite o PIN parental",
+    pinWhySettings: "Para as configurações deste perfil.",
+    pinWhyReset: "Login feito com a senha. Escolha um novo PIN — Voltar mantém o antigo.",
+    pinWait: "Muitas tentativas erradas. Próxima tentativa em {time}.",
+    pinForgot: "Esqueceu o PIN?",
+    pinSetDesc: "Mantém as crianças fora dos perfis sem limite de idade e das configurações do próprio perfil. Para esta TV.",
+    pinRemoveDesc: "Todos os perfis e suas configurações voltam a abrir sem PIN.",
+
     // Quick Connect
     quickConnect: "Conexão rápida",
     qcInstruction: "Digite este código no seu aplicativo Jellyfin (celular/web) em “Conexão rápida”:",

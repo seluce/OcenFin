@@ -25,6 +25,7 @@
   import { registerSession, listSyncGroups, createSyncGroup, joinSyncGroup, leaveSyncGroup, syncSocketUrl, setSyncIgnoreWait, measureClockOffset } from './syncplay.js';
   import { suppressTheme } from './thememusic.js';
   import { setTrackMemoryUser } from './trackmemory.js';
+  import { parental, kidLockOn, noteProfileEntered } from './parentalpin.svelte.js';
 
   // Lazy-loaded views (Vite code-splitting): loaded only on first open, then cached.
   // Keeps the cold-start bundle small — especially the Player pulls the heavy deps (hls.js, libbitsub, JASSUB) only on
@@ -35,6 +36,8 @@
   const lazySyncPlay = () => (_syncP     ??= import('./components/SyncPlay.svelte').then(m => m.default));
   let _loginP;
   const lazyLogin    = () => (_loginP    ??= import('./components/Login.svelte').then(m => m.default));
+  let _pinP;   // the parental PIN's pad — only on a TV that has a PIN, and there only when it asks
+  const lazyPin      = () => (_pinP      ??= import('./components/PinDialog.svelte').then(m => m.default));
   let loginRef = $state();   // bind:this → handleBackKey (back in login sub-dialogs)
 
   // ============================================================
@@ -1578,11 +1581,73 @@
     session.token  = token;
     isLoggedIn   = true;
     appPhase     = 'app';
+    noteProfileEntered(isAgeLimited(user));   // the parental PIN's lock follows the profile entered last (§151)
     applyUserPrefs(user.Id);   // load profile settings
     saveCurrentSession();
     scheduleScreensaver();
     detectServerCapabilities();
     refreshSharedMemberToken(user.Id, token);
+  }
+
+  // ============================================================
+  // PARENTAL PIN (§151) — the PIN itself lives in parentalpin.svelte.js, the pad in PinDialog.svelte
+  // ============================================================
+  // An age limit is Jellyfin's own statement about the account (MaxParentalRating), as everywhere in the app. The public
+  // profile list carries the full UserDto, Policy included, so a tile already knows it.
+  const isAgeLimited = (user) => user?.Policy?.MaxParentalRating != null;
+
+  let pinAsk = $state(null);            // { mode, reason, onDone, onCancel, onForgot } while the pad is open
+  const pinFocus = makeFocusReturn();
+  let pinForgotten = false;             // "Forgot the PIN?" was pressed: the next password sign-in offers a new one
+  function askPin(opts) { pinFocus.capture(); pinAsk = opts; }
+  // Focus that goes on OUTSIDE the closing pad: let go of its button first (the start-focus effect and focusContent
+  // stand down while anything holds focus), and wait for the flush that takes its trap away — while the trap is in
+  // the page, spatialnav pulls focus back in (§143).
+  function leavePin(then) {
+    pinAsk = null; pinFocus.cancel();
+    const held = document.activeElement;
+    if (held?.closest('[role="dialog"]')) held.blur();
+    tick().then(then);
+  }
+  function cancelPin() { pinAsk = null; pinFocus.restore(); }
+
+  // Every sign-in of the profile picker ends here (Login's onDone). After a profile with an age limit, a profile
+  // without one asks for the PIN — the lock sits at ENTERING, so the profile switch, signing out, a rejected token
+  // and another server all lead past it. What it lets through: a typed password (the server checked it — stronger
+  // than the PIN, and the way out of a forgotten one) and Quick Connect (confirmed on a device signed in to that
+  // account). An empty password is no proof: Jellyfin 12 no longer says which accounts have none (HasPassword).
+  function enterProfile(user, token, how) {
+    if (isAgeLimited(user) || !kidLockOn()) return finishLogin(user, token);
+    if (how === 'password' || how === 'quickconnect') {
+      if (!pinForgotten) return finishLogin(user, token);
+      pinForgotten = false;
+      const go = () => leavePin(() => finishLogin(user, token));
+      askPin({ mode: 'set', reason: i18n.t.pinWhyReset, onDone: go, onCancel: go });
+      return;
+    }
+    // A saved sign-in or an empty password. Turned away, a sign-in made just now is ended again on the server — unless
+    // "save password" keeps it (onTokenRefreshed stored it), as handleSwitchUser does.
+    const drop = () => { if (!tokenStillKept(selectedServer?.id, token)) revokeToken(session.serverUrl, token); };
+    askPin({
+      mode: 'check',
+      reason: i18n.t.pinWhyProfile.replace('{name}', user.Name || ''),
+      onDone: () => leavePin(() => finishLogin(user, token)),
+      onCancel: () => { drop(); cancelPin(); },
+      onForgot: () => { drop(); pinForgotten = true; leavePin(() => loginRef?.askPassword(user)); },
+    });
+  }
+
+  // A locked profile's settings: the PIN once per visit, open until Settings is left again (§151).
+  let settingsUnlocked = $state(false);
+  $effect(() => { if (viewState !== 'settings' && settingsUnlocked) settingsUnlocked = false; });
+  function openSettings() {
+    if (!parental.hasPin || !restrictedProfile || settingsUnlocked) { viewState = 'settings'; focusMain(); return; }
+    askPin({
+      mode: 'check',
+      reason: i18n.t.pinWhySettings,
+      onDone: () => leavePin(() => { settingsUnlocked = true; viewState = 'settings'; focusMain(); }),
+      onCancel: cancelPin,
+    });
   }
 
   // Jellyfin binds sessions to the DeviceId — if a profile signs in again on the same device,
@@ -1640,6 +1705,7 @@
     // one's dashboard until that one's own scan replaced it.
     contextItem = null; contextPickerMode = null; contextPickerItem = null;
     showExitConfirm = false; exitFocus.cancel();
+    pinAsk = null; pinFocus.cancel(); settingsUnlocked = false;   // a PIN pad open for the settings goes with the profile
     sharedSuggestions = []; _loadedSugKey = null; sharedSugDoneKey = '';
     _partnersSeq++; partnersPlayedIds = null;   // an in-flight library scan must not publish
     viewState = 'dashboard';
@@ -2512,6 +2578,15 @@
     </Dialog>
   {/if}
 
+  <!-- The parental PIN (§151): before a profile without an age limit, before a locked profile's settings. Over both
+       phases, so it lives out here. -->
+  {#if pinAsk}
+    {#await lazyPin() then PinDialog}
+      <PinDialog mode={pinAsk.mode} reason={pinAsk.reason}
+        onDone={pinAsk.onDone} onCancel={pinAsk.onCancel} onForgot={pinAsk.onForgot} />
+    {/await}
+  {/if}
+
   <!-- ============================================================
        PHASE: LOGIN — server selection + profile selection.
        Lazy-loaded: the auto-login path never touches the chunk.
@@ -2546,7 +2621,8 @@
           if (savedTokens[sid]?.[uid]) { savedTokens[sid][uid] = token; persistSavedTokens(); }
         }}
         onSwitchServer={handleLogout}
-        onDone={finishLogin}
+        pinLocked={kidLockOn()}
+        onDone={enterProfile}
       />
     {/await}
 
@@ -2570,6 +2646,7 @@
           pendingCardFocusId = null;
           // Search from the menu is always a FRESH search — mount it on first use, then clear it.
           if (target === 'search') { searchMounted = true; viewState = target; tick().then(() => searchRef?.reset()); return; }
+          if (target === 'settings') { openSettings(); return; }
           viewState = target;
           if (target !== 'favorites') focusMain();
         }}
@@ -2615,7 +2692,7 @@
             <div class="h-full flex items-center justify-center"><div class="w-14 h-14 border-4 border-white/25 border-t-white rounded-full animate-spin"></div></div>
           {:then Settings}
           <Settings
-            {selectedUser} {selectedServer} {savedTokens}
+            {selectedUser} {selectedServer} {savedTokens} {settingsUnlocked}
             {screensaverSettings} {reduceAnimations} {displaySettings} {playbackPrefs}
             {serverVersion}
             libraries={navLibraries}
