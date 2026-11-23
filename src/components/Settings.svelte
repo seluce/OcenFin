@@ -1817,13 +1817,31 @@
 
       <!-- The parental PIN (§151): one per television. Set here in a profile without an age limit; changing and
            removing it ask for it first. A profile with an age limit sees this only with its settings unlocked, i.e.
-           by someone who knows the PIN — a child can never set one of its own. With a PIN: which profiles are a
-           child's (named) and whether switching on asks too (§152); without one, a word when no profile has an age
-           limit yet — the PIN would guard nothing. -->
+           by someone who knows the PIN — a child can never set one of its own. With a PIN: what it is, with its two rare
+           actions as buttons (the profile picture's pattern — as rows of their own they took a third of this category,
+           §153), which profiles are a child's (named) and whether switching on asks too (§152); without one, a word
+           when no profile has an age limit yet — the PIN would guard nothing. -->
       {#if !restrictedProfile}
         <div bind:this={pinCardEl} class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
           {#if parental.hasPin}
-            <button onclick={() => openModal('pinKids')} data-pin-row
+            <div class="flex items-center justify-between gap-6 p-6">
+              <div class="min-w-0">
+                <span class="text-2xl text-white font-medium block">{i18n.t.pinTitle}</span>
+                <span class="text-gray-400 mt-1 block text-sm">{i18n.t.pinThisTv}</span>
+              </div>
+              <div class="flex gap-3 shrink-0">
+                <button onclick={() => openPin('change')} data-pin-row
+                  class="px-5 py-3 rounded-xl font-bold text-base bg-gray-700 text-white hover:bg-gray-600 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+                  {i18n.t.change}
+                </button>
+                <button onclick={() => openPin('remove')}
+                  class="px-5 py-3 rounded-xl font-bold text-base bg-gray-700 text-white hover:bg-gray-600 focus:outline-none focus:ring-4 focus:ring-white transition-colors">
+                  {i18n.t.remove}
+                </button>
+              </div>
+            </div>
+            <div class="h-px bg-gray-700"></div>
+            <button onclick={() => openModal('pinKids')}
               class="flex items-center justify-between gap-6 w-full p-6 hover:bg-gray-700 focus:bg-gray-700
                      focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
               <div class="min-w-0">
@@ -1834,10 +1852,6 @@
             </button>
             <div class="h-px bg-gray-700"></div>
             {@render switchRow(i18n.t.pinAtStart, i18n.t.pinAtStartDesc, parental.atStart, () => setPinOptions({ atStart: !parental.atStart }))}
-            <div class="h-px bg-gray-700"></div>
-            {@render pinRow(i18n.t.pinChange, i18n.t.pinChangeDesc, 'change')}
-            <div class="h-px bg-gray-700"></div>
-            {@render pinRow(i18n.t.pinRemove, i18n.t.pinRemoveDesc, 'remove')}
           {:else}
             {@render pinRow(i18n.t.pinSet, limitedUsers.length ? i18n.t.pinSetDesc : `${i18n.t.pinSetDesc} ${i18n.t.pinKidsNone}`, 'set')}
           {/if}
@@ -2364,6 +2378,6 @@
 {/if}
 
 {#if pinMode}
-  <PinDialog mode={pinMode} reason={pinMode === 'change' ? i18n.t.pinChange : pinMode === 'remove' ? i18n.t.pinRemove : ''}
+  <PinDialog mode={pinMode} reason={pinMode === 'change' ? i18n.t.pinChange : pinMode === 'remove' ? i18n.t.pinRemoveDesc : ''}
     onDone={pinDone} onCancel={pinCancel} />
 {/if}
