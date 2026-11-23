@@ -534,6 +534,14 @@ export const AVATAR_ICON_KEYS = ['person', 'users', 'academicCap', 'trophy', 'sm
 // OLED-friendly, vivid background colors (aligned with the accent palette).
 export const AVATAR_COLORS = ['#3b82f6', '#0ea5e9', '#14b8a6', '#10b981', '#6366f1', '#8b5cf6', '#d946ef', '#f43f5e', '#f97316', '#f59e0b'];
 
+// A stable colour per profile name for a profile without a picture — the profile picker's tiles, the parental PIN's pad
+// (same hash idea as deviceIdHash in App).
+export function initialColor(name) {
+  let h = 5381; const s = String(name || '');
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+
 // Renders an image (movie/series poster) center-cropped to a square into an avatar (PNG).
 // The image is fetched as a Blob and drawn via an ObjectURL → no canvas CORS taint,
 // so toDataURL works. imageUrl must contain the token (ApiKey parameter).

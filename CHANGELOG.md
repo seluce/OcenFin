@@ -7,8 +7,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Added
 
-- **Parental PIN.** Once a profile with an age limit has been used, the profiles without one ask for a four-digit PIN,
-  and so do that profile's settings; set it under Profile & Account.
+- **Parental PIN.** A child's profile needs a four-digit PIN to open a profile with a higher age limit or its own
+  settings; set it, and up to which age limit a profile counts as a child's, under Profile & Account.
+- **The PIN after switching on.** When the TV was off or unused for ten minutes, a grown-up profile asks for the PIN
+  before it shows anything, so a child cannot land in it.
 
 ### Changed
 

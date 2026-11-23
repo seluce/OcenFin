@@ -7,6 +7,8 @@
   //   onkeydown  — the dialog's other keys (▲▼ scrolling a long text); Back is decided first.
   //   onBackdrop — a pointer click on the darkening; a convenience, the remote closes with Back or a button.
   //   z          — its layer: dialogs stack over views and over each other (a picker over Details).
+  //   solid      — the app's background instead of the darkening: what lies under it must not show (the parental
+  //                PIN's lock over a profile, §152).
   // The trap is on this element, the darkening inside it. A pointer press on the darkening must not move focus there:
   // the frame covers the screen, so no arrow would lead anywhere from it — mousedown is held back and focus stays in
   // the panel (where the trap sat on the panel, the pull-back used to put it on the first button instead).
@@ -15,7 +17,7 @@
   // holds focus must let go of a button in here first (App's restoreContextFocus).
   import { isBackKey, uiFade, dropTrapOnOutro } from '../utils.js';
 
-  let { onBack, onkeydown, onBackdrop, z = 'z-[100]', children } = $props();
+  let { onBack, onkeydown, onBackdrop, z = 'z-[100]', solid = false, children } = $props();
 
   function keydown(e) {
     if (onBack && isBackKey(e)) { e.preventDefault(); e.stopPropagation(); onBack(); return; }
@@ -31,7 +33,7 @@
 
 <div data-focus-trap role="dialog" aria-modal="true" tabindex="-1"
   transition:uiFade onoutrostart={dropTrapOnOutro}
-  class="fixed inset-0 {z} bg-black/90 flex items-center justify-center p-8"
+  class="fixed inset-0 {z} {solid ? 'bg-gray-900' : 'bg-black/90'} flex items-center justify-center p-8"
   onkeydown={keydown} onclick={click} onmousedown={keepFocus}>
   {@render children()}
 </div>

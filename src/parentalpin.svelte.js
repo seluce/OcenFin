@@ -1,7 +1,12 @@
-// The parental PIN (CODE-HEALTH §151). One per television, kept in localStorage like every device-wide setting:
-//   ocenfin_parental_pin = { salt, hash, kid, fails, until }
-//   kid         — the profile entered last has an age limit. With a PIN set, that is what locks the profiles without
-//                 one (App's enterProfile) — siblings switch between their own profiles freely.
+// The parental PIN (CODE-HEALTH §151, §152). One per television, kept in localStorage like every device-wide setting:
+//   ocenfin_parental_pin = { salt, hash, last, upTo, atStart, fails, until }
+//   last        — the age limit of the profile entered last, null = none. Out of a CHILD'S profile, a profile with a
+//                 higher limit or none asks for the PIN (App's enterProfile) — a younger child cannot open an older
+//                 sibling's profile, the older one switches down freely.
+//   upTo        — the highest age limit that still makes a profile a child's, null = every limit (the default). Above
+//                 it a profile is outside the lock: grown-up enough to be protected by a password of its own.
+//   atStart     — nobody is known to be in front of the TV after switching on and after a pause (App): then every
+//                 profile above the children's asks too. On by default.
 //   fails/until — wrong tries in a row and the wait they earned. Stored, or closing the app would reset the count.
 // Checked here and only here, never by the server, so a wrong guess costs no sign-in attempt (Jellyfin disables an
 // account after a few). The hash only keeps the four digits out of plain sight: 10 000 candidates are tried in a blink,
@@ -13,23 +18,27 @@ export const PIN_LENGTH = 4;
 const FREE_TRIES = 2;                  // wrong tries before the first wait
 const WAITS = [30, 60, 120, 300];      // seconds: after the 3rd, 4th, 5th and every further wrong try in a row
 
+const asLimit = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
 function read() {
   try {
     const r = JSON.parse(localStorage.getItem(KEY) || 'null');
-    return r && typeof r.hash === 'string' && typeof r.salt === 'string' ? r : null;
+    if (!r || typeof r.hash !== 'string' || typeof r.salt !== 'string') return null;
+    // The first record (§151) only knew WHETHER the last profile had a limit — a child's it was, then.
+    if ('kid' in r) { r.last = r.kid ? 0 : null; delete r.kid; }
+    return { ...r, last: asLimit(r.last), upTo: asLimit(r.upTo), atStart: r.atStart !== false };
   } catch { return null; }
 }
 function write(r) {
   try { if (r) localStorage.setItem(KEY, JSON.stringify(r)); else localStorage.removeItem(KEY); }
   catch { /* storage unavailable — the state below still reflects the attempt for this run */ }
-  parental.hasPin = !!r;
-  parental.kid = !!r?.kid;
+  Object.assign(parental, view(r));
 }
+const view = (r) => ({ hasPin: !!r, last: r?.last ?? null, upTo: r?.upTo ?? null, atStart: r ? r.atStart : true });
 
-// The stored record's two answers, as state: Settings shows "set" or "change / remove" from hasPin, the profile picker
-// marks the profiles that will ask, App asks only while both are true.
-const initial = read();
-export const parental = $state({ hasPin: !!initial, kid: !!initial?.kid });
+// The stored record's answers, as state: Settings shows the card from them, the profile picker marks the profiles that
+// will ask, App asks from them.
+export const parental = $state(view(read()));
 
 // cyrb53 (public domain): 53 bits, plenty for telling four digits apart behind a salt.
 function digest(salt, pin) {
@@ -46,11 +55,19 @@ function digest(salt, pin) {
 }
 
 /** A new PIN — over an existing one too (the reset after a password sign-in). The count of wrong tries starts again;
- *  `kid` stays what it was: a PIN is only ever set in a profile without an age limit or in an unlocked one. */
+ *  the rest stays what it was: a PIN is only ever set in a profile without an age limit or in an unlocked one. */
 export function setPin(pin) {
   const old = read();
   const salt = Array.from(crypto.getRandomValues(new Uint32Array(2)), n => n.toString(36)).join('');
-  write({ salt, hash: digest(salt, pin), kid: !!old?.kid, fails: 0, until: 0 });
+  write({ salt, hash: digest(salt, pin), last: old?.last ?? null, upTo: old?.upTo ?? null,
+          atStart: old ? old.atStart : true, fails: 0, until: 0 });
+}
+
+/** Settings' two options: { upTo } (a number, null = every limit) and/or { atStart }. */
+export function setPinOptions(o) {
+  const r = read();
+  if (!r) return;
+  write({ ...r, ...('upTo' in o ? { upTo: asLimit(o.upTo) } : {}), ...('atStart' in o ? { atStart: !!o.atStart } : {}) });
 }
 
 export function clearPin() { write(null); }
@@ -83,11 +100,29 @@ export function checkPin(pin) {
   return { ok: false, wait: secs };
 }
 
-/** Does entering a profile without an age limit need the PIN now? */
-export function kidLockOn() { return parental.hasPin && parental.kid; }
+/** A profile's age limit: Jellyfin's MaxParentalRating, a score that reads as an age (FSK 12 = 12, PG-13 = 13,
+ *  R = 17); null = none. The public profile list carries it too (the full UserDto, §151). */
+export function ageLimit(user) {
+  const v = user?.Policy?.MaxParentalRating;
+  return v == null ? null : asLimit(Number(v));
+}
+const childLimit = (l) => l != null && (parental.upTo == null || l <= parental.upTo);
 
-/** Every profile that is entered (App's finishLogin) says whether it has an age limit. */
-export function noteProfileEntered(restricted) {
-  const r = read();
-  if (r && r.kid !== restricted) write({ ...r, kid: restricted });
+/** A child's profile: an age limit up to the PIN's threshold. Its settings ask for the PIN. */
+export const isKidProfile = (user) => childLimit(ageLimit(user));
+
+/** Does entering this profile need the PIN? Out of a child's profile upward: into a profile with a higher limit or
+ *  none. `unknown` — nobody is known to be in front of the TV (switched on, a pause): with "ask after switching on"
+ *  every profile above the children's asks then as well. */
+export function needsPin(user, unknown = false) {
+  if (!parental.hasPin) return false;
+  const to = ageLimit(user), from = parental.last;
+  if (childLimit(from) && (to == null || to > from)) return true;
+  return unknown && parental.atStart && !childLimit(to);
+}
+
+/** Every profile that is entered (App's finishLogin) leaves its limit behind. */
+export function noteProfileEntered(user) {
+  const r = read(), l = ageLimit(user);
+  if (r && r.last !== l) write({ ...r, last: l });
 }

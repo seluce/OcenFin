@@ -6,7 +6,7 @@
            AVATAR_ICONS, AVATAR_ICON_KEYS, AVATAR_COLORS, renderAvatarPng, renderImageAvatarPng, authHeaders, setDebug, runtimeVersions, getTvDeviceInfo, probeBrowserCodecs, formatLog, clearLogBuffer, uploadLog, makeFocusReturn, uiFade, isRepeatedEnter, UI_SIZES, SEEK_BACK_STEPS, SEEK_FORWARD_STEPS, orderHomeRows, SUB_POSITIONS, asSubPosition, asSubSize, subtitleTextStyle } from '../utils.js';
   import Dialog from './Dialog.svelte';
   import PinDialog from './PinDialog.svelte';
-  import { parental } from '../parentalpin.svelte.js';
+  import { parental, ageLimit, isKidProfile, setPinOptions } from '../parentalpin.svelte.js';
   import { session } from '../session.svelte.js';
   import { focusFromPointer } from '../spatialnav.js';
   import { startPlatformDiagnostics } from '../diag.js';
@@ -100,6 +100,9 @@
     subtitleLang: { title: i18n.t.subtitleLanguage,   options: subtitleLangOptions, grid: true,
                     value: playbackPrefs.subtitleLanguage,
                     set: (k) => onPlaybackPrefsChange?.({ ...playbackPrefs, subtitleLanguage: k }) },
+    pinKids:      { title: i18n.t.pinKids, options: pinKidsOptions,
+                    value: parental.upTo ?? 'any',
+                    set: (k) => setPinOptions({ upTo: k === 'any' ? null : k }) },
     remoteAction: { title: i18n.t.remoteButtonAction, options: remoteActionOptions,
                     value: playbackPrefs[remoteActionPref],
                     set: (k) => onPlaybackPrefsChange?.({ ...playbackPrefs, [remoteActionPref]: k }) },
@@ -156,10 +159,11 @@
   // profile may watch, which is the same intent. Nothing new to configure, and it follows the
   // server if the restriction is lifted.
   //
-  // This tidies the interface. What makes it hold is the parental PIN (§151): once a PIN is set, the profiles without an
-  // age limit ask for it after such a profile, and so do its settings — opened with it (settingsUnlocked), they show
-  // everything until they are left. Watch together stays off all the same (ageLimited): its members' sign-ins are
-  // the members' accounts, past this profile's limit.
+  // This tidies the interface. What makes it hold is the parental PIN (§151): once a PIN is set, a child's profile (an
+  // age limit up to the PIN's threshold, §152) can only go up into another one with it, and its settings ask for it —
+  // opened with it (settingsUnlocked), they show everything until they are left. A profile above the threshold opens
+  // its settings freely, trimmed like this. Watch together stays off all the same (ageLimited): its members' sign-ins
+  // are the members' accounts, past this profile's limit.
   const ageLimited = $derived(selectedUser?.Policy?.MaxParentalRating != null);
   const restrictedProfile = $derived(ageLimited && !settingsUnlocked);
   let sharedQcCode  = $state(null);
@@ -242,6 +246,19 @@
     tick().then(() => pinCardEl?.querySelector('[data-pin-row]')?.focus());
   }
   function pinCancel() { pinMode = null; pinFocus.restore(); }
+
+  // Which profiles are a child's (§152): the age limits of the server's public profiles, each offered as a threshold
+  // with the names it takes in, plus "every limit". The threshold in force stays listed when no profile has it any
+  // more. Hidden profiles are not in the public list and so not named — the threshold covers them all the same.
+  const limitedUsers = $derived((publicUsers || []).filter(u => ageLimit(u) != null));
+  const namesUpTo = (n) => limitedUsers.filter(u => n == null || ageLimit(u) <= n).map(u => u.Name).join(', ');
+  const pinUpToLabel = (n) => n == null ? i18n.t.pinUpToAny : i18n.t.pinUpTo.replace('{n}', n);
+  const pinKidsOptions = $derived.by(() => {
+    const limits = [...new Set([...limitedUsers.map(ageLimit), ...(parental.upTo != null ? [parental.upTo] : [])])].sort((a, b) => a - b);
+    return [...limits.map(n => ({ key: n, name: pinUpToLabel(n), hint: namesUpTo(n) || i18n.t.pinKidsNoProfile })),
+            { key: 'any', name: i18n.t.pinUpToAny, hint: namesUpTo(null) || i18n.t.pinKidsNoProfile }];
+  });
+  const kidNames = $derived((publicUsers || []).filter(isKidProfile).map(u => u.Name).join(', '));
 
   // Reset this profile's settings (CODE-HEALTH §112) — asked first, the dialog lands on Cancel. Both buttons ignore
   // a held OK: its repeated click would answer the dialog the same press opened. The tile says it was done for a
@@ -1800,15 +1817,29 @@
 
       <!-- The parental PIN (§151): one per television. Set here in a profile without an age limit; changing and
            removing it ask for it first. A profile with an age limit sees this only with its settings unlocked, i.e.
-           by someone who knows the PIN — a child can never set one of its own. -->
+           by someone who knows the PIN — a child can never set one of its own. With a PIN: which profiles are a
+           child's (named) and whether switching on asks too (§152); without one, a word when no profile has an age
+           limit yet — the PIN would guard nothing. -->
       {#if !restrictedProfile}
         <div bind:this={pinCardEl} class="bg-gray-800/80 border border-gray-700 rounded-2xl overflow-hidden shadow-xl">
           {#if parental.hasPin}
+            <button onclick={() => openModal('pinKids')} data-pin-row
+              class="flex items-center justify-between gap-6 w-full p-6 hover:bg-gray-700 focus:bg-gray-700
+                     focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white transition-all text-left first:rounded-t-2xl last:rounded-b-2xl">
+              <div class="min-w-0">
+                <span class="text-2xl text-white font-medium block">{i18n.t.pinKids}</span>
+                <span class="text-gray-400 mt-1 block text-sm">{kidNames || (limitedUsers.length ? i18n.t.pinKidsNoProfile : i18n.t.pinKidsNone)}</span>
+              </div>
+              <span class="text-xl font-bold text-gray-300 shrink-0">{pinUpToLabel(parental.upTo)}</span>
+            </button>
+            <div class="h-px bg-gray-700"></div>
+            {@render switchRow(i18n.t.pinAtStart, i18n.t.pinAtStartDesc, parental.atStart, () => setPinOptions({ atStart: !parental.atStart }))}
+            <div class="h-px bg-gray-700"></div>
             {@render pinRow(i18n.t.pinChange, i18n.t.pinChangeDesc, 'change')}
             <div class="h-px bg-gray-700"></div>
             {@render pinRow(i18n.t.pinRemove, i18n.t.pinRemoveDesc, 'remove')}
           {:else}
-            {@render pinRow(i18n.t.pinSet, i18n.t.pinSetDesc, 'set')}
+            {@render pinRow(i18n.t.pinSet, limitedUsers.length ? i18n.t.pinSetDesc : `${i18n.t.pinSetDesc} ${i18n.t.pinKidsNone}`, 'set')}
           {/if}
         </div>
       {/if}
@@ -2167,6 +2198,7 @@
                    focus:outline-none focus:ring-inset focus:ring-4 focus:ring-white
                    {picker.value === opt.key ? 'bg-blue-600' : 'bg-gray-900 hover:bg-gray-700 focus:bg-gray-700'}">
             {opt.name}
+            {#if opt.hint}<span class="block mt-1 text-base font-normal {picker.value === opt.key ? 'text-blue-100' : 'text-gray-400'}">{opt.hint}</span>{/if}
           </button>
         {/snippet}
         <h2 class="text-4xl text-white font-bold mb-2">{picker.title}</h2>

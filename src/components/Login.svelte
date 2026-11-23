@@ -17,7 +17,7 @@
   import QuickConnectPanel from './QuickConnectPanel.svelte';
   import { i18n } from '../i18n.svelte.js';
   import { session } from '../session.svelte.js';
-  import { focusOnMount, tvKeyboard, dlog, isRepeatedEnter, AVATAR_COLORS } from '../utils.js';
+  import { focusOnMount, tvKeyboard, dlog, isRepeatedEnter, initialColor } from '../utils.js';
   import AppMark from './AppMark.svelte';
 
   let {
@@ -36,7 +36,7 @@
     onRenameServer,               // (id, name) => void — server name adopted from the server
     onTokenRefreshed,             // (serverId, userId, token) => void — App updates only when saving is active
     onSwitchServer,               // () => void — back to the server selection (App: handleLogout)
-    pinLocked = false,            // the parental PIN locks the profiles without an age limit right now (§151)
+    pinAsks,                      // (user) => bool — entering this profile asks for the parental PIN right now (§151, §152)
     onDone,                       // (user, token, how) => void — App: enterProfile; how = 'token' | 'password' | 'empty' | 'quickconnect'
   } = $props();
 
@@ -347,13 +347,6 @@
   // ============================================================
   // SIGN-IN
   // ============================================================
-
-  // A stable colour per profile name for tiles without a picture (same hash idea as deviceIdHash in App).
-  function initialColor(name) {
-    let h = 5381; const s = String(name || '');
-    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
-    return AVATAR_COLORS[h % AVATAR_COLORS.length];
-  }
 
   let signingIn = false;   // one sign-in at a time — a held OK clicks a tile or button repeatedly
 
@@ -764,7 +757,7 @@
             {#each users as user, i (user.Id)}
               <button onclick={() => handleUserClick(user)} data-user-id={user.Id}
                 {@attach focusOnMount(i === 0)} class="flex flex-col items-center group isolate focus:outline-none">
-                <div class="w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow shadow-xl transition-transform duration-200">
+                <div class="relative w-44 h-44 rounded-2xl overflow-hidden border-4 border-transparent group-focus:border-white scale-100 group-focus:scale-105 group-focus:focus-glow shadow-xl transition-transform duration-200">
                   {#if user.PrimaryImageTag}
                     <img src="{session.serverUrl}/UserImage?UserId={user.Id}&tag={user.PrimaryImageTag}&format=webp" alt={user.Name} class="w-full h-full object-cover"/>
                   {:else}
@@ -774,17 +767,17 @@
                       <span class="text-6xl font-bold">{user.Name.charAt(0)}</span>
                     </div>
                   {/if}
-                </div>
-                <!-- The parental PIN's lock on the profiles it guards right now (§151), so a request for it comes as no
-                     surprise. -->
-                <span class="mt-4 text-2xl text-gray-400 group-focus:text-white transition-colors flex items-center gap-2">
-                  {#if pinLocked && user.Policy?.MaxParentalRating == null}
-                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" role="img" aria-label={i18n.t.pinLockedProfile}>
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
-                    </svg>
+                  <!-- The parental PIN's lock on the profiles that ask for it right now (§151), so the request comes as no
+                       surprise. On the picture, so the names stay centred under it. -->
+                  {#if pinAsks?.(user)}
+                    <div class="absolute top-2 right-2 w-10 h-10 rounded-full bg-gray-900/85 flex items-center justify-center" role="img" aria-label={i18n.t.pinLockedProfile}>
+                      <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
+                      </svg>
+                    </div>
                   {/if}
-                  {user.Name}
-                </span>
+                </div>
+                <span class="mt-4 text-2xl text-gray-400 group-focus:text-white transition-colors">{user.Name}</span>
               </button>
             {/each}
           </div>

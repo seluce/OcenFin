@@ -8,13 +8,17 @@
   // Back or Cancel → onCancel; onForgot adds "Forgot the PIN?". The fourth digit submits by itself, a moment later so
   // its dot is seen. A held OK repeats the click on a digit (isRepeatedEnter): ignored, or one press typed 1111 and
   // spent a try — the very press that opened the pad would run on into it.
+  // `user` shows whose profile it opens (picture and name, §152). The lock after switching on (App) also sets
+  // `cancelLabel` ("Switch user"), `backCancels = false` (Back does nothing there) and `solid`.
   import { onDestroy, untrack } from 'svelte';
   import Dialog from './Dialog.svelte';
   import { i18n } from '../i18n.svelte.js';
-  import { focusOnMount, isRepeatedEnter } from '../utils.js';
+  import { focusOnMount, isRepeatedEnter, initialColor } from '../utils.js';
+  import { session } from '../session.svelte.js';
   import { checkPin, setPin, clearPin, pinWaitLeft, PIN_LENGTH } from '../parentalpin.svelte.js';
 
-  let { mode = 'check', reason = '', onDone, onCancel, onForgot, z = 'z-[650]' } = $props();
+  let { mode = 'check', reason = '', user = null, cancelLabel = '', backCancels = true, solid = false,
+        onDone, onCancel, onForgot, z = 'z-[650]' } = $props();
 
   const firstStep = untrack(() => mode) === 'set' ? 'new' : 'old';   // the mode stays put while the pad is open
   let step   = $state(firstStep);
@@ -76,14 +80,33 @@
   }
 
   const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
-  const KEY_CLS = 'w-20 h-16 rounded-xl bg-gray-700 text-white text-2xl font-bold tabular-nums focus:bg-gray-600 focus:outline-none focus:ring-4 focus:ring-white';
+  const KEY_CLS = 'w-20 h-14 rounded-xl bg-gray-700 text-white text-2xl font-bold tabular-nums focus:bg-gray-600 focus:outline-none focus:ring-4 focus:ring-white';
 </script>
 
-<Dialog onBack={() => onCancel?.()} onkeydown={keydown} {z}>
-  <div class="bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl p-8 w-full max-w-lg mx-6 flex flex-col items-center gap-5">
+<Dialog onBack={() => { if (backCancels) onCancel?.(); }} onkeydown={keydown} {z} {solid}>
+  <div class="bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl p-8 w-full max-w-lg mx-6 flex flex-col items-center gap-4">
+    {#if user}
+      <div class="flex items-center gap-4 max-w-full">
+        <div class="w-14 h-14 rounded-xl overflow-hidden shrink-0">
+          {#if user.PrimaryImageTag}
+            <img src="{session.serverUrl}/UserImage?UserId={user.Id}&tag={user.PrimaryImageTag}&format=webp" alt="" class="w-full h-full object-cover"/>
+          {:else}
+            <div class="w-full h-full flex items-center justify-center" style="background-color: {initialColor(user.Name)}">
+              <span class="text-2xl font-bold text-white">{(user.Name || '').charAt(0)}</span>
+            </div>
+          {/if}
+        </div>
+        <span class="text-2xl font-bold text-white truncate">{user.Name}</span>
+      </div>
+    {/if}
+    <!-- One slot for the reason and, once something went wrong, the message in its place — held at two lines: the wait
+         runs to two in most languages, and the pad must not jump when it appears. A row of its own for the message
+         made the pad, with a profile above it, taller than the screen at a UI size of 120 % (§152). -->
     <div class="text-center">
       <h2 class="text-2xl font-bold text-white">{heading}</h2>
-      {#if reason}<p class="text-gray-400 mt-2">{reason}</p>{/if}
+      <p class="mt-1 min-h-12 flex items-center justify-center {waiting ? 'text-gray-300 font-semibold' : error ? 'text-red-400 font-semibold' : 'text-gray-400'}" role="status">
+        {waiting ? i18n.t.pinWait.replace('{time}', clock(waitLeft)) : error || reason}
+      </p>
     </div>
 
     <div class="flex gap-3" aria-hidden="true">
@@ -93,11 +116,6 @@
         </div>
       {/each}
     </div>
-
-    <!-- Two lines held free: the wait runs to two in most languages, and the pad must not jump when it appears -->
-    <p class="min-h-12 flex items-center justify-center text-center font-semibold {waiting ? 'text-gray-300' : 'text-red-400'}" role="status">
-      {waiting ? i18n.t.pinWait.replace('{time}', clock(waitLeft)) : error}
-    </p>
 
     <div class="grid grid-cols-3 gap-3 {waiting ? 'opacity-40' : ''}">
       {#each KEYS as d}
@@ -115,7 +133,7 @@
     <div class="flex gap-3 w-full mt-1">
       <button onclick={() => onCancel?.()}
         class="flex-1 bg-gray-700 text-white font-bold py-3 rounded-xl hover:bg-gray-600 focus:bg-gray-600 focus:outline-none focus:ring-4 focus:ring-white">
-        {i18n.t.cancel}
+        {cancelLabel || i18n.t.cancel}
       </button>
       {#if onForgot}
         <button onclick={() => onForgot()}

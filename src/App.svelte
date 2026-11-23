@@ -25,7 +25,7 @@
   import { registerSession, listSyncGroups, createSyncGroup, joinSyncGroup, leaveSyncGroup, syncSocketUrl, setSyncIgnoreWait, measureClockOffset } from './syncplay.js';
   import { suppressTheme } from './thememusic.js';
   import { setTrackMemoryUser } from './trackmemory.js';
-  import { parental, kidLockOn, noteProfileEntered } from './parentalpin.svelte.js';
+  import { parental, needsPin, isKidProfile, noteProfileEntered } from './parentalpin.svelte.js';
 
   // Lazy-loaded views (Vite code-splitting): loaded only on first open, then cached.
   // Keeps the cold-start bundle small — especially the Player pulls the heavy deps (hls.js, libbitsub, JASSUB) only on
@@ -505,6 +505,7 @@
   }
   function pointerActivity() {
     if (showScreensaver && Date.now() < screensaverPointerQuietUntil) return;
+    wakeCheck();
     resetActivity();
   }
 
@@ -1103,6 +1104,14 @@
       try { window.webOSSystem?.activate?.(); } catch (e) { console.warn('[Lifecycle] activate failed:', e); }
     };
     document.addEventListener('webOSRelaunch', toForeground, true);
+    // The parental PIN's pause (§152): back from the background, the first press after a long quiet. Capture phase, so
+    // a press that brings the lock up reaches nothing else; the screensaver goes with it (its own swallow comes later).
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('keydown', (e) => {
+      if (!wakeCheck()) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      resetActivity();
+    }, true);
 
     // Actively decline the webOS system screensaver while OcenFin's own screensaver is active —
     // otherwise two screensavers would stack and you'd have to press twice. webOS asks via
@@ -1176,9 +1185,13 @@
               if (res) dlog('[restore] /Users/{id} HTTP', res.status);
               if (me || res.ok) {
                 selectedUser = me || await res.json();
+                // Asked after switching on (§152)? Then the pad's chunk comes first, so it is up under the splash —
+                // the profile must not show for the moment it would take to load.
+                if (needsPin(selectedUser, true)) await lazyPin().catch(() => {});
                 isLoggedIn   = true;
                 appPhase     = 'app';
                 applyUserPrefs(selectedUser.Id);   // load profile settings
+                if (!lockProfile('switched on')) viewerUnknown = false;   // after the prefs: the profile's language
                 fetchUsers(); // in the background for user switching
                 scheduleScreensaver();
                 dlog('[restore] auto-login successful:', selectedUser.Name);
@@ -1581,7 +1594,8 @@
     session.token  = token;
     isLoggedIn   = true;
     appPhase     = 'app';
-    noteProfileEntered(isAgeLimited(user));   // the parental PIN's lock follows the profile entered last (§151)
+    noteProfileEntered(user);   // the parental PIN's lock follows the profile entered last (§151)
+    viewerUnknown = false;
     applyUserPrefs(user.Id);   // load profile settings
     saveCurrentSession();
     scheduleScreensaver();
@@ -1592,11 +1606,7 @@
   // ============================================================
   // PARENTAL PIN (§151) — the PIN itself lives in parentalpin.svelte.js, the pad in PinDialog.svelte
   // ============================================================
-  // An age limit is Jellyfin's own statement about the account (MaxParentalRating), as everywhere in the app. The public
-  // profile list carries the full UserDto, Policy included, so a tile already knows it.
-  const isAgeLimited = (user) => user?.Policy?.MaxParentalRating != null;
-
-  let pinAsk = $state(null);            // { mode, reason, onDone, onCancel, onForgot } while the pad is open
+  let pinAsk = $state(null);            // { mode, reason, user, lock, onDone, onCancel, onForgot } while the pad is open
   const pinFocus = makeFocusReturn();
   let pinForgotten = false;             // "Forgot the PIN?" was pressed: the next password sign-in offers a new one
   function askPin(opts) { pinFocus.capture(); pinAsk = opts; }
@@ -1611,13 +1621,13 @@
   }
   function cancelPin() { pinAsk = null; pinFocus.restore(); }
 
-  // Every sign-in of the profile picker ends here (Login's onDone). After a profile with an age limit, a profile
-  // without one asks for the PIN — the lock sits at ENTERING, so the profile switch, signing out, a rejected token
-  // and another server all lead past it. What it lets through: a typed password (the server checked it — stronger
-  // than the PIN, and the way out of a forgotten one) and Quick Connect (confirmed on a device signed in to that
-  // account). An empty password is no proof: Jellyfin 12 no longer says which accounts have none (HasPassword).
+  // Every sign-in of the profile picker ends here (Login's onDone). Out of a child's profile, a profile with a higher
+  // age limit or none asks for the PIN (needsPin) — the lock sits at ENTERING, so the profile switch, signing out, a
+  // rejected token and another server all lead past it. What it lets through: a typed password (the server checked
+  // it — stronger than the PIN, and the way out of a forgotten one) and Quick Connect (confirmed on a device signed in
+  // to that account). An empty password is no proof: Jellyfin 12 no longer says which accounts have none (HasPassword).
   function enterProfile(user, token, how) {
-    if (isAgeLimited(user) || !kidLockOn()) return finishLogin(user, token);
+    if (!needsPin(user, viewerUnknown)) return finishLogin(user, token);
     if (how === 'password' || how === 'quickconnect') {
       if (!pinForgotten) return finishLogin(user, token);
       pinForgotten = false;
@@ -1629,19 +1639,91 @@
     // "save password" keeps it (onTokenRefreshed stored it), as handleSwitchUser does.
     const drop = () => { if (!tokenStillKept(selectedServer?.id, token)) revokeToken(session.serverUrl, token); };
     askPin({
-      mode: 'check',
-      reason: i18n.t.pinWhyProfile.replace('{name}', user.Name || ''),
+      mode: 'check', user,
       onDone: () => leavePin(() => finishLogin(user, token)),
       onCancel: () => { drop(); cancelPin(); },
       onForgot: () => { drop(); pinForgotten = true; leavePin(() => loginRef?.askPassword(user)); },
     });
   }
 
-  // A locked profile's settings: the PIN once per visit, open until Settings is left again (§151).
+  // After switching on and after a pause nobody is known to be in front of the TV (§152). With "ask after switching on"
+  // the profile on screen then asks for the PIN unless it is a child's, and so does every profile above the children's
+  // on the profile picker until one is entered (needsPin's `unknown`). A pause: ten minutes with the app in the
+  // background (the TV off, another app in front) or ten minutes without input while nothing plays — a film is never
+  // interrupted, the time it plays counts as use.
+  const PAUSE_LOCK_MS = 10 * 60 * 1000;
+  let viewerUnknown = $state(true);     // until a profile is entered, or the restored one turns out to be a child's
+  let quietSince = Date.now();
+  let hiddenSince = 0;
+  let lockReturn = null;                // what had focus when the lock came up
+  $effect(() => { void playerPlaying; quietSince = Date.now(); });
+
+  // The first input after a long quiet. True = the lock came up, and the press is used for nothing else (like the one
+  // that wakes the screensaver) — or OK would run on into whatever was focused under it.
+  function wakeCheck() {
+    const long = !playerPlaying && Date.now() - quietSince >= PAUSE_LOCK_MS;
+    quietSince = Date.now();
+    return long && lockProfile('no input for 10 min');
+  }
+  function onVisibility() {
+    if (document.hidden) { hiddenSince = Date.now(); return; }
+    if (hiddenSince && Date.now() - hiddenSince >= PAUSE_LOCK_MS) lockProfile('back from the background');
+    hiddenSince = 0;
+    quietSince = Date.now();
+  }
+
+  // Over everything, opaque — what the profile shows stays hidden. Back does nothing: "Switch user" ends this profile's
+  // sign-in on the TV, which must not happen by a stray press. The player is left first (its progress is saved on the
+  // way out), and what listens on the window goes too: the card menu, the SyncPlay panel, the exit question.
+  function lockProfile(why) {
+    viewerUnknown = true;
+    if (appPhase !== 'app' || !selectedUser || pinAsk?.lock || !needsPin(selectedUser, true)) return false;
+    dlog('[pin] the profile asks for the PIN —', why);
+    if (viewState === 'player') returnFromPlayer();
+    contextItem = null; contextPickerMode = null; contextPickerItem = null;
+    showExitConfirm = false; exitFocus.cancel();
+    if (showSyncPlay) closeSyncPlay();
+    lockReturn = pinAsk ? null : document.activeElement;   // an open pad (the settings') goes, with its own return
+    pinFocus.cancel();
+    pinAsk = { lock: true, mode: 'check', user: selectedUser, reason: i18n.t.pinWhyStart,
+               onDone: unlockProfile, onCancel: () => lockSwitch(false), onForgot: () => lockSwitch(true) };
+    return true;
+  }
+  function unlockProfile() {
+    viewerUnknown = false;
+    const el = lockReturn; lockReturn = null;
+    leavePin(() => {
+      if (el?.isConnected && isShown(el)) { el.focus(); return; }
+      // Nothing yet (the start) or gone (the player that was left): Details' play button, else the content
+      const play = viewState === 'details' ? document.querySelector('[data-primary-action]') : null;
+      if (isShown(play)) { play.focus(); return; }
+      focusContent({ why: 'unlocked', heldByOther: (a) => !!a && a !== document.body && isShown(a) });
+    });
+  }
+  // "Switch user" and "Forgot the PIN?": to the profile picker at once, in the same flush — a fade over the profile
+  // would show it. "Forgot" opens its password form there (Login may still be loading: bounded retries).
+  function lockSwitch(forgot) {
+    const user = selectedUser;
+    lockReturn = null;
+    const held = document.activeElement;
+    if (held?.closest('[role="dialog"]')) held.blur();
+    handleSwitchUser();                 // closes the pad; viewerUnknown stays — the picker asks for the grown-ups
+    if (!forgot) return;
+    pinForgotten = true;
+    let tries = 0;
+    const ask = () => {
+      if (appPhase !== 'users') return;
+      if (loginRef) loginRef.askPassword(user);
+      else if (++tries < 40) setTimeout(ask, 50);
+    };
+    tick().then(ask);
+  }
+
+  // A child's profile's settings: the PIN once per visit, open until Settings is left again (§151).
   let settingsUnlocked = $state(false);
   $effect(() => { if (viewState !== 'settings' && settingsUnlocked) settingsUnlocked = false; });
   function openSettings() {
-    if (!parental.hasPin || !restrictedProfile || settingsUnlocked) { viewState = 'settings'; focusMain(); return; }
+    if (!parental.hasPin || !isKidProfile(selectedUser) || settingsUnlocked) { viewState = 'settings'; focusMain(); return; }
     askPin({
       mode: 'check',
       reason: i18n.t.pinWhySettings,
@@ -2578,15 +2660,6 @@
     </Dialog>
   {/if}
 
-  <!-- The parental PIN (§151): before a profile without an age limit, before a locked profile's settings. Over both
-       phases, so it lives out here. -->
-  {#if pinAsk}
-    {#await lazyPin() then PinDialog}
-      <PinDialog mode={pinAsk.mode} reason={pinAsk.reason}
-        onDone={pinAsk.onDone} onCancel={pinAsk.onCancel} onForgot={pinAsk.onForgot} />
-    {/await}
-  {/if}
-
   <!-- ============================================================
        PHASE: LOGIN — server selection + profile selection.
        Lazy-loaded: the auto-login path never touches the chunk.
@@ -2621,7 +2694,7 @@
           if (savedTokens[sid]?.[uid]) { savedTokens[sid][uid] = token; persistSavedTokens(); }
         }}
         onSwitchServer={handleLogout}
-        pinLocked={kidLockOn()}
+        pinAsks={(u) => needsPin(u, viewerUnknown)}
         onDone={enterProfile}
       />
     {/await}
@@ -2899,6 +2972,17 @@
     <Screensaver {use24h} userId={activeUserId}
       mode={screensaverSettings.mode} artSource={screensaverSettings.artSource} brightness={screensaverSettings.brightness}
       onDismiss={pointerActivity} />
+  {/if}
+
+  <!-- The parental PIN (§151, §152): before a profile above a child's, before a child's settings, and as the lock
+       after switching on or a pause. Over both phases, and LAST in the page: spatialnav confines focus to the last
+       trap in document order, and the lock may come up over a view's own dialog. -->
+  {#if pinAsk}
+    {#await lazyPin() then PinDialog}
+      <PinDialog mode={pinAsk.mode} reason={pinAsk.reason} user={pinAsk.user}
+        cancelLabel={pinAsk.lock ? i18n.t.switchUser : undefined} backCancels={!pinAsk.lock} solid={!!pinAsk.lock}
+        onDone={pinAsk.onDone} onCancel={pinAsk.onCancel} onForgot={pinAsk.onForgot} />
+    {/await}
   {/if}
 
 </main>
