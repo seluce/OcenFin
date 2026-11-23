@@ -107,6 +107,8 @@ export default {
     miTagBurned: "inbränd",
     connectionLostMsg: "Servern går inte att nå.",
     retry: "Försök igen",
+    viewFailed: "Den här skärmen kunde inte visas.",
+    viewFailedDesc: "Felet finns i loggen: {where}.",
     clearCache: "Rensa cache",
     clearCacheDesc: "Läser in allt innehåll på nytt.",
     resetPrefs: "Återställ inställningar",

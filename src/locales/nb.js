@@ -107,6 +107,8 @@ export default {
     miTagBurned: "innbrent",
     connectionLostMsg: "Serveren kan ikke nås.",
     retry: "Prøv igjen",
+    viewFailed: "Denne skjermen kunne ikke vises.",
+    viewFailedDesc: "Feilen står i loggen: {where}.",
     clearCache: "Tøm hurtigbuffer",
     clearCacheDesc: "Laster inn alt innhold på nytt.",
     resetPrefs: "Tilbakestill innstillinger",

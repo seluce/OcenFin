@@ -107,6 +107,8 @@ export default {
     miTagBurned: "eingebrannt",
     connectionLostMsg: "Server nicht erreichbar.",
     retry: "Erneut versuchen",
+    viewFailed: "Diese Ansicht konnte nicht angezeigt werden.",
+    viewFailedDesc: "Der Fehler steht im Protokoll: {where}.",
     clearCache: "Cache leeren",
     clearCacheDesc: "Lädt alle Inhalte neu.",
     resetPrefs: "Einstellungen zurücksetzen",

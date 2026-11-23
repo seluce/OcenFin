@@ -4,6 +4,8 @@ export default {
     // App / Server
     errOffline: "Falha na conexão. IP errado ou servidor offline?",
     loading: "Carregando…",
+    viewFailed: "Não foi possível mostrar esta tela.",
+    viewFailedDesc: "O erro consta no registro: {where}.",
 
     // Server management
     savedServers: "Servidores salvos",

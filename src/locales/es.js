@@ -107,6 +107,8 @@ export default {
     miTagBurned: "incrustado",
     connectionLostMsg: "Servidor no accesible.",
     retry: "Reintentar",
+    viewFailed: "No se ha podido mostrar esta pantalla.",
+    viewFailedDesc: "El error figura en el registro: {where}.",
     clearCache: "Borrar caché",
     clearCacheDesc: "Vuelve a cargar todo el contenido.",
     resetPrefs: "Restablecer ajustes",

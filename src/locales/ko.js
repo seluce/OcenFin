@@ -107,6 +107,8 @@ export default {
     miTagBurned: "입혀짐",
     connectionLostMsg: "서버에 연결할 수 없습니다.",
     retry: "다시 시도",
+    viewFailed: "이 화면을 표시할 수 없습니다.",
+    viewFailedDesc: "오류가 로그에 기록되었습니다: {where}.",
     clearCache: "캐시 지우기",
     clearCacheDesc: "모든 콘텐츠를 새로 불러옵니다.",
     resetPrefs: "설정 초기화",

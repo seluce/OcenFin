@@ -107,6 +107,8 @@ export default {
     miTagBurned: "вшиті",
     connectionLostMsg: "Сервер недоступний.",
     retry: "Повторити",
+    viewFailed: "Не вдалося показати цей екран.",
+    viewFailedDesc: "Помилку записано в журнал: {where}.",
     clearCache: "Очистити кеш",
     clearCacheDesc: "Завантажує весь вміст наново.",
     resetPrefs: "Скинути налаштування",

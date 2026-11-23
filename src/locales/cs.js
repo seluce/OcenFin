@@ -107,6 +107,8 @@ export default {
     miTagBurned: "vypálené",
     connectionLostMsg: "Server není dostupný.",
     retry: "Zkusit znovu",
+    viewFailed: "Tuto obrazovku se nepodařilo zobrazit.",
+    viewFailedDesc: "Chyba je zapsaná v protokolu: {where}.",
     clearCache: "Vymazat mezipaměť",
     clearCacheDesc: "Načte veškerý obsah znovu.",
     resetPrefs: "Obnovit výchozí nastavení",

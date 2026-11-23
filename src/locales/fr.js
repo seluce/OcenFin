@@ -107,6 +107,8 @@ export default {
     miTagBurned: "incrusté",
     connectionLostMsg: "Serveur injoignable.",
     retry: "Réessayer",
+    viewFailed: "Cet écran n'a pas pu être affiché.",
+    viewFailedDesc: "L'erreur figure dans le journal : {where}.",
     clearCache: "Vider le cache",
     clearCacheDesc: "Recharge tout le contenu.",
     resetPrefs: "Réinitialiser les paramètres",

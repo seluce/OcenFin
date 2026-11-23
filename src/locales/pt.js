@@ -107,6 +107,8 @@ export default {
     miTagBurned: "gravada",
     connectionLostMsg: "Servidor inacessível.",
     retry: "Tentar novamente",
+    viewFailed: "Não foi possível mostrar este ecrã.",
+    viewFailedDesc: "O erro consta do registo: {where}.",
     clearCache: "Limpar cache",
     clearCacheDesc: "Recarrega todo o conteúdo.",
     resetPrefs: "Repor definições",

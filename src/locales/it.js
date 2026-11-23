@@ -107,6 +107,8 @@ export default {
     miTagBurned: "impresso",
     connectionLostMsg: "Server non raggiungibile.",
     retry: "Riprova",
+    viewFailed: "Impossibile mostrare questa schermata.",
+    viewFailedDesc: "L'errore è nel log: {where}.",
     clearCache: "Svuota cache",
     clearCacheDesc: "Ricarica tutti i contenuti.",
     resetPrefs: "Ripristina impostazioni",

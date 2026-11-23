@@ -107,6 +107,8 @@ export default {
     miTagBurned: "imprimată",
     connectionLostMsg: "Serverul nu poate fi accesat.",
     retry: "Reîncearcă",
+    viewFailed: "Acest ecran nu a putut fi afișat.",
+    viewFailedDesc: "Eroarea apare în jurnal: {where}.",
     clearCache: "Golește memoria cache",
     clearCacheDesc: "Reîncarcă tot conținutul de la zero.",
     resetPrefs: "Resetează setările",

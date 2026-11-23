@@ -829,6 +829,22 @@ if (typeof console !== 'undefined' && !console.__ocenfinLogHook) {
   console.warn  = (...a) => { _pushLog('warn', a); _origWarn(...a); };
   console.__ocenfinLogHook = true;
 }
+// An error for the log: name, message and the first three frames, file names without the address (§155).
+export function describeError(e) {
+  if (!(e instanceof Error)) { try { return typeof e === 'string' ? e : JSON.stringify(e); } catch { return String(e); } }
+  const frames = (e.stack || '').split('\n').filter(l => /^\s+at /.test(l)).slice(0, 3)
+    .map(l => l.trim().replace(/(?:https?|file):\/\/\S*\//g, ''));
+  return `${e.name}: ${e.message}${frames.length ? ' | ' + frames.join(' | ') : ''}`;
+}
+// What nobody caught — thrown in an event handler, a timer or after an await, a promise rejected with no one waiting
+// — went to the browser console only, which the TV does not show (§155). Into the buffer with it, like console.error;
+// the console prints it anyway. Without capture, `error` never sees a failed image or script load (they do not bubble).
+if (typeof window !== 'undefined' && !window.__ocenfinErrorHook) {
+  window.__ocenfinErrorHook = true;
+  window.addEventListener('error', (e) => _pushLog('error', ['[uncaught] ' + (e.error ? describeError(e.error)
+    : `${e.message}${e.filename ? ` @ ${e.filename.split('/').pop()}:${e.lineno}:${e.colno}` : ''}`)]));
+  window.addEventListener('unhandledrejection', (e) => _pushLog('error', ['[unhandled rejection] ' + describeError(e.reason)]));
+}
 
 // --- Shape guards for persisted state ---------------------------------------------------------
 // Every JSON.parse of localStorage is already wrapped in try/catch, so MALFORMED data is handled.

@@ -107,6 +107,8 @@ export default {
     miTagBurned: "wtopione",
     connectionLostMsg: "Serwer nieosiągalny.",
     retry: "Ponów",
+    viewFailed: "Nie udało się wyświetlić tego ekranu.",
+    viewFailedDesc: "Błąd zapisano w dzienniku: {where}.",
     clearCache: "Wyczyść pamięć podręczną",
     clearCacheDesc: "Ponownie ładuje całą zawartość.",
     resetPrefs: "Przywróć ustawienia domyślne",

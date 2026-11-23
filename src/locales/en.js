@@ -107,6 +107,8 @@ export default {
     miTagBurned: "burned in",
     connectionLostMsg: "Server not reachable.",
     retry: "Retry",
+    viewFailed: "This screen could not be shown.",
+    viewFailedDesc: "The error is in the log: {where}.",
     clearCache: "Clear cache",
     clearCacheDesc: "Reloads all content fresh.",
     resetPrefs: "Reset settings",

@@ -14,6 +14,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Changed
 
+- **A screen that fails shows a message.** Instead of a half-built page it offers Retry and Back, and the error is
+  written to the log.
 - **Screen saver settings in profiles with an age limit.** The screen saver belongs to each profile now, so these
   profiles can choose their own again.
 

@@ -107,6 +107,8 @@ export default {
     miTagBurned: "beégetve",
     connectionLostMsg: "A szerver nem érhető el.",
     retry: "Újra",
+    viewFailed: "Ezt a képernyőt nem sikerült megjeleníteni.",
+    viewFailedDesc: "A hiba a naplóban található: {where}.",
     clearCache: "Gyorsítótár törlése",
     clearCacheDesc: "Minden tartalmat újratölt.",
     resetPrefs: "Beállítások visszaállítása",

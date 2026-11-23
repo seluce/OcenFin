@@ -107,6 +107,8 @@ export default {
     miTagBurned: "poltettu",
     connectionLostMsg: "Palvelimeen ei saada yhteyttä.",
     retry: "Yritä uudelleen",
+    viewFailed: "Tätä näkymää ei voitu näyttää.",
+    viewFailedDesc: "Virhe on kirjattu lokiin: {where}.",
     clearCache: "Tyhjennä välimuisti",
     clearCacheDesc: "Lataa kaiken sisällön uudelleen.",
     resetPrefs: "Palauta oletusasetukset",

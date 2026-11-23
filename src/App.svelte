@@ -22,6 +22,7 @@
   import Person      from './components/Person.svelte';
   import Library     from './components/Library.svelte';
   import Collection  from './components/Collection.svelte';
+  import ViewBoundary from './components/ViewBoundary.svelte';
   import { registerSession, listSyncGroups, createSyncGroup, joinSyncGroup, leaveSyncGroup, syncSocketUrl, setSyncIgnoreWait, measureClockOffset } from './syncplay.js';
   import { suppressTheme } from './thememusic.js';
   import { setTrackMemoryUser } from './trackmemory.js';
@@ -1752,6 +1753,10 @@
   // with display:none, Favourites and Settings unmount. The next key press then opened the sidebar.
   // A library opened from a tile on the dashboard returns to that tile; the three views that can
   // only be reached from the menu have no card to return to and take the first content element.
+  // After Retry on a failed view (ViewBoundary, §155): its button is gone, so into the content again — unless the
+  // view, built anew, has taken focus itself (Details' play button, the Library's first card).
+  const refocusView = () => focusContent({ why: 'view retry', heldByOther: (a) => !!a && a !== document.body });
+
   function backToDashboard(from) {
     viewState = 'dashboard';
     if (from === 'library' && libraryReturnId) {
@@ -2654,8 +2659,11 @@
 
       <div data-focus-group="main" data-enter-first-fresh class="flex-1 h-full overflow-y-auto hide-scrollbar bg-gray-900 relative [scroll-padding-top:5rem]">
 
+        <!-- Every view sits in a ViewBoundary (§155): one that throws while it builds gives way to a message with
+             Retry/Back instead of a half-drawn screen. Inside each branch, so the next view starts with a fresh one. -->
         {#if viewState === 'dashboard'}
           {#key dashboardReloadKey}
+          <ViewBoundary name="dashboard" onRetry={() => { apiCache.dashboard = null; dashboardReloadKey++; }} onRetried={refocusView}>
           <Dashboard
             {selectedUser} {apiCache} {reduceAnimations}
             {resumeStale}
@@ -2682,9 +2690,11 @@
             onPlay={(item, el) => playFromCard(item, el, cardOrdinal(el, item.Id))}
             navIcons={displaySettings.navIcons}
           />
+          </ViewBoundary>
           {/key}
 
         {:else if viewState === 'settings'}
+          <ViewBoundary name="settings" onBack={() => backToDashboard('settings')} onRetried={refocusView}>
           {#await lazySettings()}
             <div class="h-full flex items-center justify-center"><div class="w-14 h-14 border-4 border-white/25 border-t-white rounded-full animate-spin"></div></div>
           {:then Settings}
@@ -2712,7 +2722,9 @@
             onResetPrefs={resetUserPrefs}
           />
           {/await}
+          </ViewBoundary>
         {:else if viewState === 'details' && currentDetailItem}
+          <ViewBoundary name="details" onBack={returnFromDetails} onRetried={refocusView}>
           <Details bind:this={detailsRef}
             focusItemId={pendingCardFocusId} focusScrollTop={pendingCardScrollTop}
             item={currentDetailItem}
@@ -2728,18 +2740,24 @@
             onProgressChanged={() => resumeStale = true}
             onPlayVideo={startPlayback}
           />
+          </ViewBoundary>
 
         {:else if viewState === 'person'}
+          <ViewBoundary name="person" onBack={returnFromPerson} onRetried={refocusView}>
           <Person person={currentPerson} {selectedUser}
             focusItemId={pendingCardFocusId} focusScrollTop={pendingCardScrollTop}
             onBack={returnFromPerson}
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu} />
+          </ViewBoundary>
         {:else if viewState === 'favorites'}
+          <ViewBoundary name="favorites" onBack={() => backToDashboard('favorites')} onRetried={refocusView}>
           <Favorites {selectedUser} reloadKey={favReloadKey} focusItemId={pendingCardFocusId}
             focusScrollTop={pendingCardScrollTop}
             onOpenDetails={showItemDetails} onContextMenu={openContextMenu}
             onOpenPerson={openPerson} onFocusFallback={focusMain} />
+          </ViewBoundary>
         {:else if viewState === 'collection'}
+          <ViewBoundary name="collection" onBack={returnFromCollection} onRetried={refocusView}>
           <Collection bind:this={collectionRef} collection={currentCollection} {selectedUser}
             focusItemId={pendingCardFocusId} focusScrollTop={pendingCardScrollTop}
             onBack={returnFromCollection}
@@ -2749,6 +2767,7 @@
             onPlayQueue={(qItems) => { playQueue = { items: qItems, index: 0 }; detailsOrigin = 'collection'; startPlayback({ item: qItems[0], audioIndex: -1, subtitleIndex: -1 }); }}
             onPlaylistRenamed={onCollectionRenamed}
             onPlaylistDeleted={onCollectionDeleted} />
+          </ViewBoundary>
         {/if}
 
         <!-- SEARCH stays mounted for the same reason as LIBRARY below: a trip into Details or a
@@ -2758,9 +2777,11 @@
              reset instead, because a search screen showing a two-day-old query reads as stale. -->
         {#if searchMounted}
           <div class="h-full w-full" class:hidden={viewState !== 'search'}>
+            <ViewBoundary name="search" onBack={() => backToDashboard('search')} onRetried={refocusView} shown={viewState === 'search'}>
             <Search bind:this={searchRef} {selectedUser}
               onOpenDetails={(item) => showItemDetails(item)}
               onOpenPerson={(person) => openPerson(person)} />
+            </ViewBoundary>
           </div>
         {/if}
 
@@ -2768,6 +2789,7 @@
              loaded window are preserved when opening Details — as before, when the state lived in App. -->
         {#if libraryMounted}
           <div class="h-full w-full" class:hidden={viewState !== 'library'}>
+            <ViewBoundary name="library" onBack={() => backToDashboard('library')} onRetried={refocusView} shown={viewState === 'library'}>
             <Library bind:this={libraryRef}
               {selectedUser} library={currentLibrary} reloadKey={libraryReloadKey}
               focusFirstOnLoad={libraryFocusFirst}
@@ -2778,6 +2800,7 @@
               onSortPersist={(libId, sort) => { librarySorts[libId] = sort; saveUserPrefs(); }}
               onFiltersPersist={(libId, f) => { if (f) libraryFilters[libId] = f; else delete libraryFilters[libId]; saveUserPrefs(); }}
               onSharedWatchToggle={(on) => librarySharedOn = on} />
+            </ViewBoundary>
           </div>
         {/if}
 
@@ -2794,6 +2817,7 @@
          uiFade honours "reduce animations" (duration 0). -->
     <div out:uiFade={{ duration: 150 }} class="absolute inset-0 z-[100] bg-black w-full h-full">
       {#key `${currentDetailItem.Id}:${playerRun}`}
+        <ViewBoundary name="player" onBack={returnFromPlayer} trap>
         {#await lazyPlayer() then Player}
         <Player
           item={currentDetailItem}
@@ -2823,6 +2847,7 @@
           onSyncplay={openSyncPlay}
         />
         {/await}
+        </ViewBoundary>
       {/key}
     </div>
   {/if}

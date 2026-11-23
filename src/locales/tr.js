@@ -107,6 +107,8 @@ export default {
     miTagBurned: "gömülü",
     connectionLostMsg: "Sunucuya ulaşılamıyor.",
     retry: "Tekrar dene",
+    viewFailed: "Bu ekran gösterilemedi.",
+    viewFailedDesc: "Hata günlüğe kaydedildi: {where}.",
     clearCache: "Önbelleği temizle",
     clearCacheDesc: "Tüm içeriği yeniden yükler.",
     resetPrefs: "Ayarları sıfırla",

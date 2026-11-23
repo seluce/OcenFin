@@ -107,6 +107,8 @@ export default {
     miTagBurned: "ingebrand",
     connectionLostMsg: "Server niet bereikbaar.",
     retry: "Opnieuw",
+    viewFailed: "Dit scherm kon niet worden getoond.",
+    viewFailedDesc: "De fout staat in het logboek: {where}.",
     clearCache: "Cache wissen",
     clearCacheDesc: "Laadt alle inhoud opnieuw.",
     resetPrefs: "Instellingen terugzetten",
