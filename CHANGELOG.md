@@ -28,6 +28,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **No false "Server not reachable".** A request the app cancels itself no longer brings up the banner.
 - **Track names without stray dashes.** A track titled like "English-Signs" showed as "-Signs"; the dash now goes
   with the word that is left out.
+- **Episode numbers in the player add up.** With an episode missing from a season, the player could show "Episode 4
+  of 3"; it now counts to the season's highest episode number.
 
 ## 2026.11.22
 

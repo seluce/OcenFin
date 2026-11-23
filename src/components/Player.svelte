@@ -1396,11 +1396,16 @@
     if (stopAfterThis) stopCountdown();   // immediately stop a running auto-play countdown
     resetControlsTimeout();
   }
-  // Position in the season for the top-left display: "Episode X of Y"
-  let seasonTotal = $derived((item?.Type === 'Episode' && item.ParentIndexNumber != null)
-                   ? seriesEpisodes.filter(e => e.ParentIndexNumber === item.ParentIndexNumber).length : 0);
-  let episodePosition = $derived((item?.Type === 'Episode' && item.IndexNumber != null && seasonTotal > 0)
-                   ? `${i18n.t.episode} ${item.IndexNumber} ${i18n.t.of} ${seasonTotal}` : '');
+  // Position in the season for the top-left display: "Episode X of Y". X is the episode's NUMBER, so Y is the season's
+  // highest number among the episodes on the server, never their count: with E2 missing, 1, 3 and 4 read "Episode 4
+  // of 3" (§159). A double episode counts by its last number and shows both ("Episode 3–4 of 8", as episodeCode()).
+  let seasonTotal = $derived.by(() => {
+    if (item?.Type !== 'Episode' || item.ParentIndexNumber == null || item.IndexNumber == null) return 0;
+    const season = seriesEpisodes.filter(e => e.ParentIndexNumber === item.ParentIndexNumber);
+    return season.length ? Math.max(item.IndexNumberEnd ?? item.IndexNumber, ...season.map(e => e.IndexNumberEnd ?? e.IndexNumber ?? 0)) : 0;
+  });
+  let episodePosition = $derived(seasonTotal > 0
+                   ? `${i18n.t.episode} ${item.IndexNumber}${item.IndexNumberEnd > item.IndexNumber ? '–' + item.IndexNumberEnd : ''} ${i18n.t.of} ${seasonTotal}` : '');
 
   // Info line for the next title: "S2:E1 · 52 min · ends at 11:59" — number, running time and end as the cards and the
   // title page write them (utils.js, §141; it said "S2 · E1"). The end counts from the resume point, where it starts.
