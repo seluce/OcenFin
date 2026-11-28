@@ -1,7 +1,8 @@
 <script module>
   // The list as it was left (§165), for ONE collection or playlist — the last: Back from a title shows it at once and
-  // asks again behind it, as the person page does (§164). Raw server data, keyed by server, profile and list; an edit
-  // of a playlist's entries writes it too.
+  // asks again behind it, as the person page does (§164). Keyed by server, profile and list; an edit of a playlist's
+  // entries writes it too. The view's own reactive list (§166), not the raw answer: a tick set on the title page or in
+  // the card menu is already on the list Back shows.
   let kept = null;   // { key, items }
 </script>
 
@@ -34,6 +35,8 @@
 
   let items     = $state([]);
   let isLoading = $state(false);
+  let failed    = $state(false);   // the list did not come (§166) — "could not be loaded", not "empty"
+  let retryBtn  = $state();
   let name      = $state('');
 
   // By type, in the list's own order; a playlist's 300 entries put up in steps (§165)
@@ -45,6 +48,9 @@
   ].filter(g => g.items.length));
   const steps = cardSteps();
   let ordered = $derived(groups.flatMap(g => g.items));
+  // What an empty one is called: it used to say "No items found in this library"
+  let emptyText = $derived(collection?.Type !== 'Playlist' ? i18n.t.collectionEmpty
+    : name === WATCHLIST_NAME ? i18n.t.watchlistEmpty : i18n.t.playlistEmpty);
   let shown   = $derived(steps.slice(groups));
 
   const keyOf = () => `${session.serverUrl}|${selectedUser.Id}|${collection.Id}`;
@@ -52,7 +58,7 @@
   let listEdits = 0;
   function keepEdit() {
     listEdits++;
-    if (kept?.key === keyOf()) kept.items = $state.snapshot(items);
+    if (kept?.key === keyOf()) kept.items = items;
   }
 
   // Playlist management
@@ -133,6 +139,7 @@
     name      = collection.Name;
     items     = hit ? hit.items : [];
     isLoading = !hit;
+    failed    = false;
     steps.reset();
     playlistEditMode = false; confirmDeletePlaylist = false; renamingPlaylist = false; editFailed = false;
     if (collection.Type === 'Playlist') loadPlaylistRights(myId);
@@ -144,19 +151,24 @@
     const url = collection.Type === 'Playlist'
       ? `${session.serverUrl}/Playlists/${collection.Id}/Items?UserId=${selectedUser.Id}&ImageTypeLimit=1&Limit=300`
       : `${session.serverUrl}/Items?UserId=${selectedUser.Id}&ParentId=${collection.Id}&ImageTypeLimit=1&Limit=100&EnableTotalRecordCount=false`;
+    let loaded = null;
     try {
       const res = await fetch(url, { headers: authHeaders() });
-      const loaded = res.ok ? ((await res.json()).Items || []) : null;
-      if (myId !== loadedId) return;   // superseded by a newer collection
-      if (loaded && listEdits === edits) {
-        if (hit) { holdCardFocus(scrollEl, backBtn, () => { items = loaded; }); steps.grow(() => ordered.length); }
-        else items = loaded;
-        kept = { key, items: loaded };
-      }
-    } catch { /* ignore — a kept list stays as it was */ }
-    finally { if (myId === loadedId) isLoading = false; }
-    if (myId !== loadedId) return;
+      loaded = res.ok ? ((await res.json()).Items || []) : null;
+    } catch { /* below: a kept list stays as it was, a fresh one says so */ }
+    if (myId !== loadedId) return;   // superseded by a newer collection
+    if (loaded && listEdits === edits) {
+      if (hit) { holdCardFocus(scrollEl, backBtn, () => { items = loaded; }); steps.grow(() => ordered.length); }
+      else items = loaded;
+      kept = { key, items };
+    } else if (!loaded && !hit) failed = true;   // it used to show the library's "no items" line (§166)
+    isLoading = false;
     if (!hit) land();
+  }
+  // Another try: focus waits on Back meanwhile — the button goes with the message, and focus would fall to <body>
+  function retry() {
+    backBtn?.focus();
+    loadCollection();
   }
 
   async function land() {
@@ -174,7 +186,7 @@
     const back = (focusItemId && scrollEl?.querySelector(`[data-item-id="${focusItemId}"]`))
               || scrollEl?.querySelector('[data-item-id]');
     if (scrollEl && focusItemId) scrollEl.scrollTop = focusScrollTop;   // the view first, then the focus
-    (back || backBtn)?.focus();
+    (back || retryBtn || backBtn)?.focus();
     steps.grow(() => ordered.length);
   }
 
@@ -406,7 +418,7 @@
           </div>
         {/each}
       {:else}
-        <p class="text-gray-500 font-bold py-6 text-center">{i18n.t.noItems}</p>
+        <p class="text-gray-500 font-bold py-6 text-center">{emptyText}</p>
       {/if}
 
       <!-- Manage playlist: rename / delete (reachable even with an empty list) -->
@@ -484,9 +496,17 @@
         </div>
       {/each}
     </div>
+  {:else if failed}
+    <div class="flex flex-col items-center justify-center gap-6 h-64">
+      <p class="text-2xl text-gray-500 font-bold">{i18n.t.loadFailed}</p>
+      <button bind:this={retryBtn} onclick={retry}
+        class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
+        {i18n.t.retry}
+      </button>
+    </div>
   {:else}
     <div class="flex items-center justify-center h-64">
-      <p class="text-2xl text-gray-500 font-bold">{i18n.t.noItems}</p>
+      <p class="text-2xl text-gray-500 font-bold">{emptyText}</p>
     </div>
   {/if}
 </div>

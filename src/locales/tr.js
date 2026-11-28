@@ -53,7 +53,14 @@ export default {
     remaining: "kaldı",
 
     // Library / Filter
-    noItems: "Bu kitaplıkta hiçbir şey bulunamadı.",
+    personNoTitles: "Bu kişiyle ilgili içerik yok.",
+    collectionEmpty: "Bu koleksiyon boş.",
+    playlistEmpty: "Bu oynatma listesi boş.",
+    watchlistEmpty: "İzleme listesi boş.",
+    noPlaylistsYet: "Henüz oynatma listesi yok.",
+    noCollectionsYet: "Henüz koleksiyon yok.",
+    loadFailed: "Bu sayfa yüklenemedi.",
+    goToShow: "Diziye git",
     status: "Durum",
     mediaInfo: "Medya bilgisi",
     more: "Daha fazla",

@@ -14,6 +14,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **More about a person.** The person page shows the photo, birthday, age, place of birth and, where known, the day of
   death, plus the biography; a long one opens in full with OK.
 - **Share a person.** Like a title, a person can be shared as a QR code that opens their IMDb or TMDb page on a phone.
+- **Guest roles lead to the episode.** A guest appearance in one episode opens that episode; with several, a short list
+  shows them, with a way to the series.
+- **Sort a person's titles.** By year, rating or name, like a library; pressing the active one again reverses it.
 
 ### Changed
 
@@ -46,6 +49,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Guest roles show what you watched.** A series someone only guest-starred in now has the tick like the others.
 - **The person page no longer shifts when it opens.** The head is a little lower, so the first row of titles fits below
   it at the standard size.
+- **Watched at once after Back.** A title marked watched and left again shows its tick on the person page or collection
+  straight away, not a moment later.
+- **The right message on an empty or failed page.** A person with nothing in the library, an empty collection or
+  playlist no longer says "No items found in this library", and a page that could not load offers Retry.
 
 ## 2026.11.22
 

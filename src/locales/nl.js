@@ -53,7 +53,14 @@ export default {
     remaining: "resterend",
 
     // Library / Filter
-    noItems: "Geen items gevonden in deze bibliotheek.",
+    personNoTitles: "Geen titels met deze persoon.",
+    collectionEmpty: "Deze verzameling is leeg.",
+    playlistEmpty: "Deze afspeellijst is leeg.",
+    watchlistEmpty: "Je kijklijst is leeg.",
+    noPlaylistsYet: "Nog geen afspeellijsten.",
+    noCollectionsYet: "Nog geen verzamelingen.",
+    loadFailed: "Deze pagina kon niet worden geladen.",
+    goToShow: "Naar de serie",
     status: "Status",
     mediaInfo: "Media-info",
     more: "Meer",

@@ -53,7 +53,14 @@ export default {
     remaining: "până la final",
 
     // Library / Filter
-    noItems: "Nu s-a găsit nimic în această bibliotecă.",
+    personNoTitles: "Niciun titlu cu această persoană.",
+    collectionEmpty: "Această colecție este goală.",
+    playlistEmpty: "Acest playlist este gol.",
+    watchlistEmpty: "Lista mea este goală.",
+    noPlaylistsYet: "Încă nu există playlisturi.",
+    noCollectionsYet: "Încă nu există colecții.",
+    loadFailed: "Această pagină nu a putut fi încărcată.",
+    goToShow: "Mergi la serial",
     status: "Stare",
     mediaInfo: "Informații media",
     more: "Mai mult",

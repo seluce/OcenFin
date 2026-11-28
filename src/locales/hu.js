@@ -53,7 +53,14 @@ export default {
     remaining: "van hátra",
 
     // Library / Filter
-    noItems: "Ebben a könyvtárban nincs semmi.",
+    personNoTitles: "Ehhez a személyhez nem tartozik cím.",
+    collectionEmpty: "Ez a gyűjtemény üres.",
+    playlistEmpty: "Ez a lejátszási lista üres.",
+    watchlistEmpty: "A megnézendők listája üres.",
+    noPlaylistsYet: "Még nincs lejátszási lista.",
+    noCollectionsYet: "Még nincs gyűjtemény.",
+    loadFailed: "Ezt az oldalt nem sikerült betölteni.",
+    goToShow: "Ugrás a sorozatra",
     status: "Állapot",
     mediaInfo: "Médiainformáció",
     more: "Továbbiak",

@@ -53,7 +53,14 @@ export default {
     remaining: "do konce",
 
     // Library / Filter
-    noItems: "V této knihovně nebylo nic nalezeno.",
+    personNoTitles: "Žádné tituly s touto osobou.",
+    collectionEmpty: "Tato kolekce je prázdná.",
+    playlistEmpty: "Tento playlist je prázdný.",
+    watchlistEmpty: "Seznam Chci vidět je prázdný.",
+    noPlaylistsYet: "Zatím žádné playlisty.",
+    noCollectionsYet: "Zatím žádné kolekce.",
+    loadFailed: "Tuto stránku se nepodařilo načíst.",
+    goToShow: "Přejít na seriál",
     status: "Stav",
     mediaInfo: "Informace o médiu",
     more: "Více",

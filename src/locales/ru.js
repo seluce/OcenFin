@@ -53,7 +53,14 @@ export default {
     remaining: "до конца",
 
     // Library / Filter
-    noItems: "В этой медиатеке ничего не найдено.",
+    personNoTitles: "Нет записей с участием этого человека.",
+    collectionEmpty: "Эта коллекция пуста.",
+    playlistEmpty: "Этот плейлист пуст.",
+    watchlistEmpty: "Список «Буду смотреть» пуст.",
+    noPlaylistsYet: "Плейлистов пока нет.",
+    noCollectionsYet: "Коллекций пока нет.",
+    loadFailed: "Не удалось загрузить эту страницу.",
+    goToShow: "К сериалу",
     status: "Статус",
     mediaInfo: "Информация о медиа",
     more: "Ещё",

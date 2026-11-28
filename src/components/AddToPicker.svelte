@@ -177,7 +177,7 @@
           {/each}
         </div>
       {:else}
-        <div class="text-gray-500 py-2">{i18n.t.noItems}</div>
+        <div class="text-gray-500 py-2">{mode === 'collection' ? i18n.t.noCollectionsYet : i18n.t.noPlaylistsYet}</div>
       {/if}
     </div>
   </Dialog>

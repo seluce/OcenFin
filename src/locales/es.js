@@ -53,7 +53,14 @@ export default {
     remaining: "restante",
 
     // Library / Filter
-    noItems: "No se han encontrado elementos en esta biblioteca.",
+    personNoTitles: "No hay títulos con esta persona.",
+    collectionEmpty: "Esta colección está vacía.",
+    playlistEmpty: "Esta lista de reproducción está vacía.",
+    watchlistEmpty: "Mi lista está vacía.",
+    noPlaylistsYet: "Aún no hay listas de reproducción.",
+    noCollectionsYet: "Aún no hay colecciones.",
+    loadFailed: "No se ha podido cargar esta página.",
+    goToShow: "Ir a la serie",
     status: "Estado",
     mediaInfo: "Información del medio",
     more: "Más",

@@ -1,18 +1,21 @@
 <script module>
   // The page as it was left (§164), for ONE person — the last: Back from a title shows it at once and asks again
   // behind it, where up to a dozen requests (a person with many titles and episodes) stood between Back and the page.
-  // Raw server data, keyed by server, profile and person.
-  let kept = null;   // { key, info, items, seriesOf, fav }
+  // Keyed by server, profile and person. The lists are kept as the page's own reactive state (§166), not the raw
+  // answer: a tick set on the title page (Details writes into the card's item) or in the card menu is then already on
+  // the page Back shows, where the raw answer had the old state until the refresh came.
+  let kept = null;   // { key, info, items, seriesOf, fav, sort }
 </script>
 
 <script>
   import { i18n, plural } from '../i18n.svelte.js';
-  import { dlog, authHeaders, getItemSubtitle, setFavorite, personImageUrl, blurUp, itemBlurHash, clampWatch, makeFocusReturn, holdCardFocus } from '../utils.js';
+  import { dlog, authHeaders, getItemSubtitle, episodeCode, setFavorite, personImageUrl, blurUp, itemBlurHash, clampWatch, makeFocusReturn, holdCardFocus } from '../utils.js';
   import { cardSteps } from '../cardsteps.svelte.js';
   import { session } from '../session.svelte.js';
   import PosterCard from './PosterCard.svelte';
   import TextDialog from './TextDialog.svelte';
   import ShareDialog from './ShareDialog.svelte';
+  import Dialog from './Dialog.svelte';
   import { tick, untrack } from 'svelte';
 
   // focusItemId: the title to land on after the parent brought us back from a detail page. Passed
@@ -23,12 +26,14 @@
         onBack, onOpenDetails, onContextMenu } = $props();
   let backBtn;   // bind:this → the landing when a person has no titles at all
   let scrollEl;  // own scroll container — unmounts with the view, so App remembers the offset
+  let retryBtn = $state();   // inside a conditional block: the binding is written on mount AND on destroy
 
   let fav       = $state(false);
   let info      = $state(null);   // the person as /Items/{id} has it: photo, life data, biography
   let items     = $state([]);
   let seriesOf  = $state({});     // guest series as the server has them, by Id (their watched state)
   let isLoading = $state(false);
+  let failed    = $state(false);  // the filmography did not come (§166) — "could not be loaded", not "no titles"
 
   // How far each list reaches (§163, §164). A series' regular cast is credited on EVERY episode (TMDb), so 200
   // episodes could all be a long-running series' own — dropped below, its tile stands there already — and older guest
@@ -38,37 +43,93 @@
   // fewer credits gets the very same answer as before.
   const MAIN_MAX = 500, EP_MAX = 1000;
 
+  // Sorting (§166), the library's three that a person's titles carry: the year (newest first — the server's order),
+  // the rating, the name; the active chip again turns it round. It belongs to the page — kept with it for Back, a new
+  // person starts by year. A guest series' tile counts by its newest guest episode, which is there from the start (the
+  // series' own data comes a round trip later and would move the tile under the focus). What has no value goes last
+  // either way.
+  const SORTS = [
+    { by: 'year',   key: 'sortReleaseYear', desc: true },
+    { by: 'rating', key: 'sortRating',      desc: true },
+    { by: 'name',   key: 'sortName',        desc: false },
+  ];
+  const BY_YEAR = { by: 'year', desc: true };
+  let sort = $state(BY_YEAR);
+  function setSort(opt) {
+    sort = sort.by === opt.by ? { by: opt.by, desc: !sort.desc } : { by: opt.by, desc: opt.desc };
+    if (kept?.key === keyOf()) kept.sort = sort;
+  }
+  let collator = $derived(new Intl.Collator(i18n.lang, { sensitivity: 'base', numeric: true }));
+  const dateOf = (i) => i._date || i.PremiereDate || (i.ProductionYear ? String(i.ProductionYear) : '');
+  const nameOf = (i) => i.SortName || i.Name || '';
+  function order(list) {
+    const { by, desc } = sort, d = desc ? -1 : 1, names = collator;
+    const byDate = (a, b) => { const x = dateOf(a), y = dateOf(b); return x < y ? -1 : x > y ? 1 : 0; };
+    const byName = (a, b) => names.compare(nameOf(a), nameOf(b));
+    const main = by === 'rating' ? (a, b) => (a.CommunityRating ?? 0) - (b.CommunityRating ?? 0) : by === 'name' ? byName : byDate;
+    const has  = by === 'rating' ? (i) => i.CommunityRating != null : by === 'name' ? (i) => !!nameOf(i) : (i) => !!dateOf(i);
+    const tie  = by === 'year' ? byName : (a, b) => byDate(b, a);   // equal values: by name, else the newest first
+    return [...list].sort((a, b) => (has(b) - has(a)) || d * main(a, b) || tie(a, b));
+  }
+
   // Group the filmography by type. Episodes are COLLAPSED per series into a single
   // "Series (N episodes)" tile — so guest stars (only credited on individual episodes,
   // not on the series) finally show up, without a main-cast actor drowning the page in
-  // hundreds of episode tiles. A collapsed tile opens the series (see onOpenDetails).
-  // SeriesId → { the tile's data from its first episode, the count } for every series the person is a guest in
+  // hundreds of episode tiles. The tile leads to the guest role itself (§166, openCard).
+  // SeriesId → the person's episodes of it, for every series the person is a guest in
   let guest = $derived.by(() => {
     const directIds = new Set(items.filter(i => i.Type === 'Series').map(x => x.Id));
     const map = new Map();
     for (const ep of items) {
       if (ep.Type !== 'Episode' || !ep.SeriesId) continue;
       if (directIds.has(ep.SeriesId)) continue;   // person is regular cast → series tile already shown
-      const hit = map.get(ep.SeriesId);
-      if (hit) hit.count++;
-      else map.set(ep.SeriesId, { ep, count: 1 });
+      const eps = map.get(ep.SeriesId);
+      if (eps) eps.push(ep);
+      else map.set(ep.SeriesId, [ep]);
     }
     return map;
   });
   let groups = $derived.by(() => {
-    const tiles = [...guest].map(([id, { ep, count }]) => seriesOf[id]
-      ? { ...seriesOf[id], _episodeCount: count }
-      : { Id: id, Type: 'Series', Name: ep.SeriesName || ep.Name,
-          ImageTags: ep.SeriesPrimaryImageTag ? { Primary: ep.SeriesPrimaryImageTag } : undefined, _episodeCount: count });
+    const tiles = [...guest].map(([id, eps]) => ({
+      ...(seriesOf[id] || { Id: id, Type: 'Series', Name: eps[0].SeriesName || eps[0].Name,
+          ImageTags: eps[0].SeriesPrimaryImageTag ? { Primary: eps[0].SeriesPrimaryImageTag } : undefined }),
+      _episodes: eps,
+      _date: eps.reduce((d, e) => (e.PremiereDate || '') > d ? e.PremiereDate : d, ''),
+    }));
     return [
-      { label: i18n.t.movies, items: items.filter(i => i.Type === 'Movie') },
-      { label: i18n.t.series, items: [...items.filter(i => i.Type === 'Series'), ...tiles] },
+      { label: i18n.t.movies, items: order(items.filter(i => i.Type === 'Movie')) },
+      { label: i18n.t.series, items: order([...items.filter(i => i.Type === 'Series'), ...tiles]) },
     ].filter(g => g.items.length > 0);
   });
   // Up to 500 films and the series besides — put up in steps (§165), the first screenful at once
   const steps = cardSteps();
   let ordered = $derived(groups.flatMap(g => g.items));
   let shown   = $derived(steps.slice(groups));
+  let sortable = $derived(groups.some(g => g.items.length > 1));
+
+  // A guest series' tile leads to the guest role (§166): it used to open the series, where the episode was to be found
+  // by hand, in whichever season. One episode → its page; several → a short list of them, and the series from there.
+  // The way back is the tile: Details is opened with focus ON it (App remembers the card and its scroll offset from the
+  // focused element), and a return naming one of its episodes lands on it (cardFor).
+  let pick   = $state(null);   // the tile whose episodes are listed
+  let pickEl = null;
+  let pickEpisodes = $derived(pick ? [...pick._episodes].sort((a, b) =>
+    (a.ParentIndexNumber ?? 0) - (b.ParentIndexNumber ?? 0) || (a.IndexNumber ?? 0) - (b.IndexNumber ?? 0)) : []);
+  function openCard(item) {
+    const eps = item._episodes;
+    if (!eps) onOpenDetails(item);
+    else if (eps.length === 1) onOpenDetails(eps[0]);
+    else { pickEl = document.activeElement; pick = item; }
+  }
+  // Closes the list and puts focus back on the tile — after the flush that removes the list's trap, which would pull
+  // focus back in (CLAUDE.md) — and only then goes on, so App takes the tile for the way back, not a button in here.
+  function closePick(then) {
+    const el = pickEl;
+    pick = null; pickEl = null;
+    tick().then(() => { el?.focus(); then?.(); });
+  }
+  // The card a return lands on: the title itself, or the guest tile one of whose episodes it was
+  const cardFor = (id) => id ? ordered.find(i => i.Id === id) || ordered.find(i => i._episodes?.some(e => e.Id === id)) : null;
 
   // Born and died, from what /Items/{id} carries for a person (TMDb's data): PremiereDate is the birthday, EndDate the
   // day of death, ProductionLocations[0] the place of birth. In UTC: the dates are midnight UTC, and local time west of
@@ -137,8 +198,11 @@
     info      = hit?.info ?? null;
     items     = hit?.items ?? [];
     seriesOf  = hit?.seriesOf ?? {};
+    sort      = hit?.sort ?? BY_YEAR;
     showBio   = false;
     showShare = false;
+    pick      = null;
+    failed    = false;
     isLoading = !hit;
     steps.reset();
     if (hit) land();
@@ -152,28 +216,35 @@
     // never crowd films and series out of a single limit.
     const base = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&PersonIds=${person.Id}` +
       `&Recursive=true&SortBy=PremiereDate&SortOrder=Descending&ImageTypeLimit=1&EnableTotalRecordCount=false`;
+    let main = null, eps = null, p = null;
     try {
-      const [main, eps, p] = await Promise.all([
+      [main, eps, p] = await Promise.all([
         fetch(`${base}&IncludeItemTypes=Movie,Series&Limit=${MAIN_MAX}`, auth).then(json),
         fetch(`${base}&IncludeItemTypes=Episode&Limit=${EP_MAX}`, auth).then(json),
         personReq,
       ]);
-      if (myId !== loadedId) return;   // superseded by a newer person
-      const fresh = [...(main?.Items || []), ...(eps?.Items || [])];
-      if (p) { info = p; if (favEdits === edits) fav = !!p.UserData?.IsFavorite; }
+    } catch {
+      p = await personReq;   // no filmography — the person's own data may still have come (personReq never rejects)
+    }
+    if (myId !== loadedId) return;   // superseded by a newer person
+    if (p) { info = p; if (favEdits === edits) fav = !!p.UserData?.IsFavorite; }
+    // Both lists or nothing: half of them would read as the whole filmography. A kept page stays as it was; a fresh one
+    // says so and offers another try (§166) — it used to show the library's "no items" line.
+    if (main && eps) {
+      const fresh = [...(main.Items || []), ...(eps.Items || [])];
       if (hit) { holdCardFocus(scrollEl, backBtn, () => { items = fresh; }); steps.grow(() => ordered.length); }
       else items = fresh;
-      kept = { key, info: p || hit?.info || null, items: fresh, seriesOf: hit?.seriesOf || {}, fav };
-    } catch {
-      // No filmography — the person's own data may still have come (personReq never rejects). A page that was kept
-      // stays as it was.
-      const p = await personReq;
-      if (p && myId === loadedId) { info = p; if (favEdits === edits) fav = !!p.UserData?.IsFavorite; }
-    }
-    finally { if (myId === loadedId) isLoading = false; }
-    if (myId !== loadedId) return;
+      kept = { key, info, items, seriesOf, fav, sort };
+    } else if (!hit) failed = true;
+    isLoading = false;
     loadGuestSeries(myId, [...guest.keys()], key);
     if (!hit) land();
+  }
+  // Another try: focus waits on Back meanwhile — the button itself goes with the message, and focus would fall to
+  // <body>, where the next key opens the sidebar
+  function retry() {
+    backBtn?.focus();
+    loadPerson();
   }
 
   // Same landing as favourites and collections: the title we came back from, failing that the
@@ -183,13 +254,14 @@
   // first if it lies beyond the first screenful (§165), the rest after the landing.
   async function land() {
     const myId = loadedId;
-    if (focusItemId) steps.reach(ordered.findIndex(i => i.Id === focusItemId));
+    const target = cardFor(focusItemId);
+    if (target) steps.reach(ordered.indexOf(target));
     await tick();
     if (myId !== loadedId) return;
-    const card = (focusItemId && scrollEl?.querySelector(`[data-item-id="${focusItemId}"]`))
+    const card = (target && scrollEl?.querySelector(`[data-item-id="${target.Id}"]`))
               || scrollEl?.querySelector('[data-item-id]');
     if (scrollEl && focusItemId) scrollEl.scrollTop = focusScrollTop;
-    (card || backBtn)?.focus();
+    (card || retryBtn || backBtn)?.focus();
     steps.grow(() => ordered.length);
   }
 
@@ -211,7 +283,7 @@
     await Promise.all(asks);
     if (myId !== loadedId || !Object.keys(found).length) return;
     seriesOf = found;
-    if (kept?.key === key) kept.seriesOf = found;
+    if (kept?.key === key) kept.seriesOf = seriesOf;
   }
 
   // Set/remove the person as a favorite (optimistic; roll back on error). A press while the page loads — a kept page
@@ -235,22 +307,19 @@
   // one runs it, so a later prop change could put focus on Back after a card had it
   // (CLAUDE.md: never feed {@attach} a value that flips).
   function focusBackOnMount(node) { if (!untrack(() => focusItemId)) node.focus(); }
+  // The episode list opens on its first episode
+  function focusFirstButton(node) { node.querySelector('button')?.focus(); }
 </script>
 
 <div bind:this={scrollEl} class="p-10 pt-16 h-full overflow-y-auto hide-scrollbar ambient">
 
-  <!-- Label under the poster; the card itself is shared (PosterCard). -->
+  <!-- Label under the poster; the card itself is shared (PosterCard). A guest tile names its one episode, or counts
+       them. -->
   {#snippet cardCaption(item)}
-    <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">
-      {item.Type === 'Episode' && item.SeriesName ? item.SeriesName : item.Name}
-    </span>
-    {#if item._episodeCount}
-      <span class="text-xs text-gray-400 block truncate w-full">{plural('episodeCount', item._episodeCount)}</span>
-    {:else if item.Type === 'Episode'}
-      <span class="text-xs text-gray-400 block truncate w-full">{item.Name}</span>
-    {:else if getItemSubtitle(item)}
-      <span class="text-xs text-gray-400 block truncate w-full">{getItemSubtitle(item)}</span>
-    {/if}
+    {@const sub = item._episodes?.length === 1 ? getItemSubtitle(item._episodes[0])
+                : item._episodes ? plural('episodeCount', item._episodes.length) : getItemSubtitle(item)}
+    <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Name}</span>
+    {#if sub}<span class="text-xs text-gray-400 block truncate w-full">{sub}</span>{/if}
   {/snippet}
   <div class="flex items-center gap-6 mb-6">
     <button onclick={onBack} bind:this={backBtn} {@attach focusBackOnMount}
@@ -266,6 +335,25 @@
       class="w-12 h-12 rounded-lg bg-gray-800 text-gray-400 hover:bg-gray-700 focus:bg-gray-700 focus:text-white focus:outline-none focus:ring-4 focus:ring-white flex items-center justify-center">
       <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
     </button>
+    <!-- The library's sort chips (§166), in this row: below the head they would push the first row of cards off the
+         screen again (§165). Only where sorting changes something. -->
+    {#if !isLoading && sortable}
+      <div class="flex items-center gap-3 ml-4">
+        {#each SORTS as opt}
+          <button onclick={() => setSort(opt)}
+            class="shrink-0 flex items-center gap-1.5 px-5 py-2.5 rounded-full font-bold text-sm whitespace-nowrap
+                   focus:outline-none focus:ring-4 focus:ring-white transition-transform focus:scale-105
+                   {sort.by === opt.by ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">
+            {i18n.t[opt.key]}
+            {#if sort.by === opt.by}
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d={sort.desc ? 'M19 9l-7 7-7-7' : 'M5 15l7-7 7 7'}/>
+              </svg>
+            {/if}
+          </button>
+        {/each}
+      </div>
+    {/if}
   </div>
   <!-- Photo, name and life data; the biography below them, starting at the grid's left edge — beside the photo it
        began over the second card, and ▼ from it landed there. The photo as round and as big as the cast card that led
@@ -312,13 +400,21 @@
       <h2 class="text-2xl font-bold text-white mb-4">{group.label}</h2>
       <div data-focus-grid class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-10">
         {#each group.items as item (item.Id)}
-          <PosterCard {item} {onOpenDetails} {onContextMenu} caption={cardCaption} />
+          <PosterCard {item} onOpenDetails={openCard} {onContextMenu} caption={cardCaption} />
         {/each}
       </div>
     {/each}
+  {:else if failed}
+    <div class="flex flex-col items-center justify-center gap-6 h-64">
+      <p class="text-2xl text-gray-500 font-bold">{i18n.t.loadFailed}</p>
+      <button bind:this={retryBtn} onclick={retry}
+        class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-3 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
+        {i18n.t.retry}
+      </button>
+    </div>
   {:else}
     <div class="flex items-center justify-center h-64">
-      <p class="text-2xl text-gray-500 font-bold">{i18n.t.noItems}</p>
+      <p class="text-2xl text-gray-500 font-bold">{i18n.t.personNoTitles}</p>
     </div>
   {/if}
 </div>
@@ -331,4 +427,36 @@
   <ShareDialog target={shareTarget} hint={i18n.t.sharePersonHint} onClose={() => showShare = false}>
     <p class="text-white font-bold text-center break-words">{person.Name}</p>
   </ShareDialog>
+{/if}
+
+<!-- A guest series' episodes (§166): the series first, then the episodes in their order; OK opens one -->
+{#if pick}
+  <Dialog z="z-[200]" onBack={() => closePick()} onBackdrop={() => closePick()}>
+    <div class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl p-8 flex flex-col gap-5">
+      <div class="flex justify-between items-center gap-6">
+        <h2 class="text-3xl leading-[1.3] -my-[0.05em] text-white font-bold truncate">{pick.Name}</h2>
+        <button onclick={() => closePick()} aria-label={i18n.t.close}
+          class="shrink-0 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
+          <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <button onclick={() => { const s = seriesOf[pick.Id] || pick; closePick(() => onOpenDetails(s)); }}
+        class="flex items-center gap-3 self-start px-5 py-3 rounded-lg font-bold bg-gray-700/60 hover:bg-gray-700 focus:bg-gray-700 text-white focus:outline-none focus:ring-4 focus:ring-white">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        {i18n.t.goToShow}
+      </button>
+      <div class="flex flex-col gap-1" {@attach focusFirstButton}>
+        {#each pickEpisodes as ep (ep.Id)}
+          <button onclick={() => closePick(() => onOpenDetails(ep))}
+            class="flex items-center gap-4 text-left px-4 py-3 rounded-lg text-gray-200 hover:bg-gray-700 focus:bg-gray-700 focus:outline-none focus:ring-4 focus:ring-white">
+            <span class="shrink-0 min-w-[5.5rem] font-bold tabular-nums text-gray-400">{episodeCode(ep)}</span>
+            <span class="flex-1 min-w-0 truncate text-lg">{ep.Name}</span>
+            {#if ep.UserData?.Played}
+              <svg class="w-5 h-5 shrink-0 text-green-500" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+            {/if}
+          </button>
+        {/each}
+      </div>
+    </div>
+  </Dialog>
 {/if}

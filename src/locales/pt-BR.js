@@ -65,6 +65,7 @@ export default {
     earlierMarked: { one: "{n} episódio marcado como assistido", other: "{n} episódios marcados como assistidos" },
     earlierAllWatched: "Todos os episódios anteriores já foram assistidos",
     watchlist: "Minha lista",
+    watchlistEmpty: "Minha lista está vazia.",
     resetProgress: "Redefinir progresso",
     subtitleSearchNone: "Nada encontrado. Para isso o servidor precisa de um provedor de legendas, como o plugin OpenSubtitles.",
     subtitleDownloading: "Baixando…",

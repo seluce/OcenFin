@@ -53,7 +53,14 @@ export default {
     remaining: "jäljellä",
 
     // Library / Filter
-    noItems: "Tästä kirjastosta ei löytynyt mitään.",
+    personNoTitles: "Tällä henkilöllä ei ole nimikkeitä.",
+    collectionEmpty: "Tämä kokoelma on tyhjä.",
+    playlistEmpty: "Tämä soittolista on tyhjä.",
+    watchlistEmpty: "Katselulista on tyhjä.",
+    noPlaylistsYet: "Ei vielä soittolistoja.",
+    noCollectionsYet: "Ei vielä kokoelmia.",
+    loadFailed: "Tätä sivua ei voitu ladata.",
+    goToShow: "Siirry sarjaan",
     status: "Tila",
     mediaInfo: "Mediatiedot",
     more: "Lisää",

@@ -53,7 +53,14 @@ export default {
     remaining: "tilbage",
 
     // Library / Filter
-    noItems: "Der blev ikke fundet noget i dette bibliotek.",
+    personNoTitles: "Ingen titler med denne person.",
+    collectionEmpty: "Denne samling er tom.",
+    playlistEmpty: "Denne playliste er tom.",
+    watchlistEmpty: "Der er intet i Se senere.",
+    noPlaylistsYet: "Ingen playlister endnu.",
+    noCollectionsYet: "Ingen samlinger endnu.",
+    loadFailed: "Denne side kunne ikke indlæses.",
+    goToShow: "Gå til serien",
     status: "Status",
     mediaInfo: "Medieinfo",
     more: "Mere",

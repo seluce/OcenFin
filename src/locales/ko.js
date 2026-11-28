@@ -53,7 +53,14 @@ export default {
     remaining: "남음",
 
     // Library / Filter
-    noItems: "이 라이브러리에 항목이 없습니다.",
+    personNoTitles: "이 인물이 참여한 작품이 없습니다.",
+    collectionEmpty: "이 컬렉션은 비어 있습니다.",
+    playlistEmpty: "이 재생목록은 비어 있습니다.",
+    watchlistEmpty: "찜 목록이 비어 있습니다.",
+    noPlaylistsYet: "아직 재생목록이 없습니다.",
+    noCollectionsYet: "아직 컬렉션이 없습니다.",
+    loadFailed: "이 페이지를 불러올 수 없습니다.",
+    goToShow: "시리즈로 이동",
     status: "상태",
     mediaInfo: "미디어 정보",
     more: "더 보기",

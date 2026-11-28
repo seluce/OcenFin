@@ -53,7 +53,14 @@ export default {
     remaining: "kvar",
 
     // Library / Filter
-    noItems: "Inget hittades i det här biblioteket.",
+    personNoTitles: "Inga titlar med den här personen.",
+    collectionEmpty: "Den här samlingen är tom.",
+    playlistEmpty: "Den här spellistan är tom.",
+    watchlistEmpty: "Min lista är tom.",
+    noPlaylistsYet: "Inga spellistor än.",
+    noCollectionsYet: "Inga samlingar än.",
+    loadFailed: "Den här sidan kunde inte läsas in.",
+    goToShow: "Gå till serien",
     status: "Status",
     mediaInfo: "Medieinfo",
     more: "Mer",

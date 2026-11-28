@@ -53,7 +53,14 @@ export default {
     remaining: "left",
 
     // Library / Filter
-    noItems: "No items found in this library.",
+    personNoTitles: "No titles with this person.",
+    collectionEmpty: "This collection is empty.",
+    playlistEmpty: "This playlist is empty.",
+    watchlistEmpty: "Your watchlist is empty.",
+    noPlaylistsYet: "No playlists yet.",
+    noCollectionsYet: "No collections yet.",
+    loadFailed: "This page could not be loaded.",
+    goToShow: "Go to the show",
     status: "Status",
     mediaInfo: "Media info",
     more: "More",

@@ -53,7 +53,14 @@ export default {
     remaining: "до кінця",
 
     // Library / Filter
-    noItems: "У цій медіатеці нічого не знайдено.",
+    personNoTitles: "Немає записів з участю цієї людини.",
+    collectionEmpty: "Ця колекція порожня.",
+    playlistEmpty: "Цей плейлист порожній.",
+    watchlistEmpty: "Список «Дивитимусь» порожній.",
+    noPlaylistsYet: "Плейлистів ще немає.",
+    noCollectionsYet: "Колекцій ще немає.",
+    loadFailed: "Не вдалося завантажити цю сторінку.",
+    goToShow: "До серіалу",
     status: "Стан",
     mediaInfo: "Інформація про медіа",
     more: "Більше",

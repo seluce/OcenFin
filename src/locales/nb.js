@@ -53,7 +53,14 @@ export default {
     remaining: "igjen",
 
     // Library / Filter
-    noItems: "Fant ingenting i dette biblioteket.",
+    personNoTitles: "Ingen titler med denne personen.",
+    collectionEmpty: "Denne samlingen er tom.",
+    playlistEmpty: "Denne spillelisten er tom.",
+    watchlistEmpty: "Det er ingenting i Se senere.",
+    noPlaylistsYet: "Ingen spillelister ennå.",
+    noCollectionsYet: "Ingen samlinger ennå.",
+    loadFailed: "Denne siden kunne ikke lastes inn.",
+    goToShow: "Gå til serien",
     status: "Status",
     mediaInfo: "Medieinfo",
     more: "Mer",

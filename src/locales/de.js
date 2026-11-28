@@ -53,7 +53,14 @@ export default {
     remaining: "übrig",
 
     // Library / Filter
-    noItems: "Keine Inhalte in dieser Bibliothek gefunden.",
+    personNoTitles: "Keine Titel mit dieser Person.",
+    collectionEmpty: "Diese Sammlung ist leer.",
+    playlistEmpty: "Diese Wiedergabeliste ist leer.",
+    watchlistEmpty: "Deine Merkliste ist leer.",
+    noPlaylistsYet: "Noch keine Wiedergabelisten.",
+    noCollectionsYet: "Noch keine Sammlungen.",
+    loadFailed: "Diese Seite konnte nicht geladen werden.",
+    goToShow: "Zur Serie",
     status: "Status",
     mediaInfo: "Medieninfos",
     more: "Mehr",
