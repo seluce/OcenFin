@@ -1,8 +1,9 @@
 <script>
   import { i18n, plural } from '../i18n.svelte.js';
-  import { authHeaders, getItemSubtitle, setFavorite } from '../utils.js';
+  import { authHeaders, getItemSubtitle, setFavorite, personImageUrl, blurUp, itemBlurHash, clampWatch, makeFocusReturn } from '../utils.js';
   import { session } from '../session.svelte.js';
   import PosterCard from './PosterCard.svelte';
+  import TextDialog from './TextDialog.svelte';
   import { tick, untrack } from 'svelte';
 
   // focusItemId: the title to land on after the parent brought us back from a detail page. Passed
@@ -15,35 +16,80 @@
   let scrollEl;  // own scroll container — unmounts with the view, so App remembers the offset
 
   let fav       = $state(false);
+  let info      = $state(null);   // the person as /Items/{id} has it: photo, life data, biography
   let items     = $state([]);
+  let seriesOf  = $state({});     // guest series as the server has them, by Id (their watched state)
   let isLoading = $state(false);
+
+  // Episodes come in pages (§163). A series' regular cast is credited on EVERY episode (TMDb), so one page of 200
+  // could be full of a long-running series' own episodes — dropped below, its tile stands there already — and older
+  // guest roles fell off its end. A full page asks for the next, up to EP_MAX; anyone with fewer credits still costs
+  // one request. Sorted down to the episode, so a page boundary between two of the same date cannot shift, and merged
+  // by Id in case it does.
+  const EP_PAGE = 200, EP_MAX = 1000;
 
   // Group the filmography by type. Episodes are COLLAPSED per series into a single
   // "Series (N episodes)" tile — so guest stars (only credited on individual episodes,
   // not on the series) finally show up, without a main-cast actor drowning the page in
   // hundreds of episode tiles. A collapsed tile opens the series (see onOpenDetails).
-  let groups = $derived.by(() => {
-    const movies = items.filter(i => i.Type === 'Movie');
-    const directSeries = items.filter(i => i.Type === 'Series');
-    const directIds = new Set(directSeries.map(x => x.Id));
-    const guest = new Map();   // SeriesId -> synthetic series tile
+  // SeriesId → { the tile's data from its first episode, the count } for every series the person is a guest in
+  let guest = $derived.by(() => {
+    const directIds = new Set(items.filter(i => i.Type === 'Series').map(x => x.Id));
+    const map = new Map();
     for (const ep of items) {
       if (ep.Type !== 'Episode' || !ep.SeriesId) continue;
       if (directIds.has(ep.SeriesId)) continue;   // person is regular cast → series tile already shown
-      const hit = guest.get(ep.SeriesId);
-      if (hit) { hit._episodeCount++; continue; }
-      guest.set(ep.SeriesId, {
-        Id: ep.SeriesId, Type: 'Series', Name: ep.SeriesName || ep.Name,
-        ImageTags: ep.SeriesPrimaryImageTag ? { Primary: ep.SeriesPrimaryImageTag } : undefined,
-        ProductionYear: ep.SeriesProductionYear,
-        _episodeCount: 1,
-      });
+      const hit = map.get(ep.SeriesId);
+      if (hit) hit.count++;
+      else map.set(ep.SeriesId, { ep, count: 1 });
     }
+    return map;
+  });
+  let groups = $derived.by(() => {
+    const tiles = [...guest].map(([id, { ep, count }]) => seriesOf[id]
+      ? { ...seriesOf[id], _episodeCount: count }
+      : { Id: id, Type: 'Series', Name: ep.SeriesName || ep.Name,
+          ImageTags: ep.SeriesPrimaryImageTag ? { Primary: ep.SeriesPrimaryImageTag } : undefined, _episodeCount: count });
     return [
-      { label: i18n.t.movies, items: movies },
-      { label: i18n.t.series, items: [...directSeries, ...guest.values()] },
+      { label: i18n.t.movies, items: items.filter(i => i.Type === 'Movie') },
+      { label: i18n.t.series, items: [...items.filter(i => i.Type === 'Series'), ...tiles] },
     ].filter(g => g.items.length > 0);
   });
+
+  // Born and died, from what /Items/{id} carries for a person (TMDb's data): PremiereDate is the birthday, EndDate the
+  // day of death, ProductionLocations[0] the place of birth. In UTC: the dates are midnight UTC, and local time west of
+  // Greenwich showed the day before (as Details' episode date). The age goes beside the birthday while alive, beside
+  // the day of death after; none where it comes out impossible (a placeholder date).
+  let life = $derived.by(() => {
+    const day = (s) => { const d = s ? new Date(s) : null; return d && !isNaN(d) && d.getUTCFullYear() > 1800 ? d : null; };
+    const born = day(info?.PremiereDate), died = day(info?.EndDate);
+    const place = info?.ProductionLocations?.[0] || '';
+    const date = (d) => d.toLocaleDateString(i18n.lang, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+    const age = (to) => {
+      if (!born) return '';
+      let n = to.getUTCFullYear() - born.getUTCFullYear();
+      if (to.getUTCMonth() * 32 + to.getUTCDate() < born.getUTCMonth() * 32 + born.getUTCDate()) n--;
+      return n >= 0 && n < 130 ? ` (${plural('ageYears', n)})` : '';
+    };
+    const now = new Date(), today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    const rows = [];
+    if (born || place) rows.push({ label: i18n.t.personBorn,
+      value: [born ? date(born) + (died ? '' : age(today)) : '', place].filter(Boolean).join(' · ') });
+    if (died) rows.push({ label: i18n.t.personDied, value: date(died) + age(died) });
+    return rows;
+  });
+
+  // The photo the cast card or the search showed (same address, so it comes from the cache), else the one
+  // /Items/{id} names
+  let photo = $derived(personImageUrl(session.serverUrl, person) || (info && personImageUrl(session.serverUrl, info)));
+
+  // The biography stays clamped to three lines; where that cuts it, it is a button and OK shows all of it — the title
+  // page's plot does the same (TextDialog, §136).
+  let bioClamped = $state(false);
+  let showBio    = $state(false);
+  let bioBtn     = $state();
+  const bioFocus = makeFocusReturn();
+  $effect(() => { if (!showBio && bioFocus.pending) bioFocus.restore(); });
 
 
   async function loadPerson() {
@@ -53,30 +99,49 @@
     // Details/Library/Search.
     const myId = person.Id;
     fav       = !!person.UserData?.IsFavorite;
+    info      = null;
     items     = [];
+    seriesOf  = {};
+    showBio   = false;
     isLoading = true;
-    // Fetch the person item separately → correct favorite status (from search/cast, UserData is often missing)
-    fetch(`${session.serverUrl}/Items/${person.Id}?UserId=${selectedUser.Id}`, { headers: authHeaders() })
-      .then(r => r.ok ? r.json() : null)
-      .then(p => { if (p && myId === loadedId) fav = !!p.UserData?.IsFavorite; })
-      .catch(() => {});
-    // Two parallel fetches: main filmography (movies/series) and episodes (for guest roles),
-    // so a long-running series' episodes can never crowd movies/series out of a single limit.
+    const auth = { headers: authHeaders() };
+    const json = (r) => r.ok ? r.json() : null;
+    // The person itself: /Items/{id} carries every field — the favourite status (from search and the cast, UserData is
+    // often missing), the photo, the life data, the biography. Awaited together with the filmography, so the head of
+    // the page is complete when the grids go up and nothing below moves once a card has focus.
+    const personReq = fetch(`${session.serverUrl}/Items/${person.Id}?UserId=${selectedUser.Id}`, auth).then(json).catch(() => null);
+    // Two lists in parallel: films/series, and the episodes (for guest roles), so a long-running series' episodes can
+    // never crowd films and series out of a single limit.
     const base = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&PersonIds=${person.Id}` +
-      `&Recursive=true&SortBy=PremiereDate&SortOrder=Descending` +
-      `&ImageTypeLimit=1&EnableTotalRecordCount=false`;
+      `&Recursive=true&ImageTypeLimit=1&EnableTotalRecordCount=false`;
+    const episodes = (start) => fetch(`${base}&IncludeItemTypes=Episode` +
+      `&SortBy=PremiereDate,SeriesSortName,ParentIndexNumber,IndexNumber&SortOrder=Descending` +
+      `&StartIndex=${start}&Limit=${EP_PAGE}`, auth).then(json);
     try {
-      const [mainRes, epRes] = await Promise.all([
-        fetch(`${base}&IncludeItemTypes=Movie,Series&Limit=100`, { headers: authHeaders() }),
-        fetch(`${base}&IncludeItemTypes=Episode&Limit=200`, { headers: authHeaders() }),
+      const [main, first, p] = await Promise.all([
+        fetch(`${base}&IncludeItemTypes=Movie,Series&SortBy=PremiereDate&SortOrder=Descending&Limit=100`, auth).then(json),
+        episodes(0),
+        personReq,
       ]);
-      const main = mainRes.ok ? ((await mainRes.json()).Items || []) : [];
-      const eps  = epRes.ok  ? ((await epRes.json()).Items  || []) : [];
       if (myId !== loadedId) return;   // superseded by a newer person
-      items = [...main, ...eps];
-    } catch { /* ignore */ }
+      let page = first?.Items || [];
+      const eps = [...page];
+      while (page.length === EP_PAGE && eps.length < EP_MAX) {
+        page = (await episodes(eps.length).catch(() => null))?.Items || [];
+        if (myId !== loadedId) return;
+        eps.push(...page);
+      }
+      if (p) { info = p; fav = !!p.UserData?.IsFavorite; }
+      const seen = new Set();
+      items = [...(main?.Items || []), ...eps.filter(e => !seen.has(e.Id) && seen.add(e.Id))];
+    } catch {
+      // No filmography — the person's own data may still have come (personReq never rejects)
+      const p = await personReq;
+      if (p && myId === loadedId) { info = p; fav = !!p.UserData?.IsFavorite; }
+    }
     finally { if (myId === loadedId) isLoading = false; }
     if (myId !== loadedId) return;
+    loadGuestSeries(myId, [...guest.keys()]);
     await tick();
     // Same landing as favourites and collections: the title we came back from, failing that the
     // first one, and only for a person with no titles the Back button — which holds focus while the
@@ -86,6 +151,25 @@
               || scrollEl?.querySelector('[data-item-id]');
     if (scrollEl && focusItemId) scrollEl.scrollTop = focusScrollTop;
     (card || backBtn)?.focus();
+  }
+
+  // The guest series as the server has them (§163). Their tile is put together from episodes, which name the series
+  // and its poster but not whether it is watched, so it never had the tick a series the person is regular cast of has.
+  // Asked by Ids once the page is up, 100 at a time (the length of the address); the answer replaces the tile's data
+  // in place — the keyed card stays, and so does the focus. A series not in the answer keeps its tile as it was.
+  async function loadGuestSeries(myId, ids) {
+    if (!ids.length) return;
+    const found = {};
+    const asks = [];
+    for (let i = 0; i < ids.length; i += 100) {
+      asks.push(fetch(`${session.serverUrl}/Items?UserId=${selectedUser.Id}&Ids=${ids.slice(i, i + 100).join(',')}` +
+        `&ImageTypeLimit=1&EnableTotalRecordCount=false`, { headers: authHeaders() })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { for (const s of d?.Items || []) if (s.Type === 'Series') found[s.Id] = s; })
+        .catch(() => {}));
+    }
+    await Promise.all(asks);
+    if (myId === loadedId && Object.keys(found).length) seriesOf = found;
   }
 
   // Set/remove the person as a favorite (optimistic; roll back on error)
@@ -133,13 +217,36 @@
       <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0z"/></svg>
     </button>
   </div>
-  <div class="flex items-center gap-4 mb-10">
-    <svg class="w-10 h-10 shrink-0 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-    <div class="min-w-0">
+  <!-- Photo, name and life data; the biography below them, starting at the grid's left edge — beside the photo it
+       began over the second card, and ▼ from it landed there. The photo as round as the person card that led here. -->
+  <div class="flex items-center gap-8 {info?.Overview ? 'mb-5' : 'mb-10'}">
+    <div class="w-40 h-40 shrink-0 rounded-full overflow-hidden bg-gray-800 shadow-xl">
+      {#if photo}
+        <img src={photo} {@attach blurUp(itemBlurHash(person))} alt={person.Name} class="w-full h-full object-cover" decoding="async"/>
+      {:else}
+        <div class="w-full h-full flex items-center justify-center text-gray-600">
+          <svg class="w-[40%] h-[40%]" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+        </div>
+      {/if}
+    </div>
+    <div class="min-w-0 flex-1">
       <h1 class="text-4xl leading-[1.3] -my-[0.0944em] font-bold text-white truncate">{person?.Name}</h1>
-      <p class="text-gray-400 mt-1">{i18n.t.appearsIn}</p>
+      {#if life.length}
+        <div class="flex flex-col gap-1 mt-3 text-lg text-gray-200">
+          {#each life as row (row.label)}<span><span class="text-gray-400">{row.label}</span> {row.value}</span>{/each}
+        </div>
+      {/if}
     </div>
   </div>
+  {#if info?.Overview}
+    <!-- The padding sits outside the text (negative margins): it wraps and clamps like a plain paragraph, and the focus
+         ring gets room around it. Not cut → disabled, out of the D-pad's way. -->
+    <button bind:this={bioBtn} disabled={!bioClamped}
+      onclick={() => { bioFocus.capture(bioBtn); showBio = true; }}
+      class="block max-w-[57.5rem] text-left -mx-3 px-3 py-2 mb-8 rounded-xl focus:outline-none focus:ring-4 focus:ring-white">
+      <span {@attach clampWatch(info.Overview, (cut) => bioClamped = cut)} class="text-lg text-gray-300 line-clamp-3 leading-relaxed">{info.Overview}</span>
+    </button>
+  {/if}
 
   {#if isLoading}
     <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4">
@@ -162,3 +269,7 @@
     </div>
   {/if}
 </div>
+
+{#if showBio && info?.Overview}
+  <TextDialog title={person.Name} text={info.Overview} onClose={() => showBio = false} />
+{/if}

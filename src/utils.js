@@ -23,6 +23,25 @@ export function dropTrapOnOutro(e) {
   root.querySelectorAll?.('[data-focus-trap]').forEach((el) => el.removeAttribute('data-focus-trap'));
 }
 
+// ▲▼ scroll a long text in a dialog (media info, a whole plot or biography) instead of moving focus.
+export function scrollByKey(e, el) {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  e.preventDefault(); e.stopPropagation();
+  el?.scrollBy({ top: e.key === 'ArrowDown' ? 160 : -160, behavior: 'smooth' });
+}
+
+// Svelte attachment (factory): reports whether a line-clamped text is cut — the title page's plot, a person's
+// biography (§136, §163). A ResizeObserver: its first call comes after layout, and it calls again when the box changes
+// (UI size, font). `text` is read only so that ANOTHER text starts it over: a cut and an uncut one can fill the same
+// lines, and the box alone would not tell.
+export function clampWatch(text, onChange) {
+  return (node) => {
+    const ro = new ResizeObserver(() => onChange(node.scrollHeight > node.clientHeight + 1));
+    ro.observe(node);
+    return () => ro.disconnect();
+  };
+}
+
 // Focus return after closing a modal/overlay: on open remember the trigger, on close
 // jump back to it. capture()/restore() (incl. tick timing) are unified here;
 // WHEN restore() runs is decided by each component via its own $effect or close handler,

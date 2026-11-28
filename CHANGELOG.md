@@ -11,6 +11,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   settings; set it, and up to which age limit a profile counts as a child's, under Profile & Account.
 - **The PIN after switching on.** When the TV was off or unused for ten minutes, a grown-up profile asks for the PIN
   before it shows anything, so a child cannot land in it.
+- **More about a person.** The person page shows the photo, birthday, age, place of birth and, where known, the day of
+  death, plus the biography; a long one opens in full with OK.
 
 ### Changed
 
@@ -32,6 +34,9 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   with the word that is left out.
 - **Episode numbers in the player add up.** With an episode missing from a season, the player could show "Episode 4
   of 3"; it now counts to the season's highest episode number.
+- **Guest roles behind a long series.** For someone in the main cast of a long-running series, the person page could
+  miss older guest roles in other series; it now looks further back.
+- **Guest roles show what you watched.** A series someone only guest-starred in now has the tick like the others.
 
 ## 2026.11.22
 

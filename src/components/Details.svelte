@@ -1,8 +1,9 @@
 <script>
   import { i18n, LANGUAGES, plural, baseLang } from '../i18n.svelte.js';
   import { toggleWatchlist, inWatchlist } from '../watchlist.svelte.js';
-  import { dlog, isBackKey, focusOnMount, itemProgress, minutesLeft, episodeCode, backdropUrl, logoUrl, runtimeLabel, frameRateLabel, endsAtLabel, authHeaders, setPlayed, setFavorite, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, hint, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
+  import { dlog, isBackKey, focusOnMount, itemProgress, minutesLeft, episodeCode, backdropUrl, logoUrl, runtimeLabel, frameRateLabel, endsAtLabel, authHeaders, setPlayed, setFavorite, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, hint, scrollByKey, clampWatch, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
   import Dialog from './Dialog.svelte';
+  import TextDialog from './TextDialog.svelte';
   import { pickDefaultTracks, rememberChoice, orderTracks } from '../trackmemory.js';
   import { trackLabels } from '../tracklabel.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
@@ -386,61 +387,15 @@
   }
   // The list markers: which track turns the playback into a transcode before it is picked (the same rule)
   let defaultAudio = $derived(defaultAudioIndex(selectedSource?.MediaStreams));
-  // ▲▼ scroll a long text in a dialog (media info, the whole plot) instead of moving focus
-  function scrollByKey(e, el) {
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-    e.preventDefault(); e.stopPropagation();
-    el?.scrollBy({ top: e.key === 'ArrowDown' ? 160 : -160, behavior: 'smooth' });
-  }
-
   // The plot stays clamped to four lines (the hero must leave room for the buttons). Where that cuts it, the text is a
-  // button and OK shows all of it in a dialog (CODE-HEALTH §136) — on a TV there was no other way to read the rest.
-  // Not cut → the button is disabled, which takes it out of the D-pad and the pointer: no extra stop for nothing.
+  // button and OK shows all of it in a dialog (CODE-HEALTH §136, TextDialog) — on a TV there was no other way to read
+  // the rest. Not cut → the button is disabled, which takes it out of the D-pad and the pointer: no extra stop for
+  // nothing. clampWatch (utils.js) measures it.
   let overviewClamped = $state(false);
   let showOverview    = $state(false);
-  let overviewScroll  = $state();
   let overviewBtn     = $state();
   const overviewFocus = makeFocusReturn();
   $effect(() => { if (!showOverview && overviewFocus.pending) overviewFocus.restore(); });
-  // Measured by a ResizeObserver: its first call comes after layout, and it calls again when the box changes (UI size,
-  // font). Reading the text makes the attachment start over for another title — a cut and an uncut plot can fill
-  // the same four lines, so the box alone would not tell.
-  function measureOverview(node) {
-    void fullItem?.Overview;
-    const ro = new ResizeObserver(() => { overviewClamped = node.scrollHeight > node.clientHeight + 1; });
-    ro.observe(node);
-    return () => ro.disconnect();
-  }
-
-  // The dialog's plot in paragraphs (§145). Most plots come as ONE block (TMDb), a wall of text in the dialog. Blank
-  // lines of its own make paragraphs (single line breaks stay, whitespace-pre-line); a long block without any is cut
-  // at sentence ends into parts of about PARA characters, as even as the sentences allow. Never after a word of up to
-  // three letters, a number or an initial ("Agentin K. Larsen", "Dr.", "z. B.", "3. Oktober", "U.S.A."): a break
-  // missed there costs nothing, a wrong one would cut a sentence in two. Intl.Segmenter: Chromium 87, webOS 25 has it.
-  const PARA = 320;
-  function bySentences(block) {
-    const n = Math.round(block.length / PARA);
-    if (n < 2 || block.includes('\n') || typeof Intl.Segmenter !== 'function') return [block];
-    const sentences = [];
-    for (const { segment } of new Intl.Segmenter(i18n.lang, { granularity: 'sentence' }).segment(block)) {
-      const last = sentences.length - 1;
-      if (last >= 0 && /(?:^|[\s(„"'.])(?:\p{L}{1,3}|\d+)\.$/u.test(sentences[last].trimEnd())) sentences[last] += segment;
-      else sentences.push(segment);
-    }
-    const target = block.length / n, parts = [];
-    let cur = '';
-    sentences.forEach((sentence, i) => {
-      cur += sentence;
-      const next = sentences[i + 1];
-      // Close the part here when that lands nearer the target than taking the next sentence along.
-      if (next === undefined || (parts.length < n - 1 && Math.abs(cur.length - target) <= Math.abs(cur.length + next.length - target))) {
-        parts.push(cur.trim()); cur = '';
-      }
-    });
-    return parts;
-  }
-  const plotParagraphs = (text) => text.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean).flatMap(bySentences);
-  let plotParts = $derived(showOverview && fullItem?.Overview ? plotParagraphs(fullItem.Overview) : []);
 
   // Share: QR code with a public title link (IMDb/TMDb) — anyone can scan it, no server access needed.
   let showShare = $state(false);
@@ -1272,7 +1227,7 @@
             <button bind:this={overviewBtn} disabled={!overviewClamped}
               onclick={() => { overviewFocus.capture(overviewBtn); showOverview = true; }}
               class="block max-w-[57.5rem] text-left -mx-3 -mt-2 px-3 py-2 mb-8 rounded-xl focus:outline-none focus:ring-4 focus:ring-white">
-              <span {@attach measureOverview} class="text-xl text-gray-300 line-clamp-4 leading-relaxed">{fullItem.Overview}</span>
+              <span {@attach clampWatch(fullItem.Overview, (cut) => overviewClamped = cut)} class="text-xl text-gray-300 line-clamp-4 leading-relaxed">{fullItem.Overview}</span>
             </button>
           {:else}
             <div class="mb-6"></div>
@@ -1793,20 +1748,7 @@
 
 <!-- THE WHOLE PLOT — opened from the clamped text in the hero (overviewClamped); ▲▼ scroll a long one -->
 {#if showOverview && fullItem?.Overview}
-  <Dialog z="z-[200]" onBack={() => showOverview = false} onkeydown={(e) => scrollByKey(e, overviewScroll)}>
-    <div bind:this={overviewScroll} class="bg-gray-800 border border-gray-700 rounded-2xl w-full max-w-4xl max-h-[85vh] overflow-y-auto hide-scrollbar shadow-2xl">
-      <div class="flex justify-between items-start gap-6 p-8 pb-4 sticky top-0 bg-gray-800 z-10">
-        <h2 class="text-4xl leading-[1.3] -my-[0.0944em] text-white font-bold line-clamp-2">{fullItem.Name}</h2>
-        <button onclick={() => showOverview = false} {@attach focusOnMount()} aria-label={i18n.t.close}
-          class="shrink-0 text-gray-400 hover:text-white focus:text-white focus:outline-none focus:ring-4 focus:ring-white rounded-full p-2">
-          <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-        </button>
-      </div>
-      <div class="px-8 pb-8 flex flex-col gap-5 text-2xl text-gray-200 leading-relaxed whitespace-pre-line">
-        {#each plotParts as part}<p>{part}</p>{/each}
-      </div>
-    </div>
-  </Dialog>
+  <TextDialog title={fullItem.Name} text={fullItem.Overview} onClose={() => showOverview = false} />
 {/if}
 
 <!-- Share: QR code with a title link (IMDb/TMDb) to scan -->
