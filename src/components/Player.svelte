@@ -1625,8 +1625,10 @@
     try {
       const res = await fetch(
         // IsMissing=false: with "display missing episodes" on in the Jellyfin profile the list holds
-        // placeholders without a file, and Next / auto-play landed on the error page.
-        `${session.serverUrl}/Shows/${item.SeriesId}/Episodes?UserId=${selectedUser.Id}&IsMissing=false`,
+        // placeholders without a file, and Next / auto-play landed on the error page. ImageTypeLimit=1: without it
+        // EVERY episode carries the tag and BlurHash of every backdrop of the series (§160) — this list is the whole
+        // series, asked at every episode start; only the next title's first picture is ever shown.
+        `${session.serverUrl}/Shows/${item.SeriesId}/Episodes?UserId=${selectedUser.Id}&IsMissing=false&ImageTypeLimit=1`,
         { headers: authHeaders() }
       );
       if (res.ok) {

@@ -370,10 +370,11 @@ export async function buildPlayQueue(items, { serverUrl, userId, headers }) {
   for (const it of items || []) {
     if (it.Type === 'Series' || it.Type === 'Season') {
       // IsMissing=false: a placeholder for an episode the library does not have (a metadata plugin
-      // or the profile's "display missing episodes" creates them) has no file to play.
+      // or the profile's "display missing episodes" creates them) has no file to play. ImageTypeLimit=1: a whole
+      // series, and each episode would carry every backdrop of the series (§160).
       const url = `${serverUrl}/Items?UserId=${userId}&ParentId=${it.Id}`
         + `&IncludeItemTypes=Episode${it.Type === 'Series' ? '&Recursive=true' : ''}`
-        + `&SortBy=ParentIndexNumber,IndexNumber&IsMissing=false&EnableTotalRecordCount=false`;
+        + `&SortBy=ParentIndexNumber,IndexNumber&IsMissing=false&ImageTypeLimit=1&EnableTotalRecordCount=false`;
       try {
         const res  = await fetch(url, { headers });
         // Without this an error response made res.json() throw straight into the catch below, and
@@ -402,7 +403,7 @@ const regularFirst = (eps) => eps.find(e => e.ParentIndexNumber !== 0) || eps[0]
 export async function firstEpisodeInSeason(seasonId, { serverUrl, userId, headers, unwatchedOnly = false }) {
   try {
     const res = await fetch(`${serverUrl}/Items?UserId=${userId}&ParentId=${seasonId}&IncludeItemTypes=Episode`
-      + `${unwatchedOnly ? '&Filters=IsUnplayed' : ''}&IsMissing=false&SortBy=ParentIndexNumber,IndexNumber&EnableTotalRecordCount=false`, { headers });
+      + `${unwatchedOnly ? '&Filters=IsUnplayed' : ''}&IsMissing=false&SortBy=ParentIndexNumber,IndexNumber&ImageTypeLimit=1&EnableTotalRecordCount=false`, { headers });
     if (!res.ok) { console.warn('firstEpisodeInSeason: HTTP', res.status); return null; }
     return regularFirst((await res.json()).Items || []);
   } catch (e) { console.error('firstEpisodeInSeason:', e); return null; }

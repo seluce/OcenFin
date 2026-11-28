@@ -20,6 +20,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   profiles can choose their own again.
 - **Server and sign-out together.** Under Profile & Account the connected server comes last, with Switch User and Log
   Out beside it instead of two large tiles.
+- **Lighter episode lists.** Starting an episode, a season or "Play all" no longer fetches the details of every
+  background picture of the series for each episode; with long series that took up memory for nothing.
 
 ### Fixed
 
