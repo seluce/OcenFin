@@ -820,6 +820,9 @@ export function installConnectionGuard() {
         if (ms > 0) {
           console.warn(`[fetch] no answer within ${ms / 1000} s: ${url.replace(/^[a-z]+:\/\/[^/]+/i, '').split('?')[0]}`);
           if (isServer) checkServer(orig);
+          // Our TimeoutError, not what fetch threw: Chromium 120 (webOS 25) rejects with its own AbortError
+          // (a DOMException, code 20) and ignores the abort reason; newer engines throw the reason itself (§162).
+          throw init.signal.reason ?? err;
         }
       } else if (isServer) session.connectionLost = true;
       throw err;
