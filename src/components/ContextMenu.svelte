@@ -42,13 +42,15 @@
 
   async function toggleWatched() {
     if (!armed) return;
-    const next = !played, hadResume = hasResume;
+    const next = !played, hadResume = hasResume, was = item.UserData ? { ...item.UserData } : null;
     played = next;                         // toggle optimistically
-    if (next) hasResume = false;           // marked as watched → no more resume
-    if (item.UserData) item.UserData.Played = next;
+    hasResume = false;
+    // The server drops the position either way (resetProgress below relies on it, "mark earlier" writes it too, §168):
+    // a started title marked watched showed its tick AND its bar until the list was asked again
+    if (item.UserData) { item.UserData.Played = next; item.UserData.PlaybackPositionTicks = 0; }
     if (!(await setPlayed(item.Id, userId, next))) {
       played = !next; hasResume = hadResume;
-      if (item.UserData) item.UserData.Played = !next;
+      if (was) Object.assign(item.UserData, was);
     } else onProgressChanged?.();   // a series' episode leaves Continue watching, Up next moves on (§140)
     onChanged?.();                   // reload only AFTER the server write (otherwise a race: reload reads stale data)
   }

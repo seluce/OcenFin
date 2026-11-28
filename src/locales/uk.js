@@ -54,6 +54,7 @@ export default {
 
     // Library / Filter
     personNoTitles: "Немає записів з участю цієї людини.",
+    personAllSeen: "Усі записи з участю цієї людини переглянуто.",
     collectionEmpty: "Ця колекція порожня.",
     playlistEmpty: "Цей плейлист порожній.",
     watchlistEmpty: "Список «Дивитимусь» порожній.",

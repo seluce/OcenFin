@@ -54,6 +54,7 @@ export default {
 
     // Library / Filter
     personNoTitles: "Ingen titler med denne person.",
+    personAllSeen: "Alle titler med denne person er set.",
     collectionEmpty: "Denne samling er tom.",
     playlistEmpty: "Denne playliste er tom.",
     watchlistEmpty: "Der er intet i Se senere.",

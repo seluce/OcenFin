@@ -54,6 +54,7 @@ export default {
 
     // Library / Filter
     personNoTitles: "이 인물이 참여한 작품이 없습니다.",
+    personAllSeen: "이 인물이 참여한 작품을 모두 봤습니다.",
     collectionEmpty: "이 컬렉션은 비어 있습니다.",
     playlistEmpty: "이 재생목록은 비어 있습니다.",
     watchlistEmpty: "찜 목록이 비어 있습니다.",

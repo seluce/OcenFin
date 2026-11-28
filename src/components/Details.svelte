@@ -852,16 +852,19 @@
     const shown = fullItem;
     const carry = !!item && item.Id === shown.Id;
     const willBePlayed = !shown.UserData?.Played;
-    shown.UserData = { ...shown.UserData, Played: willBePlayed };
-    if (carry) item.UserData = { ...item.UserData, Played: willBePlayed };
+    const was = shown.UserData, wasItem = carry ? item.UserData : null;
+    // The position goes too, as on the server (the card menu's reset relies on it, "mark earlier" below writes it, §168):
+    // the card Back returned to showed the tick AND the bar of a started title, and this page kept "Resume"
+    shown.UserData = { ...shown.UserData, Played: willBePlayed, PlaybackPositionTicks: 0 };
+    if (carry) item.UserData = { ...item.UserData, Played: willBePlayed, PlaybackPositionTicks: 0 };
     if (await setPlayed(shown.Id, selectedUser.Id, willBePlayed)) {
       // The home screen's Continue watching and Up next follow — a series or season marked here takes its
       // episode out of Continue watching, an episode moves Up next on (CODE-HEALTH §140)
       onProgressChanged?.();
     } else {
       // Roll back — an error ANSWER counts too: the tick used to stay although the server had refused
-      shown.UserData = { ...shown.UserData, Played: !willBePlayed };
-      if (carry) item.UserData = { ...item.UserData, Played: !willBePlayed };
+      shown.UserData = was;
+      if (carry) item.UserData = wasItem;
     }
   }
 

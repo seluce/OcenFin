@@ -54,6 +54,7 @@ export default {
 
     // Library / Filter
     personNoTitles: "Ehhez a személyhez nem tartozik cím.",
+    personAllSeen: "Az ehhez a személyhez tartozó összes cím megnézve.",
     collectionEmpty: "Ez a gyűjtemény üres.",
     playlistEmpty: "Ez a lejátszási lista üres.",
     watchlistEmpty: "A megnézendők listája üres.",

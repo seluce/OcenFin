@@ -54,6 +54,7 @@ export default {
 
     // Library / Filter
     personNoTitles: "Bu kişiyle ilgili içerik yok.",
+    personAllSeen: "Bu kişiyle ilgili tüm içerikler izlendi.",
     collectionEmpty: "Bu koleksiyon boş.",
     playlistEmpty: "Bu oynatma listesi boş.",
     watchlistEmpty: "İzleme listesi boş.",

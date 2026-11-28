@@ -54,6 +54,7 @@ export default {
 
     // Library / Filter
     personNoTitles: "Žádné tituly s touto osobou.",
+    personAllSeen: "Všechny tituly s touto osobou jsou zhlédnuté.",
     collectionEmpty: "Tato kolekce je prázdná.",
     playlistEmpty: "Tento playlist je prázdný.",
     watchlistEmpty: "Seznam Chci vidět je prázdný.",

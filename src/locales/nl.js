@@ -54,6 +54,7 @@ export default {
 
     // Library / Filter
     personNoTitles: "Geen titels met deze persoon.",
+    personAllSeen: "Je hebt alle titels met deze persoon gezien.",
     collectionEmpty: "Deze verzameling is leeg.",
     playlistEmpty: "Deze afspeellijst is leeg.",
     watchlistEmpty: "Je kijklijst is leeg.",

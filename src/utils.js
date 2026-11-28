@@ -79,6 +79,22 @@ export async function holdCardFocus(root, fallback, apply) {
   (left[Math.min(at, left.length - 1)] || fallback)?.focus();
 }
 
+// The last few pages a view showed, for Back (§168) — person pages and collections, kept in their `<script module>`.
+// One page was too few: person A → a film → person B → a film → Back, Back, Back put A up from nothing again. Newest
+// first; a lookup moves its page to the front, so the one longest unused goes when a new one comes. Pages carry a `key`
+// (server|profile|id) — another profile or server never finds them.
+export function pageMemory(max) {
+  let pages = [];
+  return {
+    get(key) {
+      const page = pages.find(p => p.key === key) || null;
+      if (page && pages[0] !== page) pages = [page, ...pages.filter(p => p !== page)];
+      return page;
+    },
+    put(page) { pages = [page, ...pages.filter(p => p.key !== page.key)].slice(0, max); },
+  };
+}
+
 // Detects the "back" action: Escape, Backspace OR the webOS remote
 // (Magic Remote "Back" sends keyCode 461). Backspace in a text input field
 // deletes a character and therefore does NOT count as back.

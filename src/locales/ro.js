@@ -54,6 +54,7 @@ export default {
 
     // Library / Filter
     personNoTitles: "Niciun titlu cu această persoană.",
+    personAllSeen: "Toate titlurile cu această persoană au fost vizionate.",
     collectionEmpty: "Această colecție este goală.",
     playlistEmpty: "Acest playlist este gol.",
     watchlistEmpty: "Lista mea este goală.",

@@ -54,6 +54,7 @@ export default {
 
     // Library / Filter
     personNoTitles: "No titles with this person.",
+    personAllSeen: "You've watched every title with this person.",
     collectionEmpty: "This collection is empty.",
     playlistEmpty: "This playlist is empty.",
     watchlistEmpty: "Your watchlist is empty.",

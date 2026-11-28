@@ -66,6 +66,7 @@ export default {
     earlierAllWatched: "Todos os episódios anteriores já foram assistidos",
     watchlist: "Minha lista",
     watchlistEmpty: "Minha lista está vazia.",
+    personAllSeen: "Todos os títulos com esta pessoa já foram assistidos.",
     resetProgress: "Redefinir progresso",
     subtitleSearchNone: "Nada encontrado. Para isso o servidor precisa de um provedor de legendas, como o plugin OpenSubtitles.",
     subtitleDownloading: "Baixando…",

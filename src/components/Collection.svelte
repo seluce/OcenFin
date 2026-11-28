@@ -1,9 +1,10 @@
 <script module>
-  // The list as it was left (§165), for ONE collection or playlist — the last: Back from a title shows it at once and
-  // asks again behind it, as the person page does (§164). Keyed by server, profile and list; an edit of a playlist's
-  // entries writes it too. The view's own reactive list (§166), not the raw answer: a tick set on the title page or in
-  // the card menu is already on the list Back shows.
-  let kept = null;   // { key, items }
+  import { pageMemory } from '../utils.js';
+  // The list as it was left (§165), for the last five collections or playlists (§168: a film's "Included in" leads
+  // from one to the next): Back from a title shows it at once and asks again behind it, as the person page does
+  // (§164). Keyed by server, profile and list; an edit of a playlist's entries writes it too. The view's own reactive
+  // list (§166), not the raw answer: a tick set on the title page or in the card menu is already on the list Back shows.
+  const kept = pageMemory(5);   // pages { key, items }
 </script>
 
 <script>
@@ -58,7 +59,8 @@
   let listEdits = 0;
   function keepEdit() {
     listEdits++;
-    if (kept?.key === keyOf()) kept.items = items;
+    const page = kept.get(keyOf());
+    if (page) page.items = items;
   }
 
   // Playlist management
@@ -135,7 +137,7 @@
     const myId = collection.Id, key = keyOf(), edits = listEdits;
     // The list as it was left, if it is this one: on screen and focused at once, the request below only brings it up
     // to date — the keyed cards stay, and so does the focus.
-    const hit = kept?.key === key ? kept : null;
+    const hit = kept.get(key);
     name      = collection.Name;
     items     = hit ? hit.items : [];
     isLoading = !hit;
@@ -160,7 +162,7 @@
     if (loaded && listEdits === edits) {
       if (hit) { holdCardFocus(scrollEl, backBtn, () => { items = loaded; }); steps.grow(() => ordered.length); }
       else items = loaded;
-      kept = { key, items };
+      kept.put({ key, items });
     } else if (!loaded && !hit) failed = true;   // it used to show the library's "no items" line (§166)
     isLoading = false;
     if (!hit) land();

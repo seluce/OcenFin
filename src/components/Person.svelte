@@ -1,10 +1,12 @@
 <script module>
-  // The page as it was left (§164), for ONE person — the last: Back from a title shows it at once and asks again
-  // behind it, where up to a dozen requests (a person with many titles and episodes) stood between Back and the page.
-  // Keyed by server, profile and person. The lists are kept as the page's own reactive state (§166), not the raw
-  // answer: a tick set on the title page (Details writes into the card's item) or in the card menu is then already on
-  // the page Back shows, where the raw answer had the old state until the refresh came.
-  let kept = null;   // { key, info, items, seriesOf, fav, sort }
+  import { pageMemory } from '../utils.js';
+  // The page as it was left (§164), for the last five persons (§168: one was too few for a chain person → film →
+  // person): Back from a title shows it at once and asks again behind it, where up to a dozen requests (a person with
+  // many titles and episodes) stood between Back and the page. Keyed by server, profile and person. The lists are kept
+  // as the page's own reactive state (§166), not the raw answer: a tick set on the title page (Details writes into the
+  // card's item) or in the card menu is then already on the page Back shows, where the raw answer had the old state
+  // until the refresh came.
+  const kept = pageMemory(5);   // pages { key, info, items, seriesOf, fav, sort, hidden }
 </script>
 
 <script>
@@ -57,7 +59,8 @@
   let sort = $state(BY_YEAR);
   function setSort(opt) {
     sort = sort.by === opt.by ? { by: opt.by, desc: !sort.desc } : { by: opt.by, desc: opt.desc };
-    if (kept?.key === keyOf()) kept.sort = sort;
+    const page = kept.get(keyOf());
+    if (page) page.sort = sort;
   }
   let collator = $derived(new Intl.Collator(i18n.lang, { sensitivity: 'base', numeric: true }));
   const dateOf = (i) => i._date || i.PremiereDate || (i.ProductionYear ? String(i.ProductionYear) : '');
@@ -89,23 +92,45 @@
     }
     return map;
   });
-  let groups = $derived.by(() => {
-    const tiles = [...guest].map(([id, eps]) => ({
-      ...(seriesOf[id] || { Id: id, Type: 'Series', Name: eps[0].SeriesName || eps[0].Name,
-          ImageTags: eps[0].SeriesPrimaryImageTag ? { Primary: eps[0].SeriesPrimaryImageTag } : undefined }),
-      _episodes: eps,
-      _date: eps.reduce((d, e) => (e.PremiereDate || '') > d ? e.PremiereDate : d, ''),
-    }));
+  // A guest tile's status is the guest role's (§168), not the series': it showed the tick only once the WHOLE series
+  // was watched, and leads to the episode since §166. One episode → its tick and progress (its UserData, the very
+  // object Details and the card menu write into); several → the tick once all of them are watched, no bar.
+  let all = $derived.by(() => {
+    const tiles = [...guest].map(([id, eps]) => {
+      const series = seriesOf[id], one = eps.length === 1 ? eps[0] : null;
+      return {
+        ...(series || { Id: id, Type: 'Series', Name: eps[0].SeriesName || eps[0].Name,
+            ImageTags: eps[0].SeriesPrimaryImageTag ? { Primary: eps[0].SeriesPrimaryImageTag } : undefined }),
+        UserData: one ? one.UserData : { Played: !!series?.UserData?.Played || eps.every(e => e.UserData?.Played) },
+        RunTimeTicks: one?.RunTimeTicks,
+        _episodes: eps,
+        _date: eps.reduce((d, e) => (e.PremiereDate || '') > d ? e.PremiereDate : d, ''),
+      };
+    });
     return [
       { label: i18n.t.movies, items: order(items.filter(i => i.Type === 'Movie')) },
       { label: i18n.t.series, items: order([...items.filter(i => i.Type === 'Series'), ...tiles]) },
     ].filter(g => g.items.length > 0);
   });
+
+  // "Unplayed" (§168): what was watched when the chip was pressed stays away until it is pressed again — a title
+  // watched meanwhile keeps its place (with its tick), so the card Back returns to is still there and nothing moves
+  // under the focus. A Set of ids, null = off; kept with the page like the sort, a new person starts with it off.
+  let hidden = $state(null);
+  function toggleUnseen() {
+    hidden = hidden ? null : new Set(all.flatMap(g => g.items).filter(i => i.UserData?.Played).map(i => i.Id));
+    const page = kept.get(keyOf());
+    if (page) page.hidden = hidden;
+  }
+  // `count` for the heading (§168): what the group shows, all of it — the grid itself goes up in steps
+  let groups = $derived((hidden ? all.map(g => ({ ...g, items: g.items.filter(i => !hidden.has(i.Id)) })) : all)
+    .filter(g => g.items.length).map(g => ({ ...g, count: g.items.length })));
   // Up to 500 films and the series besides — put up in steps (§165), the first screenful at once
   const steps = cardSteps();
   let ordered = $derived(groups.flatMap(g => g.items));
   let shown   = $derived(steps.slice(groups));
-  let sortable = $derived(groups.some(g => g.items.length > 1));
+  // The chips go by the whole list: with "Unplayed" on and everything watched they must stay, to turn it off again
+  let sortable = $derived(all.some(g => g.items.length > 1));
 
   // A guest series' tile leads to the guest role (§166): it used to open the series, where the episode was to be found
   // by hand, in whichever season. One episode → its page; several → a short list of them, and the series from there.
@@ -120,6 +145,24 @@
     if (!eps) onOpenDetails(item);
     else if (eps.length === 1) onOpenDetails(eps[0]);
     else { pickEl = document.activeElement; pick = item; }
+  }
+  // The card menu speaks for what the tile stands for (§168): the title itself, the ONE guest episode, or — with
+  // several — the series. The server passes a series' watched mark on to all its episodes, and so does the tile's menu
+  // here (to the guest episodes it shows): "mark as unwatched" left the tick of all-watched guest episodes standing.
+  function menuFor(item) {
+    const eps = item._episodes;
+    if (!eps) return onContextMenu(item);
+    if (eps.length === 1) return onContextMenu(eps[0]);
+    const series = seriesOf[item.Id];
+    if (!series?.UserData) return onContextMenu(item);   // the series' data still on its way: its menu, unmirrored
+    // The target is the series' own (reactive) data, so Svelte takes this wrapper as state and never wraps it again
+    onContextMenu({ ...series, UserData: new Proxy(series.UserData, {
+      set(data, key, value) {
+        data[key] = value;
+        if (key === 'Played') for (const e of eps) if (e.UserData) e.UserData.Played = value;
+        return true;
+      },
+    }) });
   }
   // Closes the list and puts focus back on the tile — after the flush that removes the list's trap, which would pull
   // focus back in (CLAUDE.md) — and only then goes on, so App takes the tile for the way back, not a button in here.
@@ -193,12 +236,13 @@
     const myId = person.Id, key = keyOf(), edits = favEdits;
     // The page as it was left, if it is this person's: on screen and focused at once, the requests below only bring it
     // up to date — the keyed cards stay, and so does the focus.
-    const hit = kept?.key === key ? kept : null;
+    const hit = kept.get(key);
     fav       = hit ? hit.fav : !!person.UserData?.IsFavorite;
     info      = hit?.info ?? null;
     items     = hit?.items ?? [];
     seriesOf  = hit?.seriesOf ?? {};
     sort      = hit?.sort ?? BY_YEAR;
+    hidden    = hit?.hidden ?? null;
     showBio   = false;
     showShare = false;
     pick      = null;
@@ -234,7 +278,7 @@
       const fresh = [...(main.Items || []), ...(eps.Items || [])];
       if (hit) { holdCardFocus(scrollEl, backBtn, () => { items = fresh; }); steps.grow(() => ordered.length); }
       else items = fresh;
-      kept = { key, info, items, seriesOf, fav, sort };
+      kept.put({ key, info, items, seriesOf, fav, sort, hidden });
     } else if (!hit) failed = true;
     isLoading = false;
     loadGuestSeries(myId, [...guest.keys()], key);
@@ -283,7 +327,8 @@
     await Promise.all(asks);
     if (myId !== loadedId || !Object.keys(found).length) return;
     seriesOf = found;
-    if (kept?.key === key) kept.seriesOf = seriesOf;
+    const page = kept.get(key);
+    if (page) page.seriesOf = seriesOf;
   }
 
   // Set/remove the person as a favorite (optimistic; roll back on error). A press while the page loads — a kept page
@@ -294,7 +339,8 @@
     const next = !fav;
     fav = next;
     if (!(await setFavorite(person.Id, selectedUser.Id, next))) fav = !next;
-    if (kept?.key === keyOf()) kept.fav = fav;
+    const page = kept.get(keyOf());
+    if (page) page.fav = fav;
   }
 
   // Loads on mount and when a different person is opened.
@@ -341,6 +387,16 @@
          screen again (§165). Only where sorting changes something. -->
     {#if !isLoading && sortable}
       <div class="flex items-center gap-3 ml-4">
+        <!-- First, as the library's favourites chip: a filter, with its icon, before the order -->
+        <button onclick={toggleUnseen} aria-pressed={!!hidden}
+          class="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm whitespace-nowrap
+                 focus:outline-none focus:ring-4 focus:ring-white transition-transform focus:scale-105
+                 {hidden ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/>
+          </svg>
+          {i18n.t.filterUnplayed}
+        </button>
         {#each SORTS as opt}
           <button onclick={() => setSort(opt)}
             class="shrink-0 flex items-center gap-1.5 px-5 py-2.5 rounded-full font-bold text-sm whitespace-nowrap
@@ -399,13 +455,17 @@
     </div>
   {:else if groups.length > 0}
     {#each shown as group (group.label)}
-      <h2 class="text-2xl font-bold text-white mb-4">{group.label}</h2>
+      <h2 class="text-2xl font-bold text-white mb-4">{group.label}<span class="ml-3 text-gray-500 tabular-nums">{group.count}</span></h2>
       <div data-focus-grid class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-10">
         {#each group.items as item (item.Id)}
-          <PosterCard {item} onOpenDetails={openCard} {onContextMenu} caption={cardCaption} />
+          <PosterCard {item} onOpenDetails={openCard} onContextMenu={menuFor} caption={cardCaption} />
         {/each}
       </div>
     {/each}
+  {:else if hidden && all.length}
+    <div class="flex items-center justify-center h-64">
+      <p class="text-2xl text-gray-500 font-bold">{i18n.t.personAllSeen}</p>
+    </div>
   {:else if failed}
     <div class="flex flex-col items-center justify-center gap-6 h-64">
       <p class="text-2xl text-gray-500 font-bold">{i18n.t.loadFailed}</p>

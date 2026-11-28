@@ -54,6 +54,7 @@ export default {
 
     // Library / Filter
     personNoTitles: "Нет записей с участием этого человека.",
+    personAllSeen: "Все записи с участием этого человека просмотрены.",
     collectionEmpty: "Эта коллекция пуста.",
     playlistEmpty: "Этот плейлист пуст.",
     watchlistEmpty: "Список «Буду смотреть» пуст.",

@@ -17,11 +17,15 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Guest roles lead to the episode.** A guest appearance in one episode opens that episode; with several, a short list
   shows them, with a way to the series.
 - **Sort a person's titles.** By year, rating or name, like a library; pressing the active one again reverses it.
+- **Only what you have not seen.** One press beside the sort buttons hides the titles of a person you have already
+  watched.
+- **How many titles.** The films and series on a person page show their number beside the heading.
 
 ### Changed
 
 - **Back to a person or a collection at once.** Coming back from a title, the person page, collection or playlist is
-  there straight away and updates itself in the background.
+  there straight away and updates itself in the background, also when you went on from one person or collection to
+  the next.
 - **Big pages open faster.** A person with hundreds of titles, or a large collection or playlist, shows the first
   titles straight away and builds the rest right after.
 - **A screen that fails shows a message.** Instead of a half-built page it offers Retry and Back, and the error is
@@ -46,13 +50,16 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   miss older guest roles in other series; it now looks further back.
 - **Long filmographies complete.** The person page stopped after 100 films and series; it now shows up to 500, enough
   for a film composer in a big library.
-- **Guest roles show what you watched.** A series someone only guest-starred in now has the tick like the others.
+- **Guest roles show what you watched.** A series someone only guest-starred in has the tick once you have seen their
+  episodes, and a single started one shows how far you got; its menu then marks that episode, not the whole series.
 - **The person page no longer shifts when it opens.** The head is a little lower, so the first row of titles fits below
   it at the standard size.
 - **Watched at once after Back.** A title marked watched and left again shows its tick on the person page or collection
   straight away, not a moment later.
 - **The right message on an empty or failed page.** A person with nothing in the library, an empty collection or
   playlist no longer says "No items found in this library", and a page that could not load offers Retry.
+- **No progress bar on a watched title.** A started title marked watched in its menu or on its page lost its bar only
+  after the page was loaded again.
 
 ## 2026.11.22
 

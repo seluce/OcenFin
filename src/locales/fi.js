@@ -54,6 +54,7 @@ export default {
 
     // Library / Filter
     personNoTitles: "Tällä henkilöllä ei ole nimikkeitä.",
+    personAllSeen: "Kaikki tämän henkilön nimikkeet on katsottu.",
     collectionEmpty: "Tämä kokoelma on tyhjä.",
     playlistEmpty: "Tämä soittolista on tyhjä.",
     watchlistEmpty: "Katselulista on tyhjä.",
