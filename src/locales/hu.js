@@ -547,6 +547,7 @@ export default {
     // Share
     share: "Megosztás",
     shareHint: "Olvasd be a telefonoddal a cím megkereséséhez vagy megosztásához.",
+    sharePersonHint: "Olvasd be a telefonoddal a személy megkereséséhez vagy megosztásához.",
 
     // Subtitle offset
     subtitleOffset: "Eltolás",

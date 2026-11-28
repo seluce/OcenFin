@@ -547,6 +547,7 @@ export default {
     // Share
     share: "공유",
     shareHint: "휴대폰으로 스캔해 작품을 찾아보거나 공유하세요.",
+    sharePersonHint: "휴대폰으로 스캔해 이 인물을 찾아보거나 공유하세요.",
 
     // Subtitle offset
     subtitleOffset: "싱크 조절",

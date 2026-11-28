@@ -1,9 +1,17 @@
+<script module>
+  // The page as it was left (§164), for ONE person — the last: Back from a title shows it at once and asks again
+  // behind it, where up to a dozen requests (a person with many titles and episodes) stood between Back and the page.
+  // Raw server data, keyed by server, profile and person.
+  let kept = null;   // { key, info, items, seriesOf, fav }
+</script>
+
 <script>
   import { i18n, plural } from '../i18n.svelte.js';
-  import { authHeaders, getItemSubtitle, setFavorite, personImageUrl, blurUp, itemBlurHash, clampWatch, makeFocusReturn } from '../utils.js';
+  import { dlog, authHeaders, getItemSubtitle, setFavorite, personImageUrl, blurUp, itemBlurHash, clampWatch, makeFocusReturn } from '../utils.js';
   import { session } from '../session.svelte.js';
   import PosterCard from './PosterCard.svelte';
   import TextDialog from './TextDialog.svelte';
+  import ShareDialog from './ShareDialog.svelte';
   import { tick, untrack } from 'svelte';
 
   // focusItemId: the title to land on after the parent brought us back from a detail page. Passed
@@ -21,12 +29,13 @@
   let seriesOf  = $state({});     // guest series as the server has them, by Id (their watched state)
   let isLoading = $state(false);
 
-  // Episodes come in pages (§163). A series' regular cast is credited on EVERY episode (TMDb), so one page of 200
-  // could be full of a long-running series' own episodes — dropped below, its tile stands there already — and older
-  // guest roles fell off its end. A full page asks for the next, up to EP_MAX; anyone with fewer credits still costs
-  // one request. Sorted down to the episode, so a page boundary between two of the same date cannot shift, and merged
-  // by Id in case it does.
-  const EP_PAGE = 200, EP_MAX = 1000;
+  // How far each list reaches (§163, §164). A series' regular cast is credited on EVERY episode (TMDb), so 200
+  // episodes could all be a long-running series' own — dropped below, its tile stands there already — and older guest
+  // roles fell off the end; films/series carry every role (music, writing, directing), past 100 for a film composer in
+  // a big library. ONE request each with the higher limit, not pages: the page waits for all of it anyway, and pages
+  // one after another cost a round trip each (450 episodes: 379 instead of 165 ms at 100 ms latency). A person with
+  // fewer credits gets the very same answer as before.
+  const MAIN_MAX = 500, EP_MAX = 1000;
 
   // Group the filmography by type. Episodes are COLLAPSED per series into a single
   // "Series (N episodes)" tile — so guest stars (only credited on individual episodes,
@@ -91,62 +100,83 @@
   const bioFocus = makeFocusReturn();
   $effect(() => { if (!showBio && bioFocus.pending) bioFocus.restore(); });
 
+  // Share (§164): a QR code of the person's public page, as the title page has one — IMDb (prefered there too), else
+  // TMDb, else the name to look up. Jellyfin's TMDb data brings both ids with the person.
+  let showShare   = $state(false);
+  let shareBtn    = $state();
+  let shareTarget = $state(null);
+  const shareFocus = makeFocusReturn();
+  $effect(() => { if (!showShare && shareFocus.pending) shareFocus.restore(); });
+  function openShare() {
+    shareFocus.capture(shareBtn);
+    const ids = (info || person)?.ProviderIds || {};
+    shareTarget = ids.Imdb ? `https://www.imdb.com/name/${ids.Imdb}/`
+      : ids.Tmdb ? `https://www.themoviedb.org/person/${ids.Tmdb}` : (person.Name || '');
+    dlog('[share] person →', shareTarget);
+    showShare = true;
+  }
+
+  const keyOf = () => `${session.serverUrl}|${selectedUser.Id}|${person.Id}`;
+
 
   async function loadPerson() {
     // Opening a second person while the first is still loading would otherwise let the slower
     // response win and fill the view with the wrong filmography. loadedId is set synchronously
     // before this runs, so comparing against it identifies a superseded load. Same guard as in
     // Details/Library/Search.
-    const myId = person.Id;
-    fav       = !!person.UserData?.IsFavorite;
-    info      = null;
-    items     = [];
-    seriesOf  = {};
+    const myId = person.Id, key = keyOf(), edits = favEdits;
+    // The page as it was left, if it is this person's: on screen and focused at once, the requests below only bring it
+    // up to date — the keyed cards stay, and so does the focus.
+    const hit = kept?.key === key ? kept : null;
+    fav       = hit ? hit.fav : !!person.UserData?.IsFavorite;
+    info      = hit?.info ?? null;
+    items     = hit?.items ?? [];
+    seriesOf  = hit?.seriesOf ?? {};
     showBio   = false;
-    isLoading = true;
+    showShare = false;
+    isLoading = !hit;
+    if (hit) land();
     const auth = { headers: authHeaders() };
     const json = (r) => r.ok ? r.json() : null;
     // The person itself: /Items/{id} carries every field — the favourite status (from search and the cast, UserData is
-    // often missing), the photo, the life data, the biography. Awaited together with the filmography, so the head of
-    // the page is complete when the grids go up and nothing below moves once a card has focus.
+    // often missing), the photo, the life data, the biography, the ids to share. Awaited together with the filmography,
+    // so the head of the page is complete when the grids go up and nothing below moves once a card has focus.
     const personReq = fetch(`${session.serverUrl}/Items/${person.Id}?UserId=${selectedUser.Id}`, auth).then(json).catch(() => null);
     // Two lists in parallel: films/series, and the episodes (for guest roles), so a long-running series' episodes can
     // never crowd films and series out of a single limit.
     const base = `${session.serverUrl}/Items?UserId=${selectedUser.Id}&PersonIds=${person.Id}` +
-      `&Recursive=true&ImageTypeLimit=1&EnableTotalRecordCount=false`;
-    const episodes = (start) => fetch(`${base}&IncludeItemTypes=Episode` +
-      `&SortBy=PremiereDate,SeriesSortName,ParentIndexNumber,IndexNumber&SortOrder=Descending` +
-      `&StartIndex=${start}&Limit=${EP_PAGE}`, auth).then(json);
+      `&Recursive=true&SortBy=PremiereDate&SortOrder=Descending&ImageTypeLimit=1&EnableTotalRecordCount=false`;
     try {
-      const [main, first, p] = await Promise.all([
-        fetch(`${base}&IncludeItemTypes=Movie,Series&SortBy=PremiereDate&SortOrder=Descending&Limit=100`, auth).then(json),
-        episodes(0),
+      const [main, eps, p] = await Promise.all([
+        fetch(`${base}&IncludeItemTypes=Movie,Series&Limit=${MAIN_MAX}`, auth).then(json),
+        fetch(`${base}&IncludeItemTypes=Episode&Limit=${EP_MAX}`, auth).then(json),
         personReq,
       ]);
       if (myId !== loadedId) return;   // superseded by a newer person
-      let page = first?.Items || [];
-      const eps = [...page];
-      while (page.length === EP_PAGE && eps.length < EP_MAX) {
-        page = (await episodes(eps.length).catch(() => null))?.Items || [];
-        if (myId !== loadedId) return;
-        eps.push(...page);
-      }
-      if (p) { info = p; fav = !!p.UserData?.IsFavorite; }
-      const seen = new Set();
-      items = [...(main?.Items || []), ...eps.filter(e => !seen.has(e.Id) && seen.add(e.Id))];
+      const fresh = [...(main?.Items || []), ...(eps?.Items || [])];
+      if (p) { info = p; if (favEdits === edits) fav = !!p.UserData?.IsFavorite; }
+      items = fresh;
+      kept = { key, info: p || hit?.info || null, items: fresh, seriesOf: hit?.seriesOf || {}, fav };
     } catch {
-      // No filmography — the person's own data may still have come (personReq never rejects)
+      // No filmography — the person's own data may still have come (personReq never rejects). A page that was kept
+      // stays as it was.
       const p = await personReq;
-      if (p && myId === loadedId) { info = p; fav = !!p.UserData?.IsFavorite; }
+      if (p && myId === loadedId) { info = p; if (favEdits === edits) fav = !!p.UserData?.IsFavorite; }
     }
     finally { if (myId === loadedId) isLoading = false; }
     if (myId !== loadedId) return;
-    loadGuestSeries(myId, [...guest.keys()]);
+    loadGuestSeries(myId, [...guest.keys()], key);
+    if (!hit) land();
+  }
+
+  // Same landing as favourites and collections: the title we came back from, failing that the
+  // first one, and only for a person with no titles the Back button — which holds focus while the
+  // skeletons are up, since nothing else there can. The remembered offset applies only on a
+  // return; on a fresh open it belongs to some earlier view and would jump this one.
+  async function land() {
+    const myId = loadedId;
     await tick();
-    // Same landing as favourites and collections: the title we came back from, failing that the
-    // first one, and only for a person with no titles the Back button — which holds focus while the
-    // skeletons are up, since nothing else there can. The remembered offset applies only on a
-    // return; on a fresh open it belongs to some earlier view and would jump this one.
+    if (myId !== loadedId) return;
     const card = (focusItemId && scrollEl?.querySelector(`[data-item-id="${focusItemId}"]`))
               || scrollEl?.querySelector('[data-item-id]');
     if (scrollEl && focusItemId) scrollEl.scrollTop = focusScrollTop;
@@ -157,7 +187,7 @@
   // and its poster but not whether it is watched, so it never had the tick a series the person is regular cast of has.
   // Asked by Ids once the page is up, 100 at a time (the length of the address); the answer replaces the tile's data
   // in place — the keyed card stays, and so does the focus. A series not in the answer keeps its tile as it was.
-  async function loadGuestSeries(myId, ids) {
+  async function loadGuestSeries(myId, ids, key) {
     if (!ids.length) return;
     const found = {};
     const asks = [];
@@ -169,14 +199,20 @@
         .catch(() => {}));
     }
     await Promise.all(asks);
-    if (myId === loadedId && Object.keys(found).length) seriesOf = found;
+    if (myId !== loadedId || !Object.keys(found).length) return;
+    seriesOf = found;
+    if (kept?.key === key) kept.seriesOf = found;
   }
 
-  // Set/remove the person as a favorite (optimistic; roll back on error)
+  // Set/remove the person as a favorite (optimistic; roll back on error). A press while the page loads — a kept page
+  // takes presses at once — outranks the answer that load brings (asked before the press).
+  let favEdits = 0;
   async function toggleFavorite() {
+    favEdits++;
     const next = !fav;
     fav = next;
     if (!(await setFavorite(person.Id, selectedUser.Id, next))) fav = !next;
+    if (kept?.key === keyOf()) kept.fav = fav;
   }
 
   // Loads on mount and when a different person is opened.
@@ -215,6 +251,10 @@
       class="w-12 h-12 rounded-lg focus:outline-none focus:ring-4 focus:ring-white transition-colors flex items-center justify-center
              {fav ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700 focus:bg-gray-700'}">
       <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0z"/></svg>
+    </button>
+    <button bind:this={shareBtn} onclick={openShare} aria-label={i18n.t.share}
+      class="w-12 h-12 rounded-lg bg-gray-800 text-gray-400 hover:bg-gray-700 focus:bg-gray-700 focus:text-white focus:outline-none focus:ring-4 focus:ring-white flex items-center justify-center">
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
     </button>
   </div>
   <!-- Photo, name and life data; the biography below them, starting at the grid's left edge — beside the photo it
@@ -272,4 +312,10 @@
 
 {#if showBio && info?.Overview}
   <TextDialog title={person.Name} text={info.Overview} onClose={() => showBio = false} />
+{/if}
+
+{#if showShare}
+  <ShareDialog target={shareTarget} hint={i18n.t.sharePersonHint} onClose={() => showShare = false}>
+    <p class="text-white font-bold text-center break-words">{person.Name}</p>
+  </ShareDialog>
 {/if}

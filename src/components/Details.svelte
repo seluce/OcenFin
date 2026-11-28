@@ -4,6 +4,7 @@
   import { dlog, isBackKey, focusOnMount, itemProgress, minutesLeft, episodeCode, backdropUrl, logoUrl, runtimeLabel, frameRateLabel, endsAtLabel, authHeaders, setPlayed, setFavorite, blurUp, itemBlurHash, blurHashTint, makeFocusReturn, hint, scrollByKey, clampWatch, getItemImageUrlWithFallbacks as getItemImageUrl } from '../utils.js';
   import Dialog from './Dialog.svelte';
   import TextDialog from './TextDialog.svelte';
+  import ShareDialog from './ShareDialog.svelte';
   import { pickDefaultTracks, rememberChoice, orderTracks } from '../trackmemory.js';
   import { trackLabels } from '../tracklabel.js';
   import { playThemeFor, stopTheme } from '../thememusic.js';
@@ -412,7 +413,7 @@
   // After closing the share modal, put focus back on the three dots.
   $effect(() => { if (!showShare && shareFocus.pending) shareFocus.restore(); });
   $effect(() => { if (!showMediaInfo && !pickerMode && menuReturn.pending) menuReturn.restore(); });
-  let shareQrSvg = $state(null);
+  let shareTarget = $state(null);   // what the QR code says (ShareDialog draws it)
   // Public link (IMDb/TMDb) of an item — or null if none can be built. A season has no public ID of its
   // own and an episode only sometimes (IMDb), so both go through their SERIES' IDs: on IMDb the season's
   // episode list, on TMDb the season or episode page. They used to fall back to the plain series page.
@@ -444,21 +445,17 @@
   async function openShare() {
     shareFocus.capture(kebabBtnEl);
     showShare = true;
-    shareQrSvg = null;
-    try {
-      // A season, or an episode without its own IMDb ID, links through its series (see buildShareUrl).
-      let series = null;
-      if ((fullItem.Type === 'Season' || fullItem.Type === 'Episode') && fullItem.SeriesId && !fullItem.ProviderIds?.Imdb) {
-        try {
-          const res = await fetch(`${session.serverUrl}/Items/${fullItem.SeriesId}?UserId=${selectedUser.Id}`, { headers: authHeaders() });
-          if (res.ok) series = await res.json();
-        } catch { /* series unreachable → title fallback below */ }
-      }
-      const target = buildShareUrl(fullItem, series) || shareTitleText(fullItem);
-      dlog('[share]', fullItem.Type, '→', target);
-      const { renderSVG } = await import('uqr');   // dynamically loaded, zero-dependency
-      shareQrSvg = renderSVG(target || ' ', { ecc: 'M', border: 1 });   // vector instead of PNG → razor sharp
-    } catch (e) { console.warn('[OcenFin] share QR failed', e); }
+    shareTarget = null;
+    // A season, or an episode without its own IMDb ID, links through its series (see buildShareUrl).
+    let series = null;
+    if ((fullItem.Type === 'Season' || fullItem.Type === 'Episode') && fullItem.SeriesId && !fullItem.ProviderIds?.Imdb) {
+      try {
+        const res = await fetch(`${session.serverUrl}/Items/${fullItem.SeriesId}?UserId=${selectedUser.Id}`, { headers: authHeaders() });
+        if (res.ok) series = await res.json();
+      } catch { /* series unreachable → title fallback below */ }
+    }
+    shareTarget = buildShareUrl(fullItem, series) || shareTitleText(fullItem);
+    dlog('[share]', fullItem.Type, '→', shareTarget);
   }
 
   // The media info's size and bitrates in the app language's digits and in decimal units, like the version list
@@ -1753,32 +1750,18 @@
 
 <!-- Share: QR code with a title link (IMDb/TMDb) to scan -->
 {#if showShare}
-  <Dialog onBack={() => showShare = false}>
-    <div data-modal
-      class="bg-gray-800 border border-gray-700 rounded-2xl p-8 w-full max-w-lg flex flex-col items-center gap-5 shadow-2xl">
-      <div class="flex items-center justify-between gap-4 w-full">
-        <h2 class="text-3xl text-white font-bold">{i18n.t.share}</h2>
-        <button onclick={() => showShare = false} {@attach focusOnMount()}
-          class="px-5 py-3 rounded-xl font-bold bg-gray-700 hover:bg-gray-600 focus:bg-gray-600 text-white
-                 focus:outline-none focus:ring-4 focus:ring-white transition-colors">{i18n.t.close}</button>
+  <ShareDialog target={shareTarget} hint={i18n.t.shareHint} onClose={() => showShare = false}>
+    <!-- A season or an episode alone read "Season 2" / "Episode 1": the series first, then which part
+         of it, in the episode row's own form ("S2:E1 · title"). -->
+    {#if fullItem?.SeriesName && (fullItem.Type === 'Season' || fullItem.Type === 'Episode')}
+      <div class="text-center break-words">
+        <p class="text-white font-bold">{fullItem.SeriesName}</p>
+        <p class="text-gray-300 font-semibold mt-1">{fullItem.Type === 'Episode' ? epTitle(fullItem) : fullItem.Name}</p>
       </div>
-      {#if shareQrSvg}
-        <div class="rounded-xl bg-white p-3 [&>svg]:block [&>svg]:w-full [&>svg]:h-full"
-             style="width:320px;height:320px;max-width:40vh;max-height:40vh;">{@html shareQrSvg}</div>
-      {/if}
-      <!-- A season or an episode alone read "Season 2" / "Episode 1": the series first, then which part
-           of it, in the episode row's own form ("S2:E1 · title"). -->
-      {#if fullItem?.SeriesName && (fullItem.Type === 'Season' || fullItem.Type === 'Episode')}
-        <div class="text-center break-words">
-          <p class="text-white font-bold">{fullItem.SeriesName}</p>
-          <p class="text-gray-300 font-semibold mt-1">{fullItem.Type === 'Episode' ? epTitle(fullItem) : fullItem.Name}</p>
-        </div>
-      {:else}
-        <p class="text-white font-bold text-center break-words">{fullItem?.Name}</p>
-      {/if}
-      <p class="text-gray-400 text-base text-center max-w-md">{i18n.t.shareHint}</p>
-    </div>
-  </Dialog>
+    {:else}
+      <p class="text-white font-bold text-center break-words">{fullItem?.Name}</p>
+    {/if}
+  </ShareDialog>
 {/if}
 
 {#if subtitleSearchOpen && fullItem}

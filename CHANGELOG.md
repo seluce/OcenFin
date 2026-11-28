@@ -13,9 +13,12 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   before it shows anything, so a child cannot land in it.
 - **More about a person.** The person page shows the photo, birthday, age, place of birth and, where known, the day of
   death, plus the biography; a long one opens in full with OK.
+- **Share a person.** Like a title, a person can be shared as a QR code that opens their IMDb or TMDb page on a phone.
 
 ### Changed
 
+- **Back to a person at once.** Coming back from a title, the person page is there straight away and updates itself in
+  the background.
 - **A screen that fails shows a message.** Instead of a half-built page it offers Retry and Back, and the error is
   written to the log.
 - **Screen saver settings in profiles with an age limit.** The screen saver belongs to each profile now, so these
@@ -36,6 +39,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
   of 3"; it now counts to the season's highest episode number.
 - **Guest roles behind a long series.** For someone in the main cast of a long-running series, the person page could
   miss older guest roles in other series; it now looks further back.
+- **Long filmographies complete.** The person page stopped after 100 films and series; it now shows up to 500, enough
+  for a film composer in a big library.
 - **Guest roles show what you watched.** A series someone only guest-starred in now has the tick like the others.
 
 ## 2026.11.22

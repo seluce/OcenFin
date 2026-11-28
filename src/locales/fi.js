@@ -547,6 +547,7 @@ export default {
     // Share
     share: "Jaa",
     shareHint: "Hae tai jaa nimike skannaamalla koodi puhelimella.",
+    sharePersonHint: "Hae tai jaa henkilö skannaamalla koodi puhelimella.",
 
     // Subtitle offset
     subtitleOffset: "Ajoitus",

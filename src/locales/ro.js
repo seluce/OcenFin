@@ -547,6 +547,7 @@ export default {
     // Share
     share: "Distribuie",
     shareHint: "Scanează cu telefonul pentru a căuta sau distribui titlul.",
+    sharePersonHint: "Scanează cu telefonul pentru a căuta sau distribui această persoană.",
 
     // Subtitle offset
     subtitleOffset: "Decalaj",

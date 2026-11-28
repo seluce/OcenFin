@@ -547,6 +547,7 @@ export default {
     // Share
     share: "Delen",
     shareHint: "Scan met je telefoon om de titel op te zoeken of te delen.",
+    sharePersonHint: "Scan met je telefoon om deze persoon op te zoeken of te delen.",
 
     // Subtitle offset
     subtitleOffset: "Verschuiving",

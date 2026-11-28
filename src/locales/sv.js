@@ -547,6 +547,7 @@ export default {
     // Share
     share: "Dela",
     shareHint: "Skanna med telefonen för att slå upp eller dela titeln.",
+    sharePersonHint: "Skanna med telefonen för att slå upp eller dela personen.",
 
     // Subtitle offset
     subtitleOffset: "Förskjutning",

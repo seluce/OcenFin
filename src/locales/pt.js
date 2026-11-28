@@ -547,6 +547,7 @@ export default {
     // Share
     share: "Partilhar",
     shareHint: "Digitalize com o telemóvel para consultar ou partilhar o título.",
+    sharePersonHint: "Digitalize com o telemóvel para consultar ou partilhar esta pessoa.",
 
     // Subtitle offset
     subtitleOffset: "Desfasamento",

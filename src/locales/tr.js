@@ -547,6 +547,7 @@ export default {
     // Share
     share: "Paylaş",
     shareHint: "İçeriği aramak veya paylaşmak için telefonunuzla tarayın.",
+    sharePersonHint: "Bu kişiyi aramak veya paylaşmak için telefonunuzla tarayın.",
 
     // Subtitle offset
     subtitleOffset: "Kaydırma",

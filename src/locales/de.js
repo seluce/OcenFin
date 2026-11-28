@@ -547,6 +547,7 @@ export default {
     // Share
     share: "Teilen",
     shareHint: "Mit dem Handy scannen, um den Titel nachzuschlagen oder zu teilen.",
+    sharePersonHint: "Mit dem Handy scannen, um die Person nachzuschlagen oder zu teilen.",
 
     // Subtitle offset
     subtitleOffset: "Versatz",

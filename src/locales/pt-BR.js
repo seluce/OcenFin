@@ -240,6 +240,7 @@ export default {
     // Share
     share: "Compartilhar",
     shareHint: "Escaneie com o celular para ver ou compartilhar o título.",
+    sharePersonHint: "Escaneie com o celular para ver ou compartilhar esta pessoa.",
 
     // Subtitle offset
     subtitleOffset: "Atraso",

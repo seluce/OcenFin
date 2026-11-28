@@ -547,6 +547,7 @@ export default {
     // Share
     share: "Udostępnij",
     shareHint: "Zeskanuj telefonem, aby wyszukać lub udostępnić tytuł.",
+    sharePersonHint: "Zeskanuj telefonem, aby wyszukać lub udostępnić tę osobę.",
 
     // Subtitle offset
     subtitleOffset: "Przesunięcie",

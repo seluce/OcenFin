@@ -547,6 +547,7 @@ export default {
     // Share
     share: "Поділитися",
     shareHint: "Скануйте телефоном, щоб знайти запис або поділитися ним.",
+    sharePersonHint: "Скануйте телефоном, щоб знайти цю людину або поділитися посиланням.",
 
     // Subtitle offset
     subtitleOffset: "Зсув",

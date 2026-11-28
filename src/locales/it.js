@@ -547,6 +547,7 @@ export default {
     // Share
     share: "Condividi",
     shareHint: "Scansiona con il telefono per cercare o condividere il titolo.",
+    sharePersonHint: "Scansiona con il telefono per cercare o condividere questa persona.",
 
     // Subtitle offset
     subtitleOffset: "Sfasamento",

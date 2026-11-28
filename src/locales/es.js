@@ -547,6 +547,7 @@ export default {
     // Share
     share: "Compartir",
     shareHint: "Escanea con el móvil para consultar o compartir el título.",
+    sharePersonHint: "Escanea con el móvil para consultar o compartir esta persona.",
 
     // Subtitle offset
     subtitleOffset: "Desfase",
