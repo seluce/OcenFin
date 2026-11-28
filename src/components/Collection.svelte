@@ -1,7 +1,15 @@
+<script module>
+  // The list as it was left (§165), for ONE collection or playlist — the last: Back from a title shows it at once and
+  // asks again behind it, as the person page does (§164). Raw server data, keyed by server, profile and list; an edit
+  // of a playlist's entries writes it too.
+  let kept = null;   // { key, items }
+</script>
+
 <script>
   import { tick, onDestroy, untrack } from 'svelte';
   import { i18n } from '../i18n.svelte.js';
-  import { itemBlurHash, blurUp, authHeaders, focusOnMount, getItemImageUrl, getItemSubtitle } from '../utils.js';
+  import { itemBlurHash, blurUp, authHeaders, focusOnMount, getItemImageUrl, getItemSubtitle, holdCardFocus } from '../utils.js';
+  import { cardSteps } from '../cardsteps.svelte.js';
   import { buildPlayQueue } from '../playback.js';
   import { WATCHLIST_NAME } from '../watchlist.svelte.js';
   import PosterCard from './PosterCard.svelte';
@@ -27,6 +35,25 @@
   let items     = $state([]);
   let isLoading = $state(false);
   let name      = $state('');
+
+  // By type, in the list's own order; a playlist's 300 entries put up in steps (§165)
+  let groups = $derived([
+    { label: i18n.t.movies,   items: items.filter(i => i.Type === 'Movie') },
+    { label: i18n.t.series,   items: items.filter(i => i.Type === 'Series') },
+    { label: i18n.t.episodes, items: items.filter(i => i.Type === 'Episode') },
+    { label: '',              items: items.filter(i => !['Movie', 'Series', 'Episode'].includes(i.Type)) }
+  ].filter(g => g.items.length));
+  const steps = cardSteps();
+  let ordered = $derived(groups.flatMap(g => g.items));
+  let shown   = $derived(steps.slice(groups));
+
+  const keyOf = () => `${session.serverUrl}|${selectedUser.Id}|${collection.Id}`;
+  // A playlist edit writes the kept list too, and outranks a refresh that was asked before it (listEdits)
+  let listEdits = 0;
+  function keepEdit() {
+    listEdits++;
+    if (kept?.key === keyOf()) kept.items = $state.snapshot(items);
+  }
 
   // Playlist management
   let playlistEditMode     = $state(false);   // edit mode (remove/reorder)
@@ -99,12 +126,17 @@
     // Guard against a superseded load: opening a second collection while the first is still
     // fetching would otherwise show the slower response's items under the newer title.
     // loadedId is set synchronously before this call. Same guard as in Details/Library/Search.
-    const myId = collection.Id;
+    const myId = collection.Id, key = keyOf(), edits = listEdits;
+    // The list as it was left, if it is this one: on screen and focused at once, the request below only brings it up
+    // to date — the keyed cards stay, and so does the focus.
+    const hit = kept?.key === key ? kept : null;
     name      = collection.Name;
-    items     = [];
-    isLoading = true;
+    items     = hit ? hit.items : [];
+    isLoading = !hit;
+    steps.reset();
     playlistEditMode = false; confirmDeletePlaylist = false; renamingPlaylist = false; editFailed = false;
     if (collection.Type === 'Playlist') loadPlaylistRights(myId);
+    if (hit) land();
     // Playlists via their own endpoint (reliable + in list order),
     // collections/BoxSets via ParentId — WITHOUT SortBy: a BoxSet lists in its own order (release date
     // unless the admin set another), and any SortBy replaces it. SortName put part 3 of a trilogy
@@ -116,11 +148,22 @@
       const res = await fetch(url, { headers: authHeaders() });
       const loaded = res.ok ? ((await res.json()).Items || []) : null;
       if (myId !== loadedId) return;   // superseded by a newer collection
-      if (loaded) items = loaded;
-    } catch { /* ignore */ }
+      if (loaded && listEdits === edits) {
+        if (hit) { holdCardFocus(scrollEl, backBtn, () => { items = loaded; }); steps.grow(() => ordered.length); }
+        else items = loaded;
+        kept = { key, items: loaded };
+      }
+    } catch { /* ignore — a kept list stays as it was */ }
     finally { if (myId === loadedId) isLoading = false; }
     if (myId !== loadedId) return;
+    if (!hit) land();
+  }
+
+  async function land() {
+    const myId = loadedId;
+    if (focusItemId) steps.reach(ordered.findIndex(i => i.Id === focusItemId));   // built first if further down (§165)
     await tick();
+    if (myId !== loadedId) return;
     // Land on the card we came back from; failing that the first one, and only if the list is empty
     // the Back button. Opened FRESH there is no card to return to, but the first one is still the
     // right place to stand — the Back button holds focus while the skeletons are up (nothing else
@@ -132,6 +175,7 @@
               || scrollEl?.querySelector('[data-item-id]');
     if (scrollEl && focusItemId) scrollEl.scrollTop = focusScrollTop;   // the view first, then the focus
     (back || backBtn)?.focus();
+    steps.grow(() => ordered.length);
   }
 
   // Reorder: optimistically local, then confirm server-side.
@@ -145,6 +189,7 @@
     const [moved] = arr.splice(fromIndex, 1);
     arr.splice(toIndex, 0, moved);
     items = arr;
+    keepEdit();
     // The each is keyed, so the row's DOM node MOVES and focus travels with it. At either end
     // though, the arrow just pressed turns disabled — and disabling a focused element drops focus
     // to <body> (measured in Chromium), which sends the next key press to the sidebar. Only in that
@@ -166,6 +211,7 @@
   let editFailed = $state(false);
   function editRollback(before) {
     items = before;
+    keepEdit();
     onChildCountChanged?.(collection.Id, items.length);
     editFailed = true;
   }
@@ -176,6 +222,7 @@
     editFailed = false;
     const gap = items.findIndex(i => i.PlaylistItemId === item.PlaylistItemId);
     items = items.filter(i => i.PlaylistItemId !== item.PlaylistItemId);
+    keepEdit();
     onChildCountChanged?.(collection.Id, items.length);   // carry the overview tile (ChildCount) along
     // The pressed button dies with its row (measured: activeElement falls to <body>), and clearing
     // out several entries one after another is the normal way to use this list — so land on the row
@@ -423,14 +470,8 @@
       </div>
     </div>
   {:else if items.length > 0}
-    {@const groups = [
-      { label: i18n.t.movies,   items: items.filter(i => i.Type === 'Movie') },
-      { label: i18n.t.series,   items: items.filter(i => i.Type === 'Series') },
-      { label: i18n.t.episodes, items: items.filter(i => i.Type === 'Episode') },
-      { label: '',          items: items.filter(i => !['Movie', 'Series', 'Episode'].includes(i.Type)) }
-    ].filter(g => g.items.length)}
     <div class="flex flex-col gap-10 pr-4">
-      {#each groups as group (group.label)}
+      {#each shown as group (group.label)}
         <div>
           {#if group.label}
             <h2 class="text-3xl font-bold text-white mb-6 px-2">{group.label}</h2>

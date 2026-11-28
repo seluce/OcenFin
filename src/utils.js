@@ -62,6 +62,23 @@ export function makeFocusReturn() {
   };
 }
 
+// A view that puts a kept page up first and lays the server's answer over it (§164/§165): the answer can take away the
+// card that has focus — a title gone, a playlist entry removed on the title page meanwhile — and focus fell to <body>,
+// where the next key opens the sidebar. Then the card now standing at its place (the last one, if it was further down),
+// else `fallback`. `apply` makes the change; nothing happens if focus was not on a card of `root` or has moved on.
+export async function holdCardFocus(root, fallback, apply) {
+  const cards = () => [...(root?.querySelectorAll('[data-item-id]') || [])];
+  const el = document.activeElement;
+  const at = el && root?.contains(el) ? cards().indexOf(el) : -1;
+  apply();
+  if (at < 0) return;
+  await tick();
+  const now = document.activeElement;
+  if (el.isConnected || (now && now !== document.body)) return;
+  const left = cards();
+  (left[Math.min(at, left.length - 1)] || fallback)?.focus();
+}
+
 // Detects the "back" action: Escape, Backspace OR the webOS remote
 // (Magic Remote "Back" sends keyCode 461). Backspace in a text input field
 // deletes a character and therefore does NOT count as back.

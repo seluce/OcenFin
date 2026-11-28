@@ -17,8 +17,10 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 
 ### Changed
 
-- **Back to a person at once.** Coming back from a title, the person page is there straight away and updates itself in
-  the background.
+- **Back to a person or a collection at once.** Coming back from a title, the person page, collection or playlist is
+  there straight away and updates itself in the background.
+- **Big pages open faster.** A person with hundreds of titles, or a large collection or playlist, shows the first
+  titles straight away and builds the rest right after.
 - **A screen that fails shows a message.** Instead of a half-built page it offers Retry and Back, and the error is
   written to the log.
 - **Screen saver settings in profiles with an age limit.** The screen saver belongs to each profile now, so these
@@ -42,6 +44,8 @@ Notable changes to OcenFin. Versions are release dates (`YYYY.MM.DD`) and match
 - **Long filmographies complete.** The person page stopped after 100 films and series; it now shows up to 500, enough
   for a film composer in a big library.
 - **Guest roles show what you watched.** A series someone only guest-starred in now has the tick like the others.
+- **The person page no longer shifts when it opens.** The head is a little lower, so the first row of titles fits below
+  it at the standard size.
 
 ## 2026.11.22
 

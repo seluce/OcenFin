@@ -7,7 +7,8 @@
 
 <script>
   import { i18n, plural } from '../i18n.svelte.js';
-  import { dlog, authHeaders, getItemSubtitle, setFavorite, personImageUrl, blurUp, itemBlurHash, clampWatch, makeFocusReturn } from '../utils.js';
+  import { dlog, authHeaders, getItemSubtitle, setFavorite, personImageUrl, blurUp, itemBlurHash, clampWatch, makeFocusReturn, holdCardFocus } from '../utils.js';
+  import { cardSteps } from '../cardsteps.svelte.js';
   import { session } from '../session.svelte.js';
   import PosterCard from './PosterCard.svelte';
   import TextDialog from './TextDialog.svelte';
@@ -64,6 +65,10 @@
       { label: i18n.t.series, items: [...items.filter(i => i.Type === 'Series'), ...tiles] },
     ].filter(g => g.items.length > 0);
   });
+  // Up to 500 films and the series besides — put up in steps (§165), the first screenful at once
+  const steps = cardSteps();
+  let ordered = $derived(groups.flatMap(g => g.items));
+  let shown   = $derived(steps.slice(groups));
 
   // Born and died, from what /Items/{id} carries for a person (TMDb's data): PremiereDate is the birthday, EndDate the
   // day of death, ProductionLocations[0] the place of birth. In UTC: the dates are midnight UTC, and local time west of
@@ -135,6 +140,7 @@
     showBio   = false;
     showShare = false;
     isLoading = !hit;
+    steps.reset();
     if (hit) land();
     const auth = { headers: authHeaders() };
     const json = (r) => r.ok ? r.json() : null;
@@ -155,7 +161,8 @@
       if (myId !== loadedId) return;   // superseded by a newer person
       const fresh = [...(main?.Items || []), ...(eps?.Items || [])];
       if (p) { info = p; if (favEdits === edits) fav = !!p.UserData?.IsFavorite; }
-      items = fresh;
+      if (hit) { holdCardFocus(scrollEl, backBtn, () => { items = fresh; }); steps.grow(() => ordered.length); }
+      else items = fresh;
       kept = { key, info: p || hit?.info || null, items: fresh, seriesOf: hit?.seriesOf || {}, fav };
     } catch {
       // No filmography — the person's own data may still have come (personReq never rejects). A page that was kept
@@ -172,15 +179,18 @@
   // Same landing as favourites and collections: the title we came back from, failing that the
   // first one, and only for a person with no titles the Back button — which holds focus while the
   // skeletons are up, since nothing else there can. The remembered offset applies only on a
-  // return; on a fresh open it belongs to some earlier view and would jump this one.
+  // return; on a fresh open it belongs to some earlier view and would jump this one. The card returned to is built
+  // first if it lies beyond the first screenful (§165), the rest after the landing.
   async function land() {
     const myId = loadedId;
+    if (focusItemId) steps.reach(ordered.findIndex(i => i.Id === focusItemId));
     await tick();
     if (myId !== loadedId) return;
     const card = (focusItemId && scrollEl?.querySelector(`[data-item-id="${focusItemId}"]`))
               || scrollEl?.querySelector('[data-item-id]');
     if (scrollEl && focusItemId) scrollEl.scrollTop = focusScrollTop;
     (card || backBtn)?.focus();
+    steps.grow(() => ordered.length);
   }
 
   // The guest series as the server has them (§163). Their tile is put together from episodes, which name the series
@@ -242,7 +252,7 @@
       <span class="text-xs text-gray-400 block truncate w-full">{getItemSubtitle(item)}</span>
     {/if}
   {/snippet}
-  <div class="flex items-center gap-6 mb-8">
+  <div class="flex items-center gap-6 mb-6">
     <button onclick={onBack} bind:this={backBtn} {@attach focusBackOnMount}
       class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
       {i18n.t.back}
@@ -258,9 +268,12 @@
     </button>
   </div>
   <!-- Photo, name and life data; the biography below them, starting at the grid's left edge — beside the photo it
-       began over the second card, and ▼ from it landed there. The photo as round as the person card that led here. -->
-  <div class="flex items-center gap-8 {info?.Overview ? 'mb-5' : 'mb-10'}">
-    <div class="w-40 h-40 shrink-0 rounded-full overflow-hidden bg-gray-800 shadow-xl">
+       began over the second card, and ▼ from it landed there. The photo as round and as big as the cast card that led
+       here. Kept that low (§165) for the first row of cards to fit whole under it at UI size 100 with a three-line
+       biography (33 px to spare): it stood 12 px over, and focus scrolled the page on opening — at 110 and 120 it still
+       does, by 24 and 81 px instead of 73 and 135. -->
+  <div class="flex items-center gap-8 {info?.Overview ? 'mb-4' : 'mb-8'}">
+    <div class="w-36 h-36 shrink-0 rounded-full overflow-hidden bg-gray-800 shadow-xl">
       {#if photo}
         <img src={photo} {@attach blurUp(itemBlurHash(person))} alt={person.Name} class="w-full h-full object-cover" decoding="async"/>
       {:else}
@@ -283,7 +296,7 @@
          ring gets room around it. Not cut → disabled, out of the D-pad's way. -->
     <button bind:this={bioBtn} disabled={!bioClamped}
       onclick={() => { bioFocus.capture(bioBtn); showBio = true; }}
-      class="block max-w-[57.5rem] text-left -mx-3 px-3 py-2 mb-8 rounded-xl focus:outline-none focus:ring-4 focus:ring-white">
+      class="block max-w-[57.5rem] text-left -mx-3 px-3 py-2 mb-6 rounded-xl focus:outline-none focus:ring-4 focus:ring-white">
       <span {@attach clampWatch(info.Overview, (cut) => bioClamped = cut)} class="text-lg text-gray-300 line-clamp-3 leading-relaxed">{info.Overview}</span>
     </button>
   {/if}
@@ -295,8 +308,8 @@
       {/each}
     </div>
   {:else if groups.length > 0}
-    {#each groups as group (group.label)}
-      <h2 class="text-2xl font-bold text-white mb-4 mt-2">{group.label}</h2>
+    {#each shown as group (group.label)}
+      <h2 class="text-2xl font-bold text-white mb-4">{group.label}</h2>
       <div data-focus-grid class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 pr-4 mb-10">
         {#each group.items as item (item.Id)}
           <PosterCard {item} {onOpenDetails} {onContextMenu} caption={cardCaption} />
