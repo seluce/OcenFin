@@ -321,18 +321,20 @@
     <span class="text-sm font-bold text-gray-300 group-focus:text-white block truncate w-full mt-2">{item.Name}</span>
     {#if sub}<span class="text-xs text-gray-400 block truncate w-full">{sub}</span>{/if}
   {/snippet}
+  <!-- Every button of this row is as high as Back (50 px at UI size 100, §167): the heart and Share were 60 px squares
+       beside it and the chips, and set the row's height. -->
   <div class="flex items-center gap-6 mb-6">
     <button onclick={onBack} bind:this={backBtn} {@attach focusBackOnMount}
       class="bg-gray-800 hover:bg-gray-700 focus:bg-gray-700 px-6 py-2 rounded-lg text-white font-bold focus:outline-none focus:ring-4 focus:ring-white">
       {i18n.t.back}
     </button>
     <button onclick={toggleFavorite} aria-label={i18n.t.favorites}
-      class="w-12 h-12 rounded-lg focus:outline-none focus:ring-4 focus:ring-white transition-colors flex items-center justify-center
+      class="w-10 h-10 rounded-lg focus:outline-none focus:ring-4 focus:ring-white transition-colors flex items-center justify-center
              {fav ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700 focus:bg-gray-700'}">
       <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0z"/></svg>
     </button>
     <button bind:this={shareBtn} onclick={openShare} aria-label={i18n.t.share}
-      class="w-12 h-12 rounded-lg bg-gray-800 text-gray-400 hover:bg-gray-700 focus:bg-gray-700 focus:text-white focus:outline-none focus:ring-4 focus:ring-white flex items-center justify-center">
+      class="w-10 h-10 rounded-lg bg-gray-800 text-gray-400 hover:bg-gray-700 focus:bg-gray-700 focus:text-white focus:outline-none focus:ring-4 focus:ring-white flex items-center justify-center">
       <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
     </button>
     <!-- The library's sort chips (§166), in this row: below the head they would push the first row of cards off the
@@ -358,8 +360,8 @@
   <!-- Photo, name and life data; the biography below them, starting at the grid's left edge — beside the photo it
        began over the second card, and ▼ from it landed there. The photo as round and as big as the cast card that led
        here. Kept that low (§165) for the first row of cards to fit whole under it at UI size 100 with a three-line
-       biography (33 px to spare): it stood 12 px over, and focus scrolled the page on opening — at 110 and 120 it still
-       does, by 24 and 81 px instead of 73 and 135. -->
+       biography (43 px to spare since §167): it stood 12 px over, and focus scrolled the page on opening — at 110 and
+       120 it still does, by 13 and 69 px instead of 73 and 135. -->
   <div class="flex items-center gap-8 {info?.Overview ? 'mb-4' : 'mb-8'}">
     <div class="w-36 h-36 shrink-0 rounded-full overflow-hidden bg-gray-800 shadow-xl">
       {#if photo}
